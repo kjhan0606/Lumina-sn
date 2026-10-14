@@ -364,7 +364,7 @@ extern "C" int nlte_assemble_gpu_supported(void)
         "LUMINA_NLTE_JBAR_POPS", "LUMINA_MALI", "LUMINA_NLTE_JEQB",
         "LUMINA_JBAR_SRC_BINNED", "LUMINA_CMF_LINERES_CONSUME",
         "LUMINA_NLTE_DILUTE_FIELD",
-        "LUMINA_ARTIS_PARITY", NULL
+        "LUMINA_ARTIS_PARITY", "LUMINA_OMEGA_CMFGEN", NULL
     };
     for (int i = 0; blockers[i]; i++) {
         const char *e = getenv(blockers[i]);

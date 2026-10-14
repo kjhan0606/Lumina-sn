@@ -86,6 +86,137 @@ LineNetStatus line_net_rate_evaluate(const LineNetComponentInput *input,
     return line_net_fail(result, LINE_NET_OK_HEATING);
 }
 
+static long double line_net_add_up(long double sum, long double term)
+{
+    long double added = sum + term;
+    return term == 0.0L ? added : nextafterl(added, INFINITY);
+}
+
+int line_net_shell_accumulate(LineNetShellAccumulator *accumulator,
+                              const LineNetResult *cell)
+{
+    LineNetShellAccumulator next;
+
+    if (!accumulator || !cell ||
+        (cell->status != LINE_NET_OK_COOLING &&
+         cell->status != LINE_NET_OK_HEATING &&
+         cell->status != LINE_NET_EXACT_ZERO &&
+         cell->status != LINE_NET_UNRESOLVED_CANCELLATION) ||
+        !isfinite(cell->signed_rate) ||
+        !isfinite(cell->absolute_uncertainty) ||
+        cell->absolute_uncertainty < 0.0 ||
+        (cell->status == LINE_NET_OK_COOLING &&
+         (!(cell->signed_rate > cell->absolute_uncertainty) ||
+          cell->cooling != cell->signed_rate || cell->heating != 0.0)) ||
+        (cell->status == LINE_NET_OK_HEATING &&
+         (!(-cell->signed_rate > cell->absolute_uncertainty) ||
+          cell->heating != -cell->signed_rate || cell->cooling != 0.0)) ||
+        (cell->status == LINE_NET_EXACT_ZERO &&
+         (cell->signed_rate != 0.0 || cell->absolute_uncertainty != 0.0 ||
+          cell->cooling != 0.0 || cell->heating != 0.0)) ||
+        (cell->status == LINE_NET_UNRESOLVED_CANCELLATION &&
+         ((cell->signed_rate != 0.0 &&
+           fabs(cell->signed_rate) > cell->absolute_uncertainty) ||
+          cell->cooling != 0.0 || cell->heating != 0.0)))
+        return -1;
+
+    next = *accumulator;
+    next.signed_rate += (long double)cell->signed_rate;
+    if (cell->signed_rate != 0.0) {
+        next.signed_rate_lower = nextafterl(
+            accumulator->signed_rate_lower +
+                (long double)cell->signed_rate, -INFINITY);
+        next.signed_rate_upper = nextafterl(
+            accumulator->signed_rate_upper +
+                (long double)cell->signed_rate, INFINITY);
+    }
+    next.absolute_uncertainty = line_net_add_up(
+        accumulator->absolute_uncertainty,
+        (long double)cell->absolute_uncertainty);
+    next.absolute_signed_rate_sum = line_net_add_up(
+        accumulator->absolute_signed_rate_sum,
+        fabsl((long double)cell->signed_rate));
+    next.cells++;
+    if (cell->status == LINE_NET_UNRESOLVED_CANCELLATION)
+        next.unresolved_cells++;
+    if (!isfinite(next.signed_rate) ||
+        !isfinite(next.signed_rate_lower) ||
+        !isfinite(next.signed_rate_upper) ||
+        !isfinite(next.absolute_uncertainty) ||
+        !isfinite(next.absolute_signed_rate_sum) ||
+        next.cells == 0) return -1;
+    *accumulator = next;
+    return 0;
+}
+
+static double line_net_round_up(long double value)
+{
+    double rounded = (double)value;
+    if (isfinite(rounded) && (long double)rounded < value)
+        rounded = nextafter(rounded, INFINITY);
+    return rounded;
+}
+
+LineNetStatus line_net_shell_qualify(
+        const LineNetShellAccumulator *accumulator, LineNetShellResult *result)
+{
+    if (!result) return LINE_NET_INVALID_INPUT;
+    memset(result, 0, sizeof(*result));
+    result->status = LINE_NET_INVALID_INPUT;
+    if (!accumulator ||
+        !isfinite(accumulator->signed_rate) ||
+        !isfinite(accumulator->signed_rate_lower) ||
+        !isfinite(accumulator->signed_rate_upper) ||
+        !isfinite(accumulator->absolute_uncertainty) ||
+        accumulator->absolute_uncertainty < 0.0L ||
+        !isfinite(accumulator->absolute_signed_rate_sum) ||
+        accumulator->absolute_signed_rate_sum < 0.0L ||
+        accumulator->signed_rate_lower > accumulator->signed_rate ||
+        accumulator->signed_rate_upper < accumulator->signed_rate ||
+        accumulator->absolute_signed_rate_sum <
+            fabsl(accumulator->signed_rate))
+        return LINE_NET_INVALID_INPUT;
+
+    if (accumulator->signed_rate == 0.0L &&
+        accumulator->absolute_signed_rate_sum == 0.0L &&
+        accumulator->absolute_uncertainty == 0.0L &&
+        accumulator->unresolved_cells == 0) {
+        result->status = LINE_NET_EXACT_ZERO;
+        return result->status;
+    }
+
+    result->signed_rate = (double)accumulator->signed_rate;
+    long double rounding_bound = fmaxl(
+        accumulator->signed_rate - accumulator->signed_rate_lower,
+        accumulator->signed_rate_upper - accumulator->signed_rate);
+    long double total_uncertainty = line_net_add_up(
+        accumulator->absolute_uncertainty, rounding_bound);
+    total_uncertainty = line_net_add_up(
+        total_uncertainty,
+        fabsl((long double)result->signed_rate - accumulator->signed_rate));
+    result->absolute_uncertainty = line_net_round_up(total_uncertainty);
+    result->absolute_signed_rate_sum = line_net_round_up(
+        accumulator->absolute_signed_rate_sum);
+    if (!isfinite(result->signed_rate) ||
+        !isfinite(result->absolute_uncertainty) ||
+        !isfinite(result->absolute_signed_rate_sum) ||
+        result->absolute_signed_rate_sum < fabs(result->signed_rate))
+        return result->status;
+    result->cancellation_condition = result->signed_rate == 0.0
+        ? INFINITY
+        : result->absolute_signed_rate_sum / fabs(result->signed_rate);
+
+    if (result->signed_rate == 0.0 ||
+        !(fabs(result->signed_rate) > result->absolute_uncertainty) ||
+        !isfinite(result->cancellation_condition)) {
+        result->status = LINE_NET_UNRESOLVED_CANCELLATION;
+        return result->status;
+    }
+    result->status = result->signed_rate > 0.0
+        ? LINE_NET_OK_COOLING : LINE_NET_OK_HEATING;
+    return result->status;
+}
+
 int line_net_sobolev_material(double n_upper, double A_ul, double nu,
                               double tau, double time_explosion,
                               LineNetNegativeOpacityPolicy policy,
@@ -303,6 +434,50 @@ const char *line_net_status_name(LineNetStatus status)
     case LINE_NET_UNRESOLVED_CANCELLATION:
         return "UNRESOLVED_CANCELLATION";
     case LINE_NET_INVALID_INPUT: return "INVALID_INPUT";
+    default: return "UNKNOWN";
+    }
+}
+
+int line_net_bracket_rates(double continuum_term,
+                           double local_emission_term, double tau_eff,
+                           double jbar_view, unsigned provenance,
+                           double B_lu, double B_ul, double A_ul,
+                           LineNetBracketRates *out)
+{
+    if (!out || !isfinite(B_lu) || B_lu < 0.0 || !isfinite(B_ul) ||
+        B_ul < 0.0 || !isfinite(A_ul) || A_ul < 0.0 ||
+        !isfinite(jbar_view) || jbar_view < 0.0)
+        return LINE_NET_BRACKET_INVALID_ARGUMENT;
+    /* Only bits 0 (srce_chk) and 1 (exact_zero) are defined; the 0xff
+     * sentinel must not be read as an SRCE_CHK cell. */
+    if (provenance > 3u) return LINE_NET_BRACKET_LEDGER_ABSENT;
+    if (provenance & 1u) return LINE_NET_BRACKET_NOT_APPLICABLE;
+    if (!isfinite(continuum_term) || continuum_term < 0.0)
+        return LINE_NET_BRACKET_CONT_TERM_INVALID;
+    if (!isfinite(local_emission_term) ||
+        !(fabs(jbar_view - (continuum_term + local_emission_term)) <=
+          1.0e-12 * jbar_view))
+        return LINE_NET_BRACKET_LEDGER_MISMATCH;
+    double beta, companion;
+    if (line_net_cmfgen_exponx(tau_eff, &beta, &companion) != 0)
+        return LINE_NET_BRACKET_BETA_UNDEFINED;
+    out->beta = beta;
+    out->R_absorb = B_lu * continuum_term;
+    out->R_stim = B_ul * continuum_term;
+    out->R_spont = A_ul * beta;
+    return LINE_NET_BRACKET_OK;
+}
+
+const char *line_net_bracket_status_name(int rc)
+{
+    switch (rc) {
+    case LINE_NET_BRACKET_OK: return "OK";
+    case LINE_NET_BRACKET_NOT_APPLICABLE: return "NOT_APPLICABLE";
+    case LINE_NET_BRACKET_LEDGER_ABSENT: return "LEDGER_ABSENT";
+    case LINE_NET_BRACKET_CONT_TERM_INVALID: return "CONT_TERM_INVALID";
+    case LINE_NET_BRACKET_LEDGER_MISMATCH: return "LEDGER_MISMATCH";
+    case LINE_NET_BRACKET_BETA_UNDEFINED: return "BETA_UNDEFINED";
+    case LINE_NET_BRACKET_INVALID_ARGUMENT: return "INVALID_ARGUMENT";
     default: return "UNKNOWN";
     }
 }

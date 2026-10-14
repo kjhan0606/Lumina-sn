@@ -61,6 +61,7 @@ typedef struct {
  double scaled_absorption_rate;
  double cancellation_condition;
  uint64_t eligible_cells,cooling_cells,heating_cells,exact_zero_cells;
+ uint64_t unresolved_cells;
  uint64_t srce_chk_cells;
  LineNetStatus status;
 } A210LineNetShell;
@@ -71,6 +72,58 @@ typedef struct {
  uint64_t opacity_generation,radiation_generation;
  const A210LineNetShell *shell;
 } A210LineNetPublication;
+
+/* Production deterministic line-cell admission and completed-shell
+ * qualification.  MC retains its existing per-cell sign gate and sum path. */
+static inline RadeqStatus a210_det_line_net_shell_add(
+    A210LineNetShell *shell, LineNetShellAccumulator *accumulator,
+    const LineNetResult *cell)
+{
+    LineNetShellAccumulator next_accumulator;
+    A210LineNetShell next_shell;
+
+    if (!shell || !accumulator || !cell)
+        return RADEQ_TERM_SCHEMA;
+    next_accumulator = *accumulator;
+    next_shell = *shell;
+    if (line_net_shell_accumulate(&next_accumulator, cell) != 0)
+        return cell->status == LINE_NET_INVALID_INPUT
+             ? RADEQ_NONFINITE : RADEQ_TERM_SCHEMA;
+    next_shell.eligible_cells++;
+    if (cell->status == LINE_NET_OK_COOLING)
+        next_shell.cooling_cells++;
+    else if (cell->status == LINE_NET_OK_HEATING)
+        next_shell.heating_cells++;
+    else if (cell->status == LINE_NET_EXACT_ZERO)
+        next_shell.exact_zero_cells++;
+    else if (cell->status == LINE_NET_UNRESOLVED_CANCELLATION)
+        next_shell.unresolved_cells++;
+    else
+        return RADEQ_TERM_SCHEMA;
+    *accumulator = next_accumulator;
+    *shell = next_shell;
+    return RADEQ_OK;
+}
+
+static inline RadeqStatus a210_det_line_net_shell_finish(
+    A210LineNetShell *shell, const LineNetShellAccumulator *accumulator)
+{
+    LineNetShellResult result;
+    LineNetStatus status;
+
+    if (!shell || !accumulator)
+        return RADEQ_TERM_SCHEMA;
+    status = line_net_shell_qualify(accumulator, &result);
+    if (status == LINE_NET_INVALID_INPUT)
+        return RADEQ_NONFINITE;
+    shell->signed_rate = result.signed_rate;
+    shell->absolute_uncertainty = result.absolute_uncertainty;
+    shell->absolute_signed_rate_sum = result.absolute_signed_rate_sum;
+    shell->cancellation_condition = result.cancellation_condition;
+    shell->status = status;
+    return status == LINE_NET_UNRESOLVED_CANCELLATION
+         ? RADEQ_SIGN_MISMATCH : RADEQ_OK;
+}
 
 typedef enum {
  A210_TE_LANE_UNSET = 0,

@@ -15,6 +15,13 @@ static int contains(const char *path, const char *needle) {
     n = fread(buf, 1, sizeof(buf) - 1, fp); fclose(fp); buf[n] = '\0';
     return strstr(buf, needle) != NULL;
 }
+static int data_rows(const char *path) {
+    FILE *fp = fopen(path, "rb"); char line[4096]; int lines = 0;
+    if (!fp) return -1;
+    while (fgets(line, sizeof(line), fp)) ++lines;
+    fclose(fp);
+    return lines > 0 ? lines - 1 : -1;
+}
 static void stamp(PopulationDerivedStamp *s, uint64_t pg, uint64_t tg,
                   const char hash[65], size_t items) {
     memset(s, 0, sizeof(*s)); s->required_population_generation = pg;
@@ -25,12 +32,12 @@ static void stamp(PopulationDerivedStamp *s, uint64_t pg, uint64_t tg,
 
 int main(int argc, char **argv) {
     static const char hash[] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    char root[] = "/tmp/cmfgen-final-writer.XXXXXX", path[2048], disabled[256], stale[256];
+    char root[] = "/tmp/cmfgen-final-writer.XXXXXX", path[4096], case_dir[2048], disabled[256], stale[256];
     double te[] = {12345.25, 23456.5}, ne[] = {2.5, 3.5};
     int iz[] = {26, 26}, istage[] = {1, 2}; double ion[] = {-1.25, NAN, 3.5, 4.5};
     int to_global[] = {0, 1}, level_g[] = {2, 4}; double energy[] = {0.0, 1.25};
     double levels[] = {-0.0, -7.25, INFINITY, NAN};
-    PlasmaState p = {0}, p0; AtomicData a = {0}, a0; NLTEConfig n = {0}, n0;
+    PlasmaState p = {0}, p0; AtomicData a = {0}, a0; NLTEConfig n = {0}, n0, before_n;
     double te0[2], ne0[2], ion0[4], levels0[4];
     const char *output_root;
     if (argc > 2) return 2;
@@ -72,12 +79,65 @@ int main(int argc, char **argv) {
     CHECK(memcmp(te, te0, sizeof te) == 0 && memcmp(ne, ne0, sizeof ne) == 0 &&
           memcmp(ion, ion0, sizeof ion) == 0 && memcmp(levels, levels0, sizeof levels) == 0);
     CHECK(cmfgen_final_writer(output_root, &p, &a, &n, 2) != 0); /* collision */
+
+    n.n_nlte_ions = 3; n.n_nlte_levels_total = 2;
+    n.nlte_Z[0] = 6; n.nlte_ion[0] = 1;
+    n.nlte_Z[1] = 26; n.nlte_ion[1] = 1;
+    n.nlte_Z[2] = 26; n.nlte_ion[2] = 2;
+    n.nlte_ion_level_offset[0] = 0; n.nlte_ion_level_offset[1] = 0;
+    n.nlte_ion_level_offset[2] = 1; n.nlte_ion_level_offset[3] = 2;
+    before_n = n;
+    snprintf(case_dir, sizeof(case_dir), "%s/empty-leading", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) == 0 && memcmp(&n, &before_n, sizeof n) == 0);
+    snprintf(path, sizeof(path), "%s/nlte_levels_final.csv", case_dir); CHECK(data_rows(path) == 4);
+    snprintf(path, sizeof(path), "%s/cmfgen_final_publication.json", case_dir); CHECK(contains(path, "\"rows\": 4"));
+
+    n.nlte_Z[0] = 26; n.nlte_ion[0] = 1;
+    n.nlte_Z[1] = 6; n.nlte_ion[1] = 1;
+    n.nlte_Z[2] = 26; n.nlte_ion[2] = 2;
+    n.nlte_ion_level_offset[0] = 0; n.nlte_ion_level_offset[1] = 1;
+    n.nlte_ion_level_offset[2] = 1; n.nlte_ion_level_offset[3] = 2;
+    before_n = n;
+    snprintf(case_dir, sizeof(case_dir), "%s/empty-middle", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) == 0 && memcmp(&n, &before_n, sizeof n) == 0);
+    snprintf(path, sizeof(path), "%s/nlte_levels_final.csv", case_dir); CHECK(data_rows(path) == 4);
+
+    n.nlte_Z[0] = 26; n.nlte_ion[0] = 1;
+    n.nlte_Z[1] = 26; n.nlte_ion[1] = 2;
+    n.nlte_Z[2] = 6; n.nlte_ion[2] = 1;
+    n.nlte_ion_level_offset[0] = 0; n.nlte_ion_level_offset[1] = 1;
+    n.nlte_ion_level_offset[2] = 2; n.nlte_ion_level_offset[3] = 2;
+    before_n = n;
+    snprintf(case_dir, sizeof(case_dir), "%s/empty-trailing", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) == 0 && memcmp(&n, &before_n, sizeof n) == 0);
+    snprintf(path, sizeof(path), "%s/nlte_levels_final.csv", case_dir); CHECK(data_rows(path) == 4);
+
+    n = n0; n.n_nlte_ions = 1; n.n_nlte_levels_total = 1;
+    n.nlte_Z[0] = 6; n.nlte_ion[0] = 1;
+    n.nlte_ion_level_offset[0] = 0; n.nlte_ion_level_offset[1] = 1;
+    snprintf(case_dir, sizeof(case_dir), "%s/nonempty-missing", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) != 0);
+
+    n = n0; n.nlte_ion_level_offset[0] = -1;
+    snprintf(case_dir, sizeof(case_dir), "%s/invalid-offset", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) != 0);
+
+    n = n0; n.n_nlte_levels_total = 1; n.nlte_ion_level_offset[1] = 1; to_global[0] = a.n_levels;
+    snprintf(case_dir, sizeof(case_dir), "%s/invalid-global", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) != 0);
+    to_global[0] = 0;
+
+    n = n0; n.n_nlte_levels_total = 0; n.nlte_ion_level_offset[1] = 0;
+    snprintf(case_dir, sizeof(case_dir), "%s/all-levels-zero", output_root); CHECK(mkdir(case_dir, 0700) == 0);
+    CHECK(cmfgen_final_writer(case_dir, &p, &a, &n, 2) != 0);
+
+    n = n0;
     n.population_required_generation = 8;
     CHECK(cmfgen_final_writer(stale, &p, &a, &n, 2) != 0);
     n.population_required_generation = 7;
     CHECK(cmfgen_final_writer("/path/that/does/not/exist", &p, &a, &n, 2) != 0);
     CHECK(memcmp(te, te0, sizeof te) == 0 && memcmp(ne, ne0, sizeof ne) == 0 &&
           memcmp(ion, ion0, sizeof ion) == 0 && memcmp(levels, levels0, sizeof levels) == 0);
-    printf("CMFGEN_FINAL_WRITER_SELFTEST_PASS population_generation=7 te_generation=11 plasma_rows=2 saha_rows=4 nlte_rows=4 bytes_unchanged=1 negative_nan_inf_preserved=1 disabled_legacy_plasma=1\n");
+    printf("CMFGEN_FINAL_WRITER_SELFTEST_PASS population_generation=7 te_generation=11 plasma_rows=2 saha_rows=4 nlte_rows=4 empty_absent_slots=leading,middle,trailing nonempty_missing_rejected=1 invalid_offset_rejected=1 invalid_global_rejected=1 all_levels_zero_rejected=1 bytes_unchanged=1 negative_nan_inf_preserved=1 disabled_legacy_plasma=1\n");
     return 0;
 }

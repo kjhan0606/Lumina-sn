@@ -32,6 +32,395 @@ static double cmf_wall_seconds(void)
     return (double)ts.tv_sec + 1.0e-9 * (double)ts.tv_nsec;
 }
 
+/* DET-LTEUNMAP-EPS: direct-call companions defined in lumina_plasma.c. Declared
+ * here (not in lumina.h) so the frozen public API is unchanged and the changeset
+ * stays inside the four gated files (radeq_line_eps_phys is already in lumina.h).
+ * Declared at file scope so BOTH the bin assembler (cmfgen_assemble_impl, the
+ * committed-J path) and the fine parity material can reach them. */
+extern void radeq_line_table_ensure(NLTEConfig *nlte, AtomicData *atom,
+                                    const OpacityState *opacity);
+extern int  radeq_line_table_is_built(void);
+extern int  lumina_line_used_nlte_fill_for_tau(
+        const AtomicData *atom, const PlasmaState *plasma,
+        const NLTEConfig *nlte, size_t n_lines, size_t n_shells,
+        unsigned char *used_nlte_line_shell);
+
+/* DET-LTEUNMAP-EPS: bin-assembler (committed-J) fault channel. cmfgen_assemble_impl
+ * is void, so it flags a fail-closed condition (radeq table unbuilt, atom/nlte
+ * handle absent, used_nlte build failure, or an unmapped line with eps<0) here;
+ * the driver (cmfgen_run) checks it right after cmfgen_assemble and BLOCKS before
+ * the field is solved/committed. 0 = clean. The per-shell census pass counter is
+ * monotonic across gated assembler calls so G-EPS can select the last pass. */
+static int  g_asm_unmapped_eps_fault = 0;
+static long g_asm_unmapped_eps_pass  = 0;
+
+/* DET-LTEUNMAP-EPS (rev 5): the unmapped-line scattering share w*(1-el) that the
+ * commit-path assembler folds into chi_es (2-level treatment for the COMMITTED
+ * bin field). It is tracked SEPARATELY here so the fine exact solver's continuum
+ * (which interpolates the assembler chi_es) can subtract it and see a base-like
+ * albedo — otherwise the near-unity (eps~1e-9) line-scatter forest drives the
+ * fine fixed-point non-convergent (run 374640). CMFGENState lives in the frozen
+ * lumina_cmfgen.h (outside the 4-file changeset), so this cannot be a cs-> member;
+ * a file-static [NS*NB] array, populated by the assembler and read by the fine
+ * solver in the same driver pass, is functionally identical and keeps G-ID.
+ * NULL / zero when the commit gate is off => the fine interp is byte-identical. */
+static double *g_chi_line_sc_unmapped       = NULL;
+static size_t  g_chi_line_sc_unmapped_cells = 0;
+/* CONV diagnostic pass counter (bin solver); +1 per cmfgen_solve_J call, so in
+ * the driver's assemble->solve_J pass loop it tracks the assembler census pass. */
+static long g_solve_j_conv_pass = 0;
+
+/* DET-CONT-NLTE-BALANCE: gate LUMINA_CMF_CONT_NLTE_SOURCE replaces the bin
+ * assembler's Kirchhoff-LTE bf source term chi_bf*B in S_fixed with the real
+ * Milne emissivity eta_bf (bf_get_eta); ff stays thermal. Fail-closed (no silent
+ * B fallback) flags here and the driver blocks, like the LTEUNMAP path. */
+static int  g_asm_cont_src_fault = 0;
+static long g_asm_cont_src_pass  = 0;
+
+/* Forward (tentative) declarations of the registered material handles, defined
+ * with cmfgen_fine_set_bf_atom below; needed here so the bin assembler can reach
+ * them for the DET-LTEUNMAP-EPS table build / used_nlte publication. */
+static AtomicData *g_fine_atom;
+static NLTEConfig  *g_fine_nlte;
+
+/* DET-LTEUNMAP-EPS: G-EPS census line for the bin assembler (committed path).
+ * Same field set as the fine-path census plus the pass index; one source of
+ * truth so production and the selftest stay in sync. Emits the trailing '\n'. */
+static int cmf_assemble_unmapped_eps_format(char *buf,size_t n,long pass,
+        int shell,long n_unmapped,long n_mapped,double eps_min,
+        double eps_median,double eps_max,double thermal_emit_fraction){
+    return snprintf(buf,n,
+        "[cmfgen_assemble][UNMAPPED-EPS] pass=%ld shell=%d n_unmapped=%ld "
+        "n_mapped=%ld eps_min=%.6e eps_median=%.6e eps_max=%.6e "
+        "thermal_emit_fraction=%.6e\n",
+        pass,shell,n_unmapped,n_mapped,eps_min,eps_median,eps_max,
+        thermal_emit_fraction);
+}
+
+/* ascending double comparator (per-shell eps median); shared by both census. */
+static int cmf_unmapped_eps_cmp(const void *a, const void *b){
+    double x=*(const double*)a, y=*(const double*)b;
+    return (x<y)?-1:((x>y)?1:0);
+}
+
+/* DET-LTEUNMAP-EPS (rev 5): bin-solver per-pass convergence line. One source of
+ * truth for production and the selftest. Emits the trailing newline. */
+static int cmf_solve_j_conv_format(char *buf,size_t n,long pass,int n_ali,
+        double max_rel,double p99_rel,long cells){
+    return snprintf(buf,n,
+        "[cmfgen_solve_J][CONV] pass=%ld n_ali=%d max_rel=%.6e p99_rel=%.6e "
+        "cells=%ld\n", pass, n_ali, max_rel, p99_rel, cells);
+}
+
+/* DET-CONT-NLTE-BALANCE: the continuum-source numerator of S_fixed. gate 0 = the
+ * legacy Kirchhoff form (chi_bf+chi_ff)*B + eta_ln; gate 1 replaces the bf part
+ * chi_bf*B with the real Milne eta_bf (ff stays thermal). One source of truth for
+ * production and the selftest. LTE limit eta_bf==chi_bf*B => the two agree. */
+static double cmf_cont_src_numerator(int gate, double chi_bf, double chi_ff,
+        double B, double eta_bf, double eta_ln){
+    if (gate) return eta_bf + chi_ff * B + eta_ln;
+    return (chi_bf + chi_ff) * B + eta_ln;
+}
+
+/* DET-CONT-NLTE-BALANCE fail-closed predicates (shared with the selftest).
+ * precond: the Milne emissivity must be present and built (BF_MILNE>=1);
+ * shell (rev 1, R1-1): a shell with bf-opaque bins but whose MILNE (bf, pre-ff)
+ * emissivity is all-zero (eta_milne_ok==0) means the source is not really built
+ * -> fault (no silent B / pure-ff fallback). bf_get_eta includes ff, so the
+ * pre-ff Milne flag from the bf builder is the honest test. */
+static int cmf_cont_src_precond_fault(int bf_present, int eta_bf_present,
+        int bf_milne){
+    return (!bf_present || !eta_bf_present || bf_milne < 1) ? 1 : 0;
+}
+static int cmf_cont_src_shell_fault(long n_bf_bins, int milne_ok){
+    return (n_bf_bins > 0 && !milne_ok) ? 1 : 0;
+}
+
+/* DET-CONT-NLTE-BALANCE: per-pass/shell continuum-source census (G-SRC). One
+ * source of truth for production and the selftest. Emits the trailing newline. */
+static int cmf_assemble_cont_src_format(char *buf,size_t n,long pass,int shell,
+        long n_bf_bins,double s_over_b_mean,double s_over_b_min,
+        double s_over_b_max){
+    return snprintf(buf,n,
+        "[cmfgen_assemble][CONT-SRC] pass=%ld shell=%d n_bf_bins=%ld "
+        "S_bf_over_B_mean=%.6e S_bf_over_B_min=%.6e S_bf_over_B_max=%.6e\n",
+        pass, shell, n_bf_bins, s_over_b_mean, s_over_b_min, s_over_b_max);
+}
+
+/* DET-LTEUNMAP-EPS (rev 4): the fine INIT-pass parity ε folding has its OWN env
+ * LUMINA_CMF_FINE_UNMAPPED_EPS_FINE (default 0), separate from the commit-path
+ * gate LUMINA_CMF_FINE_UNMAPPED_EPS. Reason (374587): folding (1-ε)χ into the
+ * fine chi_es drives the fine-field scattering albedo to 1-4e-12, so the exact
+ * fixed-point solver cannot converge (128 iters, residual 0.076 vs base 45) and
+ * R6 blocks — and that field is only the INIT line-Jbar seed, not the committed
+ * J. Default 0 => the fine deposit is byte-identical to the original; enabling
+ * the commit-path gate alone changes nothing here. */
+static int cmf_fine_unmapped_eps_fine_gate(void){
+    const char *e = getenv("LUMINA_CMF_FINE_UNMAPPED_EPS_FINE");
+    return (e && atoi(e)) ? 1 : 0;
+}
+
+/* DET-LTEUNMAP-EPS: the bin assembler's per-line eps selection under the gate.
+ * One source of truth for the committed path and the selftest.
+ *   mapped line (is_unmapped==0) -> el = 1.0 (unchanged fully-thermal treatment;
+ *     its NLTE-source eps channel is a separate rung);
+ *   LTE-unmapped line -> el = radeq_line_eps_phys RAW (no eps_floor/eps_cap);
+ *     el<0 (table unbuilt / unknown line) -> fail-closed: sets *fail and returns
+ *     1.0 (the driver blocks the run before the field is committed; no silent
+ *     thermal fallback). */
+static double cmf_assemble_unmapped_el(int is_unmapped, int line, double n_e,
+                                       double T_e, double tau, int *fail){
+    if (!is_unmapped) return 1.0;
+    double el = radeq_line_eps_phys(line, n_e, T_e, tau);
+    if (el < 0.0) { if (fail) *fail = 1; return 1.0; }
+    return el;
+}
+
+/* DET-LTEUNMAP-EPS (rev 5): the LTE-unmapped scattering share w*(1-el) the gate
+ * adds to chi_es (2-level). Tracked in g_chi_line_sc_unmapped and subtracted in
+ * the fine interp; the assembler and the selftest use this single expression so
+ * the accumulation and the subtraction can never disagree. el==1 (mapped/base)
+ * gives 0 (no extra scattering), so subtracting restores the base construction. */
+static double cmf_assemble_unmapped_sc_share(double w, double el){
+    return w * (1.0 - el);
+}
+
+/* DET-OBS-WRITER (prereg docs/PREREG_DET_OBS_WRITER_2026-10-02.md §1-§2).
+ * One-shot capture of the source terms the bin assembler actually consumed in
+ * the final pass, for the source-conserving observer-frame writer (det_obs_write).
+ * Armed only by cmfgen_run under LUMINA_DET_OBS_WRITER=1 immediately before the
+ * final pass's main assemble; unarmed => nothing below runs (OFF byte-identical).
+ *   mode 1: unmapped-eps gate active + LINE_EPS_PHYS (the E/R configuration):
+ *           mapped el=1 source S_l^used, unmapped el=eps (same helper) with the
+ *           scattering share (1-eps) consumed against the bin J.
+ *   mode 2: neither gate: every consumed line fully thermal (el=1).
+ * Any other assembly combination (EPAY, frozen morphology, constant/UV eps
+ * split, E4 B lane, cont_only) is recorded as unsupported, never approximated. */
+#ifdef LUMINA_DET_OBS_SELFTEST
+int det_obs_fault = 0;
+#define DET_OBS_FAULT(x) (det_obs_fault == (x))
+#else
+#define DET_OBS_FAULT(x) 0
+#endif
+
+struct DetObsCapture {
+    int ns, nb, nl;
+    int valid;               /* 1 after a complete, supported final-pass capture */
+    int mode;                /* 1 or 2 (see above); 0 = unsupported */
+    int src_nlte;            /* LUMINA_CMFGEN_SRC_NLTE as the assembler read it */
+    long asm_serial;         /* assemble call serial of the capture */
+    unsigned char *mapped;   /* [nl*ns] copy of used_nlte_asm (mode 1) */
+    double *Te, *ne;         /* [ns] assembler T_e and n_e */
+    double *chi_e;           /* [ns*nb] pure electron scattering */
+    double *chi_a;           /* [ns*nb] continuum true absorption (bf+ff) */
+    double *eta_c;           /* [ns*nb] bf/ff numerator (no line term) + eta_dep */
+    double *eta_dep;         /* [ns*nb] the deposition emissivity actually added */
+    double *eta_ln;          /* [ns*nb] thermal line emissivity the assembler used */
+    double *sc_unmapped;     /* [ns*nb] sum_unmapped (1-el)w the assembler added */
+    double *chi_es_asm;      /* [ns*nb] cs->chi_es as the assembler stored it */
+    int *n_cons, *m_unm;     /* [ns*nb] consumed / consumed-unmapped line counts */
+    double *L_sum, *H_sum;   /* [ns*nb] chi_ln, chi_ln_th the assembler subtracted */
+    uint64_t mat_gen;        /* material generation at arm time */
+    uint64_t h_tau, h_ls;    /* FNV-1a of tau_sobolev / line_source_S at capture */
+    char why[160];
+};
+
+static int  g_det_obs_armed = 0;
+static uint64_t g_det_obs_arm_gen = 0;
+static long g_det_obs_asm_serial = 0;
+
+static uint64_t det_obs_fnv1a(const void *p, size_t n, uint64_t h)
+{
+    const unsigned char *c = (const unsigned char *)p;
+    if (!c) return h ^ 0x9e3779b97f4a7c15ULL;
+    for (size_t i = 0; i < n; ++i) { h ^= c[i]; h *= 0x100000001b3ULL; }
+    return h;
+}
+#define DET_OBS_FNV0 0xcbf29ce484222325ULL
+
+void det_obs_capture_free(CMFGENState *cs)
+{
+    if (!cs || !cs->det_obs_cap) return;
+    struct DetObsCapture *c = cs->det_obs_cap;
+    free(c->mapped); free(c->Te); free(c->ne); free(c->chi_e); free(c->chi_a);
+    free(c->eta_c); free(c->eta_dep); free(c->eta_ln); free(c->sc_unmapped);
+    free(c->chi_es_asm);
+    free(c->n_cons); free(c->m_unm); free(c->L_sum); free(c->H_sum);
+    free(c);
+    cs->det_obs_cap = NULL;
+}
+
+void det_obs_capture_arm(CMFGENState *cs, uint64_t material_generation)
+{
+    (void)cs;
+    g_det_obs_armed = 1;
+    g_det_obs_arm_gen = material_generation;
+}
+
+/* Called once per assemble right after the line-mode decision. Returns the
+ * capture to fill when armed, else NULL (every later hook is a no-op). */
+static struct DetObsCapture *det_obs_capture_begin(CMFGENState *cs, int n_lines,
+                                                   int NS, int NB)
+{
+    ++g_det_obs_asm_serial;
+    if (!g_det_obs_armed) return NULL;
+    g_det_obs_armed = 0;                        /* one shot */
+    det_obs_capture_free(cs);
+    struct DetObsCapture *c = calloc(1, sizeof *c);
+    if (!c) return NULL;
+    cs->det_obs_cap = c;
+    c->ns = NS; c->nb = NB; c->nl = n_lines;
+    c->asm_serial = g_det_obs_asm_serial;
+    c->mat_gen = g_det_obs_arm_gen;
+    size_t cells = (size_t)NS * (size_t)NB;
+    c->Te = calloc((size_t)NS, sizeof(double));
+    c->ne = calloc((size_t)NS, sizeof(double));
+    c->chi_e = calloc(cells, sizeof(double));
+    c->chi_a = calloc(cells, sizeof(double));
+    c->eta_c = calloc(cells, sizeof(double));
+    c->eta_dep = calloc(cells, sizeof(double));
+    c->eta_ln = calloc(cells, sizeof(double));
+    c->sc_unmapped = calloc(cells, sizeof(double));
+    c->chi_es_asm = calloc(cells, sizeof(double));
+    c->n_cons = calloc(cells, sizeof(int));
+    c->m_unm = calloc(cells, sizeof(int));
+    c->L_sum = calloc(cells, sizeof(double));
+    c->H_sum = calloc(cells, sizeof(double));
+    if (DET_OBS_FAULT(11) || !c->Te || !c->ne || !c->chi_e || !c->chi_a ||
+        !c->eta_c || !c->eta_dep || !c->eta_ln || !c->sc_unmapped || !c->chi_es_asm ||
+        !c->n_cons || !c->m_unm || !c->L_sum || !c->H_sum)
+        snprintf(c->why, sizeof c->why, "CAPTURE_ALLOCATION");
+    return c;
+}
+
+static void det_obs_capture_mask(struct DetObsCapture *c,
+                                 const unsigned char *used_nlte_asm)
+{
+    if (!c || c->why[0]) return;
+    if (!used_nlte_asm) return;                 /* mode decided in finish */
+    size_t cells = (size_t)c->nl * (size_t)c->ns;
+    c->mapped = malloc(cells ? cells : 1);
+    if (!c->mapped) { snprintf(c->why, sizeof c->why, "CAPTURE_MASK_ALLOCATION");
+                      return; }
+    memcpy(c->mapped, used_nlte_asm, cells);
+}
+
+/* rev 4: the consumed-line count n and the line domain (finite w >= 0,
+ * 0 <= el <= 1, mapped el == 1), counted in the same pass and order as the
+ * accumulation of L = sum w; m counts the unmapped share. */
+static void det_obs_capture_line_w(struct DetObsCapture *c, size_t idx, double w)
+{
+    if (!c || c->why[0]) return;
+    if (!isfinite(w) || w < 0.0) { snprintf(c->why, sizeof c->why, "CHI_E_DOMAIN:W");
+                                   return; }
+    c->n_cons[idx]++;
+}
+
+static void det_obs_capture_line_el(struct DetObsCapture *c, size_t idx,
+                                    int is_unmapped, double el)
+{
+    if (!c || c->why[0]) return;
+    if (!isfinite(el) || el < 0.0 || el > 1.0 || (!is_unmapped && el != 1.0)) {
+        snprintf(c->why, sizeof c->why, "CHI_E_DOMAIN:EL"); return; }
+    if (is_unmapped) c->m_unm[idx]++;
+}
+
+static void det_obs_capture_cell(struct DetObsCapture *c, int s, size_t idx,
+                                 double Te, double n_e, double chi_e,
+                                 double chi_a, double eta_bfff, double eta_dep,
+                                 double eta_ln, double sc_unmapped, double chi_es_asm,
+                                 double L, double H)
+{
+    if (!c || c->why[0]) return;
+    c->chi_es_asm[idx] = chi_es_asm;
+    c->L_sum[idx] = L;
+    c->H_sum[idx] = H;
+    c->Te[s] = Te; c->ne[s] = n_e;
+    c->chi_e[idx] = chi_e;
+    c->chi_a[idx] = chi_a;
+    c->eta_dep[idx] = eta_dep;
+    c->eta_c[idx] = eta_bfff + eta_dep;
+    c->eta_ln[idx] = eta_ln;
+    c->sc_unmapped[idx] = sc_unmapped;
+}
+
+/* rev 4 (prereg §2.2): rounding bound for r = fl(U - E), U = fl(A - S), from
+ * the assembler's own binary64 operations.  u = 2^-53, a = 2^-1074,
+ * rho(x) = u|x|/(1-u) + a.  mode 1:
+ *   B0 = n rho(L) + 2n rho(H) + m L rho(1) + 2m rho(S) + rho(D) + rho(A) + rho(U)
+ * mode 2 (H = L copy, S = 0): B0 = rho(A) + rho(U).  B = B0 + u B0 + a.
+ * Every bound operation is rounded outward (nextafter up) so B_up >= B; the
+ * production rounding mode is untouched.  Returns 0 |r| <= B_up, 1 violated,
+ * 2 domain (non-finite operand or bound, counts, mode 2 linkage, mode). */
+#define DET_OBS_CHI_E_BOUND_VERSION "DET_OBS_CHI_E_BOUND_V1"
+static double det_obs_up(double x) { return nextafter(x, INFINITY); }
+static double det_obs_add_up(double x, double y) { return det_obs_up(x + y); }
+static double det_obs_mul_up(double x, double y) { return det_obs_up(x * y); }
+static double det_obs_rho_up(double x)
+{
+    const double u = 0x1p-53, a = 0x1p-1074;
+    return det_obs_add_up(det_obs_up(det_obs_mul_up(u, fabs(x)) / (1.0 - u)), a);
+}
+
+static int det_obs_chi_e_check(int mode, int n, int m, double L, double H, double A,
+                               double S, double E, double U, double *r_out, double *B_out)
+{
+    const double u = 0x1p-53, a = 0x1p-1074;
+    double r = U - E, B0;
+    *r_out = r; *B_out = INFINITY;
+    if (!isfinite(L) || !isfinite(H) || !isfinite(A) || !isfinite(S) ||
+        !isfinite(E) || !isfinite(U) || !isfinite(r)) return 2;
+    if (mode == 1) {
+        if (n < 0 || m < 0 || m > n || L < 0.0 || H < 0.0 || S < 0.0 || E < 0.0)
+            return 2;
+        double D = L - H, dn = (double)n, dm = (double)m;
+        B0 = det_obs_mul_up(dn, det_obs_rho_up(L));
+        B0 = det_obs_add_up(B0, det_obs_mul_up(2.0 * dn, det_obs_rho_up(H)));
+        B0 = det_obs_add_up(B0, det_obs_mul_up(det_obs_mul_up(dm, L), det_obs_rho_up(1.0)));
+        B0 = det_obs_add_up(B0, det_obs_mul_up(2.0 * dm, det_obs_rho_up(S)));
+        B0 = det_obs_add_up(B0, det_obs_rho_up(D));
+        B0 = det_obs_add_up(B0, det_obs_rho_up(A));
+        B0 = det_obs_add_up(B0, det_obs_rho_up(U));
+    } else if (mode == 2) {
+        if (H != L || S != 0.0) return 2;
+        B0 = det_obs_add_up(det_obs_rho_up(A), det_obs_rho_up(U));
+    } else {
+        return 2;
+    }
+    double Bu = det_obs_add_up(det_obs_add_up(B0, det_obs_mul_up(u, B0)), a);
+    if (!isfinite(Bu)) return 2;
+    *B_out = Bu;
+    return (fabs(r) <= Bu) ? 0 : 1;
+}
+
+static void det_obs_capture_finish(struct DetObsCapture *c, const CMFGENState *cs,
+                                   const OpacityState *opac, int gate_active,
+                                   int eps_phys, int src_nlte, int epay,
+                                   double line_eps, double eps_uv, int emiss_b)
+{
+    if (!c) return;
+    c->src_nlte = src_nlte;
+    if (!c->why[0]) {
+        if (emiss_b)                       snprintf(c->why, sizeof c->why, "UNSUPPORTED_ASSEMBLY:E4_B_LANE");
+        else if (cs->cont_only)            snprintf(c->why, sizeof c->why, "UNSUPPORTED_ASSEMBLY:CONT_ONLY");
+        else if (epay)                     snprintf(c->why, sizeof c->why, "UNSUPPORTED_ASSEMBLY:EPAY");
+        else if (cs->frozen_morph_eps >= 0.0)
+                                           snprintf(c->why, sizeof c->why, "UNSUPPORTED_ASSEMBLY:FROZEN_MORPH");
+        else if (gate_active && eps_phys && c->mapped) c->mode = 1;
+        else if (!gate_active && !eps_phys && !(line_eps > 0.0) && !(eps_uv > 0.0))
+                                           c->mode = 2;
+        else snprintf(c->why, sizeof c->why,
+                      "UNSUPPORTED_ASSEMBLY:EPS_MODE gate=%d eps_phys=%d line_eps=%g eps_uv=%g",
+                      gate_active, eps_phys, line_eps, eps_uv);
+    }
+    size_t lc = (size_t)opac->n_lines * (size_t)c->ns;
+    c->h_tau = det_obs_fnv1a(opac->tau_sobolev, lc * sizeof(double), DET_OBS_FNV0);
+    c->h_ls  = det_obs_fnv1a(opac->line_source_S,
+                             opac->line_source_S ? lc * sizeof(double) : 0,
+                             DET_OBS_FNV0);
+    c->valid = (c->why[0] == 0 && c->mode != 0);
+}
+
 /* Fine exact-solver ownership.  Unset or zero keeps the serial CPU owner;
  * a positive value requests exactly that many visible CUDA devices.  Invalid
  * text is terminal instead of being silently interpreted by atoi(). */
@@ -84,6 +473,151 @@ static int cmf_optional_binary_env(const char *name, int *enabled)
     }
     return -1;
 }
+
+/* DET-W5-CONT-SOURCE (prereg 2026-09-30 §2): gate LUMINA_CMF_FINE_CONT_NLTE_SOURCE
+ * (unset/"0" OFF, "1" ON, anything else an explicit error). ON: the bin assembler
+ * stores the bf+ff continuum emissivity it actually consumed,
+ *   E_b = bf_get_eta(nu_b) [bf Milne + builder-ff pack] + chi_ff_extra*B(nu_b),
+ * in cs->w5_cont_eta, and the fine assembler replaces its Kirchhoff continuum
+ * term chi_abs*B with the same log-nu interpolation of E_b that it already
+ * applies to chi_abs. OFF: no allocation, no file, no log; the existing
+ * arithmetic runs unchanged. */
+#define W5_CONT_LINES_FILE "w5_lines.csv"
+#define W5_CONT_N_TARGET_SHELLS 5
+static const int w5_cont_target_shells[W5_CONT_N_TARGET_SHELLS] = {10, 15, 19, 24, 30};
+static long     w5_cont_fine_calls = 0;       /* ON fine calls; w5_lines.csv 'call' */
+static uint64_t w5_cont_rad_generation = 0;  /* set by cmfgen_run before fine_jbar */
+
+/* Selftest-only fault injection (tests/w5_cont_source_selftest.c). The
+ * production build compiles every W5_CONT_FAULT(...) to 0. */
+enum { W5_CONT_FAULT_NONE = 0, W5_CONT_FAULT_INTERP = 1, W5_CONT_FAULT_FF_OMIT = 2,
+       W5_CONT_FAULT_FF_DOUBLE = 3, W5_CONT_FAULT_THERMAL = 4, W5_CONT_FAULT_OFF = 5 };
+#ifdef LUMINA_W5_CONT_SOURCE_SELFTEST
+static int w5_cont_selftest_fault_code = W5_CONT_FAULT_NONE;
+#define W5_CONT_FAULT(code) (w5_cont_selftest_fault_code == (code))
+#else
+#define W5_CONT_FAULT(code) 0
+#endif
+
+/* Fine-grid value of the bin continuum emissivity with the SAME centre
+ * coordinate, end-point extension and weights as the fine chi_abs
+ * interpolation (used for the error report and checked by the selftest). */
+static double w5_cont_fine_eta_at(const CMFGENState *csb, int s, double nu)
+{
+    double x = log(nu / csb->nu_min) / csb->d_log_nu - 0.5;
+    int b = (int)floor(x); double f = x - b;
+    if (b < 0) { b = 0; f = 0.0; }
+    if (b >= csb->n_bins - 1) { b = csb->n_bins - 2; f = 1.0; }
+    size_t ia = (size_t)s * csb->n_bins + b, ib = ia + 1;
+    return (1.0 - f) * csb->w5_cont_eta[ia] + f * csb->w5_cont_eta[ib];
+}
+
+/* Per (target line, target shell) values already computed by the fine line
+ * producer; written to w5_lines.csv without further arithmetic. */
+typedef struct {
+    double jc, jc_err, beta, local, jbar, jbar_err, tau_eff;
+    int srce_chk;
+    int status;
+} w5_cont_line_rec;
+enum { W5_CONT_LINE_UNSET = 0, W5_CONT_LINE_OK_SOBOLEV = 1, W5_CONT_LINE_OK_INIT = 2 };
+
+/* w5_lines.csv: one row per (target mapped line, target shell) per ON fine
+ * call. First call creates the file exclusively (an existing file is an
+ * error, never overwritten); later calls append. Lines outside the fine
+ * support carry identity + OUTSIDE_FINE_SUPPORT only (no radiation value);
+ * INIT rows carry the Gaussian profile mean in Jbar and NOT_APPLICABLE in
+ * the Sobolev-only columns. A missing in-support record is an error. */
+static int w5_cont_lines_write(const char *path, long call, int sobolev,
+        uint64_t rad_gen, uint64_t mat_gen, int NS, const int *tidx,
+        const int *line_of, int nt, const w5_cont_line_rec *rec,
+        const double *line_nu, const int *Zarr, const int *qarr,
+        double nu_lo, double nu_hi, size_t *rows_out, size_t *outside_out)
+{
+    *rows_out = 0; *outside_out = 0;
+    FILE *fp = fopen(path, call == 1 ? "wx" : "a");
+    if (!fp) {
+        fprintf(stderr, "[cmf_fine][BLOCKED] reason=W5_CONT_LINES_OPEN path=%s "
+                "mode=%s errno=%d\n", path, call == 1 ? "wx" : "a", errno);
+        return -1;
+    }
+    int bad = 0;
+    if (call == 1 &&
+        fprintf(fp, "call,operator,rad_generation,material_generation,shell,"
+                    "line_id,Z,ion,nu_hz,J_c,J_c_err_upper,beta,L_l,Jbar,"
+                    "Jbar_err_upper,tau_eff,srce_chk,status\n") < 0)
+        bad = 1;
+    const char *op = sobolev ? "CMFGEN_NONOVERLAP_SOBOLEV"
+                             : "INIT_SHARED_GAUSSIAN";
+    for (int t = 0; t < nt && !bad; ++t) {
+        int l = line_of[t];
+        double nu = line_nu[l];
+        int inside = (nu >= nu_lo && nu <= nu_hi);
+        for (int s = 0; s < NS && !bad; ++s) {
+            int k = tidx[s];
+            if (k < 0) continue;
+            const w5_cont_line_rec *r = &rec[(size_t)t * W5_CONT_N_TARGET_SHELLS + k];
+            if (fprintf(fp, "%ld,%s,%llu,%llu,%d,%d,%d,%d,%.17g,", call, op,
+                        (unsigned long long)rad_gen,
+                        (unsigned long long)mat_gen, s, l, Zarr[l], qarr[l],
+                        nu) < 0) { bad = 1; break; }
+            int n;
+            if (!inside) {
+                if (r->status != W5_CONT_LINE_UNSET) { bad = 2; break; }
+                n = fprintf(fp, ",,,,,,,,OUTSIDE_FINE_SUPPORT\n");
+                ++*outside_out;
+            } else if (sobolev && r->status == W5_CONT_LINE_OK_SOBOLEV) {
+                n = fprintf(fp, "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,"
+                            "%d,OK\n", r->jc, r->jc_err, r->beta, r->local,
+                            r->jbar, r->jbar_err, r->tau_eff, r->srce_chk);
+            } else if (!sobolev && r->status == W5_CONT_LINE_OK_INIT) {
+                n = fprintf(fp, "NOT_APPLICABLE,NOT_APPLICABLE,NOT_APPLICABLE,"
+                            "NOT_APPLICABLE,%.17g,%.17g,NOT_APPLICABLE,"
+                            "NOT_APPLICABLE,OK_INIT_GAUSSIAN_PROFILE_MEAN\n",
+                            r->jbar, r->jbar_err);
+            } else {
+                bad = 3; break;
+            }
+            if (n < 0) { bad = 1; break; }
+            ++*rows_out;
+        }
+    }
+    if (fclose(fp) != 0 && !bad) bad = 1;
+    if (bad)
+        fprintf(stderr, "[cmf_fine][BLOCKED] reason=W5_CONT_LINES_WRITE code=%d "
+                "rows=%zu\n", bad, *rows_out);
+    return bad ? -1 : 0;
+}
+
+#ifdef LUMINA_W5_CONT_SOURCE_SELFTEST
+static double *w5_cont_cap[6];
+static size_t w5_cont_cap_max = 0;
+static int w5_cont_cap_ns = 0, w5_cont_cap_nf = 0, w5_cont_cap_done = 0;
+static long w5_cont_off_cell = -1;
+static double w5_cont_off_before = 0.0, w5_cont_off_after = 0.0;
+static void w5_cont_selftest_capture_pre_assembly(const CMFGENState *fs,
+        const double *eta, int NS, int NF)
+{
+    size_t n = (size_t)NS * (size_t)NF;
+    w5_cont_cap_ns = NS; w5_cont_cap_nf = NF; w5_cont_cap_done = 0;
+    if (!w5_cont_cap[0] || n > w5_cont_cap_max) return;
+    memcpy(w5_cont_cap[0], fs->S_fixed, n * sizeof(double));
+    memcpy(w5_cont_cap[1], fs->chi_abs, n * sizeof(double));
+    memcpy(w5_cont_cap[2], eta, n * sizeof(double));
+    memcpy(w5_cont_cap[3], fs->chi_es, n * sizeof(double));
+    memcpy(w5_cont_cap[4], fs->chi_line, n * sizeof(double));
+    memcpy(w5_cont_cap[5], fs->nu, (size_t)NF * sizeof(double));
+    w5_cont_cap_done = 1;
+}
+static double w5_cont_selftest_off_inject(size_t idx, size_t target,
+                                     double numerator)
+{
+    if (idx != target) return numerator;
+    w5_cont_off_cell = (long)idx;
+    w5_cont_off_before = numerator;
+    w5_cont_off_after = numerator * (1.0 + 0x1p-20);
+    return w5_cont_off_after;
+}
+#endif
 
 /* Physical constants (cgs) — local copies; planck_bnu in plasma.c is static. */
 #define CM_H      6.62607015e-27   /* erg s            */
@@ -1610,9 +2144,11 @@ int cmfgen_init(CMFGENState *cs, const Geometry *geo)
 void cmfgen_free(CMFGENState *cs)
 {
     if (!cs) return;
+    det_obs_capture_free(cs);
     free(cs->nu); free(cs->dnu); free(cs->chi_es); free(cs->chi_abs);
     free(cs->chi_line); free(cs->chi_line_th); free(cs->chi_line_cls);
     free(cs->chi_tot); free(cs->S_fixed); free(cs->J);
+    free(cs->w5_cont_eta);
     free(cs->eta_total_audit);
     free(cs->stage32_eta_pre_epay);
     free(cs->stage32_boundary_eta);
@@ -1861,11 +2397,100 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
     if (cmf_r1_prepare_assembly(cs,opac) == 0 && cs->stage32_eta_pre_epay)
         cs->stage32_source_nlte=src_nlte;
 
+    /* DET-LTEUNMAP-EPS (committed path). Gate ON => in the line loop below an
+     * LTE-unmapped line (used_nlte==0) uses the RAW two-level eps
+     * radeq_line_eps_phys (no floor/cap; eps<0 fail-closed), replacing the
+     * silent el<0 -> 1.0 fallback that thermalises the outer S V/Ca V lamp; a
+     * MAPPED line (used_nlte==1) keeps its current el=1.0 thermal treatment
+     * (its NLTE-source eps channel is a separate rung). The gate first ensures
+     * the RADEQ table (the fixed-T_e run never builds it) and publishes the
+     * per-(line,shell) NLTE map with the SAME predicate the fine path uses.
+     * atom/nlte come from the registered handles (cmfgen_fine_set_bf_atom).
+     * Gate OFF => nothing here runs and no table is built (byte-identical). */
+    int unmapped_eps_gate = 0;
+    { const char *e = getenv("LUMINA_CMF_FINE_UNMAPPED_EPS");
+      if (e && atoi(e)) unmapped_eps_gate = 1; }
+    unsigned char *used_nlte_asm = NULL;
+    double *asm_eps_buf = NULL;
+    long asm_pass = 0;
+    if (unmapped_eps_gate) {
+        g_asm_unmapped_eps_fault = 0;   /* per-call; driver checks after return */
+        if (!g_fine_atom || !g_fine_nlte) {
+            fprintf(stderr,
+                    "[cmfgen_assemble][BLOCKED] reason=UNMAPPED_EPS_NO_ATOM_NLTE"
+                    "_HANDLE floor=0 clamp=0 fallback=0\n");
+            g_asm_unmapped_eps_fault = 1;
+        } else if ((size_t)n_lines > SIZE_MAX / (size_t)NS) {
+            fprintf(stderr,
+                    "[cmfgen_assemble][BLOCKED] reason=UNMAPPED_EPS_SHAPE\n");
+            g_asm_unmapped_eps_fault = 1;
+        } else {
+            size_t cells = (size_t)n_lines * (size_t)NS;
+            used_nlte_asm = malloc(cells * sizeof(*used_nlte_asm));
+            if (!used_nlte_asm ||
+                lumina_line_used_nlte_fill_for_tau(
+                    g_fine_atom, plasma, g_fine_nlte, (size_t)n_lines,
+                    (size_t)NS, used_nlte_asm) != 0) {
+                fprintf(stderr,
+                        "[cmfgen_assemble][BLOCKED] reason=UNMAPPED_EPS_USED_"
+                        "NLTE_BUILD floor=0 clamp=0 fallback=0\n");
+                free(used_nlte_asm); used_nlte_asm = NULL;
+                g_asm_unmapped_eps_fault = 1;
+            } else {
+                radeq_line_table_ensure(g_fine_nlte, g_fine_atom, opac);
+                if (!radeq_line_table_is_built()) {
+                    fprintf(stderr,
+                            "[cmfgen_assemble][BLOCKED] reason=UNMAPPED_EPS_"
+                            "RADEQ_TABLE_UNBUILT floor=0 clamp=0 fallback=0\n");
+                    free(used_nlte_asm); used_nlte_asm = NULL;
+                    g_asm_unmapped_eps_fault = 1;
+                } else if (!emiss_b) {
+                    asm_eps_buf = malloc((size_t)(n_lines > 0 ? n_lines : 1) *
+                                         sizeof(double));
+                    asm_pass = ++g_asm_unmapped_eps_pass;   /* census pass id */
+                }
+            }
+        }
+    }
+    /* if the gate faulted during setup, fall through with used_nlte_asm==NULL;
+     * every line then keeps the legacy el path and the driver blocks the run. */
+    int gate_active = unmapped_eps_gate && used_nlte_asm != NULL;
+    struct DetObsCapture *det_cap = det_obs_capture_begin(cs, n_lines, NS, NB);
+
+    /* DET-LTEUNMAP-EPS (rev 5): (re)size the unmapped-scattering side array when
+     * the gate is active, else release it so the fine interp subtracts nothing
+     * (byte-identical). memset each call: it accumulates fresh per assemble. */
+    if (gate_active) {
+        size_t cells = (size_t)NS * (size_t)NB;
+        if (g_chi_line_sc_unmapped_cells != cells) {
+            free(g_chi_line_sc_unmapped);
+            g_chi_line_sc_unmapped = malloc(cells * sizeof(double));
+            g_chi_line_sc_unmapped_cells = g_chi_line_sc_unmapped ? cells : 0;
+        }
+        if (g_chi_line_sc_unmapped)
+            memset(g_chi_line_sc_unmapped, 0, cells * sizeof(double));
+    } else {
+        free(g_chi_line_sc_unmapped);
+        g_chi_line_sc_unmapped = NULL;
+        g_chi_line_sc_unmapped_cells = 0;
+    }
+    if (DET_OBS_FAULT(18) && gate_active) {
+        free(g_chi_line_sc_unmapped);
+        g_chi_line_sc_unmapped = NULL;
+        g_chi_line_sc_unmapped_cells = 0;
+    }
+    /* without the S buffer the unmapped share is counted in m but never summed
+     * into S: the capture cannot reconcile chi_e, so it fails explicitly. */
+    if (det_cap && gate_active && !g_chi_line_sc_unmapped && !det_cap->why[0])
+        snprintf(det_cap->why, sizeof det_cap->why, "CAPTURE_SC_BUFFER");
+
     /* Expansion (Sobolev-binned) line opacity + emissivity.
      *   chi_line[bin] = sum_{l in bin} (1-e^{-tau_l}) * nu_l/(c t_exp dnu_bin)
      *   eta_line[bin] = sum_l eta_l, including the production eps_phys factor
      * S_l = line_source_S if >0 else B_nu(T_e) (thermalised fallback). */
     for (int s = 0; s < NS; ++s) {
+        long asm_nun = 0, asm_nmap = 0;
+        double asm_sum_eta = 0.0, asm_sum_el_eta = 0.0;
         double Te = plasma->T_e[s];
         double ne_s = plasma->n_electron ? plasma->n_electron[s]
                                          : opac->electron_density[s];
@@ -1883,12 +2508,37 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
             if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
             size_t idx = (size_t)s * NB + b;
             cs->chi_line[idx] += w;
+            if (det_cap) det_obs_capture_line_w(det_cap, idx, w);
             double eta_l = 0.0;
-            if (!emiss_b && eps_phys) {
-                double el = radeq_line_eps_phys(l, ne_s, Te, tau);
-                if (el < 0.0) el = 1.0;        /* table not built: thermal */
-                if (el < eps_floor) el = eps_floor;
-                if (el > eps_cap)   el = eps_cap;
+            if (!emiss_b && (eps_phys || gate_active)) {
+                double el;
+                if (gate_active) {
+                    /* DET-LTEUNMAP-EPS: unmapped -> RAW eps; mapped -> 1.0;
+                     * eps<0 -> fail-closed (helper sets g_asm_unmapped_eps_fault). */
+                    size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                    int is_unmapped = (used_nlte_asm[cell] == 0);
+                    el = cmf_assemble_unmapped_el(is_unmapped, l, ne_s, Te, tau,
+                                                  &g_asm_unmapped_eps_fault);
+                    if (det_cap) det_obs_capture_line_el(det_cap, idx, is_unmapped, el);
+                    if (is_unmapped) {
+                        if (asm_eps_buf) asm_eps_buf[asm_nun] = el;
+                        ++asm_nun;
+                        asm_sum_eta    += w * Sl;
+                        asm_sum_el_eta += el * w * Sl;
+                        /* rev 5: track the unmapped scattering share w*(1-el)
+                         * that flows into chi_es (2-level) so the fine solver
+                         * can exclude it (this is the second inflow path). */
+                        if (g_chi_line_sc_unmapped)
+                            g_chi_line_sc_unmapped[idx] += cmf_assemble_unmapped_sc_share(w, el);
+                    } else {
+                        ++asm_nmap;
+                    }
+                } else {
+                    el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                    if (el < 0.0) el = 1.0;    /* table not built: thermal */
+                    if (el < eps_floor) el = eps_floor;
+                    if (el > eps_cap)   el = eps_cap;
+                }
                 cs->chi_line_th[idx] += w * el;
                 eta_l = w * el * Sl;
                 eta_line[idx] += eta_l;        /* thermal-channel eta */
@@ -1912,11 +2562,23 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                  * accumulator changes.  The direct CMFGEN-style emissivity is
                  * projected as a delta line into the same coarse bin. */
                 double el = 1.0;
-                if (eps_phys) {
-                    el = radeq_line_eps_phys(l, ne_s, Te, tau);
-                    if (el < 0.0) el = 1.0;
-                    if (el < eps_floor) el = eps_floor;
-                    if (el > eps_cap) el = eps_cap;
+                if (eps_phys || gate_active) {
+                    if (gate_active) {
+                        /* DET-LTEUNMAP-EPS (E4 B lane): same rule as the
+                         * production lane. No census here (not the committed
+                         * path). */
+                        size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                        int is_unmapped = (used_nlte_asm[cell] == 0);
+                        el = cmf_assemble_unmapped_el(is_unmapped,
+                                l, ne_s, Te, tau, &g_asm_unmapped_eps_fault);
+                        if (is_unmapped && g_chi_line_sc_unmapped)
+                            g_chi_line_sc_unmapped[idx] += cmf_assemble_unmapped_sc_share(w, el);
+                    } else {
+                        el = radeq_line_eps_phys(l, ne_s, Te, tau);
+                        if (el < 0.0) el = 1.0;
+                        if (el < eps_floor) el = eps_floor;
+                        if (el > eps_cap) el = eps_cap;
+                    }
                     cs->chi_line_th[idx] += w * el;
                     {
                         double be = (tau > 700.0) ? 1.0 / tau
@@ -1977,7 +2639,33 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                 }
             }
         }
+        /* DET-LTEUNMAP-EPS: per-shell census (committed path, gate ON). One
+         * line per shell; G-EPS consumes the last pass. thermal_emit_fraction
+         * = sum(el*eta0)/sum(eta0) over LTE-unmapped lines with eta0 = w*Sl the
+         * original (fully thermal) emissivity. */
+        if (gate_active && !emiss_b) {
+            double emin = 0.0, emed = 0.0, emax = 0.0;
+            if (asm_nun > 0 && asm_eps_buf) {
+                qsort(asm_eps_buf, (size_t)asm_nun, sizeof(double),
+                      cmf_unmapped_eps_cmp);
+                emin = asm_eps_buf[0];
+                emax = asm_eps_buf[asm_nun - 1];
+                emed = (asm_nun & 1) ? asm_eps_buf[asm_nun / 2]
+                     : 0.5 * (asm_eps_buf[asm_nun / 2 - 1] +
+                              asm_eps_buf[asm_nun / 2]);
+            }
+            double tfrac = (asm_sum_eta > 0.0) ? asm_sum_el_eta / asm_sum_eta
+                                               : 0.0;
+            char cline[256];
+            cmf_assemble_unmapped_eps_format(cline, sizeof cline, asm_pass, s,
+                                             asm_nun, asm_nmap, emin, emed,
+                                             emax, tfrac);
+            fputs(cline, stderr);
+        }
     }
+    det_obs_capture_mask(det_cap, used_nlte_asm);
+    free(used_nlte_asm);
+    free(asm_eps_buf);
 
     /* Line-forest scattering split (LUMINA_CMFGEN_LINE_EPS = eps in (0,1]):
      * two-level treatment of the binned forest, S_line=(1-eps)*J+eps*B. The
@@ -2071,8 +2759,100 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
         /* else: arr stays 0 < epay_tau — tau gate passes, EPAY_SMIN gates */
     }
 
+    /* DET-CONT-NLTE-BALANCE: gate (default 0 = byte-identical). ON => the bf part
+     * of the continuum source (chi_bf*B) is replaced by the real Milne emissivity
+     * eta_bf; ff stays thermal. Preconditions checked once: bf + eta_bf must be
+     * present and built with LUMINA_CMF_BF_MILNE>=1, else fail-closed (no silent
+     * B fallback) and the driver blocks. Only the non-emiss_b (committed) lane
+     * carries this; emiss_b (E4 A/B) is left as-is. */
+    int cont_nlte_gate = 0;
+    { const char *e = getenv("LUMINA_CMF_CONT_NLTE_SOURCE");
+      if (e && atoi(e)) cont_nlte_gate = 1; }
+    int cont_src_active = 0;
+    long cont_src_pass = 0;
+    if (cont_nlte_gate && !emiss_b) {
+        g_asm_cont_src_fault = 0;   /* per-call; driver checks after return */
+        int bf_milne = 0;
+        { const char *e = getenv("LUMINA_CMF_BF_MILNE"); if (e) bf_milne = atoi(e); }
+        if (cmf_cont_src_precond_fault(bf ? 1 : 0,
+                                       (bf && bf->eta_bf) ? 1 : 0, bf_milne)) {
+            fprintf(stderr,
+                    "[cmfgen_assemble][BLOCKED] reason=CONT_NLTE_SOURCE_NO_ETA_BF "
+                    "bf=%d eta_bf=%d bf_milne=%d floor=0 clamp=0 fallback=0\n",
+                    bf ? 1 : 0, (bf && bf->eta_bf) ? 1 : 0, bf_milne);
+            g_asm_cont_src_fault = 1;
+        } else {
+            cont_src_active = 1;
+            cont_src_pass = ++g_asm_cont_src_pass;
+        }
+    }
+
+    /* DET-W5-CONT-SOURCE (§2.2-2.3): bin-consumed continuum emissivity ledger,
+     * owned by this state next to chi_abs/S_fixed. ON: the previous ledger is
+     * released and a fresh NS*NB one is filled below (every cell); the
+     * supported path is the C1 one (CONT_NLTE_SOURCE active, BF_MILNE=2, EPAY=0,
+     * FINE_BF_OPAC off), anything else is refused, never emulated. Faults use
+     * the CONT-SRC driver-block channel (g_asm_cont_src_fault); the ledger is
+     * left NULL so the fine consumer cannot run on it. OFF: nothing here runs. */
+    int w5_cont_on = 0;
+    size_t w5_cont_nonfinite = 0, w5_cont_first_bad = SIZE_MAX;
+    if (cmf_optional_binary_env("LUMINA_CMF_FINE_CONT_NLTE_SOURCE",
+                                &w5_cont_on) != 0) {
+        fprintf(stderr,
+                "[cmfgen_assemble][BLOCKED] reason=W5_CONT_INVALID_GATE "
+                "value=%s expected=0_or_1 floor=0 clamp=0 fallback=0\n",
+                getenv("LUMINA_CMF_FINE_CONT_NLTE_SOURCE"));
+        g_asm_cont_src_fault = 1;
+        w5_cont_on = 0;
+    }
+    if (w5_cont_on) {
+        free(cs->w5_cont_eta);
+        cs->w5_cont_eta = NULL;
+        if (emiss_b) {
+            w5_cont_on = 0;   /* E4 audit lane: never consumed by the fine producer */
+        } else {
+            int w5_cont_bf_milne = 0, w5_cont_fine_bf_opac = 0;
+            { const char *e = getenv("LUMINA_CMF_BF_MILNE");
+              if (e) w5_cont_bf_milne = atoi(e); }
+            { const char *e = getenv("LUMINA_CMF_FINE_BF_OPAC");
+              w5_cont_fine_bf_opac = (e && atoi(e)) ? 1 : 0; }
+            if (!cont_src_active || w5_cont_bf_milne != 2 || epay != 0 ||
+                w5_cont_fine_bf_opac) {
+                fprintf(stderr,
+                        "[cmfgen_assemble][BLOCKED] reason=W5_CONT_UNSUPPORTED_"
+                        "COMBINATION cont_nlte_source_active=%d bf_milne=%d "
+                        "epay=%d fine_bf_opac=%d required=1,2,0,0 floor=0 "
+                        "clamp=0 fallback=0\n", cont_src_active, w5_cont_bf_milne,
+                        epay, w5_cont_fine_bf_opac);
+                g_asm_cont_src_fault = 1;
+                w5_cont_on = 0;
+            } else if ((size_t)NB == 0 ||
+                       (size_t)NS > SIZE_MAX / (size_t)NB / sizeof(double)) {
+                fprintf(stderr,
+                        "[cmfgen_assemble][BLOCKED] reason=W5_CONT_LEDGER_SHAPE "
+                        "shells=%d bins=%d\n", NS, NB);
+                g_asm_cont_src_fault = 1;
+                w5_cont_on = 0;
+            } else {
+                cs->w5_cont_eta =
+                    (double *)malloc((size_t)NS * (size_t)NB * sizeof(double));
+                if (!cs->w5_cont_eta) {
+                    fprintf(stderr,
+                            "[cmfgen_assemble][BLOCKED] reason=W5_CONT_LEDGER_"
+                            "ALLOCATION cells=%zu\n", (size_t)NS * (size_t)NB);
+                    g_asm_cont_src_fault = 1;
+                    w5_cont_on = 0;
+                }
+            }
+        }
+    }
+
     /* electron scattering + bf/ff thermal absorption + combine. */
     for (int s = 0; s < NS; ++s) {
+        /* DET-CONT-NLTE-BALANCE per-shell census accumulators (G-SRC) */
+        long   csrc_nbf = 0;
+        double csrc_sum_eta = 0.0, csrc_sum_chibfB = 0.0;
+        double csrc_rmin = INFINITY, csrc_rmax = 0.0;
         double Te  = plasma->T_e[s];
         double n_e = plasma->n_electron ? plasma->n_electron[s]
                                         : opac->electron_density[s];
@@ -2105,6 +2885,21 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                 if (chi_ff < 0.0) chi_ff = 0.0;
             }
             double chi_a   = chi_bf + chi_ff;        /* thermal true abs */
+            /* DET-CONT-NLTE-BALANCE: real Milne bf emissivity (replaces chi_bf*B
+             * in S_fixed under the gate); census over bf-opaque bins (chi_bf>0). */
+            double eta_bf_cont = 0.0;
+            if (cont_src_active) {
+                eta_bf_cont = bf_get_eta(bf, s, nu);
+                if (chi_bf > 0.0) {
+                    double cbB = chi_bf * B;
+                    ++csrc_nbf;
+                    csrc_sum_eta     += eta_bf_cont * cs->dnu[b];
+                    csrc_sum_chibfB  += cbB * cs->dnu[b];
+                    double rr = (cbB > 0.0) ? eta_bf_cont / cbB : 0.0;
+                    if (rr < csrc_rmin) csrc_rmin = rr;
+                    if (rr > csrc_rmax) csrc_rmax = rr;
+                }
+            }
             /* continuum-only J_inc pass: drop ALL line opacity + emissivity so
              * the solved field is the bare chi_es+bf/ff continuum (no forest
              * blanketing, not self-referential with the line source). */
@@ -2172,8 +2967,29 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
              * count of the line source). */
             if (cs->stage32_eta_pre_epay)
                 cs->stage32_eta_pre_epay[idx]=eta_ln;
+            /* DET-CONT-NLTE-BALANCE: gate ON replaces the Kirchhoff bf term
+             * chi_bf*B with the real Milne eta_bf (ff stays thermal chi_ff*B);
+             * chi_a/chi_t/eta_ln/EPAY/kappa_dep are untouched. OFF => legacy
+             * (byte-identical: cont_src_active=0 -> same (chi_a*B+eta_ln)). */
             cs->S_fixed[idx] = (chi_t > 0.0)
-                             ? (chi_a * B + eta_ln) / chi_t : 0.0;
+                ? cmf_cont_src_numerator(cont_src_active, chi_bf, chi_ff, B,
+                                         eta_bf_cont, eta_ln) / chi_t
+                : 0.0;
+            /* DET-W5-CONT-SOURCE: E_b from the same call/material/frequency
+             * as the S_fixed numerator above (eta_bf_cont = bf_get_eta pack,
+             * chi_ff = the extra thermal ff); stored, never back-derived. */
+            if (w5_cont_on) {
+                double w5_cont_e = cmf_cont_src_numerator(1, chi_bf, chi_ff, B,
+                                                     eta_bf_cont, 0.0);
+                if (W5_CONT_FAULT(W5_CONT_FAULT_FF_OMIT)) w5_cont_e = eta_bf_cont;
+                if (W5_CONT_FAULT(W5_CONT_FAULT_FF_DOUBLE))
+                    w5_cont_e = eta_bf_cont + 2.0 * chi_ff * B;
+                cs->w5_cont_eta[idx] = w5_cont_e;
+                if (!isfinite(w5_cont_e)) {
+                    ++w5_cont_nonfinite;
+                    if (idx < w5_cont_first_bad) w5_cont_first_bad = idx;
+                }
+            }
             /* EPAY books: thermal emitted vs absorbed (lagged J), per shell.
              * Per-bin THICK exemption (Kirchhoff limit): a locally thick bin
              * (tau_bin = (chi_a+chi_l,th)*dr > EPAY_TAUBIN) reabsorbs its own
@@ -2211,8 +3027,41 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
                  (epay_tau_arr && epay_tau_arr[s] >= epay_tau)) &&
                 kappa_dep > 0.0 && chi_t > 0.0)
                 cs->S_fixed[idx] += kappa_dep * B / chi_t;
+            if (det_cap) {
+                int det_dep_on = ((!epay || s < epay_smin ||
+                                   (epay_tau_arr && epay_tau_arr[s] >= epay_tau)) &&
+                                  kappa_dep > 0.0 && chi_t > 0.0);
+                det_obs_capture_cell(det_cap, s, idx, Te, n_e, chi_e, chi_a,
+                    cmf_cont_src_numerator(cont_src_active, chi_bf, chi_ff, B,
+                                           eta_bf_cont, 0.0),
+                    det_dep_on ? kappa_dep * B : 0.0, eta_ln,
+                    g_chi_line_sc_unmapped ? g_chi_line_sc_unmapped[idx] : 0.0,
+                    cs->chi_es[idx], chi_ln, chi_ln_th);
+            }
             /* chi_tot scratch now overwritten with the real total */
             cs->chi_tot[idx] = chi_t;
+        }
+        /* DET-CONT-NLTE-BALANCE (rev 1, R1-1): per-shell census + Milne-part
+         * fail-closed. A shell with bf-opaque bins but whose Milne (bf, pre-ff)
+         * emissivity is all-zero (eta_milne_ok==0) means the source is not really
+         * built for it -> fail-closed (no silent B / pure-ff fallback). bf_get_eta
+         * includes ff, so the pre-ff Milne flag is the honest test. */
+        if (cont_src_active) {
+            int csrc_milne_ok = (bf && bf->eta_milne_ok) ? bf->eta_milne_ok[s] : 0;
+            if (cmf_cont_src_shell_fault(csrc_nbf, csrc_milne_ok)) {
+                fprintf(stderr,
+                        "[cmfgen_assemble][BLOCKED] reason=CONT_NLTE_SOURCE_MILNE_"
+                        "PART_ALLZERO shell=%d n_bf_bins=%ld floor=0 clamp=0 "
+                        "fallback=0\n", s, csrc_nbf);
+                g_asm_cont_src_fault = 1;
+            }
+            double mean = (csrc_sum_chibfB > 0.0)
+                        ? csrc_sum_eta / csrc_sum_chibfB : 0.0;
+            double rmin = (csrc_nbf > 0) ? csrc_rmin : 0.0;
+            char srcline[192];
+            cmf_assemble_cont_src_format(srcline, sizeof srcline, cont_src_pass,
+                                         s, csrc_nbf, mean, rmin, csrc_rmax);
+            fputs(srcline, stderr);
         }
         if (epay && s >= epay_smin && epay_tau_arr[s] < epay_tau) {
             double scale = (acc_emit > 0.0) ? acc_abs / acc_emit : 0.0;
@@ -2299,11 +3148,32 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
             }
         }
     }
+    if (w5_cont_on) {
+        if (w5_cont_nonfinite) {
+            fprintf(stderr,
+                    "[cmfgen_assemble][BLOCKED] reason=W5_CONT_NONFINITE_"
+                    "EMISSIVITY cells=%zu first_shell=%zu first_bin=%zu "
+                    "value=%.17g floor=0 clamp=0 fallback=0\n",
+                    w5_cont_nonfinite, w5_cont_first_bad / (size_t)NB,
+                    w5_cont_first_bad % (size_t)NB,
+                    cs->w5_cont_eta[w5_cont_first_bad]);
+            free(cs->w5_cont_eta);
+            cs->w5_cont_eta = NULL;
+            g_asm_cont_src_fault = 1;
+        } else {
+            fprintf(stderr,
+                    "[cmfgen_assemble][W5-CONT] pass=%ld stored_cells=%zu "
+                    "shells=%d bins=%d\n", cont_src_pass,
+                    (size_t)NS * (size_t)NB, NS, NB);
+        }
+    }
     if (epay)
         printf("[CMF-EPAY] scale s0=%.3e s%d=%.3e s38=%.3e s%d=%.3e\n",
                epay_scale_dbg[0], NS/2, epay_scale_dbg[1],
                epay_scale_dbg[2], NS-1, epay_scale_dbg[3]);
     free(epay_tau_arr);
+    det_obs_capture_finish(det_cap, cs, opac, gate_active, eps_phys,
+                           src_nlte, epay, line_eps, eps_uv, emiss_b != NULL);
     if ((line_eps > 0.0 || eps_phys || eps_uv > 0.0) && cs->diag) {
         static int eps_diag_once = 0;
         if (!eps_diag_once && n_split > 0) {   /* first assemble with lines */
@@ -2601,6 +3471,125 @@ static void formal_solve_bin(CMFGENState *cs, const Geometry *geo,
     free(Jacc); free(wacc); free(Lacc); free(TloA); free(TupA);
 }
 
+/* ============================================================ */
+/* DET-PATHB-LOCAL: fixed-S formal-solve chi derivative (dJ_fs/dchi)|_S.        */
+/*                                                                              */
+/* A SEPARATE-BUFFER recursion that reproduces formal_solve_bin's ray structure */
+/* (same inbound/inner-BC/outbound legs, same z-grid, same ray weight, same     */
+/* small-tau branch) but propagates dI[t] = dI/dchi_t (LOCAL diagonal only) at   */
+/* FIXED S = S_fixed. It NEVER touches the production I/Jacc/Lacc/lambda_star -- */
+/* it writes only its own dJacc/dI scratch and the caller's dJdchi buffer, so    */
+/* cmfgen_solve_J's committed J and L* are bit-identical whether CHI is on or    */
+/* off. No Tlo/Tup: this is the F2DA same-depth diagonal, not the tri operator.  */
+/*                                                                              */
+/* Segment primitive fs_seg_eval is the SINGLE source of truth shared by the    */
+/* production walker below and the selftest hooks (no replica): its ex/psi match */
+/* formal_solve_bin's inline forward step, and dsrc is the exact fixed-S chi     */
+/* derivative source d(I_out)/dchi_local = (-I_in*ex + S*psi')*ds (psi'=ex for   */
+/* tau>1e-4, else 1-tau -- the derivative of psi w.r.t. dtau, times ds=dtau/dchi).*/
+typedef struct { double ex, psi, dsrc; } FsSeg;
+static FsSeg fs_seg_eval(double dtau, double S, double I_in, double ds)
+{
+    FsSeg r;
+    /* Geometry tau-guard, faithfully copied from formal_solve_bin (:2991):
+     * dtau<0 (chi<0, since ds>=0) is CLAMPED to 0. In that region dtau is pinned
+     * to 0 REGARDLESS of chi, so d(dtau)/dchi = 0 and the segment's source
+     * derivative must vanish: I_out = I_in*1 + S*psi(0) = I_in is chi-independent.
+     * ex=1 (=> dI[t]*=1, unchanged propagation) but dsrc = 0. Without this the
+     * chain-rule factor d(dtau)/dchi=0 would be dropped and dsrc = (S-I_in)*ds
+     * would be spuriously non-zero. */
+    int clamped = (dtau < 0.0);
+    if (clamped) dtau = 0.0;
+    r.ex  = exp(-dtau);
+    r.psi = (dtau > 1e-4) ? (1.0 - r.ex) : (dtau - 0.5 * dtau * dtau);
+    double psip = (dtau > 1e-4) ? r.ex : (1.0 - dtau);
+    r.dsrc = clamped ? 0.0 : (-I_in * r.ex + S * psip) * ds;  /* per unit dchi */
+    return r;
+}
+
+/* file-static dJ_fs/dchi buffer [n_shells*n_bins]; registered with the plasma
+ * assembly via radeq_set_djdchi_fs. Kept OUT of CMFGENState so lumina_cmfgen.h
+ * (a changeset-outside file) is unchanged -> files=5. */
+static double *g_djdchi_fs = NULL;
+static int     g_djdchi_fs_ns = 0, g_djdchi_fs_nb = 0;
+
+static void formal_djdchi_fs_S(CMFGENState *cs, const Geometry *geo,
+                               double T_inner, double *dJdchi)
+{
+    int NS = cs->n_shells, NB = cs->n_bins;
+    double inner_bb_scale = cmf_inner_bb_scale();
+    double *dJacc = calloc(NS, sizeof(double));
+    double *wacc  = calloc(NS, sizeof(double));
+    double *dI    = calloc(NS, sizeof(double));   /* dI/dchi_t, per ray */
+    if (!dJacc || !wacc || !dI) { free(dJacc); free(wacc); free(dI); return; }
+
+    for (int b = 0; b < NB; ++b) {
+        double Bin = inner_bb_scale * cm_planck(cs->nu[b], T_inner);
+        for (int s = 0; s < NS; ++s) { dJacc[s] = 0.0; wacc[s] = 0.0; }
+        for (int ray = 0; ray < cs->n_rays; ++ray) {
+            double p = cs->p_ray[ray];
+            int    *sh = malloc(sizeof(int) * (NS + 1));
+            double *z  = malloc(sizeof(double) * (NS + 1));
+            int n = 0;
+            for (int s = NS - 1; s >= 0; --s) {
+                double ro = geo->r_outer[s];
+                if (ro <= p) break;
+                double rmid = 0.5 * (geo->r_inner[s] + geo->r_outer[s]);
+                if (rmid <= p) rmid = p * 1.0000001;
+                sh[n] = s;
+                z[n]  = sqrt(rmid * rmid - p * p);
+                ++n;
+            }
+            if (n == 0) { free(sh); free(z); continue; }
+            int core = (p < geo->r_inner[0]) ? 1 : 0;
+            double z_core = 0.0;
+            if (core) {
+                double ri0 = geo->r_inner[0];
+                z_core = sqrt(ri0 * ri0 - p * p);
+                if (z_core > z[n - 1]) z_core = z[n - 1];
+            }
+            double ray_w = p;
+            for (int s = 0; s < NS; ++s) dI[s] = 0.0;   /* outer BC: no dI */
+            double I = 0.0;
+            /* ----- inbound leg (mu<0) ----- */
+            for (int i = 0; i < n; ++i) {
+                int s = sh[i];
+                double S_s = cs->S_fixed[(size_t)s * NB + b];
+                double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1]) : (z[i] - z_core);
+                double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
+                FsSeg seg = fs_seg_eval(dtau, S_s, I, ds);
+                for (int t = 0; t < NS; ++t) dI[t] *= seg.ex;  /* attenuate all */
+                dI[s] += seg.dsrc;                             /* local diagonal */
+                I = I * seg.ex + S_s * seg.psi;
+                dJacc[s] += ray_w * dI[s];
+                wacc[s]  += ray_w;
+            }
+            /* ----- inner boundary ----- */
+            if (core) { I = Bin; for (int t = 0; t < NS; ++t) dI[t] = 0.0; }
+            /* (B(T_inner) is not a function of chi => dI reset to 0 at the core) */
+            /* ----- outbound leg (mu>0) ----- */
+            for (int i = n - 1; i >= 0; --i) {
+                int s = sh[i];
+                double S_s = cs->S_fixed[(size_t)s * NB + b];
+                double ds = (i + 1 < n) ? fabs(z[i] - z[i + 1]) : (z[i] - z_core);
+                double dtau = cs->chi_tot[(size_t)s * NB + b] * ds;
+                FsSeg seg = fs_seg_eval(dtau, S_s, I, ds);
+                for (int t = 0; t < NS; ++t) dI[t] *= seg.ex;
+                dI[s] += seg.dsrc;
+                I = I * seg.ex + S_s * seg.psi;
+                dJacc[s] += ray_w * dI[s];
+                wacc[s]  += ray_w;
+            }
+            free(sh); free(z);
+        }
+        for (int s = 0; s < NS; ++s) {
+            double iw = (wacc[s] > 0.0) ? 1.0 / wacc[s] : 0.0;
+            dJdchi[(size_t)s * NB + b] = dJacc[s] * iw;   /* wacc==0 => 0 */
+        }
+    }
+    free(dJacc); free(wacc); free(dI);
+}
+
 /* ------------------------------------------------------------ */
 void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                     int n_ali_iter)
@@ -2610,6 +3599,10 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
     double *Jb   = malloc(sizeof(double) * NS);
     double *Lst  = malloc(sizeof(double) * NS);
     if (!S || !Jb || !Lst) { free(S); free(Jb); free(Lst); return; }
+    /* DET-LTEUNMAP-EPS (rev 5): per-pass convergence diagnostic. Holds the LAST
+     * ALI iteration's per-cell relative J change; emitted once per call (always,
+     * gate-independent). Pure diagnostic — no physics/arithmetic change. */
+    double *conv_last = calloc((size_t)NS * (size_t)NB, sizeof(double));
 
     /* A4 tridiagonal-Lambda ALI preconditioner (LUMINA_CMFGEN_LAMBDA_TRI=1):
      * solve (I - Lambda_tri*R) J_new = J_fs - Lambda_tri*R*J_old per ALI pass
@@ -2697,6 +3690,7 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                         warm-started J makes any one-iter accident permanent */
                     double rel = (Jn > 1e-300) ? fabs(Jn - Jold) / Jn : 0.0;
                     if (rel > maxrel) maxrel = rel;
+                    if (conv_last) conv_last[idx] = rel;   /* rev5 CONV */
                     Jb[s] = Jn;                 /* solved J for s (scratch) */
                 }
                 for (int s = 0; s < NS; ++s) {
@@ -2733,6 +3727,11 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
                                S[s], Ldiag, Jb[s], cs->J[idx], Jnew < 0 ? 0 : Jnew);
                     }
                     if (!isfinite(Jnew) || Jnew < 0.0) Jnew = 0.0;
+                    if (conv_last) {                       /* rev5 CONV */
+                        double Jold_c = cs->J[idx];
+                        conv_last[idx] = (Jnew > 1e-300)
+                            ? fabs(Jnew - Jold_c) / Jnew : 0.0;
+                    }
                     cs->J[idx] = Jnew;
                     /* Persist the diagonal ∂J/∂S operator for the RADEQ/Newton T_e
                      * solve (Phase-1 faithful radiation response). Last ALI iter wins. */
@@ -2742,6 +3741,26 @@ void cmfgen_solve_J(CMFGENState *cs, const Geometry *geo, double T_inner,
             if (use_tri && maxrel < ali_tol && it >= ali_minit) break;
         }
     }
+    /* DET-LTEUNMAP-EPS (rev 5): per-pass convergence diagnostic (always). max and
+     * p99 of the last-ALI-iter per-cell relative J change; consumed by the verdict
+     * to grade the E-1 lamp claim (observed vs converged). */
+    {
+        long cells = (long)((size_t)NS * (size_t)NB);
+        long cpass = ++g_solve_j_conv_pass;
+        double max_rel = 0.0, p99_rel = 0.0;
+        if (conv_last && cells > 0) {
+            qsort(conv_last, (size_t)cells, sizeof(double), cmf_unmapped_eps_cmp);
+            max_rel = conv_last[cells - 1];
+            long p99i = (long)floor(0.99 * (double)(cells - 1));
+            if (p99i < 0) p99i = 0;
+            p99_rel = conv_last[p99i];
+        }
+        char convline[160];
+        cmf_solve_j_conv_format(convline, sizeof convline, cpass, n_ali_iter,
+                                max_rel, p99_rel, cells);
+        fputs(convline, stderr);
+    }
+    free(conv_last);
     free(S); free(Jb); free(Lst);
     free(Tlo); free(Tup); free(rA); free(aA); free(dA); free(cA); free(rhs);
     /* This is the only point that certifies lambda_star as the diagonal paired
@@ -3463,6 +4482,2105 @@ int cmfgen_write_spectrum_obs(const CMFGENState *cs, const Geometry *geo,
 
     free(Sbin); free(Lnu); free(p_obs);
     return 0;
+}
+
+
+/* ================================================================== */
+/* DET-OBS-WRITER: source-conserving observer-frame writer (N) and the  */
+/* same-view legacy pair (L).  prereg PREREG_DET_OBS_WRITER §1-§2.      */
+/* ================================================================== */
+
+/* Constant-coefficient layer: I_out = I e^{-tau} + (eta*l) phi(tau),
+ * phi = -expm1(-tau)/tau, phi(0) = 1.  Valid for any sign of tau; a negative
+ * tau beyond the double range is an explicit failure (NaN), never clipped. */
+double det_obs_layer(double I, double tau, double eta_ell)
+{
+    if (!isfinite(I) || !isfinite(tau) || !isfinite(eta_ell)) return NAN;
+    if (DET_OBS_FAULT(5) && tau < 0.0) tau = 0.0;
+    if (tau < -700.0) return NAN;
+    double phi;
+    if (tau == 0.0) phi = DET_OBS_FAULT(6) ? 0.0 : 1.0;
+    else            phi = -expm1(-tau) / tau;
+    return I * exp(-tau) + eta_ell * phi;
+}
+
+/* Sobolev resonance jump with the observer-frame source S_obs = D^3 S_cmf. */
+double det_obs_line_jump(double I, double tau, double S_obs)
+{
+    return I * exp(-tau) + S_obs * (-expm1(-tau));
+}
+
+/* Unmapped-line total source: thermal eps*S_th plus scattering (1-eps)*J_sc. */
+double det_obs_unmapped_source(double eps, double S_th, double J_sc)
+{
+    return eps * S_th + (DET_OBS_FAULT(1) ? 0.0 : (1.0 - eps) * J_sc);
+}
+
+typedef struct DetObsView {
+    int NS, NB, NL, mode, src_nlte;
+    const double *nu, *dnu;
+    double nu_min, nu_max, d_log_nu, inv_ct;
+    const double *J;            /* [NS*NB] J_sc = the bin J the scattering consumed */
+    const double *chi_c;        /* [NS*NB] chi_e + chi_a (+ sc share under NC 2) */
+    const double *eta_c;        /* [NS*NB] eta_bfff + eta_dep + chi_e*J */
+    const double *line_nu;      /* [NL] descending */
+    const double *tau;          /* [NL*NS] */
+    const double *ls;           /* [NL*NS] line_source_S or NULL */
+    const unsigned char *mapped;/* [NL*NS] mode 1 */
+    const double *Te, *ne;      /* [NS] */
+    const double *el_override;  /* selftest adapter only; NULL in production */
+    void (*trace)(void *arg, int l, int s, double tau, double S_cmf, int mapped);
+    void *trace_arg;
+    int fail_eps;               /* an unmapped eps evaluation failed */
+    int nonfinite;              /* a transport step produced a non-finite I */
+    long n_jump, n_jump_mapped, n_jump_unmapped, n_nsub_capped;
+} DetObsView;
+
+static int det_obs_line_bin(const DetObsView *v, double nu_l)
+{
+    if (!(nu_l > v->nu_min && nu_l < v->nu_max)) return -1;
+    int b = (int)floor(log(nu_l / v->nu_min) / v->d_log_nu);
+    return (b >= 0 && b < v->NB) ? b : -1;
+}
+
+/* The assembler's consumed-line predicate (cmfgen_assemble_impl line loop). */
+static int det_obs_consumed(const DetObsView *v, int l, int s, int *bout)
+{
+    double tau = v->tau[(size_t)l * v->NS + s];
+    if (!(tau > 1e-12)) return 0;               /* also rejects NaN */
+    int b = det_obs_line_bin(v, v->line_nu[l]);
+    if (b < 0) return 0;
+    if (bout) *bout = b;
+    return 1;
+}
+
+/* comoving line source exactly as the assembler consumed it */
+static double det_obs_line_source(DetObsView *v, int l, int s, int b,
+                                  double tau, int *is_mapped)
+{
+    double Te = v->Te[s];
+    double Sl = (v->src_nlte && v->ls) ? v->ls[(size_t)l * v->NS + s] : 0.0;
+    if (Sl <= 0.0) Sl = cm_planck(v->line_nu[l], Te);
+    if (v->mode == 2) { *is_mapped = 1; return Sl; }
+    size_t cell = (size_t)l * (size_t)v->NS + (size_t)s;
+    int unm = (v->mapped[cell] == 0);
+    *is_mapped = !unm;
+    if (!unm) return Sl;
+    double el;
+    if (v->el_override) el = v->el_override[cell];
+    else {
+        int fail = 0;
+        el = cmf_assemble_unmapped_el(1, l, v->ne[s], Te, tau, &fail);
+        if (fail) v->fail_eps = 1;
+    }
+    return det_obs_unmapped_source(el, Sl, v->J[(size_t)s * v->NB + b]);
+}
+
+static double det_obs_el(DetObsView *v, int l, int s, double tau)
+{
+    size_t cell = (size_t)l * (size_t)v->NS + (size_t)s;
+    if (v->mode == 2 || v->mapped[cell]) return 1.0;
+    if (v->el_override) return v->el_override[cell];
+    int fail = 0;
+    double el = cmf_assemble_unmapped_el(1, l, v->ne[s], v->Te[s], tau, &fail);
+    if (fail) v->fail_eps = 1;
+    return el;
+}
+
+/* continuum piece [za,zb] of shell s at observer frequency nu_obs */
+static double det_obs_cont_piece(DetObsView *v, double I, double p, double za,
+                                 double zb, int s, double nu_obs)
+{
+    if (zb == za) return I;
+    double zm = 0.5 * (za + zb), ds = fabs(zb - za);
+    double q = cmf_q_at_z(p, zm, v->inv_ct), D = 1.0 / q;
+    double nucmf = q * nu_obs;
+    double chi = cmf_interp_nu_asc(v->nu, &v->chi_c[(size_t)s * v->NB], v->NB, nucmf);
+    double eta = cmf_interp_nu_asc(v->nu, &v->eta_c[(size_t)s * v->NB], v->NB, nucmf);
+    double out = det_obs_layer(I, q * chi * ds, D * D * eta * ds);
+    if (!isfinite(out)) v->nonfinite = 1;
+    return out;
+}
+
+/* March one shell segment [z0,z1] (z increasing toward the observer).
+ * Comoving frequency decreases monotonically with z; each consumed line whose
+ * rest frequency lies in the half-open sweep (nu_b, nu_a] of a sub-step fires
+ * once at its resonance point, with the continuum split before and after it. */
+double det_obs_march(DetObsView *v, double I, double p, double z0, double z1,
+                     int s, double nu_obs)
+{
+    double q0 = cmf_q_at_z(p, z0, v->inv_ct), q1 = cmf_q_at_z(p, z1, v->inv_ct);
+    const double dlq = 30.0 / 2.99792458e5;            /* 30 km/s, fixed */
+    int nsub = (int)ceil(fabs(log(q1 / q0)) / dlq);
+    if (nsub < 1) nsub = 1;
+    if (nsub > 4096) { nsub = 4096; v->n_nsub_capped++; }
+    for (int m = 0; m < nsub; ++m) {
+        double za = z0 + (z1 - z0) * ((double)m / nsub);
+        double zb = z0 + (z1 - z0) * ((double)(m + 1) / nsub);
+        double nu_a = cmf_q_at_z(p, za, v->inv_ct) * nu_obs;
+        double nu_b = cmf_q_at_z(p, zb, v->inv_ct) * nu_obs;
+        double zc = za;
+        if (nu_a > nu_b) {
+            int lo = 0, hi = v->NL;                        /* first nu_l <= nu_a */
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (v->line_nu[mid] > nu_a) lo = mid + 1; else hi = mid;
+            }
+            for (int l = lo; l < v->NL; ++l) {
+                double nl = v->line_nu[l];
+                if (DET_OBS_FAULT(9) ? !(nl >= nu_b) : !(nl > nu_b)) break;
+                int b;
+                if (!det_obs_consumed(v, l, s, &b)) continue;
+                double tau = v->tau[(size_t)l * v->NS + s];
+                double zl = za + (zb - za) * ((nu_a - nl) / (nu_a - nu_b));
+                if (zl < zc) zl = zc;                      /* monotone order */
+                I = det_obs_cont_piece(v, I, p, zc, zl, s, nu_obs);
+                int is_mapped;
+                double S = det_obs_line_source(v, l, s, b, tau, &is_mapped);
+                double tau_used = tau;
+                if (DET_OBS_FAULT(3) && !is_mapped) tau_used = tau * det_obs_el(v, l, s, tau);
+                double D = nu_obs / nl;                    /* exact at resonance */
+                if (v->trace) v->trace(v->trace_arg, l, s, tau_used, S, is_mapped);
+                I = det_obs_line_jump(I, tau_used, D * D * D * S);
+                if (!isfinite(I)) v->nonfinite = 1;
+                v->n_jump++;
+                if (is_mapped) v->n_jump_mapped++; else v->n_jump_unmapped++;
+                zc = zl;
+            }
+        }
+        I = det_obs_cont_piece(v, I, p, zc, zb, s, nu_obs);
+    }
+    return I;
+}
+
+/* Full observer spectrum on the coarse grid with the legacy geometry
+ * (256 equal-p rays, full shell extents, diffusive core D^3 B(q nu, T_inner)). */
+static int det_obs_spectrum(DetObsView *v, const Geometry *geo, double T_inner,
+                            double *Lnu)
+{
+    int NS = v->NS, NB = v->NB;
+    const int NRO = 256;
+    double r_max = geo->r_outer[NS - 1];
+    for (int k = 0; k < NB; ++k) {
+        double nu_obs = v->nu[k];
+        double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+        for (int ray = 0; ray < NRO; ++ray) {
+            double p = r_max * (ray + 0.5) / (double)NRO;
+            int sh[256], nsh = 0;
+            for (int s = NS - 1; s >= 0 && nsh < 256; --s) {
+                if (geo->r_outer[s] <= p) break;
+                sh[nsh++] = s;
+            }
+            if (nsh == 0) continue;
+            int core = (p < geo->r_inner[0]);
+            double I = 0.0;
+            for (int i = 0; i < nsh; ++i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                I = det_obs_march(v, I, p, -z_hi, -z_lo, sh[i], nu_obs);
+            }
+            if (core) {
+                double ri0 = geo->r_inner[0];
+                double z_core = sqrt(ri0 * ri0 - p * p);
+                double mu_c = z_core / ri0, beta_in = ri0 * v->inv_ct;
+                double q_c = (1.0 - mu_c * beta_in) / sqrt(1.0 - beta_in * beta_in);
+                double D_c = 1.0 / q_c;
+                I = cmf_inner_bb_scale() * (D_c * D_c * D_c) *
+                    cm_planck(q_c * nu_obs, T_inner);
+            }
+            for (int i = nsh - 1; i >= 0; --i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                I = det_obs_march(v, I, p, +z_lo, +z_hi, sh[i], nu_obs);
+            }
+            double f = I * p;
+            integ += 0.5 * (f_prev + f) * (p - p_prev);
+            p_prev = p; f_prev = f;
+        }
+        Lnu[k] = 8.0 * M_PI_VAL * M_PI_VAL * integ;
+        if (!isfinite(Lnu[k])) v->nonfinite = 1;
+    }
+    return (v->nonfinite || v->fail_eps) ? -1 : 0;
+}
+
+static int det_obs_exists(const char *path)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return 0;
+    fclose(fp);
+    return 1;
+}
+
+/* Exclusive creation: an existing file is never overwritten. */
+static FILE *det_obs_create(const char *path)
+{
+    if (DET_OBS_FAULT(12)) { errno = EACCES; return NULL; }
+    return fopen(path, "wx");                 /* C11 exclusive create */
+}
+
+static int det_obs_write_csv(const char *path, const double *nu, int NB,
+                             const double *Lnu)
+{
+    FILE *fp = det_obs_create(path);
+    if (!fp) return -1;
+    int bad = (fprintf(fp, "wavelength_angstrom,flux\n") < 0);
+    for (int b = NB - 1; b >= 0 && !bad; --b) {
+        double lam_cm = CM_C / nu[b];
+        double L_lam = Lnu[b] * CM_C / (lam_cm * lam_cm) * 1.0e-8;
+        if (DET_OBS_FAULT(13) && b == NB / 2) { bad = 1; break; }
+        if (fprintf(fp, "%.17g,%.17g\n", lam_cm * 1.0e8, L_lam) < 0) bad = 1;
+    }
+    if (fclose(fp) != 0) bad = 1;
+    return bad ? -1 : 0;
+}
+
+static int det_obs_file_digest(const char *path, uint64_t *h, long *n)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    unsigned char buf[65536]; size_t r; uint64_t x = DET_OBS_FNV0; long tot = 0;
+    while ((r = fread(buf, 1, sizeof buf, fp)) > 0) { x = det_obs_fnv1a(buf, r, x); tot += (long)r; }
+    int err = ferror(fp); fclose(fp);
+    if (err) return -1;
+    *h = x; *n = tot; return 0;
+}
+
+/* every file-static the legacy writer reads or writes */
+typedef struct {
+    double eps, taumin, rphot, Tinner, sl_clamp;
+    int noemit, diag, contonly, pray, srcj, jbardet, sei_cmv, sei, faithful;
+    const double *sl_ptr;
+} DetObsSobState;
+static void det_obs_sob_save(DetObsSobState *x)
+{
+    x->eps = g_sob_eps; x->taumin = g_sob_taumin; x->rphot = g_sob_rphot;
+    x->Tinner = g_sob_Tinner; x->sl_clamp = g_sob_sl_clamp;
+    x->noemit = g_sob_noemit; x->diag = g_sob_diag; x->contonly = g_sob_contonly;
+    x->pray = g_pray_bin; x->srcj = g_sob_srcj; x->jbardet = g_sob_jbardet;
+    x->sei_cmv = g_sob_sei_cmv; x->sei = g_sob_sei; x->faithful = g_sob_faithful;
+    x->sl_ptr = g_sob_sl_ptr;
+}
+static void det_obs_restore(const DetObsSobState *x)
+{
+    g_sob_eps = x->eps; g_sob_taumin = x->taumin; g_sob_rphot = x->rphot;
+    g_sob_Tinner = x->Tinner; g_sob_sl_clamp = x->sl_clamp;
+    g_sob_noemit = x->noemit; g_sob_diag = x->diag; g_sob_contonly = x->contonly;
+    g_pray_bin = x->pray; g_sob_srcj = x->srcj; g_sob_jbardet = x->jbardet;
+    g_sob_sei_cmv = x->sei_cmv; g_sob_sei = x->sei;
+    if (!DET_OBS_FAULT(14)) g_sob_faithful = x->faithful;
+    g_sob_sl_ptr = x->sl_ptr;
+}
+#ifdef LUMINA_DET_OBS_SELFTEST
+uint64_t det_obs_sob_state_digest(void)
+{
+    DetObsSobState x; memset(&x, 0, sizeof x); det_obs_sob_save(&x);
+    return det_obs_fnv1a(&x, sizeof x, DET_OBS_FNV0);
+}
+void det_obs_sob_poison(void) { g_sob_faithful = 1; }
+#endif
+
+/* Same-view legacy writer (L): the unchanged cmfgen_write_spectrum_obs on the
+ * same frozen state; every file-static it touches is saved and restored on
+ * all paths. */
+static int det_obs_legacy_pair(const CMFGENState *cs, const Geometry *geo,
+                               double T_inner, const OpacityState *opac,
+                               const double *Te, const char *path)
+{
+    if (det_obs_exists(path)) { errno = EEXIST; return -1; }
+    DetObsSobState saved;
+    det_obs_sob_save(&saved);
+    if (DET_OBS_FAULT(14)) g_sob_faithful = 1;
+    int rc = cmfgen_write_spectrum_obs(cs, geo, T_inner, opac, Te, path);
+    det_obs_restore(&saved);
+    return rc;
+}
+
+typedef struct {
+    long nonfinite, neg, zero, tiny, pos, pos_freq_excluded, consumed;
+    long consumed_mapped, consumed_unmapped, mapped_B_fallback, unmapped_ls_pos;
+    double max_rel_eta, max_rel_sc;
+} DetObsCensus;
+
+/* One pass over every (line, shell): census of the coarse selection and the
+ * reconciliation of the thermal line emissivity / unmapped scattering share
+ * against what the assembler stored (same order, same expressions). */
+static int det_obs_census(DetObsView *v, const struct DetObsCapture *c,
+                          DetObsCensus *cn)
+{
+    memset(cn, 0, sizeof *cn);
+    int NS = v->NS, NB = v->NB, NL = v->NL;
+    double *eta = calloc((size_t)NS * NB, sizeof(double));
+    double *sc  = calloc((size_t)NS * NB, sizeof(double));
+    if (!eta || !sc || DET_OBS_FAULT(11)) { free(eta); free(sc); return -1; }
+    for (int s = 0; s < NS; ++s) {
+        double Te = v->Te[s];
+        for (int l = 0; l < NL; ++l) {
+            double tau = v->tau[(size_t)l * NS + s];
+            if (!isfinite(tau)) { cn->nonfinite++; continue; }
+            if (tau < 0.0) { cn->neg++; continue; }
+            if (tau == 0.0) { cn->zero++; continue; }
+            if (tau <= 1e-12) { cn->tiny++; continue; }
+            cn->pos++;
+            int b = det_obs_line_bin(v, v->line_nu[l]);
+            if (b < 0) { cn->pos_freq_excluded++; continue; }
+            cn->consumed++;
+            double nu_l = v->line_nu[l];
+            double frac = (tau > 1e-6) ? -expm1(-tau) : tau;
+            double w = frac * nu_l * v->inv_ct / v->dnu[b];
+            double lsv = (v->src_nlte && v->ls) ? v->ls[(size_t)l * NS + s] : 0.0;
+            double Sl = lsv;
+            if (Sl <= 0.0) Sl = cm_planck(nu_l, Te);
+            size_t idx = (size_t)s * NB + b;
+            double el = det_obs_el(v, l, s, tau);
+            int mapped = (v->mode == 2) || v->mapped[(size_t)l * NS + s];
+            if (mapped) { cn->consumed_mapped++; if (!(lsv > 0.0)) cn->mapped_B_fallback++; }
+            else { cn->consumed_unmapped++; if (lsv > 0.0) cn->unmapped_ls_pos++;
+                   sc[idx] += w * (1.0 - el); }
+            eta[idx] += (v->mode == 1) ? w * el * Sl : w * Sl;
+        }
+    }
+    for (size_t i = 0; i < (size_t)NS * NB; ++i) {
+        double a = eta[i], r = c->eta_ln[i];
+        double d = fabs(a - r) / fmax(fabs(r), 1e-300);
+        if (r == 0.0 && a == 0.0) d = 0.0;
+        if (d > cn->max_rel_eta || isnan(d)) cn->max_rel_eta = isnan(d) ? INFINITY : d;
+        a = sc[i]; r = c->sc_unmapped[i];
+        d = fabs(a - r) / fmax(fabs(r), 1e-300);
+        if (r == 0.0 && a == 0.0) d = 0.0;
+        if (d > cn->max_rel_sc || isnan(d)) cn->max_rel_sc = isnan(d) ? INFINITY : d;
+    }
+    free(eta); free(sc);
+    return v->fail_eps ? -1 : 0;
+}
+
+static double det_obs_now(void)
+{
+    struct timespec t; timespec_get(&t, TIME_UTC);
+    return (double)t.tv_sec + 1e-9 * (double)t.tv_nsec;
+}
+
+/* Status file (separate from the success manifest); written on every path. */
+/* replace = 0: exclusive create (the name must be free); replace = 1: rewrite
+ * the status this call itself created moments before (never a foreign file:
+ * det_obs_write refuses to start when det_obs_status.json already exists). */
+static int det_obs_status_write(const char *state, const char *reason,
+                                uint64_t rad_generation, int iter, int replace)
+{
+    FILE *fp = (DET_OBS_FAULT(15) || DET_OBS_FAULT(20) || (replace && DET_OBS_FAULT(21)))
+               ? NULL
+               : (replace ? fopen("det_obs_status.json", "w")
+                          : det_obs_create("det_obs_status.json"));
+    if (!fp) {
+        fprintf(stderr, "[DET-OBS] det_obs_status=UNWRITTEN errno=%d\n", errno);
+        return -1;
+    }
+    int bad = fprintf(fp, "{\"schema\":\"DET_OBS_STATUS_V1\",\"det_obs_state\":\"%s%s%s%s\","
+                "\"signed_zero_tau_component\":\"UNSUPPORTED_SOURCE_DOMAIN\","
+                "\"rad_generation\":%llu,\"iter\":%d}\n",
+            state, reason ? "(" : "", reason ? reason : "", reason ? ")" : "",
+            (unsigned long long)rad_generation, iter) < 0;
+    if (fclose(fp) != 0) bad = 1;
+    if (bad) fprintf(stderr, "[DET-OBS] det_obs_status=WRITE_ERROR\n");
+    return bad ? -1 : 0;
+}
+
+/* Identity of everything the two writers read: J, the assembled continuum,
+ * tau and line source, T_e/n_e, geometry and the inner boundary. */
+static uint64_t det_obs_view_digest(const CMFGENState *cs, const Geometry *geo,
+                                    const OpacityState *opac, const PlasmaState *plasma,
+                                    double T_inner)
+{
+    size_t cells = (size_t)cs->n_shells * (size_t)cs->n_bins;
+    size_t lc = (size_t)opac->n_lines * (size_t)cs->n_shells;
+    uint64_t h = DET_OBS_FNV0;
+    h = det_obs_fnv1a(cs->J, cells * sizeof(double), h);
+    h = det_obs_fnv1a(cs->S_fixed, cells * sizeof(double), h);
+    h = det_obs_fnv1a(cs->chi_tot, cells * sizeof(double), h);
+    h = det_obs_fnv1a(cs->chi_es, cells * sizeof(double), h);
+    h = det_obs_fnv1a(cs->chi_abs, cells * sizeof(double), h);
+    h = det_obs_fnv1a(opac->tau_sobolev, lc * sizeof(double), h);
+    h = det_obs_fnv1a(opac->line_source_S, opac->line_source_S ? lc * sizeof(double) : 0, h);
+    h = det_obs_fnv1a(plasma->T_e, (size_t)cs->n_shells * sizeof(double), h);
+    h = det_obs_fnv1a(plasma->n_electron, plasma->n_electron ? (size_t)cs->n_shells * sizeof(double) : 0, h);
+    h = det_obs_fnv1a(geo->r_inner, (size_t)cs->n_shells * sizeof(double), h);
+    h = det_obs_fnv1a(geo->r_outer, (size_t)cs->n_shells * sizeof(double), h);
+    h = det_obs_fnv1a(&geo->time_explosion, sizeof(double), h);
+    h = det_obs_fnv1a(&T_inner, sizeof(double), h);
+    return h;
+}
+
+#ifdef LUMINA_DET_OBS_SELFTEST
+void (*det_obs_selftest_trace_fn)(void *, int, int, double, double, int) = NULL;
+void *det_obs_selftest_trace_arg = NULL;
+#endif
+
+/* Observer continuum coefficients from the capture: chi = chi_e + chi_a,
+ * eta = (bf/ff numerator + eta_dep) + chi_e*J.  No line term: lines are
+ * consumed only at their resonances. */
+static void det_obs_cont_build(const struct DetObsCapture *c, const double *J,
+                               const double *nu, double *chi_c, double *eta_c)
+{
+    int NS = c->ns, NB = c->nb;
+    for (int s = 0; s < NS; ++s)
+        for (int b = 0; b < NB; ++b) {
+            size_t i = (size_t)s * NB + b;
+            double chi_e = c->chi_e[i];
+            double eta = c->eta_c[i];
+            if (DET_OBS_FAULT(4)) eta = c->chi_a[i] * cm_planck(nu[b], c->Te[s]);
+            if (DET_OBS_FAULT(7)) eta -= c->eta_dep[i];
+            if (DET_OBS_FAULT(8)) eta += c->eta_dep[i];
+            chi_c[i] = chi_e + c->chi_a[i];
+            eta_c[i] = eta + chi_e * J[i];
+            if (DET_OBS_FAULT(2)) {                     /* continuum re-add */
+                chi_c[i] += c->sc_unmapped[i];
+                eta_c[i] += c->sc_unmapped[i] * J[i];
+            }
+        }
+}
+
+/* ================================================================== */
+/* DET-OBS-CAPTURE (prereg docs/PREREG_DET_OBS_CAPTURE_2026-10-06.md). */
+/* Same-view capture of the sources det_obs_write consumes (E', R'),  */
+/* and the offline scalar / component-vector replay of the N writer.  */
+/* Key LUMINA_DET_OBS_CAPTURE: unset or "0" = OFF (no extra work),    */
+/* "1" = ON, anything else = capture CONFIG failure (model continues).*/
+/* ================================================================== */
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
+
+#define DET_OBS_CAPTURE_SCHEMA  "DET_OBS_CAPTURE_V1"
+#define DET_OBS_CAPTURE_PAIR_CAP 2000000000ULL  /* prereg 5.3: committed payload cap of the E'/R' pair */
+#define DET_OBS_CAPTURE_STATE_CAP (DET_OBS_CAPTURE_PAIR_CAP / 2)  /* each state <= half: the pair never exceeds the cap */
+#define DET_OBS_CAPTURE_MANIFEST_MAX 32768ULL
+#define DET_OBS_CAPTURE_DIR     "det_obs_capture"
+#define DET_OBS_CAPTURE_PARTIAL "det_obs_capture.partial"
+#define DET_OBS_CAPTURE_STATUS  "det_obs_capture_status.json"
+#define DET_OBS_CAPTURE_REC     33
+
+#ifdef LUMINA_DET_OBS_SELFTEST
+/* storage / live fault adapter (selftest build only):
+ * 1 open, 2 short write, 3 flush, 4 close, 5 commit rename, 6 live tamper,
+ * 7 mkdir, 8 replay drops the unmapped-scatter lane, 9 replay fires a
+ * resonance twice in the vector lanes, 10 replay interpolates chi_e and J
+ * separately for the electron-scattering lane, 11 eps helper failure,
+ * 12 size cap forced to 1 byte. */
+int det_obs_capture_fault = 0;
+void (*det_obs_capture_tamper_fn)(void) = NULL;
+void (*det_obs_r7_entry_stub)(void) = NULL;   /* selftest: the R7 entry the seam continues to */
+#define DET_OBS_CAP_FAULT(x) (det_obs_capture_fault == (x))
+#else
+#define DET_OBS_CAP_FAULT(x) 0
+#endif
+
+/* ---- SHA-256 (FIPS 180-4) for payload integrity ---- */
+typedef struct { uint32_t h[8]; uint64_t len; unsigned char buf[64]; size_t n; } DetObsCapSha;
+static const uint32_t det_obs_capture_k[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+#define DOC_ROR(x,n) (((x) >> (n)) | ((x) << (32 - (n))))
+static void det_obs_capture_sha_block(DetObsCapSha *s, const unsigned char *p)
+{
+    uint32_t w[64], a, b, c, d, e, f, g, h;
+    for (int i = 0; i < 16; ++i)
+        w[i] = ((uint32_t)p[4*i] << 24) | ((uint32_t)p[4*i+1] << 16) |
+               ((uint32_t)p[4*i+2] << 8) | (uint32_t)p[4*i+3];
+    for (int i = 16; i < 64; ++i) {
+        uint32_t s0 = DOC_ROR(w[i-15], 7) ^ DOC_ROR(w[i-15], 18) ^ (w[i-15] >> 3);
+        uint32_t s1 = DOC_ROR(w[i-2], 17) ^ DOC_ROR(w[i-2], 19) ^ (w[i-2] >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3];
+    e = s->h[4]; f = s->h[5]; g = s->h[6]; h = s->h[7];
+    for (int i = 0; i < 64; ++i) {
+        uint32_t S1 = DOC_ROR(e, 6) ^ DOC_ROR(e, 11) ^ DOC_ROR(e, 25);
+        uint32_t ch = (e & f) ^ (~e & g);
+        uint32_t t1 = h + S1 + ch + det_obs_capture_k[i] + w[i];
+        uint32_t S0 = DOC_ROR(a, 2) ^ DOC_ROR(a, 13) ^ DOC_ROR(a, 22);
+        uint32_t mj = (a & b) ^ (a & c) ^ (b & c);
+        uint32_t t2 = S0 + mj;
+        h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+    }
+    s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d;
+    s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
+}
+static void det_obs_capture_sha_init(DetObsCapSha *s)
+{
+    static const uint32_t h0[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                                   0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    memcpy(s->h, h0, sizeof h0); s->len = 0; s->n = 0;
+}
+static void det_obs_capture_sha_update(DetObsCapSha *s, const void *data, size_t n)
+{
+    const unsigned char *p = (const unsigned char *)data;
+    s->len += (uint64_t)n;
+    while (n > 0) {
+        size_t take = 64 - s->n; if (take > n) take = n;
+        memcpy(s->buf + s->n, p, take); s->n += take; p += take; n -= take;
+        if (s->n == 64) { det_obs_capture_sha_block(s, s->buf); s->n = 0; }
+    }
+}
+static void det_obs_capture_sha_final(DetObsCapSha *s, char hex[65])
+{
+    uint64_t bits = s->len * 8;
+    unsigned char pad = 0x80, z = 0, L[8];
+    det_obs_capture_sha_update(s, &pad, 1);
+    while (s->n != 56) det_obs_capture_sha_update(s, &z, 1);
+    for (int i = 0; i < 8; ++i) L[i] = (unsigned char)(bits >> (56 - 8 * i));
+    det_obs_capture_sha_update(s, L, 8);
+    for (int i = 0; i < 8; ++i) snprintf(hex + 8 * i, 9, "%08x", s->h[i]);
+    hex[64] = 0;
+}
+static int det_obs_capture_sha_file(const char *path, char hex[65], uint64_t *bytes)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    DetObsCapSha s; det_obs_capture_sha_init(&s);
+    unsigned char buf[1 << 16]; size_t n; uint64_t tot = 0;
+    while ((n = fread(buf, 1, sizeof buf, fp)) > 0) { det_obs_capture_sha_update(&s, buf, n); tot += n; }
+    int bad = ferror(fp);
+    fclose(fp);
+    det_obs_capture_sha_final(&s, hex);
+    if (bytes) *bytes = tot;
+    return bad ? -1 : 0;
+}
+
+/* ---- exclusive, checked, hashed payload writer ---- */
+typedef struct { FILE *fp; DetObsCapSha sha; uint64_t bytes; int err; char hex[65]; } DetObsCapOut;
+static int det_obs_capture_open(DetObsCapOut *o, const char *path)
+{
+    memset(o, 0, sizeof *o); det_obs_capture_sha_init(&o->sha);
+    if (DET_OBS_CAP_FAULT(1)) { errno = EACCES; o->err = 1; return -1; }
+    o->fp = fopen(path, "wbx");
+    if (!o->fp) { o->err = 1; return -1; }
+    return 0;
+}
+static void det_obs_capture_put(DetObsCapOut *o, const void *p, size_t n)
+{
+    if (o->err || !o->fp) { o->err = 1; return; }
+    size_t w = fwrite(p, 1, n, o->fp);
+    if (DET_OBS_CAP_FAULT(2) && n > 1) w = n / 2;
+    if (w != n) { o->err = 1; return; }
+    det_obs_capture_sha_update(&o->sha, p, n);
+    o->bytes += n;
+}
+static int det_obs_capture_close(DetObsCapOut *o)
+{
+    if (!o->fp) return -1;
+    int bad = o->err;
+    if (fflush(o->fp) != 0 || DET_OBS_CAP_FAULT(3)) bad = 1;
+    if (!bad && fsync(fileno(o->fp)) != 0) bad = 1;
+    if (fclose(o->fp) != 0 || DET_OBS_CAP_FAULT(4)) bad = 1;
+    o->fp = NULL;
+    det_obs_capture_sha_final(&o->sha, o->hex);
+    return bad ? -1 : 0;
+}
+
+/* ---- one consumed pair exactly as the N writer consumes it ---- */
+static void det_obs_capture_record(unsigned char r[DET_OBS_CAPTURE_REC], uint32_t l,
+                                   uint32_t s, double tau, double S, double eps,
+                                   unsigned char m)
+{
+    memcpy(r, &l, 4); memcpy(r + 4, &s, 4); memcpy(r + 8, &tau, 8);
+    memcpy(r + 16, &S, 8); memcpy(r + 24, &eps, 8); r[32] = m;
+}
+/* returns 1 if (l,s) is consumed; S = selected comoving source after the
+ * mapped B fallback (det_obs_line_source), eps = raw unmapped epsilon from
+ * the same helper (0 and unused for mapped). */
+static int det_obs_capture_pair(DetObsView *w, int l, int s, double *tau, double *S,
+                                double *eps, unsigned char *m, int *fallback, int *ls_pos)
+{
+    int b;
+    if (!det_obs_consumed(w, l, s, &b)) return 0;
+    *tau = w->tau[(size_t)l * w->NS + s];
+    double lsv = (w->src_nlte && w->ls) ? w->ls[(size_t)l * w->NS + s] : 0.0;
+    double Sl = lsv;
+    if (Sl <= 0.0) Sl = cm_planck(w->line_nu[l], w->Te[s]);
+    int mapped = (w->mode == 2) || w->mapped[(size_t)l * w->NS + s];
+    *m = (unsigned char)(mapped ? 1 : 0);
+    *S = Sl;
+    *fallback = mapped && !(lsv > 0.0);
+    *ls_pos = !mapped && (lsv > 0.0);
+    *eps = mapped ? 0.0 : det_obs_el(w, l, s, *tau);
+    return 1;
+}
+
+/* ---- live digests: four domains, each from the live arrays ---- */
+typedef struct {
+    uint64_t mask, pairs, cont, rest;
+    long n, n_mapped, n_unmapped, n_fallback, n_ls_pos, n_bad;
+    int fail_eps;
+} DetObsCapDigest;
+static void det_obs_capture_digest(const DetObsView *v, const struct DetObsCapture *c,
+                                   const Geometry *geo, double T_inner, double bbscale,
+                                   DetObsCapDigest *d)
+{
+    memset(d, 0, sizeof *d);
+    DetObsView w = *v; w.trace = NULL; w.fail_eps = 0;
+    size_t lc = (size_t)v->NL * (size_t)v->NS, cells = (size_t)v->NS * (size_t)v->NB;
+    d->mask = det_obs_fnv1a(c->mapped, c->mapped ? lc : 0, DET_OBS_FNV0);
+    uint64_t h = DET_OBS_FNV0;
+    for (int l = 0; l < v->NL; ++l)
+        for (int s = 0; s < v->NS; ++s) {
+            double tau, S, eps; unsigned char m; int fb, lp;
+            if (!det_obs_capture_pair(&w, l, s, &tau, &S, &eps, &m, &fb, &lp)) continue;
+            unsigned char r[DET_OBS_CAPTURE_REC];
+            det_obs_capture_record(r, (uint32_t)l, (uint32_t)s, tau, S, eps, m);
+            h = det_obs_fnv1a(r, sizeof r, h);
+            d->n++;
+            if (m) d->n_mapped++; else d->n_unmapped++;
+            d->n_fallback += fb; d->n_ls_pos += lp;
+            if (!isfinite(tau) || !isfinite(S) || !(S > 0.0) || !isfinite(eps) ||
+                (!m && !(eps >= 0.0 && eps <= 1.0)) || (m && eps != 0.0)) d->n_bad++;
+        }
+    d->pairs = h;
+    d->fail_eps = w.fail_eps || DET_OBS_CAP_FAULT(11);
+    h = DET_OBS_FNV0;
+    h = det_obs_fnv1a(c->chi_a, cells * sizeof(double), h);
+    h = det_obs_fnv1a(c->chi_e, cells * sizeof(double), h);
+    h = det_obs_fnv1a(c->eta_c, cells * sizeof(double), h);
+    h = det_obs_fnv1a(c->eta_dep, cells * sizeof(double), h);
+    d->cont = h;
+    h = DET_OBS_FNV0;
+    h = det_obs_fnv1a(v->J, cells * sizeof(double), h);
+    h = det_obs_fnv1a(c->Te, (size_t)v->NS * sizeof(double), h);
+    h = det_obs_fnv1a(c->ne, (size_t)v->NS * sizeof(double), h);
+    h = det_obs_fnv1a(v->nu, (size_t)v->NB * sizeof(double), h);
+    h = det_obs_fnv1a(v->dnu, (size_t)v->NB * sizeof(double), h);
+    h = det_obs_fnv1a(&v->nu_min, sizeof(double), h);
+    h = det_obs_fnv1a(&v->nu_max, sizeof(double), h);
+    h = det_obs_fnv1a(&v->d_log_nu, sizeof(double), h);
+    h = det_obs_fnv1a(&v->inv_ct, sizeof(double), h);
+    h = det_obs_fnv1a(v->line_nu, (size_t)v->NL * sizeof(double), h);
+    h = det_obs_fnv1a(geo->r_inner, (size_t)v->NS * sizeof(double), h);
+    h = det_obs_fnv1a(geo->r_outer, (size_t)v->NS * sizeof(double), h);
+    h = det_obs_fnv1a(&geo->time_explosion, sizeof(double), h);
+    h = det_obs_fnv1a(&T_inner, sizeof(double), h);
+    h = det_obs_fnv1a(&bbscale, sizeof(double), h);
+    d->rest = h;
+}
+
+typedef struct DetObsCapRun {
+    char why[200];
+    DetObsCapDigest before, after;
+    uint64_t file_digest_pairs;
+    char sha[16][65]; uint64_t bytes[16]; const char *name[16]; int nfiles;
+    uint64_t rad_gen, mat_gen, tau_req, tau_comp; int iter;
+    long census_consumed, census_mapped, census_unmapped, census_fallback, census_lspos;
+    uint64_t view_d0; double t_dump;
+    int mode, src_nlte, NS, NB, NL; long asm_serial; uint64_t cap_mat_gen;
+    double T_inner, bbscale, inv_ct, t_exp; char bbenv[64];
+    uint64_t expected_bytes, committed_bytes;
+    const DetObsView *vp; const struct DetObsCapture *cp; const Geometry *gp;   /* live view for the post-failure digest */
+} DetObsCapRun;
+
+/* status file; d (may be NULL) = the live digest taken before the dump */
+static void det_obs_capture_status_da(const char *state, const char *why, const DetObsCapDigest *d,
+                                      const DetObsCapDigest *da)
+{
+    FILE *fp = fopen(DET_OBS_CAPTURE_STATUS, "wx");
+    if (fp) {
+        fprintf(fp, "{\"schema\":\"DET_OBS_CAPTURE_STATUS_V1\",\"state\":\"%s\",\"reason\":\"%s\"",
+                state, why ? why : "");
+        if (d)
+            fprintf(fp, ",\"live_digest_before\":{\"mask\":\"%016llx\",\"pairs\":\"%016llx\","
+                    "\"cont\":\"%016llx\",\"rest\":\"%016llx\"},\"live_census\":{\"consumed\":%ld,"
+                    "\"mapped\":%ld,\"unmapped\":%ld,\"mapped_B_fallback\":%ld}",
+                    (unsigned long long)d->mask, (unsigned long long)d->pairs,
+                    (unsigned long long)d->cont, (unsigned long long)d->rest,
+                    d->n, d->n_mapped, d->n_unmapped, d->n_fallback);
+        if (da)
+            fprintf(fp, ",\"live_digest_after\":{\"mask\":\"%016llx\",\"pairs\":\"%016llx\","
+                    "\"cont\":\"%016llx\",\"rest\":\"%016llx\"},\"live_census_after\":{\"consumed\":%ld,"
+                    "\"mapped\":%ld,\"unmapped\":%ld,\"mapped_B_fallback\":%ld}",
+                    (unsigned long long)da->mask, (unsigned long long)da->pairs,
+                    (unsigned long long)da->cont, (unsigned long long)da->rest,
+                    da->n, da->n_mapped, da->n_unmapped, da->n_fallback);
+        fprintf(fp, "}\n");
+        if (fclose(fp) != 0) fp = NULL;
+    }
+    fprintf(stderr, "[DET-OBS-CAPTURE] state=%s%s%s%s status_file=%s\n", state,
+            why ? "(" : "", why ? why : "", why ? ")" : "", fp ? "written" : "UNWRITTEN");
+}
+static void det_obs_capture_status_d(const char *state, const char *why, const DetObsCapDigest *d)
+{
+    det_obs_capture_status_da(state, why, d, NULL);
+}
+static void det_obs_capture_status(const char *state, const char *why)
+{
+    det_obs_capture_status_d(state, why, NULL);
+}
+
+static int det_obs_capture_write_array(DetObsCapRun *r, const char *name, const void *p,
+                                       size_t n)
+{
+    char path[256];
+    snprintf(path, sizeof path, "%s/%s", DET_OBS_CAPTURE_PARTIAL, name);
+    DetObsCapOut o;
+    if (det_obs_capture_open(&o, path) != 0) return -1;
+    det_obs_capture_put(&o, p, n);
+    int rc = det_obs_capture_close(&o);
+    int k = r->nfiles++;
+    r->name[k] = name; r->bytes[k] = o.bytes; memcpy(r->sha[k], o.hex, 65);
+    return rc;
+}
+
+/* Called from det_obs_write after the view checks, census, source
+ * reconciliation and the unmapped-conflict gate passed, before the N march.
+ * Returns NULL when OFF (no work) or when the capture failed (recorded). */
+static DetObsCapRun *det_obs_capture_dump_start(DetObsView *v, const struct DetObsCapture *c,
+        const CMFGENState *cs, const Geometry *geo, const OpacityState *opac,
+        double T_inner, uint64_t rad_generation, uint64_t material_generation, int iter,
+        const DetObsCensus *cn, uint64_t d0)
+{
+    (void)cs;
+    const char *e = getenv("LUMINA_DET_OBS_CAPTURE");
+    if (!e || strcmp(e, "0") == 0) return NULL;
+    if (strcmp(e, "1") != 0) { det_obs_capture_status("FAILED", "CONFIG"); return NULL; }
+    double t0 = det_obs_now();
+    DetObsCapRun *r = calloc(1, sizeof *r);
+    if (!r) { det_obs_capture_status("FAILED", "ALLOCATION"); return NULL; }
+    r->rad_gen = rad_generation; r->mat_gen = material_generation; r->iter = iter;
+    r->tau_req = opac->tau_required_generation; r->tau_comp = opac->tau_computed_generation;
+    r->census_consumed = cn->consumed; r->census_mapped = cn->consumed_mapped;
+    r->census_unmapped = cn->consumed_unmapped; r->census_fallback = cn->mapped_B_fallback;
+    r->census_lspos = cn->unmapped_ls_pos; r->view_d0 = d0;
+    double bbscale = cmf_inner_bb_scale();
+    const char *bbenv = getenv("LUMINA_INNER_BB_SCALE");
+    r->mode = v->mode; r->src_nlte = v->src_nlte; r->NS = v->NS; r->NB = v->NB; r->NL = v->NL;
+    r->asm_serial = c->asm_serial; r->cap_mat_gen = c->mat_gen; r->T_inner = T_inner;
+    r->bbscale = bbscale; r->inv_ct = v->inv_ct; r->t_exp = geo->time_explosion;
+    snprintf(r->bbenv, sizeof r->bbenv, "%s", bbenv ? bbenv : "UNSET");
+    r->vp = v; r->cp = c; r->gp = geo;
+    int have_digest = 0;
+    uint16_t one = 1; unsigned char le; memcpy(&le, &one, 1);
+    if (!le) { snprintf(r->why, sizeof r->why, "NOT_LITTLE_ENDIAN"); goto fail; }
+    if (v->mode != 1) { snprintf(r->why, sizeof r->why, "MODE %d", v->mode); goto fail; }
+    if (cn->unmapped_ls_pos != 0) { snprintf(r->why, sizeof r->why, "UNMAPPED_SOURCE_POSITIVE"); goto fail; }
+    det_obs_capture_digest(v, c, geo, T_inner, bbscale, &r->before);
+    have_digest = 1;
+    if (r->before.fail_eps) { snprintf(r->why, sizeof r->why, "EPS_HELPER_FAIL"); goto fail; }
+    if (r->before.n_bad) { snprintf(r->why, sizeof r->why, "BAD_VALUE n=%ld", r->before.n_bad); goto fail; }
+    if (r->before.n != cn->consumed || r->before.n_mapped != cn->consumed_mapped ||
+        r->before.n_unmapped != cn->consumed_unmapped || r->before.n_fallback != cn->mapped_B_fallback ||
+        r->before.n_ls_pos != 0) {
+        snprintf(r->why, sizeof r->why, "COVERAGE_CENSUS n=%ld/%ld", r->before.n, cn->consumed); goto fail; }
+    {   /* prereg 5.3: refuse (never truncate) a payload above the pair cap, and
+         * any file above the process file-size limit (SIGXFSZ would end the run) */
+        uint64_t cells = (uint64_t)v->NS * (uint64_t)v->NB;
+        uint64_t lines_b = (uint64_t)cn->consumed * DET_OBS_CAPTURE_REC;
+        r->expected_bytes = lines_b + 8 * (5 * cells + 4 * (uint64_t)v->NS + 2 * (uint64_t)v->NB +
+                                           (uint64_t)v->NL) + 4096 + DET_OBS_CAPTURE_MANIFEST_MAX;
+        uint64_t cap = DET_OBS_CAP_FAULT(12) ? 1 : DET_OBS_CAPTURE_STATE_CAP;
+        uint64_t largest = lines_b > 8 * cells ? lines_b : 8 * cells;
+        if ((uint64_t)v->NL * 8 > largest) largest = (uint64_t)v->NL * 8;
+        struct rlimit rl; uint64_t fmax = UINT64_MAX;
+        if (getrlimit(RLIMIT_FSIZE, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY) fmax = (uint64_t)rl.rlim_cur;
+        if (r->expected_bytes > cap || largest > fmax) {
+            snprintf(r->why, sizeof r->why, "SIZE_CAP expected=%llu cap=%llu largest=%llu fsize=%llu",
+                     (unsigned long long)r->expected_bytes, (unsigned long long)cap,
+                     (unsigned long long)largest, (unsigned long long)fmax);
+            goto fail; }
+    }
+    if (DET_OBS_CAP_FAULT(7) || mkdir(DET_OBS_CAPTURE_PARTIAL, 0750) != 0) {
+        snprintf(r->why, sizeof r->why, "MKDIR errno=%d", DET_OBS_CAP_FAULT(7) ? EACCES : errno); goto fail; }
+    {   /* sparse consumed pairs */
+        DetObsCapOut o; char path[256];
+        snprintf(path, sizeof path, "%s/lines.bin", DET_OBS_CAPTURE_PARTIAL);
+        if (det_obs_capture_open(&o, path) != 0) { snprintf(r->why, sizeof r->why, "OPEN lines errno=%d", errno); goto fail; }
+        DetObsView w = *v; w.trace = NULL; w.fail_eps = 0;
+        size_t cap = (size_t)DET_OBS_CAPTURE_REC * 65536, used = 0;
+        unsigned char *buf = malloc(cap);
+        if (!buf) { o.err = 1; }
+        for (int l = 0; l < v->NL && !o.err; ++l)
+            for (int s = 0; s < v->NS; ++s) {
+                double tau, S, eps; unsigned char m; int fb, lp;
+                if (!det_obs_capture_pair(&w, l, s, &tau, &S, &eps, &m, &fb, &lp)) continue;
+                det_obs_capture_record(buf + used, (uint32_t)l, (uint32_t)s, tau, S, eps, m);
+                used += DET_OBS_CAPTURE_REC;
+                if (used == cap) { det_obs_capture_put(&o, buf, used); used = 0; }
+            }
+        if (used && buf) det_obs_capture_put(&o, buf, used);
+        free(buf);
+        int rc = det_obs_capture_close(&o);
+        int k = r->nfiles++;
+        r->name[k] = "lines.bin"; r->bytes[k] = o.bytes; memcpy(r->sha[k], o.hex, 65);
+        if (rc != 0) { snprintf(r->why, sizeof r->why, "WRITE lines errno=%d", errno); goto fail; }
+        if (o.bytes != (uint64_t)cn->consumed * DET_OBS_CAPTURE_REC) {
+            snprintf(r->why, sizeof r->why, "LINES_SIZE"); goto fail; }
+    }
+    {
+        size_t cells = (size_t)v->NS * (size_t)v->NB;
+        struct { const char *n; const void *p; size_t b; } arr[] = {
+            {"chi_a.f64", c->chi_a, cells * 8}, {"chi_e.f64", c->chi_e, cells * 8},
+            {"eta_c.f64", c->eta_c, cells * 8}, {"eta_dep.f64", c->eta_dep, cells * 8},
+            {"J.f64", v->J, cells * 8}, {"Te.f64", c->Te, (size_t)v->NS * 8},
+            {"ne.f64", c->ne, (size_t)v->NS * 8}, {"nu.f64", v->nu, (size_t)v->NB * 8},
+            {"dnu.f64", v->dnu, (size_t)v->NB * 8}, {"line_nu.f64", v->line_nu, (size_t)v->NL * 8},
+            {"r_inner.f64", geo->r_inner, (size_t)v->NS * 8},
+            {"r_outer.f64", geo->r_outer, (size_t)v->NS * 8}};
+        for (size_t i = 0; i < sizeof arr / sizeof arr[0]; ++i)
+            if (det_obs_capture_write_array(r, arr[i].n, arr[i].p, arr[i].b) != 0) {
+                snprintf(r->why, sizeof r->why, "WRITE %s errno=%d", arr[i].n, errno); goto fail; }
+    }
+    {   /* scalar metadata: hex-exact, read by the replay */
+        char path[256]; snprintf(path, sizeof path, "%s/meta.txt", DET_OBS_CAPTURE_PARTIAL);
+        DetObsCapOut o;
+        if (det_obs_capture_open(&o, path) != 0) { snprintf(r->why, sizeof r->why, "OPEN meta"); goto fail; }
+        char t[4096];
+        int n = snprintf(t, sizeof t,
+            "schema=%s\nNS=%d\nNB=%d\nNL=%d\nmode=%d\nsrc_nlte=%d\nn_pairs=%ld\n"
+            "n_mapped=%ld\nn_unmapped=%ld\nnu_min=%a\nnu_max=%a\nd_log_nu=%a\ninv_ct=%a\n"
+            "time_explosion=%a\nT_inner=%a\ninner_bb_scale=%a\ninner_bb_scale_env=%s\n"
+            "material_generation=%llu\nrad_generation=%llu\niter=%d\nasm_serial=%ld\n"
+            "tau_required_generation=%llu\ntau_computed_generation=%llu\n",
+            DET_OBS_CAPTURE_SCHEMA, v->NS, v->NB, v->NL, v->mode, v->src_nlte, cn->consumed,
+            cn->consumed_mapped, cn->consumed_unmapped, v->nu_min, v->nu_max, v->d_log_nu,
+            v->inv_ct, geo->time_explosion, T_inner, bbscale, bbenv ? bbenv : "UNSET",
+            (unsigned long long)material_generation, (unsigned long long)rad_generation, iter,
+            c->asm_serial, (unsigned long long)opac->tau_required_generation,
+            (unsigned long long)opac->tau_computed_generation);
+        det_obs_capture_put(&o, t, (size_t)n);
+        int rc = det_obs_capture_close(&o);
+        int k = r->nfiles++;
+        r->name[k] = "meta.txt"; r->bytes[k] = o.bytes; memcpy(r->sha[k], o.hex, 65);
+        if (rc != 0 || n <= 0 || (size_t)n >= sizeof t) { snprintf(r->why, sizeof r->why, "WRITE meta"); goto fail; }
+    }
+    {   /* re-read: sizes, hashes, record domain/order, and the record digest
+         * must equal the live consumed-pair digest (file content == live) */
+        for (int k = 0; k < r->nfiles; ++k) {
+            char path[256], hex[65]; uint64_t b = 0;
+            snprintf(path, sizeof path, "%s/%s", DET_OBS_CAPTURE_PARTIAL, r->name[k]);
+            if (det_obs_capture_sha_file(path, hex, &b) != 0 || b != r->bytes[k] ||
+                strcmp(hex, r->sha[k]) != 0) {
+                snprintf(r->why, sizeof r->why, "REREAD %s", r->name[k]); goto fail; }
+        }
+        char path[256]; snprintf(path, sizeof path, "%s/lines.bin", DET_OBS_CAPTURE_PARTIAL);
+        FILE *fp = fopen(path, "rb");
+        if (!fp) { snprintf(r->why, sizeof r->why, "REREAD_OPEN"); goto fail; }
+        unsigned char rec[DET_OBS_CAPTURE_REC]; uint64_t h = DET_OBS_FNV0; long n = 0;
+        long long prev = -1; int bad = 0;
+        while (fread(rec, 1, sizeof rec, fp) == sizeof rec) {
+            uint32_t l, s; memcpy(&l, rec, 4); memcpy(&s, rec + 4, 4);
+            long long key = (long long)l * v->NS + s;
+            if (l >= (uint32_t)v->NL || s >= (uint32_t)v->NS || key <= prev || rec[32] > 1) bad = 1;
+            prev = key; h = det_obs_fnv1a(rec, sizeof rec, h); n++;
+        }
+        fclose(fp);
+        r->file_digest_pairs = h;
+        if (bad || n != cn->consumed || h != r->before.pairs) {
+            snprintf(r->why, sizeof r->why, "REREAD_PAIRS bad=%d n=%ld", bad, n); goto fail; }
+    }
+#ifdef LUMINA_DET_OBS_SELFTEST
+    if (DET_OBS_CAP_FAULT(6) && det_obs_capture_tamper_fn) det_obs_capture_tamper_fn();
+#endif
+    det_obs_capture_digest(v, c, geo, T_inner, bbscale, &r->after);
+    if (r->after.mask != r->before.mask || r->after.pairs != r->before.pairs ||
+        r->after.cont != r->before.cont || r->after.rest != r->before.rest) {
+        snprintf(r->why, sizeof r->why, "LIVE_DIGEST mask=%d pairs=%d cont=%d rest=%d",
+                 r->after.mask != r->before.mask, r->after.pairs != r->before.pairs,
+                 r->after.cont != r->before.cont, r->after.rest != r->before.rest);
+        goto fail; }
+    r->t_dump = det_obs_now() - t0;
+    fprintf(stderr, "[DET-OBS-CAPTURE] dumped pairs=%ld mapped=%ld unmapped=%ld wall=%.1fs\n",
+            r->before.n, r->before.n_mapped, r->before.n_unmapped, r->t_dump);
+    return r;
+fail:
+    if (have_digest) {   /* the live state after the failure, measured again */
+        DetObsCapDigest da;
+        det_obs_capture_digest(v, c, geo, T_inner, bbscale, &da);
+        det_obs_capture_status_da("FAILED", r->why, &r->before, &da);
+    } else det_obs_capture_status("FAILED", r->why);
+    free(r);
+    return NULL;
+}
+
+/* prereg 4.5 step 5: the finished partial directory becomes the final name
+ * by one POSIX rename.  An existing final entry (an earlier result in the
+ * same work directory) is never touched: the commit refuses. */
+static int det_obs_capture_commit(char *why, size_t nw, const char **method)
+{
+    struct stat st;
+    if (lstat(DET_OBS_CAPTURE_DIR, &st) == 0) { snprintf(why, nw, "FINAL_EXISTS"); return -1; }
+    if (DET_OBS_CAP_FAULT(5) || rename(DET_OBS_CAPTURE_PARTIAL, DET_OBS_CAPTURE_DIR) != 0) {
+        snprintf(why, nw, "COMMIT_RENAME errno=%d", DET_OBS_CAP_FAULT(5) ? EIO : errno); return -1; }
+    *method = "rename";
+    return 0;
+}
+
+/* sha256 of a file or "ABSENT" */
+static void det_obs_capture_sha_or_absent(const char *path, char out[65])
+{
+    uint64_t b = 0;
+    if (det_obs_capture_sha_file(path, out, &b) != 0) snprintf(out, 65, "ABSENT");
+}
+
+/* After the writer finished (ok = 1: N/L written and the writer manifest
+ * committed).  Links the N/L identities, writes the manifest, then renames
+ * the partial directory to its final name.  Never touches model state. */
+static void det_obs_capture_dump_finish(DetObsCapRun *r, int ok, const char *PN, const char *PL,
+                                   const char *writer_why)
+{
+    if (!r) return;
+    char why[200] = "";
+    char hN[65] = "", hL[65] = ""; uint64_t bN = 0, bL = 0;
+    if (!ok) { snprintf(why, sizeof why, "WRITER_FAILED:%s", writer_why ? writer_why : "?"); goto fail; }
+    if (det_obs_capture_sha_file(PN, hN, &bN) != 0 || det_obs_capture_sha_file(PL, hL, &bL) != 0) {
+        snprintf(why, sizeof why, "OUTPUT_HASH"); goto fail; }
+    {
+        char path[256]; snprintf(path, sizeof path, "%s/manifest.json", DET_OBS_CAPTURE_PARTIAL);
+        DetObsCapOut o;
+        if (det_obs_capture_open(&o, path) != 0) { snprintf(why, sizeof why, "MANIFEST_OPEN errno=%d", errno); goto fail; }
+        char t[32768]; int n = 0;
+        char h_exe[65], h_rbi[65], h_exp[65], h_job[65], h_sid[65], h_wm[65], cwd[1024];
+        det_obs_capture_sha_or_absent("/proc/self/exe", h_exe);
+        det_obs_capture_sha_or_absent("../input/run_build_identity.json", h_rbi);
+        det_obs_capture_sha_or_absent("../input/resolved_lumina.exports", h_exp);
+        det_obs_capture_sha_or_absent("../job.slurm", h_job);
+        det_obs_capture_sha_or_absent("../STAGE_IDENTITY.txt", h_sid);
+        det_obs_capture_sha_or_absent("det_obs_manifest.json", h_wm);
+        if (!getcwd(cwd, sizeof cwd)) snprintf(cwd, sizeof cwd, "UNKNOWN");
+        uint64_t tot = 0;
+        for (int k = 0; k < r->nfiles; ++k) tot += r->bytes[k];
+        r->committed_bytes = tot;
+        n += snprintf(t + n, sizeof t - n,
+            "{\"schema\":\"%s\",\"transaction\":\"COMMITTED\","
+            "\"identity\":{\"callsite\":\"cmfgen_run R6 final pass -> det_obs_final_pass_hook -> det_obs_write\","
+            "\"mode\":%d,\"src_nlte\":%d,\"asm_serial\":%ld,\"NS\":%d,\"NB\":%d,\"NL\":%d,"
+            "\"transport\":{\"rays\":256,\"sub_step_km_s\":30,\"T_inner\":\"%a\",\"inner_bb_scale\":\"%a\","
+            "\"inner_bb_scale_env\":\"%s\",\"inv_ct\":\"%a\",\"time_explosion\":\"%a\"},"
+            "\"binary_sha256\":\"%s\",\"cwd\":\"%s\",\"run_files_sha256\":{\"input/run_build_identity.json\":\"%s\","
+            "\"input/resolved_lumina.exports\":\"%s\",\"job.slurm\":\"%s\",\"STAGE_IDENTITY.txt\":\"%s\"},"
+            "\"writer_manifest_sha256\":\"%s\",\"lineage\":\"binary_sha256 -> registered B2 build record -> "
+            "T2 sources -> T1 + registered patch (resolved by the reader)\"},"
+            "\"committed_payload_bytes\":%llu,\"pair_cap_bytes\":%llu,\"state_cap_bytes\":%llu,"
+            "\"manifest_bytes_max\":%llu,"
+            "\"layout\":{\"record_bytes\":%d,"
+            "\"record\":\"line_id:u32le,shell_id:u32le,tau:f64le,S_used:f64le,epsilon:f64le,mapped:u8\","
+            "\"order\":\"line_id asc, shell_id asc\",\"arrays\":\"f64le, [shell][bin] row-major\","
+            "\"frame\":\"SHELL_COMOVING\",\"eta_c\":\"capture eta_c = bf/ff numerator + eta_dep (no chi_e*J, no line term)\"},"
+            "\"generations\":{\"material\":%llu,\"radiation\":%llu,\"iter\":%d,"
+            "\"tau_required\":%llu,\"tau_computed\":%llu,\"nlte_population_committed\":%llu,"
+            "\"capture_material\":%llu},"
+            "\"census\":{\"consumed\":%ld,\"mapped\":%ld,\"unmapped\":%ld,\"mapped_B_fallback\":%ld,"
+            "\"unmapped_line_source_positive\":%ld},"
+            "\"live_digest\":{\"before\":{\"mask\":\"%016llx\",\"pairs\":\"%016llx\",\"cont\":\"%016llx\",\"rest\":\"%016llx\"},"
+            "\"after\":{\"mask\":\"%016llx\",\"pairs\":\"%016llx\",\"cont\":\"%016llx\",\"rest\":\"%016llx\"},"
+            "\"file_pairs\":\"%016llx\"},\"writer_view_fnv1a_before\":\"%016llx\",\"dump_wall_s\":%.3f,"
+            "\"outputs\":{\"%s\":{\"bytes\":%llu,\"sha256\":\"%s\"},\"%s\":{\"bytes\":%llu,\"sha256\":\"%s\"}},"
+            "\"files\":{",
+            DET_OBS_CAPTURE_SCHEMA,
+            r->mode, r->src_nlte, r->asm_serial, r->NS, r->NB, r->NL, r->T_inner, r->bbscale,
+            r->bbenv, r->inv_ct, r->t_exp, h_exe, cwd, h_rbi, h_exp, h_job, h_sid, h_wm,
+            (unsigned long long)tot, (unsigned long long)DET_OBS_CAPTURE_PAIR_CAP,
+            (unsigned long long)DET_OBS_CAPTURE_STATE_CAP, (unsigned long long)DET_OBS_CAPTURE_MANIFEST_MAX,
+            DET_OBS_CAPTURE_REC,
+            (unsigned long long)r->mat_gen, (unsigned long long)r->rad_gen, r->iter,
+            (unsigned long long)r->tau_req, (unsigned long long)r->tau_comp,
+            (unsigned long long)r->mat_gen, (unsigned long long)r->cap_mat_gen,
+            r->census_consumed, r->census_mapped, r->census_unmapped, r->census_fallback, r->census_lspos,
+            (unsigned long long)r->before.mask, (unsigned long long)r->before.pairs,
+            (unsigned long long)r->before.cont, (unsigned long long)r->before.rest,
+            (unsigned long long)r->after.mask, (unsigned long long)r->after.pairs,
+            (unsigned long long)r->after.cont, (unsigned long long)r->after.rest,
+            (unsigned long long)r->file_digest_pairs, (unsigned long long)r->view_d0, r->t_dump,
+            PN, (unsigned long long)bN, hN, PL, (unsigned long long)bL, hL);
+        for (int k = 0; k < r->nfiles && n < (int)sizeof t; ++k)
+            n += snprintf(t + n, sizeof t - n, "%s\"%s\":{\"bytes\":%llu,\"sha256\":\"%s\"}",
+                          k ? "," : "", r->name[k], (unsigned long long)r->bytes[k], r->sha[k]);
+        if (n < (int)sizeof t) n += snprintf(t + n, sizeof t - n, "}}\n");
+        if (n >= (int)sizeof t) { o.err = 1; }
+        else det_obs_capture_put(&o, t, (size_t)n);
+        if (det_obs_capture_close(&o) != 0) { snprintf(why, sizeof why, "MANIFEST_WRITE"); goto fail; }
+        if (o.bytes > DET_OBS_CAPTURE_MANIFEST_MAX ||
+            tot + o.bytes > (DET_OBS_CAP_FAULT(12) ? 1 : DET_OBS_CAPTURE_STATE_CAP)) {
+            snprintf(why, sizeof why, "SIZE_CAP committed=%llu manifest=%llu",
+                     (unsigned long long)tot, (unsigned long long)o.bytes); goto fail; }
+    }
+    {
+        const char *method = "";
+        if (det_obs_capture_commit(why, sizeof why, &method) != 0) goto fail;
+        char cm[96]; snprintf(cm, sizeof cm, "commit=%s", method);
+        det_obs_capture_status_d("COMMITTED", cm, &r->before);
+    }
+    free(r);
+    return;
+fail:
+    {   /* the live state after the failure, measured again */
+        DetObsCapDigest da;
+        det_obs_capture_digest(r->vp, r->cp, r->gp, r->T_inner, r->bbscale, &da);
+        det_obs_capture_status_da("FAILED", why, &r->before, &da);
+    }
+    free(r);
+}
+
+/* ================= offline replay (not linked into the run path) ========= */
+/* Outward rounding for the replay bounds: next binary64 above x by bit
+ * increment (same value as nextafter(x, +inf) for finite x >= 0; the bound
+ * terms are non-negative).  Inline, because the vector pass calls it ~1e10x. */
+static inline double det_obs_capture_up(double x)
+{
+    if (!(x >= 0.0)) return nextafter(x, INFINITY);   /* negative / NaN: libm */
+    if (isinf(x)) return x;
+    uint64_t u; memcpy(&u, &x, 8);
+    u += 1;                                            /* +0 -> smallest subnormal */
+    memcpy(&x, &u, 8);
+    return x;
+}
+static inline double det_obs_capture_add_up(double x, double y) { return det_obs_capture_up(x + y); }
+static inline double det_obs_capture_mul_up(double x, double y) { return det_obs_capture_up(x * y); }
+static inline double det_obs_capture_rho_up(double x)
+{
+    const double u = 0x1p-53, a = 0x1p-1074;
+    return det_obs_capture_add_up(det_obs_capture_up(det_obs_capture_mul_up(u, fabs(x)) / (1.0 - u)), a);
+}
+#define DOC_K 7
+enum { DOC_MAPPED = 0, DOC_UNM_TH, DOC_UNM_SC, DOC_BFFF, DOC_ESCAT, DOC_BOUND, DOC_DEP };
+static const char *const det_obs_capture_lane_name[DOC_K] = {
+    "mapped_line", "unmapped_thermal", "unmapped_scatter", "bf_ff",
+    "electron_scatter", "inner_boundary", "deposition"};
+
+typedef struct { double I[DOC_K]; double Is; double E; } DetObsCapLanes;
+
+/* shared interpolation index (identical search and t as cmf_interp_nu_asc) */
+static int det_obs_capture_interp_idx(const double *nu, int NB, double nu_q, int *lo, double *t)
+{
+    if (nu_q <= nu[0] || nu_q >= nu[NB - 1]) return 0;
+    int l = 0, h = NB - 1;
+    while (h - l > 1) {
+        int mid = (l + h) / 2;
+        if (nu[mid] <= nu_q) l = mid; else h = mid;
+    }
+    *lo = l;
+    *t = (nu_q - nu[l]) / (nu[l + 1] - nu[l]);
+    return 1;
+}
+/* y[lo] + t*(y[lo+1]-y[lo]) (same operations as cmf_interp_nu_asc) and the
+ * rounding bound of that evaluation: |t| rho(d) + rho(t d) + rho(result). */
+static double det_obs_capture_interp_err(const double *y, int in, int lo, double t, double *err)
+{
+    if (!in) { *err = 0.0; return 0.0; }
+    double d = y[lo + 1] - y[lo], m = t * d, r = y[lo] + m;
+    *err = det_obs_capture_add_up(det_obs_capture_mul_up(fabs(t), det_obs_capture_rho_up(d)),
+                          det_obs_capture_add_up(det_obs_capture_rho_up(m), det_obs_capture_rho_up(r)));
+    return r;
+}
+
+/* consumed pairs grouped by shell, line id ascending inside a shell: the
+ * production iteration order.  The replay never builds dense NL x NS arrays
+ * (prereg 6.1); every record carries the values the writer consumed. */
+typedef struct {
+    long *off;                       /* [NS+1] record range of each shell */
+    uint32_t *l; int *b; double *tau, *S, *eps; unsigned char *m;
+} DetObsCapSparse;
+
+/* first record of shell s with line id >= lo */
+static long det_obs_capture_sp_first(const DetObsCapSparse *sp, int s, int lo)
+{
+    long a = sp->off[s], h = sp->off[s + 1];
+    while (a < h) {
+        long mid = a + (h - a) / 2;
+        if ((int)sp->l[mid] < lo) a = mid + 1; else h = mid;
+    }
+    return a;
+}
+
+/* det_obs_march with sparse access: same sub-steps, half-open sweep
+ * (nu_b, nu_a], resonance order and operations; S as det_obs_line_source */
+static double det_obs_capture_march_sp(DetObsView *v, const DetObsCapSparse *sp, double I,
+                                       double p, double z0, double z1, int s, double nu_obs)
+{
+    double q0 = cmf_q_at_z(p, z0, v->inv_ct), q1 = cmf_q_at_z(p, z1, v->inv_ct);
+    const double dlq = 30.0 / 2.99792458e5;
+    int nsub = (int)ceil(fabs(log(q1 / q0)) / dlq);
+    if (nsub < 1) nsub = 1;
+    if (nsub > 4096) { nsub = 4096; v->n_nsub_capped++; }
+    for (int m = 0; m < nsub; ++m) {
+        double za = z0 + (z1 - z0) * ((double)m / nsub);
+        double zb = z0 + (z1 - z0) * ((double)(m + 1) / nsub);
+        double nu_a = cmf_q_at_z(p, za, v->inv_ct) * nu_obs;
+        double nu_b = cmf_q_at_z(p, zb, v->inv_ct) * nu_obs;
+        double zc = za;
+        if (nu_a > nu_b) {
+            int lo = 0, hi = v->NL;
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (v->line_nu[mid] > nu_a) lo = mid + 1; else hi = mid;
+            }
+            for (long j = det_obs_capture_sp_first(sp, s, lo); j < sp->off[s + 1]; ++j) {
+                double nl = v->line_nu[sp->l[j]];
+                if (!(nl > nu_b)) break;
+                double tau = sp->tau[j];
+                double zl = za + (zb - za) * ((nu_a - nl) / (nu_a - nu_b));
+                if (zl < zc) zl = zc;
+                I = det_obs_cont_piece(v, I, p, zc, zl, s, nu_obs);
+                int is_mapped = sp->m[j];
+                double S = is_mapped ? sp->S[j]
+                         : det_obs_unmapped_source(sp->eps[j], sp->S[j], v->J[(size_t)s * v->NB + sp->b[j]]);
+                double D = nu_obs / nl;
+                I = det_obs_line_jump(I, tau, D * D * D * S);
+                if (!isfinite(I)) v->nonfinite = 1;
+                v->n_jump++;
+                if (is_mapped) v->n_jump_mapped++; else v->n_jump_unmapped++;
+                zc = zl;
+            }
+        }
+        I = det_obs_cont_piece(v, I, p, zc, zb, s, nu_obs);
+    }
+    return I;
+}
+
+/* det_obs_spectrum with the sparse march (same rays, core, trapezoid) */
+static int det_obs_capture_spectrum_sp(DetObsView *v, const DetObsCapSparse *sp,
+                                       const Geometry *geo, double T_inner, double *Lnu)
+{
+    int NS = v->NS, NB = v->NB;
+    const int NRO = 256;
+    double r_max = geo->r_outer[NS - 1];
+    for (int k = 0; k < NB; ++k) {
+        double nu_obs = v->nu[k];
+        double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+        for (int ray = 0; ray < NRO; ++ray) {
+            double p = r_max * (ray + 0.5) / (double)NRO;
+            int sh[256], nsh = 0;
+            for (int s = NS - 1; s >= 0 && nsh < 256; --s) {
+                if (geo->r_outer[s] <= p) break;
+                sh[nsh++] = s;
+            }
+            if (nsh == 0) continue;
+            int core = (p < geo->r_inner[0]);
+            double I = 0.0;
+            for (int i = 0; i < nsh; ++i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                I = det_obs_capture_march_sp(v, sp, I, p, -z_hi, -z_lo, sh[i], nu_obs);
+            }
+            if (core) {
+                double ri0 = geo->r_inner[0];
+                double z_core = sqrt(ri0 * ri0 - p * p);
+                double mu_c = z_core / ri0, beta_in = ri0 * v->inv_ct;
+                double q_c = (1.0 - mu_c * beta_in) / sqrt(1.0 - beta_in * beta_in);
+                double D_c = 1.0 / q_c;
+                I = cmf_inner_bb_scale() * (D_c * D_c * D_c) *
+                    cm_planck(q_c * nu_obs, T_inner);
+            }
+            for (int i = nsh - 1; i >= 0; --i) {
+                double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+                double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+                double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+                I = det_obs_capture_march_sp(v, sp, I, p, +z_lo, +z_hi, sh[i], nu_obs);
+            }
+            double f = I * p;
+            integ += 0.5 * (f_prev + f) * (p - p_prev);
+            p_prev = p; f_prev = f;
+        }
+        Lnu[k] = 8.0 * M_PI_VAL * M_PI_VAL * integ;
+        if (!isfinite(Lnu[k])) v->nonfinite = 1;
+    }
+    return v->nonfinite ? -1 : 0;
+}
+
+typedef struct {
+    const DetObsCapSparse *sp;       /* consumed pairs */
+    const double *lane_eta[DOC_K];   /* per-bin lane emissivities (NULL = none) */
+    const double *Cbin;              /* per-bin |sum lanes - eta_view| bound */
+    const double *chi_e, *J;         /* fault 10 only */
+    long interp_mismatch;            /* scalar eta: own interp != production */
+} DetObsCapVec;
+
+/* one continuum piece: scalar lane through the production det_obs_layer,
+ * component lanes sharing exp(-tau) and phi.  E bounds |sum I_k - Is|; the
+ * source term uses a derived rounding bound (never the measured difference),
+ * so a wrong or missing lane fails the closure. */
+static void det_obs_capture_cont_vec(DetObsView *v, DetObsCapVec *x, DetObsCapLanes *st,
+                                     double p, double za, double zb, int s, double nu_obs)
+{
+    if (zb == za) return;
+    double zm = 0.5 * (za + zb), ds = fabs(zb - za);
+    double q = cmf_q_at_z(p, zm, v->inv_ct), D = 1.0 / q;
+    double nucmf = q * nu_obs;
+    const size_t off = (size_t)s * v->NB;
+    double chi = cmf_interp_nu_asc(v->nu, &v->chi_c[off], v->NB, nucmf);
+    double eta = cmf_interp_nu_asc(v->nu, &v->eta_c[off], v->NB, nucmf);
+    double tau = q * chi * ds;
+    double els = D * D * eta * ds;
+    double Isn = det_obs_layer(st->Is, tau, els);
+    if (!isfinite(Isn)) v->nonfinite = 1;
+    int lo = 0; double t = 0.0;
+    int in = det_obs_capture_interp_idx(v->nu, v->NB, nucmf, &lo, &t);
+    double es_err, es_own = det_obs_capture_interp_err(&v->eta_c[off], in, lo, t, &es_err);
+    if (memcmp(&es_own, &eta, sizeof eta) != 0) x->interp_mismatch++;
+    double ea = exp(-tau);
+    double phi = (tau == 0.0) ? 1.0 : -expm1(-tau) / tau;
+    double D2 = D * D;
+    double el[DOC_K] = {0};
+    double Yb = det_obs_capture_add_up(es_err, in ? fmax(x->Cbin[off + lo], x->Cbin[off + lo + 1]) : 0.0);
+    double Rsrc = 0.0;
+    for (int k = 0; k < DOC_K; ++k) {
+        if (!x->lane_eta[k]) continue;
+        double ek, ek_err;
+        if (DET_OBS_CAP_FAULT(10) && k == DOC_ESCAT) {
+            double ce = cmf_interp_nu_asc(v->nu, &x->chi_e[off], v->NB, nucmf);
+            double jj = cmf_interp_nu_asc(v->nu, &x->J[off], v->NB, nucmf);
+            ek = ce * jj; ek_err = 0.0;
+        } else {
+            ek = det_obs_capture_interp_err(&x->lane_eta[k][off], in, lo, t, &ek_err);
+        }
+        Yb = det_obs_capture_add_up(Yb, ek_err);
+        double e1 = D2 * ek;
+        el[k] = e1 * ds;
+        Rsrc = det_obs_capture_add_up(Rsrc, det_obs_capture_add_up(det_obs_capture_mul_up(ds, det_obs_capture_rho_up(e1)),
+                                                   det_obs_capture_rho_up(el[k])));
+    }
+    {
+        double e1 = D2 * eta;
+        Rsrc = det_obs_capture_add_up(Rsrc, det_obs_capture_add_up(det_obs_capture_mul_up(ds, det_obs_capture_rho_up(e1)),
+                                                   det_obs_capture_rho_up(els)));
+    }
+    double dsrc = det_obs_capture_add_up(det_obs_capture_mul_up(det_obs_capture_mul_up(D2, ds), Yb), Rsrc);
+    double R = 0.0;
+    for (int k = 0; k < DOC_K; ++k) {
+        double a1 = st->I[k] * ea, a2 = el[k] * phi, nw = a1 + a2;
+        R = det_obs_capture_add_up(R, det_obs_capture_add_up(det_obs_capture_rho_up(a1),
+                det_obs_capture_add_up(det_obs_capture_rho_up(a2), det_obs_capture_rho_up(nw))));
+        st->I[k] = nw;
+    }
+    {
+        double a1 = st->Is * ea, a2 = els * phi;
+        R = det_obs_capture_add_up(R, det_obs_capture_add_up(det_obs_capture_rho_up(a1),
+                det_obs_capture_add_up(det_obs_capture_rho_up(a2), det_obs_capture_rho_up(Isn))));
+    }
+    st->E = det_obs_capture_add_up(det_obs_capture_add_up(det_obs_capture_mul_up(fabs(ea), st->E),
+                                          det_obs_capture_mul_up(fabs(phi), dsrc)), R);
+    st->Is = Isn;
+}
+
+static void det_obs_capture_march_vec(DetObsView *v, DetObsCapVec *x, DetObsCapLanes *st,
+                                      double p, double z0, double z1, int s, double nu_obs)
+{
+    double q0 = cmf_q_at_z(p, z0, v->inv_ct), q1 = cmf_q_at_z(p, z1, v->inv_ct);
+    const double dlq = 30.0 / 2.99792458e5;
+    int nsub = (int)ceil(fabs(log(q1 / q0)) / dlq);
+    if (nsub < 1) nsub = 1;
+    if (nsub > 4096) { nsub = 4096; v->n_nsub_capped++; }
+    for (int m = 0; m < nsub; ++m) {
+        double za = z0 + (z1 - z0) * ((double)m / nsub);
+        double zb = z0 + (z1 - z0) * ((double)(m + 1) / nsub);
+        double nu_a = cmf_q_at_z(p, za, v->inv_ct) * nu_obs;
+        double nu_b = cmf_q_at_z(p, zb, v->inv_ct) * nu_obs;
+        double zc = za;
+        if (nu_a > nu_b) {
+            int lo = 0, hi = v->NL;
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (v->line_nu[mid] > nu_a) lo = mid + 1; else hi = mid;
+            }
+            const DetObsCapSparse *sp = x->sp;
+            for (long j = det_obs_capture_sp_first(sp, s, lo); j < sp->off[s + 1]; ++j) {
+                double nl = v->line_nu[sp->l[j]];
+                if (!(nl > nu_b)) break;
+                int b = sp->b[j];
+                double tau = sp->tau[j];
+                double zl = za + (zb - za) * ((nu_a - nl) / (nu_a - nu_b));
+                if (zl < zc) zl = zc;
+                det_obs_capture_cont_vec(v, x, st, p, zc, zl, s, nu_obs);
+                int is_mapped = sp->m[j];
+                double S = is_mapped ? sp->S[j]
+                         : det_obs_unmapped_source(sp->eps[j], sp->S[j], v->J[(size_t)s * v->NB + b]);
+                double D = nu_obs / nl;
+                double Sobs = D * D * D * S;
+                double Isn = det_obs_line_jump(st->Is, tau, Sobs);
+                if (!isfinite(Isn)) v->nonfinite = 1;
+                v->n_jump++;
+                if (is_mapped) v->n_jump_mapped++; else v->n_jump_unmapped++;
+                double src[DOC_K] = {0}, dsrc = 0.0;
+                if (is_mapped) src[DOC_MAPPED] = Sobs;        /* identical value: no error */
+                else {
+                    double el = sp->eps[j];
+                    double Sl = sp->S[j];
+                    double th = el * Sl, sc = (1.0 - el) * v->J[(size_t)s * v->NB + b];
+                    double D3 = D * D * D;
+                    src[DOC_UNM_TH] = D3 * th;
+                    src[DOC_UNM_SC] = DET_OBS_CAP_FAULT(8) ? 0.0 : D3 * sc;
+                    /* S = fl(th + sc): |th + sc - S| <= rho(S) */
+                    dsrc = det_obs_capture_add_up(det_obs_capture_mul_up(fabs(D3), det_obs_capture_rho_up(S)),
+                           det_obs_capture_add_up(det_obs_capture_rho_up(src[DOC_UNM_TH]),
+                           det_obs_capture_add_up(det_obs_capture_rho_up(D3 * sc), det_obs_capture_rho_up(Sobs))));
+                }
+                double ea = exp(-tau), om = -expm1(-tau), R = 0.0;
+                int reps = DET_OBS_CAP_FAULT(9) ? 2 : 1;
+                for (int rep = 0; rep < reps; ++rep)
+                    for (int k = 0; k < DOC_K; ++k) {
+                        double a1 = st->I[k] * ea, a2 = src[k] * om, nw = a1 + a2;
+                        R = det_obs_capture_add_up(R, det_obs_capture_add_up(det_obs_capture_rho_up(a1),
+                                det_obs_capture_add_up(det_obs_capture_rho_up(a2), det_obs_capture_rho_up(nw))));
+                        st->I[k] = nw;
+                    }
+                {
+                    double a1 = st->Is * ea, a2 = Sobs * om;
+                    R = det_obs_capture_add_up(R, det_obs_capture_add_up(det_obs_capture_rho_up(a1),
+                            det_obs_capture_add_up(det_obs_capture_rho_up(a2), det_obs_capture_rho_up(Isn))));
+                }
+                st->E = det_obs_capture_add_up(det_obs_capture_add_up(det_obs_capture_mul_up(fabs(ea), st->E),
+                                                      det_obs_capture_mul_up(fabs(om), dsrc)), R);
+                st->Is = Isn;
+                zc = zl;
+            }
+        }
+        det_obs_capture_cont_vec(v, x, st, p, zc, zb, s, nu_obs);
+    }
+}
+
+/* one observer frequency: scalar lane (must equal det_obs_spectrum bit for
+ * bit), K component lanes and the bound E on |sum_k L_k - L_s| (L_nu). */
+static void det_obs_capture_bin_vec(DetObsView *v, DetObsCapVec *x,
+                                    const Geometry *geo, double T_inner, int k,
+                                    double *Ls, double Lk[DOC_K], double *EL)
+{
+    int NS = v->NS;
+    const int NRO = 256;
+    double r_max = geo->r_outer[NS - 1];
+    double nu_obs = v->nu[k];
+    double integ = 0.0, p_prev = 0.0, f_prev = 0.0;
+    double ik[DOC_K] = {0}, fpk[DOC_K] = {0}, Eint = 0.0, Ef_prev = 0.0;
+    for (int ray = 0; ray < NRO; ++ray) {
+        double p = r_max * (ray + 0.5) / (double)NRO;
+        int sh[256], nsh = 0;
+        for (int s = NS - 1; s >= 0 && nsh < 256; --s) {
+            if (geo->r_outer[s] <= p) break;
+            sh[nsh++] = s;
+        }
+        if (nsh == 0) continue;
+        int core = (p < geo->r_inner[0]);
+        DetObsCapLanes st; memset(&st, 0, sizeof st);
+        for (int i = 0; i < nsh; ++i) {
+            double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+            double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+            double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+            det_obs_capture_march_vec(v, x, &st, p, -z_hi, -z_lo, sh[i], nu_obs);
+        }
+        if (core) {
+            double ri0 = geo->r_inner[0];
+            double z_core = sqrt(ri0 * ri0 - p * p);
+            double mu_c = z_core / ri0, beta_in = ri0 * v->inv_ct;
+            double q_c = (1.0 - mu_c * beta_in) / sqrt(1.0 - beta_in * beta_in);
+            double D_c = 1.0 / q_c;
+            double Ib = cmf_inner_bb_scale() * (D_c * D_c * D_c) * cm_planck(q_c * nu_obs, T_inner);
+            memset(st.I, 0, sizeof st.I);
+            st.I[DOC_BOUND] = Ib; st.Is = Ib; st.E = 0.0;
+        }
+        for (int i = nsh - 1; i >= 0; --i) {
+            double ro = geo->r_outer[sh[i]], ri = geo->r_inner[sh[i]];
+            double z_hi = (ro > p) ? sqrt(ro * ro - p * p) : 0.0;
+            double z_lo = (ri > p) ? sqrt(ri * ri - p * p) : 0.0;
+            det_obs_capture_march_vec(v, x, &st, p, +z_lo, +z_hi, sh[i], nu_obs);
+        }
+        double f = st.Is * p;
+        double dp = p - p_prev;
+        double R = det_obs_capture_rho_up(f), Rt = 0.0;
+        double fk[DOC_K];
+        for (int j = 0; j < DOC_K; ++j) { fk[j] = st.I[j] * p; R = det_obs_capture_add_up(R, det_obs_capture_rho_up(fk[j])); }
+        double Ef = det_obs_capture_add_up(det_obs_capture_mul_up(fabs(p), st.E), R);
+        /* integ += 0.5 * (f_prev + f) * (p - p_prev), per lane */
+        double ts = 0.5 * (f_prev + f) * dp;
+        {
+            double a = f_prev + f, h = 0.5 * a, t = h * dp, in = integ + ts;
+            Rt = det_obs_capture_add_up(Rt, det_obs_capture_add_up(det_obs_capture_mul_up(det_obs_capture_mul_up(0.5, fabs(dp)), det_obs_capture_rho_up(a)),
+                     det_obs_capture_add_up(det_obs_capture_mul_up(fabs(dp), det_obs_capture_rho_up(h)),
+                     det_obs_capture_add_up(det_obs_capture_rho_up(t), det_obs_capture_rho_up(in)))));
+        }
+        for (int j = 0; j < DOC_K; ++j) {
+            double a = fpk[j] + fk[j], h = 0.5 * a, t = h * dp, in = ik[j] + t;
+            Rt = det_obs_capture_add_up(Rt, det_obs_capture_add_up(det_obs_capture_mul_up(det_obs_capture_mul_up(0.5, fabs(dp)), det_obs_capture_rho_up(a)),
+                     det_obs_capture_add_up(det_obs_capture_mul_up(fabs(dp), det_obs_capture_rho_up(h)),
+                     det_obs_capture_add_up(det_obs_capture_rho_up(t), det_obs_capture_rho_up(in)))));
+            ik[j] = in; fpk[j] = fk[j];
+        }
+        Eint = det_obs_capture_add_up(Eint, det_obs_capture_add_up(det_obs_capture_mul_up(det_obs_capture_mul_up(0.5, fabs(dp)),
+                                                     det_obs_capture_add_up(Ef_prev, Ef)), Rt));
+        integ += ts;
+        p_prev = p; f_prev = f; Ef_prev = Ef;
+    }
+    double c8 = 8.0 * M_PI_VAL * M_PI_VAL;
+    *Ls = 8.0 * M_PI_VAL * M_PI_VAL * integ;
+    double R = det_obs_capture_rho_up(*Ls);
+    for (int j = 0; j < DOC_K; ++j) { Lk[j] = c8 * ik[j]; R = det_obs_capture_add_up(R, det_obs_capture_rho_up(Lk[j])); }
+    *EL = det_obs_capture_add_up(det_obs_capture_mul_up(fabs(c8), Eint), R);
+}
+
+/* L_nu -> L_lambda exactly as det_obs_write_csv, with the propagated bound */
+static double det_obs_capture_lam(double Lnu, double nu)
+{
+    double lam_cm = CM_C / nu;
+    return Lnu * CM_C / (lam_cm * lam_cm) * 1.0e-8;
+}
+static double det_obs_capture_lam_bound(const double Lk[DOC_K], double Ls, double EL, double nu)
+{
+    double lam_cm = CM_C / nu, lam2 = lam_cm * lam_cm;
+    double R1 = 0.0, R2 = 0.0, R3 = 0.0;
+    for (int j = -1; j < DOC_K; ++j) {
+        double L = (j < 0) ? Ls : Lk[j];
+        double x1 = L * CM_C, x2 = x1 / lam2, x3 = x2 * 1.0e-8;
+        R1 = det_obs_capture_add_up(R1, det_obs_capture_rho_up(x1));
+        R2 = det_obs_capture_add_up(R2, det_obs_capture_rho_up(x2));
+        R3 = det_obs_capture_add_up(R3, det_obs_capture_rho_up(x3));
+    }
+    double inv = det_obs_capture_up(1.0 / lam2);   /* 1/lam2 >= 0 rounded up */
+    double s1 = det_obs_capture_mul_up(det_obs_capture_mul_up(det_obs_capture_mul_up(EL, CM_C), inv), 1.0e-8);
+    double s2 = det_obs_capture_mul_up(det_obs_capture_mul_up(R1, inv), 1.0e-8);
+    double s3 = det_obs_capture_mul_up(R2, 1.0e-8);
+    return det_obs_capture_add_up(det_obs_capture_add_up(s1, s2), det_obs_capture_add_up(s3, R3));
+}
+
+static int det_obs_capture_read_all(const char *path, void *dst, size_t n)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    size_t r = fread(dst, 1, n, fp);
+    int extra = fgetc(fp);
+    fclose(fp);
+    return (r == n && extra == EOF) ? 0 : -1;
+}
+
+static const char *const det_obs_capture_files[14] = {
+    "lines.bin", "chi_a.f64", "chi_e.f64", "eta_c.f64", "eta_dep.f64", "J.f64", "Te.f64",
+    "ne.f64", "nu.f64", "dnu.f64", "line_nu.f64", "r_inner.f64", "r_outer.f64", "meta.txt"};
+char det_obs_capture_replay_why[256] = "";
+
+/* prereg 4.5 step 6: only a COMMITTED manifest whose every payload file
+ * matches its recorded bytes and SHA-256 is replay input */
+static int det_obs_capture_verify_committed(const char *capdir)
+{
+    char path[1024], *buf = NULL;
+    /* the manifest is complete before the commit rename, so only the final
+     * name certifies the commit (a .partial keeps a finished manifest) */
+    size_t L = strlen(capdir);
+    while (L > 1 && capdir[L - 1] == '/') L--;
+    size_t nd = strlen(DET_OBS_CAPTURE_DIR);
+    if (L < nd || strncmp(capdir + L - nd, DET_OBS_CAPTURE_DIR, nd) != 0 ||
+        (L > nd && capdir[L - nd - 1] != '/')) {
+        snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why, "NOT_FINAL_NAME");
+        return -1; }
+    snprintf(path, sizeof path, "%s/manifest.json", capdir);
+    FILE *fp = fopen(path, "rb");
+    if (!fp) { snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why, "NOT_COMMITTED"); return -1; }
+    buf = malloc(1 << 20);
+    size_t n = buf ? fread(buf, 1, (1 << 20) - 1, fp) : 0;
+    fclose(fp);
+    if (!buf) return -1;
+    buf[n] = 0;
+    int rc = 0;
+    if (!strstr(buf, "\"schema\":\"" DET_OBS_CAPTURE_SCHEMA "\"") ||
+        !strstr(buf, "\"transaction\":\"COMMITTED\"")) {
+        snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why, "NOT_COMMITTED_MANIFEST");
+        rc = -1;
+    }
+    for (int i = 0; i < 14 && rc == 0; ++i) {
+        char key[96]; snprintf(key, sizeof key, "\"%s\":{\"bytes\":", det_obs_capture_files[i]);
+        char *q = strstr(buf, key), want[65] = "", hex[65];
+        unsigned long long wb = 0; uint64_t b = 0;
+        if (!q || sscanf(q + strlen(key), "%llu,\"sha256\":\"%64[0-9a-f]\"", &wb, want) != 2) {
+            snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why, "MANIFEST_FILE_ENTRY:%s",
+                     det_obs_capture_files[i]);
+            rc = -1; break; }
+        snprintf(path, sizeof path, "%s/%s", capdir, det_obs_capture_files[i]);
+        if (det_obs_capture_sha_file(path, hex, &b) != 0 || b != (uint64_t)wb || strcmp(hex, want) != 0) {
+            snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why, "FILE_IDENTITY:%s",
+                     det_obs_capture_files[i]);
+            rc = -1; }
+    }
+    free(buf);
+    return rc;
+}
+
+#ifdef LUMINA_DET_OBS_SELFTEST
+/* selftest only: seal a derived fixture directory with a COMMITTED manifest */
+int det_obs_capture_seal_fixture(const char *dir)
+{
+    char path[1024], hex[65]; uint64_t b = 0;
+    snprintf(path, sizeof path, "%s/manifest.json", dir);
+    (void)unlink(path);
+    FILE *fp = fopen(path, "wx");
+    if (!fp) return -1;
+    fprintf(fp, "{\"schema\":\"%s\",\"transaction\":\"COMMITTED\",\"fixture\":1,\"files\":{",
+            DET_OBS_CAPTURE_SCHEMA);
+    for (int i = 0; i < 14; ++i) {
+        snprintf(path, sizeof path, "%s/%s", dir, det_obs_capture_files[i]);
+        if (det_obs_capture_sha_file(path, hex, &b) != 0) { fclose(fp); return -1; }
+        fprintf(fp, "%s\"%s\":{\"bytes\":%llu,\"sha256\":\"%s\"}", i ? "," : "",
+                det_obs_capture_files[i], (unsigned long long)b, hex);
+    }
+    fprintf(fp, "}}\n");
+    return fclose(fp) == 0 ? 0 : -1;
+}
+#endif
+
+/* Replay a committed capture directory into outdir (must not exist):
+ * scalar.csv (sparse replay of det_obs_spectrum + det_obs_write_csv), components.csv
+ * (K lanes + scalar lane + bound, L_lambda) and replay.json.  nthreads
+ * parallelises the vector pass over observer bins.  Returns 0 when both the
+ * vector scalar lane equals the production scalar bit for bit and every bin
+ * closes within its bound. */
+int det_obs_capture_replay(const char *capdir, const char *outdir, int nthreads)
+{
+    char path[1024];
+    int NS = 0, NB = 0, NL = 0, mode = 0, src_nlte = 0; long n_pairs = 0;
+    double nu_min = 0, nu_max = 0, d_log_nu = 0, inv_ct = 0, t_exp = 0, T_inner = 0, bbs = 0;
+    char bbenv[256] = "", schema[64] = "";
+    long n_mapped_meta = -1;
+    det_obs_capture_replay_why[0] = 0;
+    if (det_obs_capture_verify_committed(capdir) != 0) {
+        fprintf(stderr, "[REPLAY] refused: %s\n", det_obs_capture_replay_why); return 2; }
+    snprintf(path, sizeof path, "%s/meta.txt", capdir);
+    FILE *fp = fopen(path, "r");
+    if (!fp) { fprintf(stderr, "[REPLAY] no meta.txt\n"); return 2; }
+    char ln[512];
+    while (fgets(ln, sizeof ln, fp)) {
+        char *eq = strchr(ln, '='); if (!eq) continue;
+        *eq = 0; char *val = eq + 1; val[strcspn(val, "\n")] = 0;
+        if (!strcmp(ln, "schema")) snprintf(schema, sizeof schema, "%s", val);
+        else if (!strcmp(ln, "NS")) NS = atoi(val);
+        else if (!strcmp(ln, "NB")) NB = atoi(val);
+        else if (!strcmp(ln, "NL")) NL = atoi(val);
+        else if (!strcmp(ln, "mode")) mode = atoi(val);
+        else if (!strcmp(ln, "src_nlte")) src_nlte = atoi(val);
+        else if (!strcmp(ln, "n_pairs")) n_pairs = atol(val);
+        else if (!strcmp(ln, "n_mapped")) n_mapped_meta = atol(val);
+        else if (!strcmp(ln, "nu_min")) nu_min = strtod(val, NULL);
+        else if (!strcmp(ln, "nu_max")) nu_max = strtod(val, NULL);
+        else if (!strcmp(ln, "d_log_nu")) d_log_nu = strtod(val, NULL);
+        else if (!strcmp(ln, "inv_ct")) inv_ct = strtod(val, NULL);
+        else if (!strcmp(ln, "time_explosion")) t_exp = strtod(val, NULL);
+        else if (!strcmp(ln, "T_inner")) T_inner = strtod(val, NULL);
+        else if (!strcmp(ln, "inner_bb_scale")) bbs = strtod(val, NULL);
+        else if (!strcmp(ln, "inner_bb_scale_env")) snprintf(bbenv, sizeof bbenv, "%s", val);
+    }
+    fclose(fp);
+    if (strcmp(schema, DET_OBS_CAPTURE_SCHEMA) || NS <= 0 || NB <= 0 || NL <= 0 || mode != 1) {
+        fprintf(stderr, "[REPLAY] bad meta\n"); return 2; }
+    if (strcmp(bbenv, "UNSET") != 0) setenv("LUMINA_INNER_BB_SCALE", bbenv, 1);
+    else unsetenv("LUMINA_INNER_BB_SCALE");
+    if (cmf_inner_bb_scale() != bbs) { fprintf(stderr, "[REPLAY] inner_bb_scale mismatch\n"); return 2; }
+    if (mkdir(outdir, 0750) != 0) { fprintf(stderr, "[REPLAY] outdir exists or unwritable\n"); return 2; }
+    size_t cells = (size_t)NS * NB;
+    double *chi_a = malloc(cells * 8), *chi_e = malloc(cells * 8), *eta_cap = malloc(cells * 8);
+    double *eta_dep = malloc(cells * 8), *J = malloc(cells * 8), *Te = malloc((size_t)NS * 8);
+    double *ne = malloc((size_t)NS * 8), *nu = malloc((size_t)NB * 8), *dnu = malloc((size_t)NB * 8);
+    double *line_nu = malloc((size_t)NL * 8), *r_in = malloc((size_t)NS * 8), *r_out = malloc((size_t)NS * 8);
+    double *chi_c = malloc(cells * 8), *eta_v = malloc(cells * 8), *sc0 = calloc(cells, 8);
+    double *lane_bfff = malloc(cells * 8), *lane_esc = malloc(cells * 8);
+    if (!chi_a || !chi_e || !eta_cap || !eta_dep || !J || !Te || !ne || !nu || !dnu || !line_nu ||
+        !r_in || !r_out || !chi_c || !eta_v || !sc0 ||
+        !lane_bfff || !lane_esc) { fprintf(stderr, "[REPLAY] allocation\n"); return 2; }
+    struct { const char *n; void *p; size_t b; } arr[] = {
+        {"chi_a.f64", chi_a, cells * 8}, {"chi_e.f64", chi_e, cells * 8},
+        {"eta_c.f64", eta_cap, cells * 8}, {"eta_dep.f64", eta_dep, cells * 8},
+        {"J.f64", J, cells * 8}, {"Te.f64", Te, (size_t)NS * 8}, {"ne.f64", ne, (size_t)NS * 8},
+        {"nu.f64", nu, (size_t)NB * 8}, {"dnu.f64", dnu, (size_t)NB * 8},
+        {"line_nu.f64", line_nu, (size_t)NL * 8}, {"r_inner.f64", r_in, (size_t)NS * 8},
+        {"r_outer.f64", r_out, (size_t)NS * 8}};
+    for (size_t i = 0; i < sizeof arr / sizeof arr[0]; ++i) {
+        snprintf(path, sizeof path, "%s/%s", capdir, arr[i].n);
+        if (det_obs_capture_read_all(path, arr[i].p, arr[i].b) != 0) {
+            fprintf(stderr, "[REPLAY] read %s\n", arr[i].n); return 2; }
+    }
+    if (n_pairs < 0 || n_mapped_meta < 0) { fprintf(stderr, "[REPLAY] bad meta counts\n"); return 2; }
+    DetObsView v0; memset(&v0, 0, sizeof v0);
+    v0.NB = NB; v0.nu_min = nu_min; v0.nu_max = nu_max; v0.d_log_nu = d_log_nu;
+    DetObsCapSparse sp; memset(&sp, 0, sizeof sp);
+    size_t np = (size_t)n_pairs;
+    sp.off = calloc((size_t)NS + 1, sizeof(long));
+    sp.l = malloc((np ? np : 1) * sizeof(uint32_t)); sp.b = malloc((np ? np : 1) * sizeof(int));
+    sp.tau = malloc((np ? np : 1) * 8); sp.S = malloc((np ? np : 1) * 8);
+    sp.eps = malloc((np ? np : 1) * 8); sp.m = malloc(np ? np : 1);
+    uint32_t *rs = malloc((np ? np : 1) * sizeof(uint32_t));
+    if (!sp.off || !sp.l || !sp.b || !sp.tau || !sp.S || !sp.eps || !sp.m || !rs) {
+        fprintf(stderr, "[REPLAY] allocation\n"); return 2; }
+    snprintf(path, sizeof path, "%s/lines.bin", capdir);
+    fp = fopen(path, "rb");
+    if (!fp) { fprintf(stderr, "[REPLAY] lines.bin\n"); return 2; }
+    unsigned char rec[DET_OBS_CAPTURE_REC]; long nrec = 0, nmap = 0;
+    uint32_t *fl = malloc((np ? np : 1) * sizeof(uint32_t)); int *fb = malloc((np ? np : 1) * sizeof(int));
+    double *ft = malloc((np ? np : 1) * 8), *fS = malloc((np ? np : 1) * 8), *fe = malloc((np ? np : 1) * 8);
+    unsigned char *fm = malloc(np ? np : 1);
+    if (!fl || !fb || !ft || !fS || !fe || !fm) { fclose(fp); fprintf(stderr, "[REPLAY] allocation\n"); return 2; }
+    long long prev = -1;
+    while (fread(rec, 1, sizeof rec, fp) == sizeof rec) {
+        uint32_t l, s; double t, S, e;
+        memcpy(&l, rec, 4); memcpy(&s, rec + 4, 4); memcpy(&t, rec + 8, 8);
+        memcpy(&S, rec + 16, 8); memcpy(&e, rec + 24, 8);
+        unsigned char mm = rec[32];
+        long long key = (long long)l * NS + s;
+        int b = (l < (uint32_t)NL) ? det_obs_line_bin(&v0, line_nu[l]) : -1;
+        /* consumed predicate (det_obs_consumed), order, and the writer's domain */
+        int ok = nrec < n_pairs && l < (uint32_t)NL && s < (uint32_t)NS && key > prev && mm <= 1 &&
+                 isfinite(t) && t > 1e-12 && b >= 0 && isfinite(S) && S > 0.0 && isfinite(e) &&
+                 (mm ? (e == 0.0) : (e >= 0.0 && e <= 1.0));
+        if (!ok) {
+            fclose(fp);
+            snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why,
+                     "RECORD_DOMAIN_OR_ORDER index=%ld", nrec);
+            fprintf(stderr, "[REPLAY] refused: %s\n", det_obs_capture_replay_why); return 2; }
+        prev = key;
+        fl[nrec] = l; rs[nrec] = s; fb[nrec] = b; ft[nrec] = t; fS[nrec] = S; fe[nrec] = e; fm[nrec] = mm;
+        sp.off[s + 1]++; nrec++; nmap += mm;
+    }
+    int trailing = ferror(fp) || ftell(fp) != (long)nrec * DET_OBS_CAPTURE_REC;
+    fclose(fp);
+    if (trailing || nrec != n_pairs || nmap != n_mapped_meta) {
+        snprintf(det_obs_capture_replay_why, sizeof det_obs_capture_replay_why,
+                 "PAIR_COUNT n=%ld meta=%ld mapped=%ld meta_mapped=%ld trailing=%d",
+                 nrec, n_pairs, nmap, n_mapped_meta, trailing);
+        fprintf(stderr, "[REPLAY] refused: %s\n", det_obs_capture_replay_why); return 2; }
+    for (int s = 0; s < NS; ++s) sp.off[s + 1] += sp.off[s];
+    {   /* stable grouping by shell: line id stays ascending inside a shell */
+        long *fill = malloc((size_t)NS * sizeof(long));
+        if (!fill) return 2;
+        for (int s = 0; s < NS; ++s) fill[s] = sp.off[s];
+        for (long i = 0; i < nrec; ++i) {
+            long j = fill[rs[i]]++;
+            sp.l[j] = fl[i]; sp.b[j] = fb[i]; sp.tau[j] = ft[i]; sp.S[j] = fS[i];
+            sp.eps[j] = fe[i]; sp.m[j] = fm[i];
+        }
+        free(fill);
+    }
+    free(fl); free(fb); free(ft); free(fS); free(fe); free(fm); free(rs);
+    struct DetObsCapture cc; memset(&cc, 0, sizeof cc);
+    cc.ns = NS; cc.nb = NB; cc.chi_e = chi_e; cc.chi_a = chi_a; cc.eta_c = eta_cap;
+    cc.eta_dep = eta_dep; cc.sc_unmapped = sc0; cc.Te = Te; cc.ne = ne;
+    det_obs_cont_build(&cc, J, nu, chi_c, eta_v);
+    for (size_t i = 0; i < cells; ++i) {
+        lane_bfff[i] = eta_cap[i] - eta_dep[i];
+        lane_esc[i] = chi_e[i] * J[i];
+    }
+    Geometry geo; memset(&geo, 0, sizeof geo);
+    geo.n_shells = NS; geo.r_inner = r_in; geo.r_outer = r_out; geo.time_explosion = t_exp;
+    DetObsView v; memset(&v, 0, sizeof v);
+    v.NS = NS; v.NB = NB; v.NL = NL; v.mode = mode; v.src_nlte = src_nlte;
+    v.nu = nu; v.dnu = dnu; v.nu_min = nu_min; v.nu_max = nu_max; v.d_log_nu = d_log_nu;
+    v.inv_ct = 1.0 / (CM_C * geo.time_explosion);
+    v.J = J; v.chi_c = chi_c; v.eta_c = eta_v; v.line_nu = line_nu;
+    v.tau = NULL; v.ls = NULL; v.mapped = NULL; v.Te = Te; v.ne = ne; v.el_override = NULL;
+    if (v.inv_ct != inv_ct) { fprintf(stderr, "[REPLAY] inv_ct mismatch\n"); return 2; }
+    long consumed = nrec;
+    /* scalar: production operations and order over the sparse consumed pairs */
+    double *Lnu = calloc((size_t)NB, 8);
+    if (!Lnu) return 2;
+    double t0 = det_obs_now();
+    if (det_obs_capture_spectrum_sp(&v, &sp, &geo, T_inner, Lnu) != 0) {
+        fprintf(stderr, "[REPLAY] scalar transport\n"); return 2; }
+    double t_scalar = det_obs_now() - t0;
+    snprintf(path, sizeof path, "%s/scalar.csv", outdir);
+    if (det_obs_write_csv(path, nu, NB, Lnu) != 0) { fprintf(stderr, "[REPLAY] scalar.csv\n"); return 2; }
+    /* component lanes and the per-bin construction bound:
+     * lanes bf_ff = fl(eta_cap - eta_dep), dep = eta_dep, escat = fl(chi_e J)
+     * against eta_view = fl(eta_cap + fl(chi_e J)):  |sum - view| <=
+     * rho(bf_ff) + rho(eta_view). */
+    double *Cbin = malloc(cells * 8);
+    if (!Cbin) return 2;
+    for (size_t i = 0; i < cells; ++i)
+        Cbin[i] = det_obs_capture_add_up(det_obs_capture_rho_up(lane_bfff[i]), det_obs_capture_rho_up(eta_v[i]));
+    DetObsCapVec ctx; memset(&ctx, 0, sizeof ctx);
+    ctx.sp = &sp;
+    ctx.lane_eta[DOC_BFFF] = lane_bfff;
+    ctx.lane_eta[DOC_ESCAT] = lane_esc;
+    ctx.lane_eta[DOC_DEP] = eta_dep;
+    ctx.Cbin = Cbin; ctx.chi_e = chi_e; ctx.J = J;
+    double *Lk = calloc((size_t)NB * DOC_K, 8), *Lsv = calloc((size_t)NB, 8), *EL = calloc((size_t)NB, 8);
+    if (!Lk || !Lsv || !EL) return 2;
+    long jumps = 0, imis = 0; int nonfinite = 0;
+    t0 = det_obs_now();
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 4) num_threads(nthreads > 0 ? nthreads : 1) reduction(+:jumps,imis) reduction(|:nonfinite)
+#endif
+    for (int k = 0; k < NB; ++k) {
+        DetObsView w = v; w.n_jump = 0; w.nonfinite = 0;
+        DetObsCapVec xc = ctx; xc.interp_mismatch = 0;
+        det_obs_capture_bin_vec(&w, &xc, &geo, T_inner, k, &Lsv[k], &Lk[(size_t)k * DOC_K], &EL[k]);
+        jumps += w.n_jump; nonfinite |= w.nonfinite; imis += xc.interp_mismatch;
+    }
+    (void)nthreads;
+    double t_vec = det_obs_now() - t0;
+    long scalar_mismatch = 0, closure_fail = 0; double max_ratio = 0.0; int worst = -1;
+    snprintf(path, sizeof path, "%s/components.csv", outdir);
+    FILE *cf = fopen(path, "wx");
+    if (!cf) { fprintf(stderr, "[REPLAY] components.csv\n"); return 2; }
+    int bad = fprintf(cf, "wavelength_angstrom,scalar") < 0;
+    for (int j = 0; j < DOC_K; ++j) bad |= fprintf(cf, ",%s", det_obs_capture_lane_name[j]) < 0;
+    bad |= fprintf(cf, ",bound,closure_ok\n") < 0;
+    for (int b = NB - 1; b >= 0 && !bad; --b) {
+        if (memcmp(&Lsv[b], &Lnu[b], sizeof(double)) != 0) scalar_mismatch++;
+        double lk[DOC_K], s = 0.0, rnd = 0.0;
+        double ls_lam = det_obs_capture_lam(Lnu[b], nu[b]);
+        for (int j = 0; j < DOC_K; ++j) {
+            lk[j] = det_obs_capture_lam(Lk[(size_t)b * DOC_K + j], nu[b]);
+            s = s + lk[j]; rnd = det_obs_capture_add_up(rnd, det_obs_capture_rho_up(s));
+        }
+        double bnd = det_obs_capture_lam_bound(&Lk[(size_t)b * DOC_K], Lnu[b], EL[b], nu[b]);
+        double d = fabs(s - ls_lam);
+        double lim = det_obs_capture_add_up(det_obs_capture_add_up(bnd, rnd), det_obs_capture_rho_up(d));
+        int ok = isfinite(bnd) && isfinite(d) && d <= lim;
+        if (!ok) closure_fail++;
+        double ratio = (lim > 0.0) ? d / lim : (d == 0.0 ? 0.0 : INFINITY);
+        if (ratio > max_ratio || !isfinite(ratio)) { max_ratio = ratio; worst = b; }
+        double lam_cm = CM_C / nu[b];
+        bad |= fprintf(cf, "%.17g,%.17g", lam_cm * 1.0e8, ls_lam) < 0;
+        for (int j = 0; j < DOC_K; ++j) bad |= fprintf(cf, ",%.17g", lk[j]) < 0;
+        bad |= fprintf(cf, ",%.17g,%d\n", bnd, ok) < 0;
+    }
+    if (fclose(cf) != 0) bad = 1;
+    snprintf(path, sizeof path, "%s/replay.json", outdir);
+    FILE *jf = fopen(path, "wx");
+    if (!jf) return 2;
+    fprintf(jf, "{\"schema\":\"DET_OBS_CAPTURE_REPLAY_V1\",\"pairs\":%ld,\"pairs_mapped\":%ld,"
+            "\"consumed_recount\":%ld,\"scalar_vs_vector_lane_mismatch_bins\":%ld,"
+            "\"closure_fail_bins\":%ld,\"closure_max_ratio\":%.6e,\"closure_worst_bin\":%d,"
+            "\"vector_jumps\":%ld,\"nonfinite\":%d,\"csv_write_error\":%d,\"wall_scalar_s\":%.1f,"
+            "\"wall_vector_s\":%.1f,\"interp_mismatch\":%ld,\"lanes\":[", nrec, nmap, consumed,
+            scalar_mismatch, closure_fail, max_ratio, worst, jumps, nonfinite, bad, t_scalar, t_vec, imis);
+    for (int j = 0; j < DOC_K; ++j) fprintf(jf, "%s\"%s\"", j ? "," : "", det_obs_capture_lane_name[j]);
+    fprintf(jf, "]}\n");
+    fclose(jf);
+    free(chi_a); free(chi_e); free(eta_cap); free(eta_dep); free(J); free(Te); free(ne); free(nu);
+    free(dnu); free(line_nu); free(r_in); free(r_out);
+    free(sp.off); free(sp.l); free(sp.b); free(sp.tau); free(sp.S); free(sp.eps); free(sp.m);
+    free(chi_c); free(eta_v); free(sc0); free(lane_bfff); free(lane_esc); free(Lnu); free(Lk);
+    free(Lsv); free(EL); free(Cbin);
+    return (scalar_mismatch == 0 && closure_fail == 0 && imis == 0 && !nonfinite && !bad) ? 0 : 1;
+}
+
+/* Final-pass entry.  Returns 0 on SUCCESS, -1 on FAILED(reason).  Never
+ * mutates J / populations / temperatures / opacities, and never aborts the run:
+ * the caller continues to R7, the physics dump, the legacy spectra and the
+ * footer whatever this returns.  The success manifest carries its final name
+ * only after the SUCCESS status file is written (else it is left .partial /
+ * renamed .unconfirmed). */
+int det_obs_write(CMFGENState *cs, const Geometry *geo, const OpacityState *opac,
+                  const PlasmaState *plasma, double T_inner,
+                  uint64_t rad_generation, uint64_t material_generation, int iter)
+{
+    const char *PN = "lumina_spectrum_det_obs.csv";
+    const char *PL = "lumina_spectrum_det_obs_legacy.csv";
+    const char *PM = "det_obs_manifest.json";
+    const char *PMP = "det_obs_manifest.json.partial";
+    char why[200] = "";
+    double *chi_c = NULL, *eta_c = NULL, *Lnu = NULL;
+    struct DetObsCapture *c = cs->det_obs_cap;
+    DetObsCensus cn; memset(&cn, 0, sizeof cn);
+    DetObsView v; memset(&v, 0, sizeof v);
+    double t0 = det_obs_now(), tN = 0.0, tL = 0.0, chi_e_dev = 0.0;
+    struct { double ratio, r, B; size_t cell; int st, any_fail; } cw = {-1.0, 0.0, 0.0, 0, 0, 0};
+    int NS = cs->n_shells, NB = cs->n_bins;
+    uint64_t d0 = 0, d1 = 0, d2 = 0;
+    DetObsCapRun *cap = NULL;   /* DET-OBS-CAPTURE (NULL when OFF) */
+
+    if (!c) { snprintf(why, sizeof why, "NO_CAPTURE"); goto fail; }
+    if (!c->valid) { snprintf(why, sizeof why, "CAPTURE:%s", c->why[0] ? c->why : "INVALID");
+                     goto fail; }
+    if (c->ns != NS || c->nb != NB || c->nl != opac->n_lines) {
+        snprintf(why, sizeof why, "CAPTURE_SHAPE"); goto fail; }
+    if (c->asm_serial != g_det_obs_asm_serial) {
+        snprintf(why, sizeof why, "STALE_VIEW:REASSEMBLED"); goto fail; }
+    if (c->mat_gen != material_generation) {
+        snprintf(why, sizeof why, "STALE_VIEW:MATERIAL_GENERATION capture=%llu now=%llu",
+                 (unsigned long long)c->mat_gen, (unsigned long long)material_generation);
+        goto fail; }
+    {
+        size_t lc = (size_t)opac->n_lines * (size_t)NS;
+        uint64_t ht = det_obs_fnv1a(opac->tau_sobolev, lc * sizeof(double), DET_OBS_FNV0);
+        uint64_t hl = det_obs_fnv1a(opac->line_source_S,
+                                    opac->line_source_S ? lc * sizeof(double) : 0,
+                                    DET_OBS_FNV0);
+        if (ht != c->h_tau) { snprintf(why, sizeof why, "STALE_VIEW:TAU"); goto fail; }
+        if (hl != c->h_ls)  { snprintf(why, sizeof why, "STALE_VIEW:LINE_SOURCE"); goto fail; }
+    }
+    for (int s = 0; s < NS; ++s)
+        if (c->Te[s] != plasma->T_e[s] ||
+            c->ne[s] != (plasma->n_electron ? plasma->n_electron[s] : opac->electron_density[s])) {
+            snprintf(why, sizeof why, "STALE_VIEW:TE_NE shell=%d", s); goto fail; }
+    /* pure electron scattering (prereg §2.2 rev 4): the direct capture E must
+     * equal the same-pass subtraction U = cs->chi_es - g_chi_line_sc_unmapped
+     * within the rounding bound B_up of the assembler's own operations.  The
+     * old (A+S) relative deviation is kept as a diagnostic, not a threshold. */
+    for (size_t i = 0; i < (size_t)NS * NB; ++i) {
+        double U = c->chi_es_asm[i] - c->sc_unmapped[i];
+        if (DET_OBS_FAULT(17) && i == 0) U *= 1.0 + 1e-9;
+        double dev = fabs(U - c->chi_e[i]) / fmax(c->chi_es_asm[i] + c->sc_unmapped[i], 1e-300);
+        if (c->chi_e[i] == U) dev = 0.0;
+        if (!(dev <= chi_e_dev)) chi_e_dev = isnan(dev) ? INFINITY : dev;
+        double r = 0.0, Bu = 0.0;
+        int st = det_obs_chi_e_check(c->mode, c->n_cons[i], c->m_unm[i], c->L_sum[i],
+                                     c->H_sum[i], c->chi_es_asm[i], c->sc_unmapped[i],
+                                     c->chi_e[i], U, &r, &Bu);
+        double q = (st == 2) ? INFINITY : fabs(r) / Bu;
+        if (st != 0) cw.any_fail = 1;
+        if (st == 2 || !(q <= cw.ratio)) {
+            cw.ratio = q; cw.r = r; cw.B = Bu; cw.cell = i; cw.st = st; }
+        if (st == 2) break;
+    }
+    {
+        size_t i = cw.cell;
+        fprintf(stderr, "[DET-OBS] chi_e_bound version=%s status=%s max_ratio=%.6e "
+                "shell=%d bin=%d mode=%d n=%d m=%d L=%.17g H=%.17g A=%.17g S=%.17g "
+                "E=%.17g r=%.17g B_up=%.17g old_dev=%.3e\n", DET_OBS_CHI_E_BOUND_VERSION,
+                cw.st == 2 ? "DOMAIN" : (cw.any_fail ? "VIOLATED" : "PASS"), cw.ratio,
+                (int)(i / NB), (int)(i % NB), c->mode, c->n_cons[i], c->m_unm[i],
+                c->L_sum[i], c->H_sum[i], c->chi_es_asm[i], c->sc_unmapped[i],
+                c->chi_e[i], cw.r, cw.B, chi_e_dev);
+    }
+    if (cw.st == 2) {
+        snprintf(why, sizeof why, "CHI_E_RECONCILE_DOMAIN shell=%d bin=%d",
+                 (int)(cw.cell / NB), (int)(cw.cell % NB)); goto fail; }
+    if (cw.any_fail) {
+        snprintf(why, sizeof why, "CHI_E_RECONCILE ratio=%.3e shell=%d bin=%d",
+                 cw.ratio, (int)(cw.cell / NB), (int)(cw.cell % NB)); goto fail; }
+    if (det_obs_exists(PN) || det_obs_exists(PL) || det_obs_exists(PM) ||
+        det_obs_exists(PMP) || det_obs_exists("det_obs_status.json")) {
+        snprintf(why, sizeof why, "OUTPUT_EXISTS"); goto fail; }
+
+    size_t cells = (size_t)NS * NB;
+    chi_c = malloc(cells * sizeof(double));
+    eta_c = malloc(cells * sizeof(double));
+    Lnu = calloc((size_t)NB, sizeof(double));
+    if (!chi_c || !eta_c || !Lnu || DET_OBS_FAULT(11)) {
+        snprintf(why, sizeof why, "ALLOCATION"); goto fail; }
+    det_obs_cont_build(c, cs->J, cs->nu, chi_c, eta_c);
+    v.NS = NS; v.NB = NB; v.NL = opac->n_lines; v.mode = c->mode;
+    v.src_nlte = c->src_nlte; v.nu = cs->nu; v.dnu = cs->dnu;
+    v.nu_min = cs->nu_min; v.nu_max = cs->nu_max; v.d_log_nu = cs->d_log_nu;
+    v.inv_ct = 1.0 / (CM_C * geo->time_explosion);
+    v.J = cs->J; v.chi_c = chi_c; v.eta_c = eta_c;
+    v.line_nu = opac->line_list_nu; v.tau = opac->tau_sobolev;
+    v.ls = opac->line_source_S; v.mapped = c->mapped; v.Te = c->Te; v.ne = c->ne;
+#ifdef LUMINA_DET_OBS_SELFTEST
+    v.trace = det_obs_selftest_trace_fn; v.trace_arg = det_obs_selftest_trace_arg;
+#endif
+
+    if (det_obs_census(&v, c, &cn) != 0) {
+        snprintf(why, sizeof why, v.fail_eps ? "UNMAPPED_EPS_FAIL" : "CENSUS_ALLOCATION");
+        goto fail; }
+    if (!(cn.max_rel_eta <= 1e-12) || !(cn.max_rel_sc <= 1e-12)) {
+        snprintf(why, sizeof why, "SOURCE_RECONCILE eta=%.3e sc=%.3e",
+                 cn.max_rel_eta, cn.max_rel_sc);
+        goto fail; }
+    /* contract §1.1: unmapped thermal source = eps*B(T_e).  The assembler uses
+     * eps*S_l with S_l = line_source_S when positive; the two agree only when
+     * no consumed unmapped line carries a positive line_source_S. */
+    if (cn.unmapped_ls_pos > 0) {
+        snprintf(why, sizeof why, "UNMAPPED_SOURCE_CONFLICT n=%ld", cn.unmapped_ls_pos);
+        goto fail; }
+    d0 = det_obs_view_digest(cs, geo, opac, plasma, T_inner);
+    cap = det_obs_capture_dump_start(&v, c, cs, geo, opac, T_inner, rad_generation,
+                                material_generation, iter, &cn, d0);
+    {
+        double ta = det_obs_now();
+        if (det_obs_spectrum(&v, geo, T_inner, Lnu) != 0) {
+            snprintf(why, sizeof why, v.fail_eps ? "UNMAPPED_EPS_FAIL" : "NONFINITE_TRANSPORT");
+            goto fail; }
+        tN = det_obs_now() - ta;
+    }
+    d1 = det_obs_view_digest(cs, geo, opac, plasma, T_inner);
+    if (d1 != d0) { snprintf(why, sizeof why, "VIEW_CHANGED:N"); goto fail; }
+    if (det_obs_write_csv(PN, cs->nu, NB, Lnu) != 0) {
+        snprintf(why, sizeof why, "WRITE_N errno=%d", errno); goto fail; }
+    {
+        double ta = det_obs_now();
+        if (det_obs_legacy_pair(cs, geo, T_inner, opac, plasma->T_e, PL) != 0) {
+            snprintf(why, sizeof why, "LEGACY_PAIR errno=%d", errno); goto fail; }
+        tL = det_obs_now() - ta;
+    }
+    if (DET_OBS_FAULT(16)) cs->J[0] *= 1.0 + 1e-12;
+    d2 = det_obs_view_digest(cs, geo, opac, plasma, T_inner);
+    if (d2 != d0) { snprintf(why, sizeof why, "VIEW_CHANGED:L"); goto fail; }
+    {
+        uint64_t hN = 0, hL = 0; long nN = 0, nL = 0;
+        if (det_obs_file_digest(PN, &hN, &nN) != 0 || det_obs_file_digest(PL, &hL, &nL) != 0 ||
+            nN <= 0 || nL <= 0) { snprintf(why, sizeof why, "OUTPUT_DIGEST"); goto fail; }
+        FILE *fp = det_obs_create(PMP);
+        if (!fp) { snprintf(why, sizeof why, "MANIFEST_CREATE errno=%d", errno); goto fail; }
+        int bad = fprintf(fp,
+            "{\"schema\":\"DET_OBS_MANIFEST_V1\",\"rad_generation\":%llu,"
+            "\"material_generation\":%llu,\"iter\":%d,"
+            "\"asm_serial\":%ld,\"mode\":%d,\"src_nlte\":%d,\"shells\":%d,\"bins\":%d,"
+            "\"lines\":%d,\"rays\":256,\"dv_kms\":30,\"tau_min_N\":1e-12,\"tau_min_L\":%.17g,"
+            "\"capture_fnv1a\":{\"tau_sobolev\":\"%016llx\",\"line_source_S\":\"%016llx\"},"
+            "\"view_fnv1a\":{\"before\":\"%016llx\",\"after_N\":\"%016llx\",\"after_L\":\"%016llx\"},"
+            "\"chi_e_subtraction_max_dev\":%.3e,"
+            "\"chi_e_bound\":{\"version\":\"%s\",\"max_ratio\":%.6e,\"shell\":%d,\"bin\":%d,"
+            "\"mode\":%d,\"n\":%d,\"m\":%d,\"L\":%.17g,\"H\":%.17g,\"A\":%.17g,"
+            "\"S\":%.17g,\"E\":%.17g,\"r\":%.17g,\"B_up\":%.17g},"
+            "\"census\":{\"nonfinite\":%ld,\"tau_neg\":%ld,\"tau_zero\":%ld,"
+            "\"tau_le_1e-12\":%ld,\"tau_gt_1e-12\":%ld,\"freq_excluded\":%ld,"
+            "\"consumed\":%ld,\"consumed_mapped\":%ld,\"consumed_unmapped\":%ld,"
+            "\"mapped_B_fallback\":%ld,\"unmapped_line_source_positive\":%ld},"
+            "\"reconcile_max_rel\":{\"eta_line_thermal\":%.3e,\"unmapped_scatter\":%.3e},"
+            "\"jumps\":{\"total\":%ld,\"mapped\":%ld,\"unmapped\":%ld},"
+            "\"nsub_capped_segments\":%ld,\"wall_s\":{\"N\":%.3f,\"L\":%.3f,\"total\":%.3f},"
+            "\"outputs\":{\"%s\":{\"bytes\":%ld,\"fnv1a\":\"%016llx\"},"
+            "\"%s\":{\"bytes\":%ld,\"fnv1a\":\"%016llx\"}},"
+            "\"signed_zero_tau_component\":\"UNSUPPORTED_SOURCE_DOMAIN\"}\n",
+            (unsigned long long)rad_generation, (unsigned long long)material_generation,
+            iter, c->asm_serial, c->mode,
+            c->src_nlte, NS, NB, opac->n_lines, g_sob_taumin,
+            (unsigned long long)c->h_tau, (unsigned long long)c->h_ls,
+            (unsigned long long)d0, (unsigned long long)d1, (unsigned long long)d2,
+            chi_e_dev,
+            DET_OBS_CHI_E_BOUND_VERSION, cw.ratio, (int)(cw.cell / NB), (int)(cw.cell % NB),
+            c->mode, c->n_cons[cw.cell], c->m_unm[cw.cell], c->L_sum[cw.cell],
+            c->H_sum[cw.cell], c->chi_es_asm[cw.cell], c->sc_unmapped[cw.cell],
+            c->chi_e[cw.cell], cw.r, cw.B,
+            cn.nonfinite, cn.neg, cn.zero, cn.tiny, cn.pos, cn.pos_freq_excluded,
+            cn.consumed, cn.consumed_mapped, cn.consumed_unmapped,
+            cn.mapped_B_fallback, cn.unmapped_ls_pos,
+            cn.max_rel_eta, cn.max_rel_sc, v.n_jump, v.n_jump_mapped,
+            v.n_jump_unmapped, v.n_nsub_capped, tN, tL, det_obs_now() - t0,
+            PN, nN, (unsigned long long)hN, PL, nL, (unsigned long long)hL) < 0;
+        if (fclose(fp) != 0 || bad) { snprintf(why, sizeof why, "MANIFEST_WRITE"); goto fail; }
+    }
+    /* commit order: the manifest takes its success name only after a SUCCESS
+     * status was fully written; if that rename then fails the status is
+     * withdrawn (renamed) and a FAILED status takes its place. */
+    if (det_obs_status_write("SUCCESS", NULL, rad_generation, iter, 0) != 0) {
+        int rr = DET_OBS_FAULT(20) ? -1 : rename(PMP, "det_obs_manifest.json.unconfirmed");
+        free(chi_c); free(eta_c); free(Lnu);
+        fprintf(stderr, "[DET-OBS] det_obs_state=FAILED(STATUS_WRITE manifest_unconfirmed=%d) "
+                "iter=%d rad_generation=%llu\n", rr == 0, iter,
+                (unsigned long long)rad_generation);
+        det_obs_capture_dump_finish(cap, 0, NULL, NULL, "STATUS_WRITE");
+        return -1;
+    }
+    if (DET_OBS_FAULT(19) || DET_OBS_FAULT(21) || rename(PMP, PM) != 0) {
+        int e = (DET_OBS_FAULT(19) || DET_OBS_FAULT(21)) ? EIO : errno;
+        snprintf(why, sizeof why, "MANIFEST_RENAME errno=%d", e);
+        /* the SUCCESS status was created by this call: rewrite it as FAILED */
+        if (det_obs_status_write("FAILED", why, rad_generation, iter, 1) == 0) {
+            free(chi_c); free(eta_c); free(Lnu);
+            fprintf(stderr, "[DET-OBS] det_obs_state=FAILED(%s) iter=%d rad_generation=%llu\n",
+                    why, iter, (unsigned long long)rad_generation);
+            det_obs_capture_dump_finish(cap, 0, NULL, NULL, why);
+            return -1;
+        }
+        /* rewrite failed: withdraw the SUCCESS name, then the fail path creates FAILED */
+        if (rename("det_obs_status.json", "det_obs_status.json.unconfirmed") != 0)
+            fprintf(stderr, "[DET-OBS] det_obs_status=INCONSISTENT(SUCCESS kept: rewrite "
+                    "and withdrawal both failed)\n");
+        goto fail;
+    }
+    free(chi_c); free(eta_c); free(Lnu);
+    fprintf(stderr, "[DET-OBS] det_obs_state=SUCCESS iter=%d rad_generation=%llu "
+            "material_generation=%llu consumed=%ld jumps=%ld wall_N=%.1fs wall_L=%.1fs\n", iter,
+            (unsigned long long)rad_generation, (unsigned long long)material_generation,
+            cn.consumed, v.n_jump, tN, tL);
+    det_obs_capture_dump_finish(cap, 1, PN, PL, NULL);
+    return 0;
+fail:
+    free(chi_c); free(eta_c); free(Lnu);
+    fprintf(stderr, "[DET-OBS] det_obs_state=FAILED(%s) iter=%d rad_generation=%llu\n",
+            why, iter, (unsigned long long)rad_generation);
+    (void)det_obs_status_write("FAILED", why, rad_generation, iter, 0);
+    det_obs_capture_dump_finish(cap, 0, NULL, NULL, why);
+    return -1;
+}
+
+/* The R6 -> R7 seam of cmfgen_run (DET-OBS-CAPTURE prereg section 8): the
+ * final-pass writer (+ capture) call.  cmfgen_run discards the result and
+ * proceeds to R7; the selftest adapter drives this same function. */
+int det_obs_final_pass_hook(int fire, CMFGENState *cs, const Geometry *geo,
+                            const OpacityState *opac, const PlasmaState *plasma,
+                            double T_inner, uint64_t rad_generation,
+                            uint64_t material_generation, int iter)
+{
+    if (!fire) return 1;
+    int rc = det_obs_write(cs, geo, opac, plasma, T_inner, rad_generation,
+                           material_generation, iter);
+#ifdef LUMINA_DET_OBS_SELFTEST
+    if (det_obs_r7_entry_stub) det_obs_r7_entry_stub();   /* R7 physics stubbed: not a GPU end-to-end test */
+#endif
+    return rc;
+}
+
+#ifdef LUMINA_DET_OBS_SELFTEST
+/* Selftest adapters: feed the PRODUCTION march / continuum builder / capture
+ * with caller-owned arrays.  el_override replaces the radeq eps lookup only. */
+double det_obs_selftest_march(int NB, const double *nu, const double *J,
+        const double *chi_c, const double *eta_c, int NL, const double *line_nu,
+        const double *tau, const double *ls, const unsigned char *mapped,
+        int mode, int src_nlte, double Te, double ne, const double *el_override,
+        double inv_ct, double I, double p, double z0, double z1, double nu_obs,
+        void (*trace)(void *, int, int, double, double, int), void *arg,
+        long *n_jump, int *flags)
+{
+    DetObsView v; memset(&v, 0, sizeof v);
+    v.NS = 1; v.NB = NB; v.NL = NL; v.mode = mode; v.src_nlte = src_nlte;
+    v.nu = nu; v.nu_min = nu[0] / exp(0.5 * log(nu[1] / nu[0]));
+    v.d_log_nu = log(nu[1] / nu[0]);
+    v.nu_max = v.nu_min * exp(v.d_log_nu * NB);
+    v.inv_ct = inv_ct; v.J = J; v.chi_c = chi_c; v.eta_c = eta_c;
+    v.line_nu = line_nu; v.tau = tau; v.ls = ls; v.mapped = mapped;
+    v.Te = &Te; v.ne = &ne; v.el_override = el_override;
+    v.trace = trace; v.trace_arg = arg;
+    double out = det_obs_march(&v, I, p, z0, z1, 0, nu_obs);
+    if (n_jump) *n_jump = v.n_jump;
+    if (flags) *flags = (v.nonfinite ? 1 : 0) | (v.fail_eps ? 2 : 0);
+    return out;
+}
+double det_obs_selftest_nu_at(double p, double z, double inv_ct, double nu_obs)
+{
+    return cmf_q_at_z(p, z, inv_ct) * nu_obs;
+}
+void det_obs_selftest_cont_build(int NS, int NB, double *chi_e, double *chi_a,
+        double *eta_c, double *eta_dep, double *sc, double *Te,
+        const double *J, const double *nu, double *chi_out, double *eta_out)
+{
+    struct DetObsCapture c; memset(&c, 0, sizeof c);
+    c.ns = NS; c.nb = NB; c.chi_e = chi_e; c.chi_a = chi_a; c.eta_c = eta_c;
+    c.eta_dep = eta_dep; c.sc_unmapped = sc; c.Te = Te;
+    det_obs_cont_build(&c, J, nu, chi_out, eta_out);
+}
+int det_obs_selftest_chi_e_check(int mode, int n, int m, double L, double H, double A,
+        double S, double E, double U, double *r, double *B)
+{
+    return det_obs_chi_e_check(mode, n, m, L, H, A, S, E, U, r, B);
+}
+int det_obs_selftest_capture_bound(const CMFGENState *cs, const int **n, const int **m,
+        const double **L, const double **H)
+{
+    const struct DetObsCapture *c = cs->det_obs_cap;
+    if (!c) return -1;
+    *n = c->n_cons; *m = c->m_unm; *L = c->L_sum; *H = c->H_sum;
+    return 0;
+}
+int det_obs_selftest_capture(const CMFGENState *cs, int *mode, int *valid,
+        const double **chi_e, const double **chi_a, const double **eta_c,
+        const double **eta_dep, const double **eta_ln, const double **Te,
+        const double **ne, const char **why)
+{
+    const struct DetObsCapture *c = cs->det_obs_cap;
+    if (!c) return -1;
+    *mode = c->mode; *valid = c->valid; *chi_e = c->chi_e; *chi_a = c->chi_a;
+    *eta_c = c->eta_c; *eta_dep = c->eta_dep; *eta_ln = c->eta_ln;
+    *Te = c->Te; *ne = c->ne; *why = c->why;
+    return 0;
+}
+#endif
+
+/* LUMINA_DET_OBS_WRITER: unset or "0" = OFF, "1" = ON, anything else = error. */
+int det_obs_env_mode(int *on)
+{
+    const char *e = getenv("LUMINA_DET_OBS_WRITER");
+    *on = 0;
+    if (!e || strcmp(e, "0") == 0) return 0;
+    if (strcmp(e, "1") == 0) { *on = 1; return 0; }
+    return -1;
 }
 
 /* ------------------------------------------------------------ */
@@ -4495,18 +7613,33 @@ static int cmf_fine_global_level(const AtomicData *atom, int line, int upper) {
     return -1;
 }
 
+/* DET-LTEUNMAP-EPS: single source of truth for the G-EPS census line format.
+ * Used by the production per-shell census and by the selftest so the two never
+ * diverge. Emits the full line including the trailing newline. */
+static int cmf_unmapped_eps_format(char *buf,size_t n,int shell,
+        long n_unmapped,long n_mapped,double eps_min,double eps_median,
+        double eps_max,double thermal_emit_fraction){
+    return snprintf(buf,n,
+        "[cmf_fine][UNMAPPED-EPS] shell=%d n_unmapped=%ld n_mapped=%ld "
+        "eps_min=%.6e eps_median=%.6e eps_max=%.6e "
+        "thermal_emit_fraction=%.6e\n",
+        shell,n_unmapped,n_mapped,eps_min,eps_median,eps_max,
+        thermal_emit_fraction);
+}
+
 static int cmf_fine_line_material(
         const OpacityState *opac,const PlasmaState *plasma,
         int line,int shell,int n_shells,double nu,double tau,double dnu_d,
         double time_explosion,double legacy_chi0_pref,int parity,
         int legacy_source_nlte,double line_eps,double sl_clamp,
         const double *upper_population_cache,
-        double *chi0,double *eta0,double *source_diag,
+        int unmapped_eps_gate,const unsigned char *used_nlte_cache,
+        double *chi0,double *eta0,double *source_diag,double *eps_out,
         int *srce_chk_applied,int *clamped){
-    if(!opac||!plasma||!chi0||!eta0||!source_diag||
+    if(!opac||!plasma||!chi0||!eta0||!source_diag||!eps_out||
        !srce_chk_applied||!clamped||line<0||shell<0||
        shell>=n_shells||!(dnu_d>0.0))return-1;
-    *chi0=0.0;*eta0=0.0;*source_diag=0.0;
+    *chi0=0.0;*eta0=0.0;*source_diag=0.0;*eps_out=1.0;
     *srce_chk_applied=0;*clamped=0;
     double B=cm_planck(nu,plasma->T_e[shell]);
     if(parity){
@@ -4526,10 +7659,30 @@ static int cmf_fine_line_material(
                &material)!=0)return-1;
         *chi0=material.effective_integrated_opacity/
               (1.7724538509055160*dnu_d);
-        *eta0=material.emission_per_sr/(1.7724538509055160*dnu_d);
+        *eta0=material.emission_per_sr/
+              (1.7724538509055160*dnu_d);
         if (*chi0 != 0.0) {
             double ratio = *eta0 / *chi0;
             *source_diag = isfinite(ratio) ? ratio : 0.0;
+        }
+        /* DET-LTEUNMAP-EPS: for an LTE-unmapped line (used_nlte==0) under the
+         * gate, replace the fully-thermal S_l=B(T_e) emission with the physical
+         * two-level thermal fraction eps = C_ul/(C_ul + A_ul*beta_esc). The
+         * thermal channel keeps eps*eta0 (source function still B), and the
+         * (1-eps) share of the opacity is folded into scattering (chi_es) by
+         * the caller. Mapped lines and the gate-off path are untouched.
+         * radeq_line_eps_phys returns -1 when the RADEQ table is unbuilt or the
+         * line is unknown -> fail-closed (no silent thermal fallback; the
+         * contract overrides the legacy docstring). denom<=0 -> 1.0 arises only
+         * for A_ul=0 here (radeq_beta_esc(tau) is strictly in (0,1]), where
+         * eta0=0 already, so eps=1.0 is harmless. */
+        if(unmapped_eps_gate && used_nlte_cache && used_nlte_cache[cell]==0){
+            double ne_s = plasma->n_electron ? plasma->n_electron[shell] : 0.0;
+            double eps = radeq_line_eps_phys(line,ne_s,
+                                             plasma->T_e[shell],tau);
+            if(!(eps>=0.0)){ *eps_out=-1.0; return -2; }
+            *eta0 *= eps;
+            *eps_out = eps;
         }
         *srce_chk_applied=material.srce_chk_applied;
         return 0;
@@ -5068,6 +8221,38 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             return -1;
         }
     }
+    /* DET-W5-CONT-SOURCE: consumer checks (§2.3). ON requires the ledger of
+     * this same state from its successful bin assembly, with the state's
+     * NS/NB shape; no previous-ledger reuse and no B fallback. The fine
+     * sharp-edge bf refinement and the line-free independent probe keep a
+     * Kirchhoff continuum source, so ON refuses them instead of mixing. */
+    int w5_cont_on = 0;
+    if (cmf_optional_binary_env("LUMINA_CMF_FINE_CONT_NLTE_SOURCE",
+                                &w5_cont_on) != 0) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=W5_CONT_INVALID_GATE value=%s "
+                "expected=0_or_1 floor=0 clamp=0 fallback=0\n",
+                getenv("LUMINA_CMF_FINE_CONT_NLTE_SOURCE"));
+        return -1;
+    }
+    if (w5_cont_on) {
+        const char *bo = getenv("LUMINA_CMF_FINE_BF_OPAC");
+        int w5_cont_fine_bf_opac = (bo && atoi(bo)) ? 1 : 0;
+        if (!csb->w5_cont_eta || csb->n_shells != NS || csb->n_bins < 2 ||
+            (size_t)NS > SIZE_MAX / (size_t)csb->n_bins / sizeof(double) ||
+            w5_cont_fine_bf_opac || independent_capture) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=W5_CONT_CONSUMER_PRECONDITION "
+                    "ledger=%d state_shells=%d shells=%d state_bins=%d "
+                    "fine_bf_opac=%d independent_capture=%d floor=0 clamp=0 "
+                    "fallback=0\n", csb->w5_cont_eta ? 1 : 0, csb->n_shells,
+                    NS, csb->n_bins, w5_cont_fine_bf_opac, independent_capture);
+            return -1;
+        }
+        ++w5_cont_fine_calls;
+    }
+    const double *w5_cont_eta = w5_cont_on ? csb->w5_cont_eta : NULL;
+    unsigned long long w5_cont_interp_cells = 0, w5_cont_source_cells = 0;
     double dlognu = (vdop / CM_C) / ppd;
     double profile_width = LINE_JBAR_PROFILE_NDOPPLER * vdop / CM_C;
     if (!(profile_width > 0.0) || !(profile_width < 1.0)) {
@@ -5190,8 +8375,15 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         fs.dnu[i] = fs.nu[i] * dlognu;
     }
 
-    /* --- continuum: log-nu interpolate chi_es/chi_abs from the binned state --- */
-    #pragma omp parallel for schedule(static)
+    /* --- continuum: log-nu interpolate chi_es/chi_abs from the binned state ---
+     * rev 5: when the commit-path assembler folded the LTE-unmapped scattering
+     * share into chi_es, subtract it here so the fine (INIT-seed) continuum has
+     * the SAME construction as base (no near-unity line-scatter forest); else
+     * the exact fixed-point cannot converge (run 374640). Array NULL / wrong
+     * size (commit gate off) => subtract nothing => byte-identical. */
+    int fine_sub_sc = (g_chi_line_sc_unmapped != NULL &&
+        g_chi_line_sc_unmapped_cells == (size_t)NS * (size_t)csb->n_bins);
+    #pragma omp parallel for schedule(static) reduction(+:w5_cont_interp_cells)
     for (int s = 0; s < NS; ++s) {
         for (int i = 0; i < NF; ++i) {
             double x = log(fs.nu[i] / csb->nu_min) / csb->d_log_nu - 0.5;
@@ -5199,8 +8391,28 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             if (b < 0) { b = 0; f = 0.0; }
             if (b >= csb->n_bins - 1) { b = csb->n_bins - 2; f = 1.0; }
             size_t ia = (size_t)s*csb->n_bins + b, ib = ia + 1;
-            fs.chi_es [(size_t)s*NF+i] = (1-f)*csb->chi_es [ia] + f*csb->chi_es [ib];
+            double ces_a = csb->chi_es[ia] -
+                (fine_sub_sc ? g_chi_line_sc_unmapped[ia] : 0.0);
+            double ces_b = csb->chi_es[ib] -
+                (fine_sub_sc ? g_chi_line_sc_unmapped[ib] : 0.0);
+            fs.chi_es [(size_t)s*NF+i] = (1-f)*ces_a + f*ces_b;
             fs.chi_abs[(size_t)s*NF+i] = (1-f)*csb->chi_abs[ia] + f*csb->chi_abs[ib];
+            /* DET-W5-CONT-SOURCE: E_f with the SAME b/f/ia/ib as chi_abs;
+             * S_fixed is the pre-assembly scratch (final numerator below). */
+            if (w5_cont_on) {
+                double w5_cont_ef = (1.0 - f) * w5_cont_eta[ia] + f * w5_cont_eta[ib];
+                if (W5_CONT_FAULT(W5_CONT_FAULT_INTERP) && g_fine_bf) {
+                    /* NC-INTERP: pack read directly at nu_f (extra ff kept) */
+                    double ffa = w5_cont_eta[ia] -
+                                 bf_get_eta(g_fine_bf, s, csb->nu[b]);
+                    double ffb = w5_cont_eta[ib] -
+                                 bf_get_eta(g_fine_bf, s, csb->nu[b + 1]);
+                    w5_cont_ef = bf_get_eta(g_fine_bf, s, fs.nu[i]) +
+                            (1.0 - f) * ffa + f * ffb;
+                }
+                fs.S_fixed[(size_t)s*NF+i] = w5_cont_ef;
+                ++w5_cont_interp_cells;
+            }
         }
     }
 
@@ -5298,6 +8510,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     long n_inwin = 0, n_clamped = 0;
     long srce_chk_cells = 0;
     int material_error = 0;
+    int eps_fail = 0;   /* DET-LTEUNMAP-EPS: unmapped line lacked a usable eps */
     uint64_t signed_cells = 0, exact_zero_tau_cells = 0;
     uint64_t raw_negative_cells = 0, mild_negative_cells = 0;
     uint64_t srce_chk_expected_cells = 0;
@@ -5310,6 +8523,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     double fine_taumin = 1e-12;
     { const char *e = getenv("LUMINA_CMF_FINE_TAUMIN"); if (e) fine_taumin = atof(e); }
     long n_skip_weak = 0;
+    /* DET-LTEUNMAP-EPS (rev 4): the fine parity ε folding is behind its OWN env
+     * LUMINA_CMF_FINE_UNMAPPED_EPS_FINE (default 0), NOT the commit-path gate.
+     * Unset => everything below is skipped and the deposit is byte-identical to
+     * the original (the fine field is only the INIT line-Jbar seed; folding
+     * (1-ε)χ into fine chi_es breaks the exact solver, run 374587). */
+    int unmapped_eps_gate = cmf_fine_unmapped_eps_fine_gate();
+    unsigned char *used_nlte_cache = NULL;
     int line_net_parity = g_fine_atom && g_fine_nlte &&
         g_fine_upper_population_fill && g_fine_nlte->line_eset;
     int sobolev_operator = line_net_parity &&
@@ -5367,6 +8587,41 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                                    "INIT_SHARED_GAUSSIAN",
                 population_cells,
                 population_cells * sizeof(*upper_population_cache));
+        /* DET-LTEUNMAP-EPS: gate ON => (1) publish the per-(line,shell) NLTE-map
+         * flag so the deposit knows which lines are LTE-unmapped, and (2) ensure
+         * the RADEQ line table BEFORE any eps is consumed (the fixed-T_e run never
+         * enters radeq_simul_all, so its lazy builders never fire). Consuming eps
+         * from an unbuilt table would return -1 for every line; fail-closed at
+         * start rather than proceed silently. Deposit is skipped for the sobolev
+         * operator (no chi_line/eta deposit there), so this only matters for the
+         * INIT_SHARED_GAUSSIAN pass. */
+        if (unmapped_eps_gate && !sobolev_operator) {
+            used_nlte_cache = malloc(population_cells * sizeof(*used_nlte_cache));
+            if (!used_nlte_cache ||
+                lumina_line_used_nlte_fill_for_tau(
+                    g_fine_atom, plasma, g_fine_nlte, (size_t)NL, (size_t)NS,
+                    used_nlte_cache) != 0) {
+                fprintf(stderr,
+                        "[cmf_fine][BLOCKED] reason=UNMAPPED_EPS_USED_NLTE_BUILD "
+                        "floor=0 clamp=0 fallback=0\n");
+                free(used_nlte_cache);
+                free(upper_population_cache);
+                free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+                free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+                free(eta);return -1;
+            }
+            radeq_line_table_ensure(g_fine_nlte, g_fine_atom, opac);
+            if (!radeq_line_table_is_built()) {
+                fprintf(stderr,
+                        "[cmf_fine][BLOCKED] reason=UNMAPPED_EPS_RADEQ_TABLE_"
+                        "UNBUILT floor=0 clamp=0 fallback=0\n");
+                free(used_nlte_cache);
+                free(upper_population_cache);
+                free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+                free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+                free(eta);return -1;
+            }
+        }
     }
     /* OMP enabler: the per-line deposit accumulates into chi_line[s,:]/eta[s,:], so
      * parallelising over LINES would race. Instead precompute the per-line in-window
@@ -5381,7 +8636,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                     "[cmf_fine][BLOCKED] reason=LINE_SELECTION_ALLOCATION\n");
             free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
             free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
-            free(eta);free(upper_population_cache);
+            free(eta);free(upper_population_cache);free(used_nlte_cache);
             return -1;
         }
         for (int l = 0; l < NL; ++l) {
@@ -5507,7 +8762,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                     "jitter=0 repair=0 action=TERMINATE\n",
                     (unsigned long long)srce_chk_expected_cells,
                     srce_chk_cells,material_error);
-            free(line_use);free(upper_population_cache);
+            free(line_use);free(upper_population_cache);free(used_nlte_cache);
             free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
             free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
             free(eta);return -1;
@@ -5554,7 +8809,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         double marg = 8.0 * vdop / CM_C + 4.0 * dlognu;   /* window guard */
         #pragma omp parallel for schedule(dynamic) collapse(2) \
                 reduction(max:max_slb) reduction(+:n_clamped,srce_chk_cells) \
-                reduction(|:material_error)
+                reduction(|:material_error,eps_fail)
         for (int s = 0; s < NS; ++s) {
             for (int ch = 0; ch < nch; ++ch) {
                 const int ICLO = ch * chunk_sz;
@@ -5585,13 +8840,15 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int i0 = ic - half, i1 = ic + half;
             if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
             if (i0 > i1) continue;
-            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0;
+            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0, eps_line = 1.0;
             int srce_chk = 0, clamped = 0;
             int material_rc = cmf_fine_line_material(
                 opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
                 chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
                 upper_population_cache,
-                &chi0, &eta0, &source_diag, &srce_chk, &clamped);
+                unmapped_eps_gate, used_nlte_cache,
+                &chi0, &eta0, &source_diag, &eps_line, &srce_chk, &clamped);
+            if (material_rc == -2) { eps_fail = 1; continue; }
             if (material_rc > 0) continue;
             if (material_rc < 0) { material_error = 1; continue; }
             n_clamped += clamped;
@@ -5608,7 +8865,16 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 if (fabs(xv) > LINE_JBAR_PROFILE_NDOPPLER) continue;
                 double p  = exp(-xv * xv);
                 double cl = chi0 * p;
-                fs.chi_line[(size_t)s*NF+i] += cl;
+                /* DET-LTEUNMAP-EPS: unmapped line (eps<1) deposits only the
+                 * thermal share eps*chi into chi_line; the (1-eps) scattering
+                 * share joins chi_es (ALI albedo). eps==1 (mapped / gate-off)
+                 * keeps the original all-to-chi_line deposit -> byte-identical. */
+                if (eps_line < 1.0) {
+                    fs.chi_line[(size_t)s*NF+i] += eps_line * cl;
+                    fs.chi_es  [(size_t)s*NF+i] += (1.0 - eps_line) * cl;
+                } else {
+                    fs.chi_line[(size_t)s*NF+i] += cl;
+                }
                 eta        [(size_t)s*NF+i] += eta0 * p;
             }
                 }
@@ -5616,7 +8882,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
     } else if (!fine_contonly && !sobolev_operator) {
     #pragma omp parallel for schedule(dynamic) reduction(max:max_slb) \
-            reduction(+:n_clamped,srce_chk_cells) reduction(|:material_error)
+            reduction(+:n_clamped,srce_chk_cells) \
+            reduction(|:material_error,eps_fail)
     for (int s = 0; s < NS; ++s) {
         const int ICLO = 0, ICHI = NF - 1;
         for (int l = 0; l < NL; ++l) {
@@ -5630,13 +8897,15 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int i0 = ic - half, i1 = ic + half;
             if (i0 < ICLO) i0 = ICLO; if (i1 > ICHI) i1 = ICHI;
             if (i0 > i1) continue;
-            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0;
+            double chi0 = 0.0, eta0 = 0.0, source_diag = 0.0, eps_line = 1.0;
             int srce_chk = 0, clamped = 0;
             int material_rc = cmf_fine_line_material(
                 opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
                 chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
                 upper_population_cache,
-                &chi0, &eta0, &source_diag, &srce_chk, &clamped);
+                unmapped_eps_gate, used_nlte_cache,
+                &chi0, &eta0, &source_diag, &eps_line, &srce_chk, &clamped);
+            if (material_rc == -2) { eps_fail = 1; continue; }
             if (material_rc > 0) continue;
             if (material_rc < 0) { material_error = 1; continue; }
             n_clamped += clamped;
@@ -5651,14 +8920,103 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 if (fabs(xv) > LINE_JBAR_PROFILE_NDOPPLER) continue;
                 double p  = exp(-xv * xv);
                 double cl = chi0 * p;
-                fs.chi_line[(size_t)s*NF+i] += cl;
+                /* DET-LTEUNMAP-EPS: see the fine-owner loop above. */
+                if (eps_line < 1.0) {
+                    fs.chi_line[(size_t)s*NF+i] += eps_line * cl;
+                    fs.chi_es  [(size_t)s*NF+i] += (1.0 - eps_line) * cl;
+                } else {
+                    fs.chi_line[(size_t)s*NF+i] += cl;
+                }
                 eta        [(size_t)s*NF+i] += eta0 * p;
             }
         }
     }
     }
+    /* DET-LTEUNMAP-EPS: fail-closed if any unmapped line lacked a usable eps
+     * (radeq table unbuilt or line unknown). No silent thermal fallback. */
+    if (eps_fail) {
+        fprintf(stderr,
+                "[cmf_fine][BLOCKED] reason=UNMAPPED_EPS_UNAVAILABLE gate=1 "
+                "detail=radeq_line_eps_phys_returned_negative "
+                "floor=0 clamp=0 fallback=0\n");
+        free(line_use);free(upper_population_cache);free(used_nlte_cache);
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+        free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+        free(eta);
+        return -1;
+    }
+    /* DET-LTEUNMAP-EPS: per-shell census over LTE-unmapped deposited lines
+     * (gate ON, deposit path only). One stderr line per shell; consumed by
+     * gate G-EPS. thermal_emit_fraction = sum(eps*eta0)/sum(eta0) with eta0 the
+     * ORIGINAL (pre-fold) line emissivity. */
+    if (unmapped_eps_gate && used_nlte_cache && line_net_parity &&
+        !sobolev_operator && !material_error) {
+        double *eps_buf = malloc((size_t)(NL > 0 ? NL : 1) * sizeof(double));
+        if (!eps_buf) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=UNMAPPED_EPS_CENSUS_ALLOC\n");
+            free(line_use);free(upper_population_cache);free(used_nlte_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta);
+            return -1;
+        }
+        for (int s = 0; s < NS; ++s) {
+            long n_unmapped = 0, n_mapped = 0;
+            double sum_eta = 0.0, sum_eps_eta = 0.0;
+            for (int l = 0; l < NL; ++l) {
+                if (line_use && !line_use[l]) continue;
+                double nu_l = opac->line_list_nu[l];
+                if (nu_l < line_nu_lo || nu_l > line_nu_hi) continue;
+                size_t cell = (size_t)l * (size_t)NS + (size_t)s;
+                if (!opac->tau_validity ||
+                    (opac->tau_validity[cell] != A208_VALID &&
+                     opac->tau_validity[cell] != A208_EXACT_ZERO)) continue;
+                if (used_nlte_cache[cell]) { ++n_mapped; continue; }
+                /* unmapped: recompute original eta0 and eps */
+                double tau = opac->tau_sobolev[cell];
+                double dnuD = nu_l * vdop / CM_C;
+                if (!(dnuD > 0.0)) continue;
+                double nupper = upper_population_cache[cell];
+                double Aul = g_fine_atom->line_A_ul ?
+                    g_fine_atom->line_A_ul[l] : NAN;
+                LineNetSobolevMaterial material;
+                if (!isfinite(nupper) || nupper < 0.0 ||
+                    line_net_sobolev_material(
+                        nupper, Aul, nu_l, tau, t_exp,
+                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        &material) != 0) continue;
+                double eta0 = material.emission_per_sr / (SQRTPI * dnuD);
+                double ne_s = plasma->n_electron ? plasma->n_electron[s] : 0.0;
+                double eps = radeq_line_eps_phys(l, ne_s, plasma->T_e[s], tau);
+                if (!(eps >= 0.0)) continue;  /* deposit already fail-closed */
+                eps_buf[n_unmapped++] = eps;
+                sum_eta += eta0;
+                sum_eps_eta += eps * eta0;
+            }
+            double eps_min = 0.0, eps_med = 0.0, eps_max = 0.0;
+            if (n_unmapped > 0) {
+                qsort(eps_buf, (size_t)n_unmapped, sizeof(double),
+                      cmf_unmapped_eps_cmp);
+                eps_min = eps_buf[0];
+                eps_max = eps_buf[n_unmapped - 1];
+                eps_med = (n_unmapped & 1)
+                    ? eps_buf[n_unmapped / 2]
+                    : 0.5 * (eps_buf[n_unmapped / 2 - 1] +
+                             eps_buf[n_unmapped / 2]);
+            }
+            double thermal_frac = (sum_eta > 0.0) ? sum_eps_eta / sum_eta : 0.0;
+            char census_line[256];
+            cmf_unmapped_eps_format(census_line, sizeof census_line, s,
+                                    n_unmapped, n_mapped, eps_min, eps_med,
+                                    eps_max, thermal_frac);
+            fputs(census_line, stderr);
+        }
+        free(eps_buf);
+    }
     free(line_use);
     free(upper_population_cache);
+    free(used_nlte_cache);
     if (material_error) {
         fprintf(stderr,
                 "[cmf_fine][BLOCKED] reason=LINE_NET_MATERIAL_INVALID "
@@ -5673,8 +9031,12 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
      * (ALI scattering albedo) so the line forest scatters the photospheric UV
      * field instead of thermalising it; eta already holds only eps*chi_line*B.
      * Total opacity is preserved: chi_es+(1-eps)cl + chi_abs + eps*cl = orig. */
+#ifdef LUMINA_W5_CONT_SOURCE_SELFTEST
+    w5_cont_selftest_capture_pre_assembly(&fs, eta, NS, NF);
+#endif
     size_t first_assembly_invalid = SIZE_MAX;
-    #pragma omp parallel for schedule(static) reduction(min:first_assembly_invalid)
+    #pragma omp parallel for schedule(static) reduction(min:first_assembly_invalid) \
+        reduction(+:w5_cont_source_cells)
     for (int s = 0; s < NS; ++s) {
         double Te = plasma->T_e[s];
         for (int i = 0; i < NF; ++i) {
@@ -5684,7 +9046,21 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             double ct = fs.chi_es[idx] + fs.chi_abs[idx] + chi_ln_th;
             fs.chi_tot[idx] = ct;
             double Bnu = cm_planck(fs.nu[i], Te);
-            double numerator = fs.chi_abs[idx]*Bnu + eta[idx];
+            /* DET-W5-CONT-SOURCE: ON replaces only the continuum term; the
+             * line eta, chi_tot, exact-zero/error handling and warm start
+             * are unchanged. OFF is the original expression. */
+            double numerator;
+            if (w5_cont_on && !W5_CONT_FAULT(W5_CONT_FAULT_THERMAL)) {
+                numerator = fs.S_fixed[idx] + eta[idx];
+                ++w5_cont_source_cells;
+            } else {
+                numerator = fs.chi_abs[idx]*Bnu + eta[idx];
+            }
+#ifdef LUMINA_W5_CONT_SOURCE_SELFTEST
+            if (!w5_cont_on && W5_CONT_FAULT(W5_CONT_FAULT_OFF))
+                numerator = w5_cont_selftest_off_inject(idx, (size_t)(NS / 2) * NF +
+                                                   (size_t)(NF / 2), numerator);
+#endif
             if (isfinite(ct) && isfinite(numerator) && ct > 0.0 &&
                 numerator >= 0.0)
                 fs.S_fixed[idx] = numerator / ct;
@@ -5704,6 +9080,10 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         double Bnu = cm_planck(fs.nu[bad_bin], plasma->T_e[bad_shell]);
         double numerator = fs.chi_abs[first_assembly_invalid] * Bnu +
                            eta[first_assembly_invalid];
+        if (w5_cont_on && !W5_CONT_FAULT(W5_CONT_FAULT_THERMAL))   /* the ON numerator */
+            numerator = w5_cont_fine_eta_at(csb, (int)bad_shell,
+                                            fs.nu[bad_bin]) +
+                        eta[first_assembly_invalid];
         fprintf(stderr,
                 "[cmf_fine][BLOCKED] reason=NEGATIVE_OR_NONFINITE_TOTAL_SOURCE "
                 "shell=%zu bin=%zu nu=%.17g chi_es=%.17g chi_abs=%.17g "
@@ -6335,6 +9715,54 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             opac->line_producer_provenance[cell] = UINT8_MAX;
         }
     }
+    /* DET-W5-CONT-SOURCE (§2.5): per-call ledger of the mapped lines of
+     * Z in {14,16,20}, ion in {1,2} at shells {10,15,19,24,30}. Only values the
+     * producer below already computes are kept; nothing is read from a
+     * selection manifest and the fine support is not widened. */
+    int *w5_cont_slot = NULL, *w5_cont_line_of = NULL;
+    w5_cont_line_rec *w5_cont_rec = NULL;
+    int w5_cont_nt = 0;
+    int w5_cont_tidx[256];
+    if (w5_cont_on) {
+        for (int s = 0; s < NS; ++s) w5_cont_tidx[s] = -1;
+        for (int k = 0; k < W5_CONT_N_TARGET_SHELLS; ++k)
+            if (w5_cont_target_shells[k] < NS) w5_cont_tidx[w5_cont_target_shells[k]] = k;
+        int w5_cont_ok = g_fine_atom && g_fine_nlte &&
+            g_fine_atom->line_atomic_number && g_fine_atom->line_ion_number &&
+            g_fine_nlte->nlte_line_map && g_fine_atom->n_lines == NL;
+        if (w5_cont_ok) w5_cont_slot = (int *)malloc((size_t)NL * sizeof(*w5_cont_slot));
+        if (w5_cont_slot) {
+            for (int l = 0; l < NL; ++l) {
+                int Z = g_fine_atom->line_atomic_number[l];
+                int q = g_fine_atom->line_ion_number[l];
+                w5_cont_slot[l] = ((Z == 14 || Z == 16 || Z == 20) &&
+                              (q == 1 || q == 2) &&
+                              g_fine_nlte->nlte_line_map[l] >= 0) ? w5_cont_nt++ : -1;
+            }
+            size_t nt = (size_t)(w5_cont_nt > 0 ? w5_cont_nt : 1);
+            w5_cont_line_of = (int *)malloc(nt * sizeof(*w5_cont_line_of));
+            w5_cont_rec = (w5_cont_line_rec *)calloc(nt * W5_CONT_N_TARGET_SHELLS,
+                                         sizeof(*w5_cont_rec));
+            if (w5_cont_line_of)
+                for (int l = 0; l < NL; ++l)
+                    if (w5_cont_slot[l] >= 0) w5_cont_line_of[w5_cont_slot[l]] = l;
+        }
+        if (!w5_cont_ok || !w5_cont_slot || !w5_cont_line_of || !w5_cont_rec) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=W5_CONT_LINE_LEDGER_SETUP "
+                    "atom=%d nlte=%d line_map=%d atom_lines=%d lines=%d "
+                    "floor=0 clamp=0 fallback=0\n", g_fine_atom ? 1 : 0,
+                    g_fine_nlte ? 1 : 0,
+                    (g_fine_nlte && g_fine_nlte->nlte_line_map) ? 1 : 0,
+                    g_fine_atom ? g_fine_atom->n_lines : -1, NL);
+            free(w5_cont_slot); free(w5_cont_line_of); free(w5_cont_rec);
+            free(sobolev_upper_population_cache);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+    }
     #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic, 64) reduction(|:profile_failed) \
         reduction(min:profile_error_min,sobolev_beta_min) \
@@ -6400,6 +9828,19 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 opac->jbar_line_det[cell] = radiation.jbar;
                 opac->jbar_line_det_error_upper[cell] =
                     radiation.jbar_absolute_uncertainty;
+                if (w5_cont_slot && w5_cont_slot[l] >= 0 && w5_cont_tidx[s] >= 0) {
+                    w5_cont_line_rec *w5_cont_r = &w5_cont_rec[(size_t)w5_cont_slot[l] *
+                                             W5_CONT_N_TARGET_SHELLS + w5_cont_tidx[s]];
+                    w5_cont_r->jc = line_value[s];
+                    w5_cont_r->jc_err = line_error[s];
+                    w5_cont_r->beta = radiation.beta;
+                    w5_cont_r->local = radiation.local_emission_term;
+                    w5_cont_r->jbar = radiation.jbar;
+                    w5_cont_r->jbar_err = radiation.jbar_absolute_uncertainty;
+                    w5_cont_r->tau_eff = material.effective_tau;
+                    w5_cont_r->srce_chk = material.srce_chk_applied;
+                    w5_cont_r->status = W5_CONT_LINE_OK_SOBOLEV;
+                }
                 if (sproducer_capture && opac->line_producer_continuum_term) {
                     opac->line_producer_continuum_term[cell] =
                         radiation.continuum_term;
@@ -6427,6 +9868,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             } else {
                 opac->jbar_line_det[cell] = line_value[s];
                 opac->jbar_line_det_error_upper[cell] = line_error[s];
+                if (w5_cont_slot && w5_cont_slot[l] >= 0 && w5_cont_tidx[s] >= 0) {
+                    w5_cont_line_rec *w5_cont_r = &w5_cont_rec[(size_t)w5_cont_slot[l] *
+                                             W5_CONT_N_TARGET_SHELLS + w5_cont_tidx[s]];
+                    w5_cont_r->jbar = line_value[s];      /* Gaussian profile mean */
+                    w5_cont_r->jbar_err = line_error[s];
+                    w5_cont_r->status = W5_CONT_LINE_OK_INIT;
+                }
             }
         }
         if (!sobolev_operator) {
@@ -6467,10 +9915,49 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 (unsigned long long)srce_chk_expected_cells,
                 exact_report.componentwise_error_upper_min,
                 exact_report.componentwise_error_upper_max);
+        free(w5_cont_slot); free(w5_cont_line_of); free(w5_cont_rec);
         free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
         free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
         free(eta); free(fine_error_upper);
         return -1;
+    }
+    /* DET-W5-CONT-SOURCE: publish this call's line ledger and the consumption
+     * tag (G-RUN witness: counts come from the executed ON branches). */
+    if (w5_cont_on) {
+        size_t w5_cont_rows = 0, w5_cont_outside = 0;
+        int w5_cont_rc = w5_cont_lines_write(W5_CONT_LINES_FILE, w5_cont_fine_calls,
+                sobolev_operator, w5_cont_rad_generation,
+                g_fine_nlte->population_committed_generation, NS, w5_cont_tidx,
+                w5_cont_line_of, w5_cont_nt, w5_cont_rec, opac->line_list_nu,
+                g_fine_atom->line_atomic_number,
+                g_fine_atom->line_ion_number, line_nu_lo, line_nu_hi,
+                &w5_cont_rows, &w5_cont_outside);
+        free(w5_cont_slot); free(w5_cont_line_of); free(w5_cont_rec);
+        w5_cont_slot = NULL; w5_cont_line_of = NULL; w5_cont_rec = NULL;
+        if (w5_cont_rc != 0 || w5_cont_interp_cells != (unsigned long long)fine_cells ||
+            w5_cont_source_cells != (unsigned long long)fine_cells) {
+            fprintf(stderr,
+                    "[cmf_fine][BLOCKED] reason=W5_CONT_PUBLICATION rc=%d "
+                    "interp_cells=%llu source_cells=%llu fine_cells=%zu "
+                    "floor=0 clamp=0 fallback=0\n", w5_cont_rc, w5_cont_interp_cells,
+                    w5_cont_source_cells, fine_cells);
+            free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
+            free(fs.chi_line);free(fs.chi_tot);free(fs.S_fixed);free(fs.J);
+            free(eta); free(fine_error_upper);
+            return -1;
+        }
+        fprintf(stderr,
+                "[cmf_fine][W5-CONT] call=%ld operator=%s rad_generation=%llu "
+                "material_generation=%llu assemble_pass=%ld interp_cells=%llu "
+                "source_cells=%llu fine_cells=%zu line_rows=%zu "
+                "outside_support_rows=%zu file=%s\n",
+                w5_cont_fine_calls,
+                sobolev_operator ? "CMFGEN_NONOVERLAP_SOBOLEV" :
+                                   "INIT_SHARED_GAUSSIAN",
+                (unsigned long long)w5_cont_rad_generation,
+                (unsigned long long)g_fine_nlte->population_committed_generation,
+                g_asm_cont_src_pass, w5_cont_interp_cells, w5_cont_source_cells,
+                fine_cells, w5_cont_rows, w5_cont_outside, W5_CONT_LINES_FILE);
     }
     /* Stage-4 independent probe.  The production line field above has already
      * been profiled and stored.  In this opt-in diagnostic lane reuse the
@@ -7329,11 +10816,749 @@ void cmf_obs_selftest(void)
     if (opac.jbar_line_det) free(opac.jbar_line_det);
 }
 
+/* ========================================================================== */
+/* DET-PATHB-XSHELL: epoch-6/7 capture and two read-only shadow evaluations.   */
+#define XSHELL_TARGET_SHELL 24
+#define XSHELL_REL_TOL 1.0e-6
+
+typedef struct {
+    int enabled, n_shells, n_bins, canonical_bins, n_ali, target_shell;
+    const char *selftest_fault;
+    unsigned long measured_solves;
+    long solve_counter_start;
+    size_t cells, canonical_cells;
+    int pre_count[2], post_count[2], view_count[2], material_count[2];
+    double *C6, *C7;                 /* each: chi_tot, chi_es, S_fixed */
+    double *J_init6, *J_prod6, *J_prod7, *J_null, *J_out;
+    double *J_canonical_prod6, *J_canonical_prod7;
+    RadiationFieldValidityState *validity6, *validity7;
+    uint64_t *count6, *count7;
+    double *edges6, *edges7;
+    double T6, ne6, partition6, T7, ne7, partition7;
+    int sii_ip;
+} XShellCapture;
+
+static void xshell_capture_free(XShellCapture *x) {
+    if (!x) return;
+    free(x->C6); free(x->C7); free(x->J_init6); free(x->J_prod6);
+    free(x->J_prod7); free(x->J_null); free(x->J_out);
+    free(x->J_canonical_prod6); free(x->J_canonical_prod7);
+    free(x->validity6); free(x->validity7); free(x->count6); free(x->count7);
+    free(x->edges6); free(x->edges7);
+    memset(x, 0, sizeof(*x));
+}
+
+static int xshell_env_is_one(const char *name) {
+    const char *v = getenv(name);
+    return v && strcmp(v, "1") == 0;
+}
+
+static int xshell_env_is_off(const char *name) {
+    const char *v = getenv(name);
+    return !v || strcmp(v, "0") == 0;
+}
+
+static int xshell_find_ion(const AtomicData *atom, int Z, int stage) {
+    if (!atom || !atom->ion_pop_Z || !atom->ion_pop_stage) return -1;
+    for (int ip = 0; ip < atom->n_ion_pops; ++ip)
+        if (atom->ion_pop_Z[ip] == Z && atom->ion_pop_stage[ip] == stage)
+            return ip;
+    return -1;
+}
+
+static int xshell_runtime_contract_ok(int n_iter, int n_ali, int lineres,
+                                      int n_shells) {
+    static const char *const forbidden[] = {
+        "LUMINA_CMFGEN_LAMBDA_TRI", "LUMINA_CMFGEN_JDUMP",
+        "LUMINA_CMF_FROZEN_CHIETA_DUMP", "LUMINA_ION_NT",
+        "LUMINA_COUPLED_NEWTON", "LUMINA_POP_DJDN_FDHOLD",
+        "LUMINA_RADFIELD_COMMIT_DUMP", "LUMINA_RADFIELD_SHADOW_DUMP"
+    };
+    if (n_iter != 6 || n_ali != 8 || lineres ||
+        n_shells <= XSHELL_TARGET_SHELL ||
+        !xshell_env_is_one("LUMINA_XSHELL_RESPONSE") ||
+        !xshell_env_is_one("LUMINA_POP_DJDN") ||
+        !xshell_env_is_one("LUMINA_POP_DJDN_CHI") ||
+        !xshell_env_is_one("LUMINA_ION_CHANNEL_DUMP"))
+        return 0;
+    for (size_t i = 0; i < sizeof(forbidden) / sizeof(forbidden[0]); ++i)
+        if (!xshell_env_is_off(forbidden[i])) return 0;
+    return 1;
+}
+
+static int xshell_capture_init(XShellCapture *x, int ns, int nb, int n_ali,
+                               int target_shell, const AtomicData *atom) {
+    if (!x || target_shell < 0 || ns <= target_shell || nb <= 0 ||
+        (size_t)ns > SIZE_MAX / (size_t)nb) return -1;
+    memset(x, 0, sizeof(*x));
+    x->enabled = 1; x->n_shells = ns; x->n_bins = nb; x->n_ali = n_ali;
+    x->target_shell = target_shell;
+    x->solve_counter_start = g_solve_j_conv_pass;
+    x->cells = (size_t)ns * (size_t)nb;
+    x->canonical_bins = LUMINA_RADFIELD_N_BINS;
+    if ((size_t)ns > SIZE_MAX / (size_t)x->canonical_bins) goto fail;
+    x->canonical_cells = (size_t)ns * (size_t)x->canonical_bins;
+    x->sii_ip = xshell_find_ion(atom, 16, 1);
+    if (x->sii_ip < 0 || x->cells > SIZE_MAX / (3U * sizeof(double)))
+        goto fail;
+#define XA(member, count, type) do { \
+    x->member = (type *)malloc((count) * sizeof(type)); \
+    if (!x->member) goto fail; \
+} while (0)
+    XA(C6, 3U*x->cells, double); XA(C7, 3U*x->cells, double);
+    XA(J_init6, x->cells, double); XA(J_prod6, x->cells, double);
+    XA(J_prod7, x->cells, double); XA(J_null, x->cells, double);
+    XA(J_out, x->cells, double);
+    XA(J_canonical_prod6, x->canonical_cells, double);
+    XA(J_canonical_prod7, x->canonical_cells, double);
+    XA(validity6, x->canonical_cells, RadiationFieldValidityState);
+    XA(validity7, x->canonical_cells, RadiationFieldValidityState);
+    XA(count6, x->canonical_cells, uint64_t);
+    XA(count7, x->canonical_cells, uint64_t);
+    XA(edges6, (size_t)x->canonical_bins + 1U, double);
+    XA(edges7, (size_t)x->canonical_bins + 1U, double);
+#undef XA
+    return 0;
+fail:
+    xshell_capture_free(x);
+    return -1;
+}
+
+static int xshell_capture_pre(XShellCapture *x, const CMFGENState *cs,
+        const PlasmaState *plasma, const AtomicData *atom, int epoch) {
+    if (!x || !x->enabled || !cs || !plasma || !atom ||
+        (epoch != 6 && epoch != 7)) return -1;
+    int q = epoch - 6;
+    if (++x->pre_count[q] != 1 || cs->n_shells != x->n_shells ||
+        cs->n_bins != x->n_bins || !plasma->T_e || !plasma->n_electron ||
+        !atom->partition_functions) return -1;
+    double *C = q == 0 ? x->C6 : x->C7;
+    memcpy(C, cs->chi_tot, x->cells * sizeof(double));
+    memcpy(C + x->cells, cs->chi_es, x->cells * sizeof(double));
+    memcpy(C + 2U*x->cells, cs->S_fixed, x->cells * sizeof(double));
+    if (q == 0) {
+        memcpy(x->J_init6, cs->J, x->cells * sizeof(double));
+    }
+    return 0;
+}
+
+static int xshell_capture_post(XShellCapture *x, const CMFGENState *cs,
+                               int epoch) {
+    if (!x || !cs || (epoch != 6 && epoch != 7)) return -1;
+    int q = epoch - 6;
+    if (++x->post_count[q] != 1) return -1;
+    memcpy(q == 0 ? x->J_prod6 : x->J_prod7, cs->J,
+           x->cells * sizeof(double));
+    return 0;
+}
+
+/* Capture the material generation independently after R7 has committed it.
+ * The rate-side observation is made from R7's private working state, whereas
+ * this path reads the separately published PlasmaState/AtomicData owners.
+ * Those sources describe the same committed physical state, but demanding
+ * identical binary64 evaluation histories is not part of that contract. */
+static int xshell_capture_material(XShellCapture *x,
+        const PlasmaState *plasma, const AtomicData *atom, int epoch) {
+    if (!x || !plasma || !atom || (epoch != 6 && epoch != 7) ||
+        !plasma->T_e || !plasma->n_electron || !atom->partition_functions)
+        return -1;
+    int q = epoch - 6;
+    if (++x->material_count[q] != 1) return -1;
+    size_t p = (size_t)x->sii_ip * (size_t)x->n_shells +
+               (size_t)x->target_shell;
+    if (q == 0) {
+        x->T6 = plasma->T_e[x->target_shell];
+        x->ne6 = plasma->n_electron[x->target_shell];
+        x->partition6 = atom->partition_functions[p];
+    } else {
+        x->T7 = plasma->T_e[x->target_shell];
+        x->ne7 = plasma->n_electron[x->target_shell];
+        x->partition7 = atom->partition_functions[p];
+    }
+    return 0;
+}
+
+static int xshell_capture_view(XShellCapture *x, const NLTEConfig *nlte,
+                               int epoch) {
+    if (!x || !nlte || (epoch != 6 && epoch != 7) ||
+        nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK) return -1;
+    int q = epoch - 6;
+    const RadiationFieldView *v = &nlte->radfield_view;
+    if (++x->view_count[q] != 1 || v->n_shells != (size_t)x->n_shells ||
+        v->n_bins != (size_t)x->canonical_bins || !v->frequency_bin_edges ||
+        !v->J_nu || !v->validity || !v->count) return -1;
+    RadiationFieldValidityState *valid = q == 0 ? x->validity6 : x->validity7;
+    uint64_t *count = q == 0 ? x->count6 : x->count7;
+    double *edges = q == 0 ? x->edges6 : x->edges7;
+    memcpy(q == 0 ? x->J_canonical_prod6 : x->J_canonical_prod7,
+           v->J_nu, x->canonical_cells * sizeof(double));
+    memcpy(valid, v->validity, x->canonical_cells * sizeof(*valid));
+    memcpy(count, v->count, x->canonical_cells * sizeof(*count));
+    memcpy(edges, v->frequency_bin_edges,
+           ((size_t)x->canonical_bins + 1U) * sizeof(*edges));
+    return 0;
+}
+
+/* Run the exact production source-grid -> canonical-grid transaction against
+ * a private owner.  This calls radiation_field_commit itself, so overlap
+ * arithmetic and validity policy cannot drift from cmfgen_commit_jnu; the
+ * production owner/view are never passed to the transaction. */
+static int xshell_canonicalize(const XShellCapture *x, const Geometry *geo,
+        const double *source_J, double *canonical_J,
+        RadiationFieldValidityState *canonical_validity,
+        uint64_t *canonical_count, double *canonical_edges) {
+    if (!x || !geo || !source_J || !canonical_J || !canonical_validity ||
+        !canonical_count || !canonical_edges) return -1;
+    double *source_edges=(double *)malloc(((size_t)x->n_bins+1U)*sizeof(double));
+    RadiationFieldValidityState *source_validity=
+        (RadiationFieldValidityState *)malloc(x->cells*sizeof(*source_validity));
+    if (!source_edges || !source_validity) {
+        free(source_edges); free(source_validity); return -1;
+    }
+    double dlog=log(NLTE_NU_MAX/NLTE_NU_MIN)/(double)x->n_bins;
+    for (int b=0;b<=x->n_bins;++b)
+        source_edges[b]=NLTE_NU_MIN*exp((double)b*dlog);
+    source_edges[0]=NLTE_NU_MIN; source_edges[x->n_bins]=NLTE_NU_MAX;
+    for (size_t i=0;i<x->cells;++i) {
+        if (!isfinite(source_J[i]) || source_J[i]<0.0) {
+            free(source_edges); free(source_validity); return -1;
+        }
+        source_validity[i]=source_J[i]==0.0 ? RADIATION_FIELD_EXACT_ZERO
+                                            : RADIATION_FIELD_VALID;
+    }
+    RadiationFieldOwner owner; memset(&owner,0,sizeof(owner));
+    if (radiation_field_owner_init(&owner,(size_t)x->n_shells)!=0) {
+        free(source_edges); free(source_validity); return -1;
+    }
+    RadiationFieldCommitRequest request; memset(&request,0,sizeof(request));
+    request.provenance_kind=RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY;
+    request.producer="PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN";
+    request.generation=1; request.epoch=geo->time_explosion;
+    request.n_shells=(size_t)x->n_shells;
+    request.v_inner=geo->v_inner; request.v_outer=geo->v_outer;
+    request.source_n_bins=(size_t)x->n_bins;
+    request.source_frequency_bin_edges=source_edges;
+    request.source_J_nu=source_J; request.source_validity=source_validity;
+    request.statistic_kind=RADIATION_FIELD_DETERMINISTIC;
+    int rc=radiation_field_commit(&owner,&request);
+    RadiationFieldView view; memset(&view,0,sizeof(view));
+    if (rc==0) rc=radiation_field_read_view(&owner,geo->time_explosion,
+        (size_t)x->n_shells,1,&view);
+    if (rc==RADIATION_FIELD_VIEW_OK &&
+        view.n_bins==(size_t)x->canonical_bins && view.J_nu && view.validity &&
+        view.count && view.frequency_bin_edges) {
+        memcpy(canonical_J,view.J_nu,x->canonical_cells*sizeof(double));
+        memcpy(canonical_validity,view.validity,
+               x->canonical_cells*sizeof(*canonical_validity));
+        memcpy(canonical_count,view.count,x->canonical_cells*sizeof(*canonical_count));
+        memcpy(canonical_edges,view.frequency_bin_edges,
+               ((size_t)x->canonical_bins+1U)*sizeof(double));
+        rc=0;
+    } else rc=-1;
+    radiation_field_owner_free(&owner);
+    free(source_edges); free(source_validity);
+    return rc;
+}
+
+static void xshell_digest_hex(CMFSHA256 *sha, char hex[65]) {
+    unsigned char digest[32];
+    cmf_sha256_final(sha, digest);
+    for (int i = 0; i < 32; ++i) snprintf(hex + 2*i, 3, "%02x", digest[i]);
+    hex[64] = '\0';
+}
+
+static void xshell_hash_doubles(const char *domain, const double *a, size_t na,
+        const double *b, size_t nb, const double *c, size_t nc, char hex[65]) {
+    CMFSHA256 sha; cmf_sha256_init(&sha);
+    cmf_sha256_update(&sha, domain, strlen(domain));
+    cmf_hash_u64(&sha, (uint64_t)na); cmf_hash_f64_array(&sha, a, na);
+    cmf_hash_u64(&sha, (uint64_t)nb); cmf_hash_f64_array(&sha, b, nb);
+    cmf_hash_u64(&sha, (uint64_t)nc); cmf_hash_f64_array(&sha, c, nc);
+    xshell_digest_hex(&sha, hex);
+}
+
+static void xshell_hash_rate_inputs(const XShellCapture *x,
+        const AtomicData *atom, int epoch, char weights[65], char sigma[65]) {
+    int ip = x->sii_ip, lo = atom->level_offset[ip], hi = atom->level_offset[ip+1];
+    double T = epoch == 6 ? x->T6 : x->T7;
+    double part = epoch == 6 ? x->partition6 : x->partition7;
+    CMFSHA256 sw; cmf_sha256_init(&sw);
+    const char *wdom = "XSHELL-LTE-WEIGHT-INPUT-v1";
+    cmf_sha256_update(&sw, wdom, strlen(wdom));
+    cmf_hash_f64(&sw, T); cmf_hash_f64(&sw, part);
+    cmf_hash_u64(&sw, (uint64_t)(hi-lo));
+    for (int l=lo;l<hi;++l) {
+        cmf_hash_f64(&sw, atom->level_energy_eV[l]);
+        cmf_hash_u64(&sw, (uint64_t)(uint32_t)atom->level_g[l]);
+    }
+    xshell_digest_hex(&sw, weights);
+    CMFSHA256 ss; cmf_sha256_init(&ss);
+    const char *sdom = "XSHELL-SIGMA-SELECTION-v1";
+    cmf_sha256_update(&ss, sdom, strlen(sdom));
+    cmf_hash_u64(&ss, (uint64_t)atom->cmfgen_loaded);
+    cmf_hash_u64(&ss, (uint64_t)atom->cmfgen_n_freq_bins);
+    for (int l=lo;l<hi;++l) {
+        int has = atom->cmfgen_has_sigma ? atom->cmfgen_has_sigma[l] : 0;
+        cmf_hash_u64(&ss, (uint64_t)(uint32_t)has);
+        if (has && atom->cmfgen_sigma_bf)
+            for (int b=0;b<x->n_bins;++b)
+                cmf_hash_f64(&ss, atom->cmfgen_sigma_bf[(size_t)l*x->n_bins+b]);
+    }
+    xshell_digest_hex(&ss, sigma);
+}
+
+static int xshell_rel_ok(double a, double b) {
+    if (!isfinite(a) || !isfinite(b)) return 0;
+    double scale = fmax(fabs(a), fabs(b));
+    return scale == 0.0 ? a == b : fabs(a-b) <= XSHELL_REL_TOL * scale;
+}
+
+static int xshell_file_nonempty(const char *path) {
+    FILE *fp=fopen(path,"rb");
+    if (!fp) return 0;
+    int ok=fseek(fp,0,SEEK_END)==0 && ftell(fp)>0;
+    fclose(fp);
+    return ok;
+}
+
+static const char *xshell_json_f64(double value, char out[64]) {
+    if (isfinite(value)) snprintf(out,64,"%.17g",value);
+    else memcpy(out,"null",5);
+    return out;
+}
+
+static int xshell_write_evidence(const XShellCapture *x,
+        const AtomicData *atom, const Geometry *geo,
+        double T_inner,
+        int g_id, int g_run, int g_cap, int g_null, int g_rate, int g_dir,
+        long nonzero_out, int production_untouched,
+        double gamma_census6, double gamma_census7,
+        double gamma_prod6, double gamma_prod7, double gamma_null,
+        double gamma_out, double dx, double dg, double response,
+        double q_out, double eps_gamma) {
+    const char *binpath = "lumina_xshell_response.bin";
+    const char *jsonpath = "lumina_xshell_response.json";
+    FILE *fp = fopen(binpath, "wb");
+    if (!fp) return -1;
+    CMFSHA256 file_sha; cmf_sha256_init(&file_sha); int bad = 0;
+#define XW(call) do { if (!bad && (call) != 0) bad = 1; } while (0)
+    static const unsigned char magic[8] = {'L','X','S','H','E','L','L','1'};
+    XW(cmf_dump_bytes(fp,&file_sha,magic,sizeof(magic)));
+    XW(cmf_dump_u32(fp,&file_sha,UINT32_C(0x01020304)));
+    XW(cmf_dump_u32(fp,&file_sha,UINT32_C(1)));
+    XW(cmf_dump_u32(fp,&file_sha,(uint32_t)x->n_shells));
+    XW(cmf_dump_u32(fp,&file_sha,(uint32_t)x->n_bins));
+    XW(cmf_dump_u32(fp,&file_sha,(uint32_t)x->target_shell));
+    XW(cmf_dump_u32(fp,&file_sha,(uint32_t)x->n_ali));
+    XW(cmf_dump_u32(fp,&file_sha,UINT32_C(6)));
+    XW(cmf_dump_u32(fp,&file_sha,UINT32_C(7)));
+    for (size_t i=0;i<3U*x->cells;++i) XW(cmf_dump_f64(fp,&file_sha,x->C6[i]));
+    for (size_t i=0;i<3U*x->cells;++i) XW(cmf_dump_f64(fp,&file_sha,x->C7[i]));
+    const double *jf[4] = {x->J_init6,x->J_prod6,x->J_null,x->J_out};
+    for (int f=0;f<4;++f) for (size_t i=0;i<x->cells;++i)
+        XW(cmf_dump_f64(fp,&file_sha,jf[f][i]));
+    if (fclose(fp) != 0) bad = 1;
+    if (bad) return -1;
+    char binhash[65], c6hash[65], c7hash[65], jihash[65], j6hash[65];
+    char jnhash[65], johash[65], gridhash[65], bchash[65];
+    char w6hash[65], w7hash[65], sighash[65];
+    xshell_digest_hex(&file_sha, binhash);
+    xshell_hash_doubles("C6",x->C6,x->cells,x->C6+x->cells,x->cells,
+                         x->C6+2U*x->cells,x->cells,c6hash);
+    xshell_hash_doubles("C7",x->C7,x->cells,x->C7+x->cells,x->cells,
+                         x->C7+2U*x->cells,x->cells,c7hash);
+    xshell_hash_doubles("J_init6",x->J_init6,x->cells,NULL,0,NULL,0,jihash);
+    xshell_hash_doubles("J_prod6",x->J_prod6,x->cells,NULL,0,NULL,0,j6hash);
+    xshell_hash_doubles("J_null",x->J_null,x->cells,NULL,0,NULL,0,jnhash);
+    xshell_hash_doubles("J_out",x->J_out,x->cells,NULL,0,NULL,0,johash);
+    xshell_hash_doubles("canonical_edges",x->edges6,
+                         (size_t)x->canonical_bins+1U,
+                         NULL,0,NULL,0,gridhash);
+    {
+        CMFSHA256 bc; cmf_sha256_init(&bc);
+        const char *bcdom="XSHELL-BC-GEOMETRY-v1";
+        cmf_sha256_update(&bc,bcdom,strlen(bcdom));
+        cmf_hash_f64(&bc,T_inner);
+        cmf_hash_f64(&bc,geo->time_explosion);
+        cmf_hash_f64_array(&bc,geo->r_inner,(size_t)geo->n_shells);
+        cmf_hash_f64_array(&bc,geo->r_outer,(size_t)geo->n_shells);
+        xshell_digest_hex(&bc,bchash);
+    }
+    xshell_hash_rate_inputs(x,atom,6,w6hash,sighash);
+    xshell_hash_rate_inputs(x,atom,7,w7hash,sighash);
+    const char *branch = !(g_id&&g_run&&g_cap&&g_null&&g_rate&&g_dir)
+                       ? "XSHELL-X" : (dg > eps_gamma && dx < 0.0)
+                       ? "XSHELL-A" : "XSHELL-B";
+    fp = fopen(jsonpath, "w");
+    if (!fp) return -1;
+    char ngc6[64],ngc7[64],ngp6[64],ngp7[64],ngn[64],ngo[64];
+    char ndg[64],neps[64],ndx[64],nr[64],nq[64];
+    xshell_json_f64(gamma_census6,ngc6); xshell_json_f64(gamma_census7,ngc7);
+    xshell_json_f64(gamma_prod6,ngp6); xshell_json_f64(gamma_prod7,ngp7);
+    xshell_json_f64(gamma_null,ngn); xshell_json_f64(gamma_out,ngo);
+    xshell_json_f64(dg,ndg); xshell_json_f64(eps_gamma,neps);
+    xshell_json_f64(dx,ndx); xshell_json_f64(response,nr); xshell_json_f64(q_out,nq);
+    size_t block = x->cells * sizeof(double), off = 40U;
+    fprintf(fp,
+        "{\n  \"schema\": \"LUMINA_XSHELL_RESPONSE_V1\",\n"
+        "  \"binary\": {\"path\": \"%s\", \"sha256\": \"%s\", "
+        "\"encoding\": \"little-endian binary64\", \"header_bytes\": 40},\n"
+        "  \"dimensions\": {\"n_shells\": %d, \"transport_n_bins\": %d, "
+        "\"canonical_n_bins\": %d, "
+        "\"target_shell\": %d, \"epoch6\": 6, \"epoch7\": 7, \"ali_iterations\": %d},\n"
+        "  \"payload\": {\n"
+        "    \"C6\": {\"offset\": %zu, \"fields\": [\"chi_tot\",\"chi_es\",\"S_fixed\"], \"sha256\": \"%s\"},\n"
+        "    \"C7\": {\"offset\": %zu, \"fields\": [\"chi_tot\",\"chi_es\",\"S_fixed\"], \"sha256\": \"%s\"},\n"
+        "    \"J_init6\": {\"offset\": %zu, \"sha256\": \"%s\"},\n"
+        "    \"J_prod6\": {\"offset\": %zu, \"sha256\": \"%s\"},\n"
+        "    \"J_null\": {\"offset\": %zu, \"sha256\": \"%s\"},\n"
+        "    \"J_out\": {\"offset\": %zu, \"sha256\": \"%s\"}\n  },\n",
+        binpath,binhash,x->n_shells,x->n_bins,x->canonical_bins,
+        x->target_shell,x->n_ali,
+        off,c6hash,off+3U*block,c7hash,off+6U*block,jihash,
+        off+7U*block,j6hash,off+8U*block,jnhash,off+9U*block,johash);
+    fprintf(fp,
+        "  \"audit_derived\": {\"chi_abs_eff\": \"chi_tot-chi_es\", "
+        "\"eta_fixed\": \"chi_tot*S_fixed\"},\n"
+        "  \"fixed\": {\"T_e6_K\": %.17g, \"n_e6_cm3\": %.17g, "
+        "\"partition6\": %.17g, \"T_inner_K\": %.17g, "
+        "\"boundary_geometry_sha256\": \"%s\", \"grid_sha256\": \"%s\", \"lte_weight_input6_sha256\": \"%s\", "
+        "\"lte_weight_input7_sha256\": \"%s\", \"sigma_selection_sha256\": \"%s\"},\n"
+        "  \"rates_s-1\": {\"gamma_census6\": %s, \"gamma_census7\": %s, "
+        "\"gamma_prod6_explicit\": %s, \"gamma_prod7_explicit\": %s, "
+        "\"gamma_null\": %s, \"gamma_out\": %s, \"delta_gamma_out\": %s, "
+        "\"epsilon_gamma\": %s},\n"
+        "  \"projection\": {\"delta_x24\": %s, \"R_out\": %s, \"q_out\": %s},\n"
+        "  \"audit\": {\"outside_nonzero_cells\": %ld, \"new_clamp_floor_interp_count\": 0, "
+        "\"production_state_untouched\": %s, \"production_solve_count\": %ld, "
+        "\"shadow_solve_count\": %lu},\n"
+        "  \"gates\": {\"G-ID\": %s, \"G-RUN\": %s, \"G-CAP\": %s, "
+        "\"G-NULL\": %s, \"G-RATE\": %s, \"G-DIR\": %s},\n"
+        "  \"branch\": \"%s\"\n}\n",
+        x->T6,x->ne6,x->partition6,T_inner,bchash,
+        gridhash,w6hash,w7hash,sighash,
+        ngc6,ngc7,ngp6,ngp7,ngn,ngo,ndg,neps,ndx,nr,nq,nonzero_out,
+        production_untouched?"true":"false",
+        g_solve_j_conv_pass-x->solve_counter_start-(long)x->measured_solves,
+        x->measured_solves,g_id?"true":"false",
+        g_run?"true":"false",g_cap?"true":"false",g_null?"true":"false",
+        g_rate?"true":"false",g_dir?"true":"false",branch);
+    if (fclose(fp) != 0) return -1;
+    fprintf(stderr,"[XSHELL] evidence=%s,%s branch=%s gates=%d%d%d%d%d%d\n",
+            binpath,jsonpath,branch,g_id,g_run,g_cap,g_null,g_rate,g_dir);
+    return 0;
+#undef XW
+}
+
+static int xshell_run_measurement(XShellCapture *x, const CMFGENState *production,
+        const Geometry *geo, const PlasmaState *plasma, const NLTEConfig *nlte,
+        const AtomicData *atom,
+        double T_inner, int runtime_ok) {
+    if (!x || !production || !geo || !plasma || !nlte || !atom) return -1;
+    /* The snapshot deliberately precedes every adapter call.  It therefore
+     * encloses both private canonical commits and all Gamma evaluations. */
+    const RadiationFieldView view_before = nlte->radfield_view;
+    unsigned char radfield_view_status_before[sizeof(nlte->radfield_view_status)];
+    unsigned char line_view_status_before[sizeof(nlte->line_view_status)];
+    unsigned char line_energy_view_status_before[sizeof(nlte->line_energy_view_status)];
+    memcpy(radfield_view_status_before,&nlte->radfield_view_status,
+           sizeof(nlte->radfield_view_status));
+    memcpy(line_view_status_before,&nlte->line_view_status,
+           sizeof(nlte->line_view_status));
+    memcpy(line_energy_view_status_before,&nlte->line_energy_view_status,
+           sizeof(nlte->line_energy_view_status));
+    size_t view_cells = view_before.n_shells * view_before.n_bins;
+    size_t view_edges = view_before.n_bins + 1U;
+    size_t pop_cells = (size_t)nlte->n_nlte_levels_total * (size_t)x->n_shells;
+    size_t ion_cells = (size_t)atom->n_ion_pops * (size_t)x->n_shells;
+    double *state_before=(double *)malloc((4U*x->cells + view_cells +
+        view_edges + 2U*(size_t)x->n_shells + pop_cells + 2U*ion_cells)*sizeof(double));
+    RadiationFieldValidityState *valid_before=view_cells?malloc(view_cells*sizeof(*valid_before)):NULL;
+    uint64_t *count_before=view_cells?malloc(view_cells*sizeof(*count_before)):NULL;
+    if (!state_before || (view_cells && (!valid_before || !count_before)) ||
+        !view_before.J_nu || !view_before.validity || !view_before.count ||
+        !view_before.frequency_bin_edges) {
+        free(state_before); free(valid_before); free(count_before); return -1;
+    }
+    double *sb=state_before;
+#define XSHELL_SNAP(ptr,n) do { size_t _n=(n); if (_n && !(ptr)) goto snapshot_fail; \
+    memcpy(sb,(ptr),_n*sizeof(double)); sb+=_n; } while (0)
+    XSHELL_SNAP(production->J,x->cells); XSHELL_SNAP(production->chi_tot,x->cells);
+    XSHELL_SNAP(production->chi_es,x->cells); XSHELL_SNAP(production->S_fixed,x->cells);
+    XSHELL_SNAP(view_before.J_nu,view_cells); XSHELL_SNAP(view_before.frequency_bin_edges,view_edges);
+    XSHELL_SNAP(plasma->T_e,x->n_shells); XSHELL_SNAP(plasma->n_electron,x->n_shells);
+    XSHELL_SNAP(nlte->nlte_level_populations,pop_cells);
+    XSHELL_SNAP(atom->ion_number_density,ion_cells); XSHELL_SNAP(atom->partition_functions,ion_cells);
+    memcpy(valid_before,view_before.validity,view_cells*sizeof(*valid_before));
+    memcpy(count_before,view_before.count,view_cells*sizeof(*count_before));
+#undef XSHELL_SNAP
+    int complete = x->pre_count[0]==1 && x->pre_count[1]==1 &&
+                   x->post_count[0]==1 && x->post_count[1]==1 &&
+                   x->view_count[0]==1 && x->view_count[1]==1 &&
+                   x->material_count[0]==1 && x->material_count[1]==1;
+    double obsT6=NAN,obsne6=NAN,x6=NAN,gc6=NAN;
+    double obsT7=NAN,obsne7=NAN,x7=NAN,gc7=NAN;
+    int selftest=x->selftest_fault!=NULL;
+    int observations = parity_gamma_phot_observed(6,x->target_shell,16,1,&obsT6,&obsne6,&x6,&gc6)==0 &&
+        parity_gamma_phot_observed(7,x->target_shell,16,1,&obsT7,&obsne7,&x7,&gc7)==0;
+    double gp6=NAN,gp7=NAN,gn=NAN,go=NAN;
+    double p6_partition=(selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_RATE"))
+        ? 2.0*x->partition6 : x->partition6;
+    PopulationStatus p6 = parity_gamma_phot_explicit_field(atom,nlte,
+        x->J_canonical_prod6,x->validity6,x->count6,x->edges6,
+        x->n_shells,x->canonical_bins,x->target_shell,16,1,
+        x->T6,p6_partition,&gp6);
+    PopulationStatus p7 = parity_gamma_phot_explicit_field(atom,nlte,
+        x->J_canonical_prod7,x->validity7,x->count7,x->edges7,
+        x->n_shells,x->canonical_bins,x->target_shell,16,1,
+        x->T7,x->partition7,&gp7);
+    if (selftest) {
+        /* Model the independently evaluated/committed production sources: the
+         * physical values agree, but their binary64 encodings need not.  This
+         * prevents the fixture from hiding an accidental byte-identity gate. */
+        observations=1;
+        obsT6=nextafter(x->T6,INFINITY); obsT7=nextafter(x->T7,INFINITY);
+        obsne6=nextafter(x->ne6,INFINITY); obsne7=nextafter(x->ne7,INFINITY);
+        x6=2.0; x7=1.0; gc6=gp6; gc7=gp7;
+        if (!strcmp(x->selftest_fault,"XSHELL_NEG_FREEZE")) obsT6+=1.0;
+        if (!strcmp(x->selftest_fault,"XSHELL_NEG_RATE"))
+            (void)parity_gamma_phot_explicit_field(atom,nlte,
+                x->J_canonical_prod6,x->validity6,x->count6,x->edges6,
+                x->n_shells,x->canonical_bins,x->target_shell,16,1,
+                x->T6,x->partition6,&gc6);
+    }
+    double *canonical_before = (double *)malloc(x->canonical_cells*sizeof(double));
+    if (!canonical_before || nlte->radfield_view.n_shells!=(size_t)x->n_shells ||
+        nlte->radfield_view.n_bins!=(size_t)x->canonical_bins ||
+        !nlte->radfield_view.J_nu) {
+        free(canonical_before); return -1;
+    }
+    memcpy(canonical_before,nlte->radfield_view.J_nu,
+           x->canonical_cells*sizeof(double));
+    int prod_before = memcmp(production->J,x->J_prod7,x->cells*sizeof(double))==0 &&
+        memcmp(production->chi_tot,x->C7,x->cells*sizeof(double))==0 &&
+        memcmp(production->chi_es,x->C7+x->cells,x->cells*sizeof(double))==0 &&
+        memcmp(production->S_fixed,x->C7+2U*x->cells,x->cells*sizeof(double))==0 &&
+        memcmp(canonical_before,x->J_canonical_prod7,
+               x->canonical_cells*sizeof(double))==0;
+    CMFGENState shadow; memset(&shadow,0,sizeof(shadow));
+    if (cmfgen_init(&shadow,geo)!=0) { free(canonical_before); return -1; }
+    memcpy(shadow.chi_tot,x->C6,x->cells*sizeof(double));
+    memcpy(shadow.chi_es,x->C6+x->cells,x->cells*sizeof(double));
+    memcpy(shadow.S_fixed,x->C6+2U*x->cells,x->cells*sizeof(double));
+    if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_NULL"))
+        shadow.chi_tot[0]+=1e-15;
+    int null_coeff_ok = memcmp(shadow.chi_tot,x->C6,x->cells*sizeof(double))==0 &&
+        memcmp(shadow.chi_es,x->C6+x->cells,x->cells*sizeof(double))==0 &&
+        memcmp(shadow.S_fixed,x->C6+2U*x->cells,x->cells*sizeof(double))==0;
+    memcpy(shadow.J,x->J_init6,x->cells*sizeof(double));
+    char init_null[65],init_out[65];
+    xshell_hash_doubles("J-shadow-init",shadow.J,x->cells,NULL,0,NULL,0,init_null);
+    if (!selftest || strcmp(x->selftest_fault,"XSHELL_NEG_DEAD")!=0) {
+        cmfgen_solve_J(&shadow,geo,T_inner,x->n_ali); x->measured_solves++;
+    }
+    memcpy(x->J_null,shadow.J,x->cells*sizeof(double));
+    long nonzero_out=0; int selection_ok=1;
+    for (int s=0;s<x->n_shells;++s) for (int b=0;b<x->n_bins;++b) {
+        size_t i=(size_t)s*x->n_bins+(size_t)b;
+        const double *src = s==x->target_shell ? x->C6 : x->C7;
+        if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_SELECT") && s!=x->target_shell) src=x->C6;
+        if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_SH24") && s==x->target_shell) src=x->C7;
+        shadow.chi_tot[i]=src[i]; shadow.chi_es[i]=src[x->cells+i];
+        shadow.S_fixed[i]=src[2U*x->cells+i];
+        if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_SH24") && s==x->target_shell)
+            shadow.chi_tot[i]+=1e-15;
+        if (s!=x->target_shell &&
+            (x->C7[i]!=x->C6[i] || x->C7[x->cells+i]!=x->C6[x->cells+i] ||
+             x->C7[2U*x->cells+i]!=x->C6[2U*x->cells+i])) nonzero_out++;
+        if (memcmp(&shadow.chi_tot[i],&src[i],sizeof(double)) ||
+            memcmp(&shadow.chi_es[i],&src[x->cells+i],sizeof(double)) ||
+            memcmp(&shadow.S_fixed[i],&src[2U*x->cells+i],sizeof(double)))
+            selection_ok=0;
+    }
+    for (int f=0;f<3;++f) {
+        const double *actual = f==0 ? shadow.chi_tot
+                             : f==1 ? shadow.chi_es : shadow.S_fixed;
+        const double *base6 = x->C6 + (size_t)f*x->cells;
+        const double *base7 = x->C7 + (size_t)f*x->cells;
+        size_t row=(size_t)x->n_bins*sizeof(double);
+        if (memcmp(actual+(size_t)x->target_shell*x->n_bins,
+                   base6+(size_t)x->target_shell*x->n_bins,row)!=0)
+            selection_ok=0;
+        for (int s=0;s<x->n_shells;++s) if (s!=x->target_shell)
+            if (memcmp(actual+(size_t)s*x->n_bins,
+                       base7+(size_t)s*x->n_bins,row)!=0) selection_ok=0;
+    }
+    memcpy(shadow.J,x->J_init6,x->cells*sizeof(double));
+    if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_INIT")) shadow.J[0]+=1.0;
+    xshell_hash_doubles("J-shadow-init",shadow.J,x->cells,NULL,0,NULL,0,init_out);
+    if (!selftest || strcmp(x->selftest_fault,"XSHELL_NEG_DEAD")!=0) {
+        cmfgen_solve_J(&shadow,geo,T_inner,x->n_ali); x->measured_solves++;
+    }
+    memcpy(x->J_out,shadow.J,x->cells*sizeof(double));
+    cmfgen_free(&shadow);
+    free(canonical_before);
+    double *Jcn=(double *)malloc(x->canonical_cells*sizeof(double));
+    double *Jco=(double *)malloc(x->canonical_cells*sizeof(double));
+    RadiationFieldValidityState *vn=(RadiationFieldValidityState *)malloc(
+        x->canonical_cells*sizeof(*vn));
+    RadiationFieldValidityState *vo=(RadiationFieldValidityState *)malloc(
+        x->canonical_cells*sizeof(*vo));
+    uint64_t *cn=(uint64_t *)malloc(x->canonical_cells*sizeof(*cn));
+    uint64_t *co=(uint64_t *)malloc(x->canonical_cells*sizeof(*co));
+    double *en=(double *)malloc(((size_t)x->canonical_bins+1U)*sizeof(double));
+    double *eo=(double *)malloc(((size_t)x->canonical_bins+1U)*sizeof(double));
+    if (!Jcn||!Jco||!vn||!vo||!cn||!co||!en||!eo ||
+        xshell_canonicalize(x,geo,x->J_null,Jcn,vn,cn,en)!=0 ||
+        xshell_canonicalize(x,geo,x->J_out,Jco,vo,co,eo)!=0) {
+        free(Jcn);free(Jco);free(vn);free(vo);free(cn);free(co);free(en);free(eo);
+        return -1;
+    }
+    PopulationStatus pn = parity_gamma_phot_explicit_field(atom,nlte,Jcn,
+        vn,cn,en,x->n_shells,x->canonical_bins,x->target_shell,16,1,
+        x->T6,x->partition6,&gn);
+    PopulationStatus po = parity_gamma_phot_explicit_field(atom,nlte,Jco,
+        vo,co,eo,x->n_shells,x->canonical_bins,x->target_shell,16,1,
+        x->T6,x->partition6,&go);
+    if (selftest && !strcmp(x->selftest_fault,"XSHELL_NEG_DIR")) go=NAN;
+    int g_id=runtime_ok;
+    int g_run=complete && observations && x->measured_solves==2 &&
+        (selftest || (xshell_file_nonempty("lumina_pop_djdn.csv") &&
+        xshell_file_nonempty("lumina_ion_channels.csv") &&
+        xshell_file_nonempty("lumina_spectrum.csv")));
+    int cap_init=strcmp(init_null,init_out)==0;
+    int cap_thermo=isfinite(x->T6) && isfinite(x->ne6) &&
+        isfinite(x->partition6) && x->partition6>0.0;
+    int cap_obsT=observations && xshell_rel_ok(obsT6,x->T6);
+    int cap_obsne=observations && xshell_rel_ok(obsne6,x->ne6);
+    int cap_edges=memcmp(x->edges6,x->edges7,
+        ((size_t)x->canonical_bins+1U)*sizeof(double))==0;
+    int g_cap=complete && nonzero_out>0 && selection_ok && cap_init &&
+        cap_thermo && observations && cap_obsT && cap_obsne && cap_edges;
+    if (!g_cap)
+        fprintf(stderr,
+            "[XSHELL][G-CAP-DETAIL] complete=%d selection=%d observations=%d "
+            "obsT=%d obsne=%d edges=%d init=%d thermo=%d nonzero=%ld "
+            "obsT6=%.17g capT6=%.17g obsne6=%.17g capne6=%.17g tol=%.1e\n",
+            complete,selection_ok,observations,cap_obsT,cap_obsne,cap_edges,
+            cap_init,cap_thermo,nonzero_out,obsT6,x->T6,obsne6,x->ne6,
+            XSHELL_REL_TOL);
+    int g_null=null_coeff_ok &&
+        memcmp(x->J_null,x->J_prod6,x->cells*sizeof(double))==0 &&
+        memcmp(Jcn,x->J_canonical_prod6,x->canonical_cells*sizeof(double))==0 &&
+        p6<=POP_EXACT_ZERO && pn<=POP_EXACT_ZERO && xshell_rel_ok(gn,gp6);
+    int g_rate=observations && p6<=POP_EXACT_ZERO && p7<=POP_EXACT_ZERO &&
+        xshell_rel_ok(gp6,gc6) && xshell_rel_ok(gp7,gc7) &&
+        (selftest || (xshell_rel_ok(obsT6,9231.3) && xshell_rel_ok(obsT7,9231.3) &&
+        xshell_rel_ok(gc6,2.824526205e-2) && xshell_rel_ok(gc7,3.874831249e-2)));
+    double dx=x7-x6,dg=go-gn,response=dg/dx,q=dg/(gc7-gc6);
+    double eps=fmax(fabs(gn-gp6),XSHELL_REL_TOL*fmax(fabs(gn),fabs(go)));
+    int g_dir=po<=POP_EXACT_ZERO && isfinite(x6)&&isfinite(x7)&&dx<0.0 &&
+        isfinite(gn)&&isfinite(go)&&isfinite(dg)&&isfinite(response)&&isfinite(q)&&
+        isfinite(eps);
+    /* End-of-measurement comparison: payload plus the complete view identity
+     * (dimensions/generation/epoch/provenance are in the struct) and the
+     * separately stored radiation/line view status fields. */
+    sb=state_before; int prod_after=memcmp(production->J,sb,x->cells*sizeof(double))==0; sb+=x->cells;
+#define XSHELL_CMP(ptr,n) do { size_t _n=(n); prod_after &= (_n==0 || ((ptr) && memcmp((ptr),sb,_n*sizeof(double))==0)); sb+=_n; } while (0)
+    XSHELL_CMP(production->chi_tot,x->cells); XSHELL_CMP(production->chi_es,x->cells);
+    XSHELL_CMP(production->S_fixed,x->cells); XSHELL_CMP(nlte->radfield_view.J_nu,view_cells);
+    XSHELL_CMP(nlte->radfield_view.frequency_bin_edges,view_edges);
+    XSHELL_CMP(plasma->T_e,x->n_shells); XSHELL_CMP(plasma->n_electron,x->n_shells);
+    XSHELL_CMP(nlte->nlte_level_populations,pop_cells);
+    XSHELL_CMP(atom->ion_number_density,ion_cells); XSHELL_CMP(atom->partition_functions,ion_cells);
+#undef XSHELL_CMP
+    prod_after &= memcmp(&nlte->radfield_view,&view_before,sizeof(view_before))==0 &&
+        memcmp(&nlte->radfield_view_status,radfield_view_status_before,
+               sizeof(nlte->radfield_view_status))==0 &&
+        memcmp(&nlte->line_view_status,line_view_status_before,
+               sizeof(nlte->line_view_status))==0 &&
+        memcmp(&nlte->line_energy_view_status,line_energy_view_status_before,
+               sizeof(nlte->line_energy_view_status))==0 &&
+        memcmp(nlte->radfield_view.validity,valid_before,view_cells*sizeof(*valid_before))==0 &&
+        memcmp(nlte->radfield_view.count,count_before,view_cells*sizeof(*count_before))==0;
+    int untouched=prod_before&&prod_after;
+    if (!untouched) g_run=0;
+    int wr=selftest?0:xshell_write_evidence(x,atom,geo,T_inner,g_id,g_run,g_cap,g_null,g_rate,g_dir,
+        nonzero_out,untouched,gc6,gc7,gp6,gp7,gn,go,dx,dg,response,q,eps);
+    if(selftest) fprintf(stderr,"[XSHELL][SELFTEST][GATES] id=%d run=%d cap=%d null=%d rate=%d dir=%d p=%d,%d,%d,%d solves=%lu untouched=%d obsT_byte=%d obsne_byte=%d obsT_rel=%d obsne_rel=%d\n",
+        g_id,g_run,g_cap,g_null,g_rate,g_dir,(int)p6,(int)p7,(int)pn,(int)po,x->measured_solves,untouched,
+        memcmp(&obsT6,&x->T6,sizeof(double))==0,
+        memcmp(&obsne6,&x->ne6,sizeof(double))==0,cap_obsT,cap_obsne);
+    free(Jcn);free(Jco);free(vn);free(vo);free(cn);free(co);free(en);free(eo);
+    free(state_before);free(valid_before);free(count_before);
+    return wr==0 && g_id&&g_run&&g_cap&&g_null&&g_rate&&g_dir ? 0 : -1;
+snapshot_fail:
+    free(state_before);free(valid_before);free(count_before);return -1;
+}
+
+int cmfgen_xshell_production_selftest(const char *fault,
+                                      unsigned long *solve_count) {
+    enum { NS=4, TARGET=1 };
+    double ri[NS],ro[NS],vi[NS],vo[NS],te[NS],ne[NS],ionden[NS],part[NS],levelpop[NS];
+    for(int s=0;s<NS;s++){ri[s]=1e14+s*1e13;ro[s]=ri[s]+1e13;vi[s]=1e8+s*1e7;
+        vo[s]=vi[s]+1e7;te[s]=9231.3;ne[s]=1e7;ionden[s]=part[s]=levelpop[s]=1.0;}
+    Geometry geo={.n_shells=NS,.r_inner=ri,.r_outer=ro,.v_inner=vi,.v_outer=vo,
+                  .time_explosion=864000.0};
+    int iz=16,stage=1,off[2]={0,1},eoff[2]={0,1},ln=1,lg=1; double le=0.0,chie=23.33;
+    AtomicData atom={0}; atom.n_ion_pops=1; atom.ion_pop_Z=&iz; atom.ion_pop_stage=&stage;
+    atom.level_offset=off; atom.n_levels=1; atom.level_Z=&iz; atom.level_ion=&stage;
+    atom.level_num=&ln; atom.level_g=&lg; atom.level_energy_eV=&le;
+    atom.n_ionization=1; atom.ioniz_Z=&iz; atom.ioniz_ion=&stage;
+    atom.ioniz_energy_eV=&chie; atom.ion_number_density=ionden; atom.partition_functions=part;
+    atom.n_elements=1; atom.element_Z=&iz; atom.elem_ion_offset=eoff;
+    PlasmaState plasma={.n_shells=NS,.n_electron=ne,.T_e=te};
+    NLTEConfig nlte={0}; nlte.enabled=1; nlte.n_freq_bins=NLTE_N_FREQ_BINS; nlte.nu_min=NLTE_NU_MIN;
+    nlte.nu_max=NLTE_NU_MAX; nlte.d_log_nu=log(NLTE_NU_MAX/NLTE_NU_MIN)/NLTE_N_FREQ_BINS;
+    nlte.n_nlte_levels_total=1; nlte.nlte_level_populations=levelpop;
+    CMFGENState prod={0},tmp={0}; XShellCapture x={0}; int rc=-1;
+    if(cmfgen_init(&prod,&geo)||cmfgen_init(&tmp,&geo)||
+       xshell_capture_init(&x,NS,prod.n_bins,2,TARGET,&atom)) goto done;
+    for(size_t i=0;i<x.cells;i++){int s=(int)(i/(size_t)x.n_bins);
+        x.C6[i]=1e-14;x.C6[x.cells+i]=2e-15;x.C6[2*x.cells+i]=1e-6;
+        x.C7[i]=x.C6[i]+(s==TARGET?0:1e-15);
+        x.C7[x.cells+i]=x.C6[x.cells+i]+(s==TARGET?0:2e-16);
+        x.C7[2*x.cells+i]=x.C6[2*x.cells+i]+(s==TARGET?0:1e-7);x.J_init6[i]=5e-7;}
+#define XLOAD(cs,C) do{memcpy((cs).chi_tot,(C),x.cells*sizeof(double)); \
+    memcpy((cs).chi_es,(C)+x.cells,x.cells*sizeof(double)); \
+    memcpy((cs).S_fixed,(C)+2*x.cells,x.cells*sizeof(double)); \
+    memcpy((cs).J,x.J_init6,x.cells*sizeof(double));}while(0)
+    XLOAD(tmp,x.C6); cmfgen_solve_J(&tmp,&geo,10000.0,2); memcpy(x.J_prod6,tmp.J,x.cells*sizeof(double));
+    XLOAD(prod,x.C7); cmfgen_solve_J(&prod,&geo,10000.0,2); memcpy(x.J_prod7,prod.J,x.cells*sizeof(double));
+#undef XLOAD
+    if(xshell_canonicalize(&x,&geo,x.J_prod6,x.J_canonical_prod6,x.validity6,x.count6,x.edges6)||
+       xshell_canonicalize(&x,&geo,x.J_prod7,x.J_canonical_prod7,x.validity7,x.count7,x.edges7)) goto done;
+    nlte.radfield_view.n_shells=NS; nlte.radfield_view.n_bins=x.canonical_bins;
+    nlte.radfield_view.J_nu=x.J_canonical_prod7; nlte.radfield_view.validity=x.validity7;
+    nlte.radfield_view.count=x.count7; nlte.radfield_view.frequency_bin_edges=x.edges7;
+    nlte.radfield_view_status=RADIATION_FIELD_VIEW_OK;
+    x.pre_count[0]=x.pre_count[1]=x.post_count[0]=x.post_count[1]=1;
+    x.view_count[0]=x.view_count[1]=1;
+    if(xshell_capture_material(&x,&plasma,&atom,6)||
+       xshell_capture_material(&x,&plasma,&atom,7)) goto done;
+    x.selftest_fault=fault?fault:"NONE";
+    rc=xshell_run_measurement(&x,&prod,&geo,&plasma,&nlte,&atom,10000.0,1);
+done:
+    if(solve_count)*solve_count=x.measured_solves;
+    xshell_capture_free(&x);cmfgen_free(&tmp);cmfgen_free(&prod);return rc;
+}
+
 int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                PlasmaState *plasma, NLTEConfig *nlte, AtomicData *atom,
                GammaDeposition *gamma, double T_inner, int n_iter)
 {
     if (getenv("LUMINA_CMF_OBS_SELFTEST")) { cmf_obs_selftest(); return 0; }
+    int xshell_gate = 0;
+    if (cmf_optional_binary_env("LUMINA_XSHELL_RESPONSE", &xshell_gate) != 0) {
+        fprintf(stderr,"[XSHELL][BLOCKED] reason=INVALID_GATE expected=0_or_1\n");
+        return -1;
+    }
+    int det_obs_on = 0;
+    if (det_obs_env_mode(&det_obs_on) != 0) {
+        fprintf(stderr,"[DET-OBS][BLOCKED] reason=INVALID_GATE "
+                "key=LUMINA_DET_OBS_WRITER expected=0_or_1\n");
+        return -1;
+    }
     int validation_exit_after_r6 = 0;
     if (cmf_optional_binary_env(
             "LUMINA_VALIDATION_EXIT_AFTER_R6",
@@ -7395,6 +11620,22 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
     int n_ali = ali_env ? atoi(ali_env) : 8;
     if (n_ali < 1) n_ali = 1;
 
+    XShellCapture xshell; memset(&xshell,0,sizeof(xshell));
+    int xshell_runtime_ok = !xshell_gate ||
+        xshell_runtime_contract_ok(n_iter,n_ali,cmf_lineres,cs.n_shells);
+    if (!xshell_runtime_ok || (xshell_gate &&
+        xshell_capture_init(&xshell,cs.n_shells,cs.n_bins,n_ali,
+                            XSHELL_TARGET_SHELL,atom)!=0)) {
+        fprintf(stderr,"[XSHELL][BLOCKED] reason=RUNTIME_CONTRACT_OR_ALLOCATION "
+                "iter=%d ali=%d lineres=%d shells=%d\n",
+                n_iter,n_ali,cmf_lineres,cs.n_shells);
+        cmfgen_free(&cs);
+        return -1;
+    }
+    if (xshell_gate) parity_gamma_phot_observed_reset();
+#define CMFGEN_RUN_DONE(rc) do { xshell_capture_free(&xshell); \
+    cmfgen_free(&cs); return (rc); } while (0)
+
     printf("[CMFGEN] pure deterministic radiation driver: %d shells, %d bins, "
            "%d rays, %d outer iters, %d ALI/iter, t_exp=%.4e s\n",
            cs.n_shells, cs.n_bins, cs.n_rays, n_iter, n_ali, geo->time_explosion);
@@ -7417,23 +11658,83 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         /* refresh bf opacity for current ionization/T_e */
         if (bf) compute_bf_opacity(bf, atom, plasma, cs.n_shells);
 
+        if (det_obs_on && !init_pass && iter == n_iter - 1)
+            det_obs_capture_arm(&cs, nlte ? nlte->population_committed_generation : 0);
         cmfgen_assemble(&cs, geo, opac, bf, plasma);
+        /* DET-LTEUNMAP-EPS: the bin assembler is void; it flags a fail-closed
+         * condition (radeq table unbuilt, missing atom/nlte handle, used_nlte
+         * build failure, or an unmapped line with eps<0) via a file-static.
+         * BLOCK before the field is solved/committed — no silent thermalisation
+         * of the LTE-unmapped lamp. */
+        if (g_asm_unmapped_eps_fault) {
+            fprintf(stderr,
+                    "[CMFGEN][BLOCKED] reason=UNMAPPED_EPS_ASSEMBLE_FAILCLOSED "
+                    "pass=%d floor=0 clamp=0 fallback=0\n", pass);
+            CMFGEN_RUN_DONE(-1);
+        }
+        /* DET-CONT-NLTE-BALANCE: same driver-block for the continuum NLTE source
+         * fail-closed (bf/eta_bf absent, BF_MILNE<1, or all-zero eta_bf shell). */
+        if (g_asm_cont_src_fault) {
+            fprintf(stderr,
+                    "[CMFGEN][BLOCKED] reason=CONT_NLTE_SOURCE_ASSEMBLE_FAILCLOSED "
+                    "pass=%d floor=0 clamp=0 fallback=0\n", pass);
+            CMFGEN_RUN_DONE(-1);
+        }
+        int xshell_epoch = (int)(rad_generation + 1U);
+        if (xshell_gate && (xshell_epoch == 6 || xshell_epoch == 7) &&
+            xshell_capture_pre(&xshell,&cs,plasma,atom,xshell_epoch)!=0) {
+            fprintf(stderr,"[XSHELL][BLOCKED] reason=CAPTURE_PRE epoch=%d\n",
+                    xshell_epoch);
+            CMFGEN_RUN_DONE(-1);
+        }
         if (cmf_lineres) {
             if (cmf_solve_J(&cs, geo, T_inner, n_ali) != 0) {
                 fprintf(stderr, "[CMFGEN][FATAL] GPU CMF lifecycle failure; no CPU publication\n");
-                cmfgen_free(&cs);
-                return -1;
+                CMFGEN_RUN_DONE(-1);
             }
         } else {
             cmfgen_solve_J(&cs, geo, T_inner, n_ali);/* binned (champion) */
+        }
+        if (xshell_gate && (xshell_epoch == 6 || xshell_epoch == 7) &&
+            xshell_capture_post(&xshell,&cs,xshell_epoch)!=0) {
+            fprintf(stderr,"[XSHELL][BLOCKED] reason=CAPTURE_POST epoch=%d\n",
+                    xshell_epoch);
+            CMFGEN_RUN_DONE(-1);
+        }
+        /* DET-PATHB-LOCAL: fixed-S dJ_fs/dchi channel (env LUMINA_POP_DJDN_CHI).
+         * Champion (non-LINERES) path only, AFTER cmfgen_solve_J and BEFORE the
+         * field registration, at the SAME generation as radeq_set_line_re_source.
+         * OFF (unset/0): never computed, never registered => g_lre_djdchi stays
+         * NULL in the plasma assembly => a_dchi absent => 388393 byte-identical.
+         * Reads cs.S_fixed / cs.chi_tot (the committed generation's fixed source
+         * and total opacity); does not run the ALI loop or touch cs.J/lambda*. */
+        {
+            static int chi_gate = -1;
+            if (chi_gate < 0) {
+                const char *ce = getenv("LUMINA_POP_DJDN_CHI");
+                chi_gate = (ce && atoi(ce)) ? 1 : 0;
+            }
+            if (chi_gate && !cmf_lineres) {
+                size_t need = (size_t)cs.n_shells * (size_t)cs.n_bins;
+                if (g_djdchi_fs_ns != cs.n_shells ||
+                    g_djdchi_fs_nb != cs.n_bins || !g_djdchi_fs) {
+                    free(g_djdchi_fs);
+                    g_djdchi_fs = (double *)calloc(need, sizeof(double));
+                    g_djdchi_fs_ns = g_djdchi_fs ? cs.n_shells : 0;
+                    g_djdchi_fs_nb = g_djdchi_fs ? cs.n_bins : 0;
+                }
+                if (g_djdchi_fs) {
+                    formal_djdchi_fs_S(&cs, geo, T_inner, g_djdchi_fs);
+                    radeq_set_djdchi_fs(g_djdchi_fs, cs.n_shells, cs.n_bins);
+                }
+            }
         }
         if (!init_pass &&
             cmfgen_stage32_rung1_maybe_dump(&cs,geo,opac,plasma,
                                              iter,n_iter) != 0) {
             /* ★침묵 금지(2026-08-07) */
             fprintf(stderr, "[CMFGEN][FATAL] stage32 rung1 dump failed iter=%d\n", iter);
-            cmfgen_free(&cs);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
         }
         cmfgen_window_color(&cs);
         radeq_set_tail_color(cs.t_color, cs.n_shells);
@@ -7455,8 +11756,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             fprintf(stderr,
                     "[R6][BLOCKED] reason=DETERMINISTIC_LINE_INPUT_MISSING "
                     "iter=%d\n", iter);
-            cmfgen_free(&cs);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
         }
         if (!opac->jbar_line_det)
             opac->jbar_line_det = (double *)malloc(
@@ -7465,19 +11765,18 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
             fprintf(stderr,
                     "[R6][FATAL] reason=DETERMINISTIC_LINE_JBAR_ALLOCATION "
                     "iter=%d\n", iter);
-            cmfgen_free(&cs);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
         }
         CMFFineLineOperator line_operator = init_pass
             ? CMF_FINE_LINE_OPERATOR_INIT_SHARED_GAUSSIAN
             : CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV;
+        w5_cont_rad_generation = rad_generation + 1U;   /* w5_lines.csv label */
         if (cmfgen_fine_jbar(&cs, geo, opac, T_inner, plasma,
                              line_operator) != 0) {
             fprintf(stderr,
                     "[R6][BLOCKED] reason=DETERMINISTIC_LINE_JBAR_PRODUCER "
                     "iter=%d\n", iter);
-            cmfgen_free(&cs);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
         }
 
         a208_counters()->replay_line_blocks_attempted++;
@@ -7485,18 +11784,29 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
         if (cmfgen_commit_jnu(&cs, nlte, geo, opac, rad_generation) != 0) {
             fprintf(stderr, "[RADIATION-FIELD][FATAL] pure-CMFGEN commit failed iter=%d\n",
                     iter);
-            cmfgen_free(&cs);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
         }
         a208_counters()->replay_line_blocks_committed++;
+        if (xshell_gate && (rad_generation == 6 || rad_generation == 7) &&
+            xshell_capture_view(&xshell,nlte,(int)rad_generation)!=0) {
+            fprintf(stderr,"[XSHELL][BLOCKED] reason=CAPTURE_VIEW epoch=%llu\n",
+                    (unsigned long long)rad_generation);
+            CMFGEN_RUN_DONE(-1);
+        }
+
+        /* DET-OBS-WRITER: final radiation commit done, material not yet
+         * mutated (R7 below).  A writer failure is recorded in
+         * det_obs_status.json and never changes model_rc or the run flow. */
+        (void)det_obs_final_pass_hook(det_obs_on && !init_pass && iter == n_iter - 1,
+                                      &cs, geo, opac, plasma, T_inner, rad_generation,
+                                      nlte ? nlte->population_committed_generation : 0, iter);
 
         if (validation_exit_after_r6) {
             fprintf(stderr,
                     "[VALIDATION][EXIT-AFTER-R6] PASS iter=%d generation=%llu "
                     "downstream_r7=NOT_RUN a2_10=NOT_RUN spectra=NOT_WRITTEN\n",
                     iter, (unsigned long long)rad_generation);
-            cmfgen_free(&cs);
-            return 0;
+            CMFGEN_RUN_DONE(0);
         }
 
         /* R7 phase: commit/view -> gamma publication -> A2-08/A2-09/A2-10.
@@ -7510,8 +11820,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 fprintf(stderr,
                         "[GAMMA][FATAL] lane=DET iter=%d rc=%d\n",
                         iter, gamma_rc);
-                cmfgen_free(&cs);
-                return gamma_rc;
+                CMFGEN_RUN_DONE(gamma_rc);
             }
         }
 
@@ -7528,8 +11837,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 fprintf(stderr,
                         "[A2-INIT][FATAL] lane=DET "
                         "event=SEED_MATERIAL_PREDICTOR rc=%d\n", seed_rc);
-                cmfgen_free(&cs);
-                return seed_rc;
+                CMFGEN_RUN_DONE(seed_rc);
             }
             continue;
         }
@@ -7542,8 +11850,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 fprintf(stderr,
                         "[R7][FATAL] lane=DET iter=%d rc=%d\n",
                         iter, r7_rc);
-                cmfgen_free(&cs);
-                return r7_rc;
+                CMFGEN_RUN_DONE(r7_rc);
             }
             PhysicsComparisonStatus dump_status =
                 physics_comparison_dump_if_requested(
@@ -7553,8 +11860,7 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 fprintf(stderr,
                         "[PHYSICS-COMPARISON][FATAL] lane=DET iter=%d status=%s\n",
                         iter,physics_comparison_status_name(dump_status));
-                cmfgen_free(&cs);
-                return -1;
+                CMFGEN_RUN_DONE(-1);
             }
         }
 
@@ -7655,7 +11961,14 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                     "[A2-10][FATAL] committed CMF Te/population stamp mismatch "
                     "iter=%d\n",
                     iter);
-            return -1;
+            CMFGEN_RUN_DONE(-1);
+        }
+
+        if (xshell_gate && (xshell_epoch == 6 || xshell_epoch == 7) &&
+            xshell_capture_material(&xshell,plasma,atom,xshell_epoch)!=0) {
+            fprintf(stderr,"[XSHELL][BLOCKED] reason=CAPTURE_MATERIAL epoch=%d\n",
+                    xshell_epoch);
+            CMFGEN_RUN_DONE(-1);
         }
 
         if (cs.diag) {
@@ -7679,6 +11992,228 @@ int cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
     } else {
         cmfgen_write_spectrum(&cs, geo, T_inner, "lumina_spectrum.csv");
     }
-    cmfgen_free(&cs);
+    if (xshell_gate && xshell_run_measurement(&xshell,&cs,geo,plasma,nlte,atom,
+                                               T_inner,xshell_runtime_ok)!=0) {
+        fprintf(stderr,"[XSHELL][BLOCKED] reason=MEASUREMENT_GATE_FAILURE\n");
+        CMFGEN_RUN_DONE(-1);
+    }
+    CMFGEN_RUN_DONE(0);
+#undef CMFGEN_RUN_DONE
+}
+
+/* ------------------------------------------------------------------------- *
+ * DET-LTEUNMAP-EPS selftest hooks. Compiled ONLY when the selftest defines
+ * LUMINA_CMF_FINE_UNMAPPED_EPS_SELFTEST; the production build never sees them,
+ * so behaviour is unchanged. They give the selftest external linkage to the
+ * two static entry points it must exercise: the parity material (with the new
+ * eps path) and the shared census formatter. Setting g_fine_atom/g_fine_nlte
+ * uses the already-public cmfgen_fine_set_bf_atom.
+ * ------------------------------------------------------------------------- */
+#ifdef LUMINA_CMF_FINE_UNMAPPED_EPS_SELFTEST
+int cmf_fine_line_material_test(
+        const OpacityState *opac,const PlasmaState *plasma,
+        int line,int shell,int n_shells,double nu,double tau,double dnu_d,
+        double time_explosion,double legacy_chi0_pref,int parity,
+        int legacy_source_nlte,double line_eps,double sl_clamp,
+        const double *upper_population_cache,
+        int unmapped_eps_gate,const unsigned char *used_nlte_cache,
+        double *chi0,double *eta0,double *source_diag,double *eps_out,
+        int *srce_chk_applied,int *clamped){
+    return cmf_fine_line_material(
+        opac,plasma,line,shell,n_shells,nu,tau,dnu_d,time_explosion,
+        legacy_chi0_pref,parity,legacy_source_nlte,line_eps,sl_clamp,
+        upper_population_cache,unmapped_eps_gate,used_nlte_cache,
+        chi0,eta0,source_diag,eps_out,srce_chk_applied,clamped);
+}
+
+int cmf_unmapped_eps_format_test(char *buf,size_t n,int shell,
+        long n_unmapped,long n_mapped,double eps_min,double eps_median,
+        double eps_max,double thermal_emit_fraction){
+    return cmf_unmapped_eps_format(buf,n,shell,n_unmapped,n_mapped,
+        eps_min,eps_median,eps_max,thermal_emit_fraction);
+}
+
+double cmf_assemble_unmapped_el_test(int is_unmapped,int line,double n_e,
+        double T_e,double tau,int *fail){
+    return cmf_assemble_unmapped_el(is_unmapped,line,n_e,T_e,tau,fail);
+}
+
+int cmf_assemble_unmapped_eps_format_test(char *buf,size_t n,long pass,
+        int shell,long n_unmapped,long n_mapped,double eps_min,
+        double eps_median,double eps_max,double thermal_emit_fraction){
+    return cmf_assemble_unmapped_eps_format(buf,n,pass,shell,n_unmapped,
+        n_mapped,eps_min,eps_median,eps_max,thermal_emit_fraction);
+}
+
+int cmf_fine_unmapped_eps_fine_gate_test(void){
+    return cmf_fine_unmapped_eps_fine_gate();
+}
+
+double cmf_assemble_unmapped_sc_share_test(double w,double el){
+    return cmf_assemble_unmapped_sc_share(w,el);
+}
+
+int cmf_solve_j_conv_format_test(char *buf,size_t n,long pass,int n_ali,
+        double max_rel,double p99_rel,long cells){
+    return cmf_solve_j_conv_format(buf,n,pass,n_ali,max_rel,p99_rel,cells);
+}
+
+double cmf_cont_src_numerator_test(int gate,double chi_bf,double chi_ff,
+        double B,double eta_bf,double eta_ln){
+    return cmf_cont_src_numerator(gate,chi_bf,chi_ff,B,eta_bf,eta_ln);
+}
+
+int cmf_assemble_cont_src_format_test(char *buf,size_t n,long pass,int shell,
+        long n_bf_bins,double s_over_b_mean,double s_over_b_min,
+        double s_over_b_max){
+    return cmf_assemble_cont_src_format(buf,n,pass,shell,n_bf_bins,
+        s_over_b_mean,s_over_b_min,s_over_b_max);
+}
+
+int cmf_cont_src_precond_fault_test(int bf_present,int eta_bf_present,
+        int bf_milne){
+    return cmf_cont_src_precond_fault(bf_present,eta_bf_present,bf_milne);
+}
+
+int cmf_cont_src_shell_fault_test(long n_bf_bins,int milne_ok){
+    return cmf_cont_src_shell_fault(n_bf_bins,milne_ok);
+}
+#endif
+
+#ifdef LUMINA_POP_DJDN_SELFTEST
+/* DET-PATHB-LOCAL hooks: the CPU selftest links THIS translation unit so it
+ * exercises the PRODUCTION fs_seg_eval primitive (the single source of truth
+ * that formal_djdchi_fs_S uses) -- no replica of the derivative recursion. The
+ * generic single-ray helpers below reuse fs_seg_eval, so the forward solve and
+ * the derivative recursion share the same segment arithmetic. */
+
+/* One fixed-S segment: forward update + local diagonal derivative source. */
+int formal_djdchi_seg_test(double dtau, double S, double I_in, double ds,
+        double *I_out, double *dsrc_out, double *ex_out, double *psi_out,
+        double *psip_out){
+    FsSeg seg = fs_seg_eval(dtau, S, I_in, ds);
+    if (I_out)   *I_out   = I_in * seg.ex + S * seg.psi;
+    if (dsrc_out)*dsrc_out= seg.dsrc;
+    if (ex_out)  *ex_out  = seg.ex;
+    if (psi_out) *psi_out = seg.psi;
+    if (psip_out)*psip_out= (dtau > 1e-4) ? seg.ex
+                                          : (1.0 - (dtau < 0.0 ? 0.0 : dtau));
     return 0;
 }
+
+/* Generic single-ray fixed-S formal solve J[i] (outer->inner segment list;
+ * core=1 emits Bnu at the inner boundary). Same fs_seg_eval + inbound/inner/
+ * outbound structure as formal_solve_bin, for the finite-difference fixture. */
+void formal_solve_ray_test(int n, const double *chi, const double *ds,
+        const double *S, int core, double Bnu, double *J){
+    double *Jacc = calloc((size_t)n, sizeof(double));
+    double *wacc = calloc((size_t)n, sizeof(double));
+    if (!Jacc || !wacc) { free(Jacc); free(wacc); return; }
+    double ray_w = 1.0, I = 0.0;
+    for (int i = 0; i < n; ++i) {
+        FsSeg g = fs_seg_eval(chi[i] * ds[i], S[i], I, ds[i]);
+        I = I * g.ex + S[i] * g.psi;
+        Jacc[i] += ray_w * I; wacc[i] += ray_w;
+    }
+    if (core) I = Bnu;
+    for (int i = n - 1; i >= 0; --i) {
+        FsSeg g = fs_seg_eval(chi[i] * ds[i], S[i], I, ds[i]);
+        I = I * g.ex + S[i] * g.psi;
+        Jacc[i] += ray_w * I; wacc[i] += ray_w;
+    }
+    for (int i = 0; i < n; ++i) {
+        double iw = (wacc[i] > 0.0) ? 1.0 / wacc[i] : 0.0;
+        J[i] = Jacc[i] * iw;
+    }
+    free(Jacc); free(wacc);
+}
+
+/* --- PRODUCTION-FUNCTION hooks: the selftest calls THESE (formal_djdchi_fs_S
+ *     and formal_solve_bin themselves), so the production walker's core reset,
+ *     ray weighting and (shell,bin) indexing are validated, not a replica. --- */
+void formal_djdchi_fs_S_test(CMFGENState *cs, const Geometry *geo,
+        double T_inner, double *dJdchi){
+    formal_djdchi_fs_S(cs, geo, T_inner, dJdchi);
+}
+void formal_solve_bin_test(CMFGENState *cs, const Geometry *geo, int b,
+        const double *S, double Bnu_inner, double *Jb, double *Lstar){
+    formal_solve_bin(cs, geo, b, S, Bnu_inner, Jb, Lstar, NULL, NULL);
+}
+/* the exact inner-BC blackbody the production walker uses (inner_bb_scale*B). */
+double formal_djdchi_bnu_test(double nu, double T_inner){
+    return cmf_inner_bb_scale() * cm_planck(nu, T_inner);
+}
+
+/* Generic single-ray fixed-S diagonal dJ/dchi[i] -- primitive-level reference
+ * (shared fs_seg_eval); the PRODUCTION walker is validated by the hooks above. */
+void formal_djdchi_ray_test(int n, const double *chi, const double *ds,
+        const double *S, int core, double Bnu, double *dJ){
+    double *dJacc = calloc((size_t)n, sizeof(double));
+    double *wacc  = calloc((size_t)n, sizeof(double));
+    double *dI    = calloc((size_t)n, sizeof(double));
+    if (!dJacc || !wacc || !dI) { free(dJacc); free(wacc); free(dI); return; }
+    double ray_w = 1.0, I = 0.0;
+    for (int i = 0; i < n; ++i) {
+        FsSeg g = fs_seg_eval(chi[i] * ds[i], S[i], I, ds[i]);
+        for (int t = 0; t < n; ++t) dI[t] *= g.ex;
+        dI[i] += g.dsrc;
+        I = I * g.ex + S[i] * g.psi;
+        dJacc[i] += ray_w * dI[i]; wacc[i] += ray_w;
+    }
+    if (core) { I = Bnu; for (int t = 0; t < n; ++t) dI[t] = 0.0; }
+    for (int i = n - 1; i >= 0; --i) {
+        FsSeg g = fs_seg_eval(chi[i] * ds[i], S[i], I, ds[i]);
+        for (int t = 0; t < n; ++t) dI[t] *= g.ex;
+        dI[i] += g.dsrc;
+        I = I * g.ex + S[i] * g.psi;
+        dJacc[i] += ray_w * dI[i]; wacc[i] += ray_w;
+    }
+    for (int i = 0; i < n; ++i) {
+        double iw = (wacc[i] > 0.0) ? 1.0 / wacc[i] : 0.0;
+        dJ[i] = dJacc[i] * iw;
+    }
+    free(dJacc); free(wacc); free(dI);
+}
+#endif
+
+/* ------------------------------------------------------------------------- *
+ * DET-W5-CONT-SOURCE selftest entry points (tests/w5_cont_source_selftest.c).
+ * Compiled ONLY under LUMINA_W5_CONT_SOURCE_SELFTEST; the production build
+ * never sees them. They arm fault injection, capture the fine pre-assembly
+ * scratch (continuum emissivity), and expose the error-report helper.
+ * ------------------------------------------------------------------------- */
+#ifdef LUMINA_W5_CONT_SOURCE_SELFTEST
+void w5_cont_selftest_set_fault(int code) { w5_cont_selftest_fault_code = code; }
+void w5_cont_selftest_reset(void) {
+    w5_cont_fine_calls = 0; w5_cont_rad_generation = 0;
+    w5_cont_selftest_fault_code = W5_CONT_FAULT_NONE;
+    w5_cont_off_cell = -1; w5_cont_off_before = 0.0; w5_cont_off_after = 0.0;
+    w5_cont_cap_done = 0;
+}
+void w5_cont_selftest_set_rad_generation(unsigned long long g) {
+    w5_cont_rad_generation = (uint64_t)g;
+}
+void w5_cont_selftest_arm_capture(double *scratch, double *chi_abs,
+        double *eta, double *chi_es, double *chi_line, double *nu,
+        size_t max_cells) {
+    w5_cont_cap[0] = scratch; w5_cont_cap[1] = chi_abs; w5_cont_cap[2] = eta;
+    w5_cont_cap[3] = chi_es; w5_cont_cap[4] = chi_line; w5_cont_cap[5] = nu;
+    w5_cont_cap_max = max_cells; w5_cont_cap_done = 0;
+}
+int w5_cont_selftest_capture_shape(int *ns, int *nf) {
+    if (ns) *ns = w5_cont_cap_ns;
+    if (nf) *nf = w5_cont_cap_nf;
+    return w5_cont_cap_done;
+}
+void w5_cont_selftest_off_injection(long *cell, double *before,
+                                    double *after) {
+    if (cell) *cell = w5_cont_off_cell;
+    if (before) *before = w5_cont_off_before;
+    if (after) *after = w5_cont_off_after;
+}
+long w5_cont_selftest_asm_pass(void) { return g_asm_cont_src_pass; }
+int w5_cont_selftest_asm_fault(void) { return g_asm_cont_src_fault; }
+double w5_cont_fine_eta_at_test(const CMFGENState *csb, int s, double nu) {
+    return w5_cont_fine_eta_at(csb, s, nu);
+}
+#endif

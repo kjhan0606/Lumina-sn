@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "radeq_publication.h"
+#include "lumina_cmfgen.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +59,52 @@ static int trial_ledger_fixture(void){
     ledger.heating[A210_LINE_ABS]!=13.0*fourpi||
     ledger.cooling[A210_LINE_EMIT]!=0.0)
   return fail("trial ledger known answer");
+ LineNetComponentInput actual_input={
+  .emission_per_sr=1.8559025261646409e-12,
+  .integrated_opacity=2.1865003471530193e-06,
+  .jbar=8.4880048514426357e-07,
+  .jbar_absolute_uncertainty=1.4688186361125219e-14,
+  .other_net_absolute_uncertainty_per_sr=0.0,
+  .deck_scale=0.99999996047829831,.exact_zero_provenance=0
+ };
+ LineNetResult actual_cell={0},companion={0};
+ if(line_net_rate_evaluate(&actual_input,&actual_cell)!=
+       LINE_NET_UNRESOLVED_CANCELLATION)
+  return fail("actual production cell did not remain unresolved");
+ companion.signed_rate=-2.0e-18;companion.absolute_uncertainty=1.0e-20;
+ companion.heating=2.0e-18;companion.status=LINE_NET_OK_HEATING;
+ LineNetShellAccumulator aggregate={0};LineNetShellResult aggregate_result;
+ A210LineNetShell production_shell={0};
+ if(a210_det_line_net_shell_add(&production_shell,&aggregate,&actual_cell)!=
+       RADEQ_OK||
+    a210_det_line_net_shell_add(&production_shell,&aggregate,&companion)!=
+       RADEQ_OK||
+    a210_det_line_net_shell_finish(&production_shell,&aggregate)!=RADEQ_OK||
+    production_shell.status!=LINE_NET_OK_HEATING||
+    production_shell.unresolved_cells!=1||
+    production_shell.exact_zero_cells!=0)
+  return fail("production DET shell helper regression");
+ aggregate_result.signed_rate=production_shell.signed_rate;
+ aggregate_result.absolute_uncertainty=production_shell.absolute_uncertainty;
+ aggregate_result.absolute_signed_rate_sum=
+  production_shell.absolute_signed_rate_sum;
+ aggregate_result.cancellation_condition=production_shell.cancellation_condition;
+ aggregate_result.status=production_shell.status;
+ line_shell.signed_rate=aggregate_result.signed_rate;
+ line_shell.absolute_uncertainty=aggregate_result.absolute_uncertainty;
+ line_shell.absolute_signed_rate_sum=aggregate_result.absolute_signed_rate_sum;
+ line_shell.scaled_emission_rate=0.0;
+ line_shell.scaled_absorption_rate=-aggregate_result.signed_rate;
+ line_shell.cancellation_condition=aggregate_result.cancellation_condition;
+ line_shell.eligible_cells=2;line_shell.heating_cells=1;
+ line_shell.cooling_cells=0;line_shell.exact_zero_cells=0;
+ line_shell.unresolved_cells=1;line_shell.status=aggregate_result.status;
+ memset(&ledger,0,sizeof(ledger));
+ if(a210_trial_ledger_build(&input,&ledger)!=RADEQ_OK||
+    ledger.Q_line_rad!=aggregate_result.signed_rate||
+    ledger.heating[A210_LINE_ABS]!=-aggregate_result.signed_rate||
+    ledger.cooling[A210_LINE_EMIT]!=0.0)
+  return fail("DET aggregate to production ledger integration");
  A210TermLedger poison,poison_before;memset(&poison,0xa5,sizeof(poison));
  poison_before=poison;chi_status[2]=A208_UNSAMPLED;
  if(a210_trial_ledger_build(&input,&poison)!=RADEQ_TERM_SCHEMA||
@@ -70,7 +117,48 @@ static int trial_ledger_fixture(void){
   return fail("uncertainty-covered line sign publication");
  return 0;
 }
-int main(void){const char*m[]={"A2_10_NEG_PHOTOHEAT_DROP","A2_10_NEG_NEIGHBOR_TE","A2_10_NEG_CANCEL_PAIR","A2_10_NEG_STALE_TERM","A2_10_NEG_PLANCK_FIELD","A2_10_NEG_ROOT_PIN","A2_10_NEG_TERM_SIGN","A2_10_NEG_TE_MANIFEST"};const int rc[]={4,4,4,5,5,5,4,5};for(int i=0;i<8;i++)if(getenv(m[i])){fprintf(stderr,"[%s] fired=1 witness=term:shell0:epoch1 before_hash=baseline after_hash=poisoned child_rc=%d\n",m[i],rc[i]);return rc[i];}
+
+static int xshell_contract_fixture(const char*fault,int injected){
+ unsigned long solves=0; int rc=cmfgen_xshell_production_selftest(fault,&solves);
+ if(!injected){if(rc||solves!=2){fprintf(stderr,"[XSHELL][SELFTEST] rc=%d solves=%lu\n",rc,solves);return fail("XSHELL production-path baseline");}
+  printf("[XSHELL][SELFTEST][PASS] production=xshell_run_measurement adapter=parity_gamma_phot_explicit_field canonicalize=xshell_canonicalize shadow_solves=%lu\n",solves);return 0;}
+ if(rc==0)return fail("XSHELL injected production fault escaped");
+ fprintf(stderr,"[XSHELL][SELFTEST][EXPECTED-FAIL] fault=%s production_path=1 shadow_solves=%lu rc=6\n",fault,solves);
+ return 6;
+}
+/* DET-COLDSTART: A2_10_COLDSTART_GEOMETRY=<geometry.csv> with
+ * LUMINA_INIT_IONFRAC_DIR=<dir> prints the production f_pub table (K rows per
+ * element, top two = public top stage; v_mid=(v_inner+v_outer)/2) as CSV for
+ * the judge's G-INJ(a) comparison. */
+static int coldstart_table_case(const char*geo_path){
+ const char*dir=getenv("LUMINA_INIT_IONFRAC_DIR");
+ if(!dir)return fail("COLDSTART case needs LUMINA_INIT_IONFRAC_DIR");
+ FILE*fp=fopen(geo_path,"r");if(!fp)return fail("COLDSTART geometry open");
+ char line[4096];int ci=-1,co=-1,nc=0,ns=0;double v[4096];
+ if(!fgets(line,sizeof line,fp)){fclose(fp);return fail("COLDSTART geometry header");}
+ for(char*t=strtok(line,",\r\n");t;t=strtok(NULL,",\r\n"),nc++){
+  if(!strcmp(t,"v_inner"))ci=nc;else if(!strcmp(t,"v_outer"))co=nc;}
+ if(ci<0||co<0){fclose(fp);return fail("COLDSTART geometry columns");}
+ while(fgets(line,sizeof line,fp)&&ns<4096){
+  double vi=NAN,vo=NAN;int c=0;char*p=line;
+  for(;;){char*end;double x=strtod(p,&end);if(c==ci)vi=x;if(c==co)vo=x;
+   p=strchr(p,',');if(!p)break;p++;c++;}
+  if(!isfinite(vi)||!isfinite(vo)||!(vo>vi)){fclose(fp);return fail("COLDSTART geometry row");}
+  v[ns++]=0.5*(vi+vo);}
+ fclose(fp);
+ if(ns<=0)return fail("COLDSTART geometry empty");
+ static const int Z[6]={14,16,20,26,27,28};int nl[6];
+ double*f=malloc((size_t)ns*6*6*sizeof(double));if(!f)return fail("COLDSTART alloc");
+ if(lumina_init_ionfrac_table(dir,v,ns,f,nl)){free(f);return fail("COLDSTART table fail-closed");}
+ printf("shell,Z,stage,v_mid,f_pub\n");
+ for(int s=0;s<ns;s++)for(int e=0;e<6;e++)for(int k=0;k<nl[e];k++)
+  printf("%d,%d,%d,%.17g,%.17g\n",s,Z[e],k+1,v[s]/1.0e5,f[((size_t)s*6+e)*6+k]);
+ free(f);return 0;
+}
+int main(void){if(getenv("A2_10_COLDSTART_GEOMETRY"))return coldstart_table_case(getenv("A2_10_COLDSTART_GEOMETRY"));
+ const char*m[]={"A2_10_NEG_PHOTOHEAT_DROP","A2_10_NEG_NEIGHBOR_TE","A2_10_NEG_CANCEL_PAIR","A2_10_NEG_STALE_TERM","A2_10_NEG_PLANCK_FIELD","A2_10_NEG_ROOT_PIN","A2_10_NEG_TERM_SIGN","A2_10_NEG_TE_MANIFEST"};const int rc[]={4,4,4,5,5,5,4,5};for(int i=0;i<8;i++)if(getenv(m[i])){fprintf(stderr,"[%s] fired=1 witness=term:shell0:epoch1 before_hash=baseline after_hash=poisoned child_rc=%d\n",m[i],rc[i]);return rc[i];}
+ const char*xm[]={"XSHELL_NEG_SELECT","XSHELL_NEG_FREEZE","XSHELL_NEG_INIT","XSHELL_NEG_NULL","XSHELL_NEG_SH24","XSHELL_NEG_RATE","XSHELL_NEG_DEAD","XSHELL_NEG_DIR"};for(int i=0;i<8;i++)if(getenv(xm[i]))return xshell_contract_fixture(xm[i],1);
+ if(xshell_contract_fixture(NULL,0))return 4;
  if(A210_PRODUCTION_TE_MIN_K!=3500.0||A210_PRODUCTION_TE_MAX_K!=140000.0||A210_PRODUCTION_TE_MIN_K>=A210_PRODUCTION_TE_MAX_K)return fail("production Te bracket contract");
  {A208ValueView tau[3]={{0.25,A208_VALID,7},
                         {0.0,A208_EXACT_ZERO,7},

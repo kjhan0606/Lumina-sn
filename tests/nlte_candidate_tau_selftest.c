@@ -411,10 +411,25 @@ int main(void)
         radius, velocity, NS, 100.0, 5, 8, NULL
     };
     NLTEPopulationCandidate failed_candidate;
+    setenv("LUMINA_NLTE_NE_CLOSURE", "1", 1);
     if (nlte_population_candidate_build_bundle(&failed_candidate, &request) !=
             NLTE_CANDIDATE_SOLVE_FAILED || failed_candidate.active ||
         failed_candidate.bundle_complete)
         return fail("bundle did not fail closed at missing gamma input");
+    if (failed_candidate.nlte.ew_runtime_counts_sink !=
+            &failed_candidate.ew_runtime_counts ||
+        failed_candidate.plasma.T_e != failed_candidate.trial_te ||
+        failed_candidate.plasma.n_electron !=
+            failed_candidate.electron_density ||
+        failed_candidate.atom.ion_number_density !=
+            failed_candidate.ion_population ||
+        failed_candidate.atom.partition_functions !=
+            failed_candidate.partition ||
+        failed_candidate.nlte.nlte_level_populations !=
+            failed_candidate.level_population ||
+        failed_candidate.opacity.electron_density !=
+            failed_candidate.electron_density)
+        return fail("closure retry candidate retained a moved self-pointer");
     if (memcmp(&opacity, &opacity_before, sizeof(opacity)) != 0 ||
         memcmp(public_tau, public_tau_before, sizeof(public_tau)) != 0 ||
         memcmp(public_source, public_source_before, sizeof(public_source)) != 0 ||
@@ -424,6 +439,23 @@ int main(void)
                sizeof(emissivity_counters_before)) != 0)
         return fail("failed bundle mutated public/global state");
     nlte_population_candidate_free(&failed_candidate);
+
+    /* Closure-on validates dimensions before its trial-vector allocation or
+     * initial memcpy.  These are direct calls to the production controller. */
+    {
+        NLTEPopulationBundleRequest invalid = request;
+        invalid.n_shells = SIZE_MAX;
+        if (nlte_population_candidate_build_bundle(
+                &failed_candidate, &invalid) !=
+                NLTE_CANDIDATE_INVALID_LAYOUT)
+            return fail("closure controller accepted overflow shell count");
+        invalid.n_shells = 0;
+        if (nlte_population_candidate_build_bundle(
+                &failed_candidate, &invalid) !=
+                NLTE_CANDIDATE_INVALID_LAYOUT)
+            return fail("closure controller accepted zero shell count");
+    }
+    unsetenv("LUMINA_NLTE_NE_CLOSURE");
 
     /* Complete a synthetic final replay around the already real private
      * tau/BF/A208/A209 candidate.  The commit must move owners once, copy all

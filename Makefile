@@ -390,9 +390,9 @@ bf-edge-census:
 	python3 scripts/census_bf_edges_below_grid.py \
 		--ref-dir data/tardis_reference_toy06_19p48d_sivcaiv_active
 
-selftest_a2_10_radeq: tests/a2_10_radeq_selftest.c src/radeq_publication.c src/opacity_publication.c src/population_contract.c src/radeq_publication.h
-	$(CC) -O2 -Wall -Wextra -std=c11 -Isrc -o $@ \
-		tests/a2_10_radeq_selftest.c src/radeq_publication.c src/opacity_publication.c src/population_contract.c $(LDFLAGS)
+selftest_a2_10_radeq: tests/a2_10_radeq_selftest.c $(filter-out src/lumina_main.c,$(SOURCES)) $(HEADERS)
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections -o $@ \
+		tests/a2_10_radeq_selftest.c $(filter-out src/lumina_main.c,$(SOURCES)) $(LDFLAGS)
 	python3 scripts/run_a2_10_selftest.py --binary ./selftest_a2_10_radeq
 
 selftest_det_stage12: tests/det_stage12_selftest.c src/radeq_publication.h \
@@ -543,10 +543,13 @@ lumina_legacy_seed_converter: tools/lumina_legacy_seed_converter.c \
 		tools/lumina_legacy_seed_converter.c src/jnu_seed.c \
 		src/radiation_field.c src/seed_capability.c $(LDFLAGS)
 
-.PHONY: gate-registry-check selftest-registry-milestone
+.PHONY: gate-registry-check selftest-env-universe-strict selftest-registry-milestone
 
 gate-registry-check:
 	python3 scripts/check_gate_registry.py
+
+selftest-env-universe-strict:
+	python3 tests/env_universe_strict_selftest.py
 
 selftest-registry-milestone: selftest_a2_17_jnu_seed \
 		selftest_cmf_error_envelope selftest_cmf_exact_sliding \

@@ -201,16 +201,39 @@ int main(void)
     CHECK(a210_geometry_sha256(velocity_edges,NS+1,tep.geometry_sha256)==RADEQ_OK,
           "geometry-hash");
 
+    int element_Z[1]={14},elem_offset[2]={0,3};
+    int ion_Z[3]={14,14,14},ion_stage[3]={0,1,2};
+    double ion_population[3*NS]={50,60,30,40,20,25};
+    AtomicData population_atom={0};
+    population_atom.n_elements=1;population_atom.element_Z=element_Z;
+    population_atom.elem_ion_offset=elem_offset;
+    population_atom.n_ion_pops=3;population_atom.ion_pop_Z=ion_Z;
+    population_atom.ion_pop_stage=ion_stage;
+    population_atom.ion_number_density=ion_population;
+    population_atom.population_committed_generation=7;
+    double nlte_population[4*NS]={10,15,20,25,5,10,15,15};
+    NLTEConfig population_nlte={0};
+    population_nlte.n_nlte_ions=2;
+    population_nlte.nlte_Z[0]=14;population_nlte.nlte_Z[1]=14;
+    population_nlte.nlte_ion[0]=1;population_nlte.nlte_ion[1]=2;
+    population_nlte.nlte_ion_level_offset[0]=0;
+    population_nlte.nlte_ion_level_offset[1]=2;
+    population_nlte.nlte_ion_level_offset[2]=4;
+    population_nlte.n_nlte_levels_total=4;
+    population_nlte.nlte_level_populations=nlte_population;
+    population_nlte.population_committed_generation=7;
+
     PhysicsComparisonSnapshotInput input={
         "DET",0,10,NS,ri,ro,vi,vo,te_value,ne,natom,uatom,
-        &radiation,&op,&em,&tep
+        &radiation,&op,&em,&tep,&population_atom,&population_nlte
     };
     CHECK(physics_comparison_snapshot_write(directory,&input)==
           PHYSICS_COMPARISON_OK,"positive-write");
-    char manifest[512],shell[512],spectral[512];
+    char manifest[512],shell[512],spectral[512],ion_path[512];
     snprintf(manifest,sizeof(manifest),"%s/physics_DET_iter0000.manifest.json",directory);
     snprintf(shell,sizeof(shell),"%s/physics_DET_iter0000.shell.csv",directory);
     snprintf(spectral,sizeof(spectral),"%s/physics_DET_iter0000.spectral.csv",directory);
+    snprintf(ion_path,sizeof(ion_path),"%s/physics_DET_iter0000.ion.csv",directory);
     CHECK(file_has(manifest,"\"transaction_status\": \"COMMITTED\""),
           "manifest-commit");
     CHECK(file_has(manifest,"\"te_lane\": \"FREE_T\""),
@@ -219,6 +242,15 @@ int main(void)
           "manifest-four-pi");
     CHECK(file_has(shell,"q_ad_signed_total"),"shell-schema");
     CHECK(file_has(spectral,"0,0,1,2,3,"),"integral-rebin-known-answer");
+    CHECK(file_has(manifest,"\"ion_file\": \"physics_DET_iter0000.ion.csv\""),
+          "manifest-ion-file");
+    CHECK(file_has(ion_path,"population_generation,shell_id,nonpair_charge_cm3"),
+          "ion-schema");
+    CHECK(file_has(ion_path,"7,0,0,100,30,20,30,20,,,,,"),
+          "ion-sums-and-absent-blanks");
+    struct stat ion_stat;
+    CHECK(stat(ion_path,&ion_stat)==0&&ion_stat.st_size<=256*1024,
+          "ion-size-cap");
 
     em.te_generation=6;
     input.iteration=1;
@@ -234,6 +266,19 @@ int main(void)
           PHYSICS_COMPARISON_INVALID_VALUE,"sign-negative");
     snprintf(missing,sizeof(missing),"%s/physics_DET_iter0002.manifest.json",directory);
     CHECK(access(missing,F_OK)!=0,"sign-no-manifest");
+
+    /* Target element present while both q1/q2 stage and NLTE slots are absent:
+     * reject during validation, before the ion writer can index -1. */
+    ledger[0].adiabatic_signed_total=0.6;
+    ion_stage[1]=3;ion_stage[2]=4;
+    population_nlte.nlte_ion[0]=3;population_nlte.nlte_ion[1]=4;
+    input.iteration=6;
+    CHECK(physics_comparison_snapshot_write(directory,&input)==
+          PHYSICS_COMPARISON_INVALID_VALUE,"target-pair-missing-negative");
+    snprintf(missing,sizeof(missing),"%s/physics_DET_iter0006.manifest.json",directory);
+    CHECK(access(missing,F_OK)!=0,"target-pair-missing-no-manifest");
+    ion_stage[1]=1;ion_stage[2]=2;
+    population_nlte.nlte_ion[0]=1;population_nlte.nlte_ion[1]=2;
 
     /* M5 negative controls: invalid temperature publication metadata must
      * remove the staged manifest, shell, and spectral files. */
@@ -389,7 +434,7 @@ int main(void)
         unsetenv("LUMINA_PHYSICS_COMPARISON_DIR");
     }
 
-    remove(manifest);remove(shell);remove(spectral);rmdir(directory);
+    remove(manifest);remove(shell);remove(spectral);remove(ion_path);rmdir(directory);
     if(failures)return 1;
     printf("PHYSICS_COMPARISON_SELFTEST PASS generation=ATOMIC rebin=INTEGRAL "
            "four_pi=DECLARED adiabatic_sign=CHECKED\n");

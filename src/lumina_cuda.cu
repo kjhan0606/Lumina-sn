@@ -7025,7 +7025,8 @@ int main(int argc, char *argv[]) {
      * van-Regemorter-from-oscillator-strength proxy. */
     {
         const char *fe3_env = getenv("LUMINA_FEIII_COLDATA");
-        int want_fe3 = (fe3_env && atoi(fe3_env) != 0) || artis_parity_enabled();
+        int want_fe3 = (fe3_env && atoi(fe3_env) != 0) || artis_parity_enabled() ||
+                       omega_cmfgen_enabled();
         if (want_fe3) {
             char fe3_path[1024];
             snprintf(fe3_path, sizeof(fe3_path), "%s/feiii_col_zhang.bin", ref_dir);
@@ -7127,6 +7128,17 @@ int main(int argc, char *argv[]) {
         printf("  ARTIS-parity col_data: Fe III(Zhang)%s + %d generic ion tables loaded\n",
                atom_data.feiii_col_loaded ? "" : "(MISSING!)", atom_data.ncol_ions);
         printf("========================================================\n\n");
+    }
+    if (omega_cmfgen_enabled() && !artis_parity_enabled()) {
+        /* [OMEGA-CMFGEN] standalone (no parity master): same manifest-driven,
+         * fail-closed col_data load as the parity branch above. */
+        if (load_ion_coldata_manifest(&atom_data, ref_dir) <= 0) {
+            fprintf(stderr, "[OMEGA-CMFGEN][FATAL] manifest col_data load failed"
+                            " -> fail-closed abort\n");
+            exit(EXIT_FAILURE);
+        }
+        printf("  [OMEGA-CMFGEN] standalone col_data: Fe III(Zhang)%s + %d ion tables\n",
+               atom_data.feiii_col_loaded ? "" : "(MISSING!)", atom_data.ncol_ions);
     }
     /* [OMEGA-CMFGEN] arm the per-line 3-tier map + census banner. Must run after
      * the col tables are loaded and while still single-threaded. No-op when the

@@ -21,6 +21,7 @@
 #define LUMINA_CMFGEN_H
 
 #include "lumina.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,6 +100,15 @@ typedef struct {
                                  line source S_l=(1-eps)*J_inc+eps*B(Te), which
                                  (unlike total-Jbar) can fall below the backlight
                                  and carve a P-Cygni trough. 0 = normal. */
+    double *w5_cont_eta;      /* DET-W5-CONT-SOURCE: [n_shells*n_bins] bf+ff
+                                 continuum emissivity the bin assembler consumed
+                                 (bf_get_eta pack + extra thermal ff chi_ff*B).
+                                 Allocated only under
+                                 LUMINA_CMF_FINE_CONT_NLTE_SOURCE=1; NULL
+                                 otherwise; freed with S_fixed. */
+    struct DetObsCapture *det_obs_cap; /* DET-OBS-WRITER final-pass capture
+                                 (NULL unless LUMINA_DET_OBS_WRITER=1);
+                                 freed by cmfgen_free. */
 } CMFGENState;
 
 /* E4 in-situ emissivity A/B audit.  The B lane keeps the production opacity,
@@ -167,6 +177,13 @@ int  cmfgen_init(CMFGENState *cs, const Geometry *geo);
  * thermostat extracts a too-cold value. */
 void cmfgen_window_color(CMFGENState *cs);
 void cmfgen_free(CMFGENState *cs);
+/* DET-OBS-WRITER (prereg PREREG_DET_OBS_WRITER_2026-10-02) */
+int  det_obs_env_mode(int *on);
+void det_obs_capture_arm(CMFGENState *cs, uint64_t material_generation);
+void det_obs_capture_free(CMFGENState *cs);
+int  det_obs_write(CMFGENState *cs, const Geometry *geo, const OpacityState *opac,
+                   const PlasmaState *plasma, double T_inner,
+                   uint64_t rad_generation, uint64_t material_generation, int iter);
 
 /* Build chi_es/chi_abs/chi_line/chi_tot/S_fixed for the current plasma +
  * opacity + bf state. T_e is taken from plasma->T_e. */
@@ -313,6 +330,10 @@ int  cmfgen_sha256_file(const char *path, char hex[65]);
 int  cmfgen_run(Geometry *geo, OpacityState *opac, BFOpacity *bf,
                 PlasmaState *plasma, NLTEConfig *nlte, AtomicData *atom,
                 GammaDeposition *gamma, double T_inner, int n_iter);
+
+/* Test-only driver for the production XSHELL measurement path. */
+int cmfgen_xshell_production_selftest(const char *fault,
+                                      unsigned long *solve_count);
 
 #ifdef __cplusplus
 }

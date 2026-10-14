@@ -116,6 +116,10 @@ typedef struct {
     int ionization_worst_ion_index;
     int ionization_worst_ion_shell;
     int ionization_worst_charge_shell;
+    int ne_closure_active;
+    int ne_closure_iterations;
+    double ne_closure_max_relative_residual;
+    int ne_closure_worst_shell;
     PopulationStatus ionization_failure_status;
     int ionization_failure_shell;
     int ionization_failure_element;
@@ -168,6 +172,21 @@ typedef struct {
     NLTEPopulationCandidateStatus status;
     int active;
 } NLTEPopulationCandidate;
+/* D-C-1 final invariant check.  With the gate enabled this is read-only: the
+ * simultaneous private solve has already retained the n_e consumed by the
+ * accepted stage/pair state. */
+int nlte_ne_closure_candidate(NLTEPopulationCandidate *candidate,
+                              const char *commit_label, FILE *diagnostic);
+
+/* One read-only simultaneous-closure step used by the production controller
+ * and its direct synthetic selftest.  next_ne receives the positive 0.5
+ * damped iterate; candidate arrays and generations are never changed. */
+PopulationStatus nlte_ne_closure_trial_step(
+    const NLTEPopulationCandidate *candidate,
+    double *next_ne,
+    double *max_relative_residual,
+    int *worst_shell);
+
 
 typedef struct {
     const NLTEConfig *public_nlte;
@@ -208,6 +227,12 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_thermodynamics(
  * its ion-lock conservation rows never consume totals cloned at another T_e.
  * No population generation is committed by this substage. */
 NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
+    NLTEPopulationCandidate *candidate);
+
+/* Same stage-rate producer, but consume candidate->electron_density as the
+ * prescribed trial n_e instead of running the legacy stage-only n_e solve. */
+NLTEPopulationCandidateStatus
+nlte_population_candidate_prepare_ionization_at_ne(
     NLTEPopulationCandidate *candidate);
 
 /* Diagnostic A/B only: replace the public-cloned pre-core Sobolev slab with

@@ -1,6 +1,8 @@
 #ifndef LUMINA_LINE_NET_RATE_H
 #define LUMINA_LINE_NET_RATE_H
 
+#include <stdint.h>
+
 /* Line-resolved radiative-equilibrium energy exchange.
  *
  * The signed convention matches CMFGEN STEQ_T:
@@ -9,7 +11,9 @@
  *
  * A nonzero signed result is never clamped.  A result whose sign is not
  * larger than its supplied input-uncertainty bound is returned as
- * LINE_NET_UNRESOLVED_CANCELLATION and must not be published. */
+ * LINE_NET_UNRESOLVED_CANCELLATION and cannot be published as an individual
+ * cell.  Its unchanged q/u may participate in deterministic shell aggregate
+ * qualification. */
 
 #define LINE_NET_FOUR_PI 12.56637061435917295385057353311801153679
 #define LINE_NET_CMFGEN_RE_INTERNAL_TO_CGS \
@@ -52,6 +56,27 @@ typedef struct {
     LineNetStatus status;
 } LineNetResult;
 
+/* Deterministic shell accumulator.  Individual unresolved cells retain their
+ * raw signed rates and absolute bounds here; only the completed shell is
+ * sign-qualified.  The lower/upper sums enclose accumulation rounding. */
+typedef struct {
+    long double signed_rate;
+    long double signed_rate_lower;
+    long double signed_rate_upper;
+    long double absolute_uncertainty;
+    long double absolute_signed_rate_sum;
+    uint64_t cells;
+    uint64_t unresolved_cells;
+} LineNetShellAccumulator;
+
+typedef struct {
+    double signed_rate;
+    double absolute_uncertainty;
+    double absolute_signed_rate_sum;
+    double cancellation_condition;
+    LineNetStatus status;
+} LineNetShellResult;
+
 typedef enum {
     LINE_NET_NEGATIVE_OPACITY_NONE = 0,
     LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK = 1
@@ -85,6 +110,16 @@ extern "C" {
 
 LineNetStatus line_net_rate_evaluate(const LineNetComponentInput *input,
                                      LineNetResult *result);
+
+/* Add one valid single-cell result without changing its status or q/u. */
+int line_net_shell_accumulate(LineNetShellAccumulator *accumulator,
+                              const LineNetResult *cell);
+
+/* Qualify only a completed deterministic shell.  The returned uncertainty is
+ * the conservative absolute-input sum plus enclosed accumulation/serialization
+ * rounding.  EXACT_ZERO requires exclusively certified zero cells. */
+LineNetStatus line_net_shell_qualify(
+    const LineNetShellAccumulator *accumulator, LineNetShellResult *result);
 
 /* CMFGEN direct-bracket Sobolev material.  The emission is the raw integrated
  * n_u A_ul h nu/(4 pi), not the beta-weighted A2-09 escape diagnostic. */
@@ -141,6 +176,37 @@ int line_net_cmfgen_internal_to_cgs(double etal_mat, double znet,
                                     double deck_scale, double *q_cgs);
 
 const char *line_net_status_name(LineNetStatus status);
+
+/* DET-BB-ALI net radiative bracket for one SE-matrix line cell, consuming
+ * the Sobolev producer ledger of the same fine call:
+ *   R_absorb = B_lu*ct, R_stim = B_ul*ct, R_spont = A_ul*beta,
+ * with ct = beta*J_cont as produced and beta = EXPONX(tau_eff).  The ledger
+ * identity jbar_view == ct+le is a cell/stride consistency check, not a
+ * generation witness.  SRCE_CHK cells (provenance bit0) are outside the
+ * bracket's domain and return LINE_NET_BRACKET_NOT_APPLICABLE; the caller
+ * keeps the base rates there. */
+#define LINE_NET_BRACKET_OK 0
+#define LINE_NET_BRACKET_NOT_APPLICABLE 1
+#define LINE_NET_BRACKET_LEDGER_ABSENT (-1)
+#define LINE_NET_BRACKET_CONT_TERM_INVALID (-2)
+#define LINE_NET_BRACKET_LEDGER_MISMATCH (-3)
+#define LINE_NET_BRACKET_BETA_UNDEFINED (-4)
+#define LINE_NET_BRACKET_INVALID_ARGUMENT (-5)
+
+typedef struct {
+    double beta;
+    double R_absorb;
+    double R_stim;
+    double R_spont;
+} LineNetBracketRates;
+
+int line_net_bracket_rates(double continuum_term,
+                           double local_emission_term, double tau_eff,
+                           double jbar_view, unsigned provenance,
+                           double B_lu, double B_ul, double A_ul,
+                           LineNetBracketRates *out);
+
+const char *line_net_bracket_status_name(int rc);
 
 #ifdef __cplusplus
 }

@@ -32,6 +32,8 @@ typedef struct {
     const CpuOpacityPublication *opacity;
     const CpuEmissivityPublication *emissivity;
     const ElectronTemperaturePublication *temperature_publication;
+    const AtomicData *atom;
+    const NLTEConfig *nlte;
 } PhysicsComparisonSnapshotInput;
 
 /* Writes shell, spectral and manifest files.  The manifest is renamed last and

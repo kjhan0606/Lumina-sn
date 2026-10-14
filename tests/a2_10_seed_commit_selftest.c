@@ -155,8 +155,10 @@ int main(void)
             NLTE_CANDIDATE_OK ||
         nlte_population_candidate_prepare_opacity_view(
             &candidate, &opacity) != NLTE_CANDIDATE_OK ||
-        nlte_population_candidate_prepare_ionization(
-            &candidate) != NLTE_CANDIDATE_OK)
+        nlte_population_candidate_prepare_ionization_at_ne(
+            &candidate) != NLTE_CANDIDATE_OK ||
+        candidate.electron_density[0] != ne[0] ||
+        candidate.electron_density[1] != ne[1])
         return fail("seed candidate setup rejected");
 
     /* Simulate the already-verified shared-core hand-off (as the tau
@@ -183,6 +185,12 @@ int main(void)
     if (nlte_population_candidate_produce_publications(
             &candidate, 100.0) != NLTE_CANDIDATE_OK)
         return fail("private A208/A209 publication rejected");
+    for (int s = 0; s < NS; ++s)
+        for (size_t b = 0; b < candidate.opacity.cpu_opacity.n_bins; ++b)
+            if (candidate.opacity.cpu_opacity.chi_es[
+                    (size_t)s * candidate.opacity.cpu_opacity.n_bins + b] !=
+                candidate.electron_density[s] * SIGMA_THOMSON)
+                return fail("chi_es did not consume candidate n_e");
 
     candidate.atom.partition_stamp.required_population_generation = 2;
     candidate.atom.partition_stamp.computed_population_generation = 2;

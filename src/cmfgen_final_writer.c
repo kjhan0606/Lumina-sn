@@ -114,6 +114,7 @@ int cmfgen_final_writer(const char *dir, const PlasmaState *p,
     fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,n_ion_total,population_generation,required_population_generation,partition_te_generation,te_manifest_sha256\n");
     for (int ii = 0; ii < n->n_nlte_ions; ++ii) {
         int ip = -1, b = n->nlte_ion_level_offset[ii], e = n->nlte_ion_level_offset[ii + 1];
+        if (b == e) continue;
         for (int i = 0; i < a->n_ion_pops; ++i)
             if (a->ion_pop_Z[i] == n->nlte_Z[ii] && a->ion_pop_stage[i] == n->nlte_ion[ii]) { ip = i; break; }
         if (ip < 0) { fclose(fp); return -1; }

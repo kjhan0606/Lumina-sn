@@ -12,6 +12,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+static PhysicsComparisonStatus comparison_population_validate(
+    const PhysicsComparisonSnapshotInput *in);
+
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
@@ -181,6 +184,10 @@ static PhysicsComparisonStatus comparison_validate(
         em->committed_emissivity_generation != eg ||
         em->required_emissivity_generation != eg || eg != og)
         return PHYSICS_COMPARISON_STALE_GENERATION;
+    PhysicsComparisonStatus population_status =
+        comparison_population_validate(in);
+    if (population_status != PHYSICS_COMPARISON_OK)
+        return population_status;
     if (!comparison_hex64(te->atomic_model_sha256) ||
         !comparison_hex64(te->geometry_sha256) ||
         !comparison_hex64(te->te_manifest_sha256) ||
@@ -321,6 +328,166 @@ static int comparison_finish(FILE *stream)
            fclose(stream) != 0 ? -1 : 0;
 }
 
+enum { PHYSICS_COMPARISON_ION_MAX_BYTES = 256 * 1024 };
+
+static const int comparison_target_Z[] = {14, 16, 20, 26, 27, 28};
+
+static int comparison_target_index(int Z)
+{
+    for (size_t i=0;i<sizeof(comparison_target_Z)/sizeof(comparison_target_Z[0]);++i)
+        if (comparison_target_Z[i] == Z) return (int)i;
+    return -1;
+}
+
+static int comparison_find_element(const AtomicData *atom, int Z)
+{
+    int found=-1;
+    for(int e=0;e<atom->n_elements;++e){
+        if(atom->element_Z[e]!=Z)continue;
+        if(found>=0)return -2;
+        found=e;
+    }
+    return found;
+}
+
+static int comparison_find_stage(const AtomicData *atom, int Z, int stage)
+{
+    int found=-1;
+    for(int ip=0;ip<atom->n_ion_pops;++ip){
+        if(atom->ion_pop_Z[ip]!=Z||atom->ion_pop_stage[ip]!=stage)continue;
+        if(found>=0)return -2;
+        found=ip;
+    }
+    return found;
+}
+
+static int comparison_find_nlte_stage(const NLTEConfig *nlte, int Z, int stage)
+{
+    int found=-1;
+    for(int slot=0;slot<nlte->n_nlte_ions;++slot){
+        if(nlte->nlte_Z[slot]!=Z||nlte->nlte_ion[slot]!=stage)continue;
+        if(found>=0)return -2;
+        found=slot;
+    }
+    return found;
+}
+
+static PhysicsComparisonStatus comparison_population_validate(
+        const PhysicsComparisonSnapshotInput *in)
+{
+    const AtomicData *atom=in->atom;
+    const NLTEConfig *nlte=in->nlte;
+    if(!atom||!nlte||atom->n_elements<=0||atom->n_ion_pops<=0||
+       !atom->element_Z||!atom->elem_ion_offset||!atom->ion_pop_Z||
+       !atom->ion_pop_stage||!atom->ion_number_density||
+       nlte->n_nlte_ions<=0||nlte->n_nlte_ions>NLTE_MAX_IONS||
+       nlte->n_nlte_levels_total<0||
+       !nlte->nlte_level_populations||
+       atom->population_committed_generation!=
+           in->temperature_publication->population_generation||
+       nlte->population_committed_generation!=
+           in->temperature_publication->population_generation)
+        return PHYSICS_COMPARISON_STALE_GENERATION;
+    for(int e=0;e<atom->n_elements;++e){
+        int begin=atom->elem_ion_offset[e],end=atom->elem_ion_offset[e+1];
+        if(atom->element_Z[e]<=0||begin<0||end<=begin||end>atom->n_ion_pops)
+            return PHYSICS_COMPARISON_INVALID_VALUE;
+        for(int ip=begin;ip<end;++ip)
+            if(atom->ion_pop_Z[ip]!=atom->element_Z[e]||
+               atom->ion_pop_stage[ip]<0)
+                return PHYSICS_COMPARISON_INVALID_VALUE;
+    }
+    for(int slot=0;slot<nlte->n_nlte_ions;++slot){
+        int begin=nlte->nlte_ion_level_offset[slot];
+        int end=nlte->nlte_ion_level_offset[slot+1];
+        if(begin<0||end<begin||end>nlte->n_nlte_levels_total)
+            return PHYSICS_COMPARISON_INVALID_VALUE;
+    }
+    for(size_t t=0;t<sizeof(comparison_target_Z)/sizeof(comparison_target_Z[0]);++t){
+        int Z=comparison_target_Z[t];
+        int e=comparison_find_element(atom,Z);
+        if(e==-2)return PHYSICS_COMPARISON_INVALID_VALUE;
+        for(int q=1;q<=2;++q){
+            int ip=comparison_find_stage(atom,Z,q);
+            int slot=comparison_find_nlte_stage(nlte,Z,q);
+            if(ip==-2||slot==-2||
+               (e>=0&&(ip<0||slot<0))||
+               (e<0&&(ip>=0||slot>=0)))
+                return PHYSICS_COMPARISON_INVALID_VALUE;
+        }
+    }
+    for(int ip=0;ip<atom->n_ion_pops;++ip)
+        for(size_t s=0;s<in->n_shells;++s){
+            double value=atom->ion_number_density[(size_t)ip*in->n_shells+s];
+            if(!isfinite(value)||value<0.0)
+                return PHYSICS_COMPARISON_INVALID_VALUE;
+        }
+    for(int level=0;level<nlte->n_nlte_levels_total;++level)
+        for(size_t s=0;s<in->n_shells;++s){
+            double value=nlte->nlte_level_populations[
+                (size_t)level*in->n_shells+s];
+            if(!isfinite(value)||value<0.0)
+                return PHYSICS_COMPARISON_INVALID_VALUE;
+        }
+    return PHYSICS_COMPARISON_OK;
+}
+
+static int comparison_write_ion_totals(
+        FILE *stream,const PhysicsComparisonSnapshotInput *in)
+{
+    const AtomicData *atom=in->atom;
+    const NLTEConfig *nlte=in->nlte;
+    if(fprintf(stream,"population_generation,shell_id,nonpair_charge_cm3")<0)
+        return -1;
+    for(size_t t=0;t<sizeof(comparison_target_Z)/sizeof(comparison_target_Z[0]);++t){
+        int Z=comparison_target_Z[t];
+        if(fprintf(stream,
+            ",Z%d_element_total_cm3,Z%d_stage_q1_cm3,Z%d_stage_q2_cm3"
+            ",Z%d_nlte_q1_cm3,Z%d_nlte_q2_cm3",Z,Z,Z,Z,Z)<0)return -1;
+    }
+    if(fputc('\n',stream)==EOF)return -1;
+    for(size_t s=0;s<in->n_shells;++s){
+        double nonpair_charge=0.0;
+        for(int ip=0;ip<atom->n_ion_pops;++ip){
+            int q=atom->ion_pop_stage[ip];
+            if(comparison_target_index(atom->ion_pop_Z[ip])>=0&&
+               (q==1||q==2))continue;
+            nonpair_charge+=(double)q*
+                atom->ion_number_density[(size_t)ip*in->n_shells+s];
+        }
+        if(!isfinite(nonpair_charge)||nonpair_charge<0.0||
+           fprintf(stream,"%llu,%zu,%.17g",
+             (unsigned long long)atom->population_committed_generation,
+             s,nonpair_charge)<0)return -1;
+        for(size_t t=0;t<sizeof(comparison_target_Z)/sizeof(comparison_target_Z[0]);++t){
+            int Z=comparison_target_Z[t];
+            int e=comparison_find_element(atom,Z);
+            int ip1=comparison_find_stage(atom,Z,1);
+            int ip2=comparison_find_stage(atom,Z,2);
+            int slot1=comparison_find_nlte_stage(nlte,Z,1);
+            int slot2=comparison_find_nlte_stage(nlte,Z,2);
+            if(e<0){if(fputs(",,,,,",stream)==EOF)return -1;continue;}
+            double total=0.0,n1=0.0,n2=0.0;
+            for(int ip=atom->elem_ion_offset[e];ip<atom->elem_ion_offset[e+1];++ip)
+                total+=atom->ion_number_density[(size_t)ip*in->n_shells+s];
+            for(int level=nlte->nlte_ion_level_offset[slot1];
+                level<nlte->nlte_ion_level_offset[slot1+1];++level)
+                n1+=nlte->nlte_level_populations[(size_t)level*in->n_shells+s];
+            for(int level=nlte->nlte_ion_level_offset[slot2];
+                level<nlte->nlte_ion_level_offset[slot2+1];++level)
+                n2+=nlte->nlte_level_populations[(size_t)level*in->n_shells+s];
+            if(!isfinite(total)||!isfinite(n1)||!isfinite(n2)||
+               fprintf(stream,",%.17g,%.17g,%.17g,%.17g,%.17g",total,
+                 atom->ion_number_density[(size_t)ip1*in->n_shells+s],
+                 atom->ion_number_density[(size_t)ip2*in->n_shells+s],
+                 n1,n2)<0)return -1;
+        }
+        if(fputc('\n',stream)==EOF)return -1;
+    }
+    off_t bytes=ftello(stream);
+    return bytes>=0&&bytes<=PHYSICS_COMPARISON_ION_MAX_BYTES?0:-1;
+}
+
 PhysicsComparisonStatus physics_comparison_snapshot_write(
         const char *directory, const PhysicsComparisonSnapshotInput *in)
 {
@@ -371,13 +538,15 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
 
     char tag[64];
     snprintf(tag, sizeof(tag), ".tmp.%ld", (long)getpid());
-    char shell_path[PATH_MAX], spectral_path[PATH_MAX], manifest_path[PATH_MAX];
-    char shell_tmp[PATH_MAX], spectral_tmp[PATH_MAX], manifest_tmp[PATH_MAX];
+    char shell_path[PATH_MAX], spectral_path[PATH_MAX], ion_path[PATH_MAX], manifest_path[PATH_MAX];
+    char shell_tmp[PATH_MAX], spectral_tmp[PATH_MAX], ion_tmp[PATH_MAX], manifest_tmp[PATH_MAX];
     if (comparison_path(shell_path,directory,in->lane,in->iteration,"shell.csv",NULL) ||
         comparison_path(spectral_path,directory,in->lane,in->iteration,"spectral.csv",NULL) ||
+        comparison_path(ion_path,directory,in->lane,in->iteration,"ion.csv",NULL) ||
         comparison_path(manifest_path,directory,in->lane,in->iteration,"manifest.json",NULL) ||
         comparison_path(shell_tmp,directory,in->lane,in->iteration,"shell.csv",tag) ||
         comparison_path(spectral_tmp,directory,in->lane,in->iteration,"spectral.csv",tag) ||
+        comparison_path(ion_tmp,directory,in->lane,in->iteration,"ion.csv",tag) ||
         comparison_path(manifest_tmp,directory,in->lane,in->iteration,"manifest.json",tag)) {
         free(j_rebinned);
         return PHYSICS_COMPARISON_IO_ERROR;
@@ -385,10 +554,12 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
 
     FILE *shell = fopen(shell_tmp, "w");
     FILE *spectral = fopen(spectral_tmp, "w");
-    if (!shell || !spectral) {
+    FILE *ion = fopen(ion_tmp, "w");
+    if (!shell || !spectral || !ion) {
         if (shell) fclose(shell);
         if (spectral) fclose(spectral);
-        remove(shell_tmp); remove(spectral_tmp); free(j_rebinned);
+        if (ion) fclose(ion);
+        remove(shell_tmp); remove(spectral_tmp); remove(ion_tmp); free(j_rebinned);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
     fprintf(shell,
@@ -437,9 +608,14 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
                 in->opacity->chi_total[i],in->emissivity->eta_bb[i],
                 in->emissivity->eta_bf[i],in->emissivity->eta_ff[i],
                 in->emissivity->eta_true_total[i]);
-        }
-    if (comparison_finish(shell) != 0 || comparison_finish(spectral) != 0) {
-        remove(shell_tmp); remove(spectral_tmp); free(j_rebinned);
+    }
+    int ion_write_status=comparison_write_ion_totals(ion,in);
+    int shell_finish_status=comparison_finish(shell);
+    int spectral_finish_status=comparison_finish(spectral);
+    int ion_finish_status=comparison_finish(ion);
+    if (shell_finish_status != 0 || spectral_finish_status != 0 ||
+        ion_write_status != 0 || ion_finish_status != 0) {
+        remove(shell_tmp); remove(spectral_tmp); remove(ion_tmp); free(j_rebinned);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
     free(j_rebinned);
@@ -451,6 +627,7 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
     if (te_reason) {
         remove(shell_tmp);
         remove(spectral_tmp);
+        remove(ion_tmp);
         remove(manifest_tmp);
         fprintf(stderr,
                 "[PHYSICS_COMPARISON][BLOCKED] reason=%s\n",
@@ -460,7 +637,7 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
 
     FILE *manifest = fopen(manifest_tmp, "w");
     if (!manifest) {
-        remove(shell_tmp); remove(spectral_tmp);
+        remove(shell_tmp); remove(spectral_tmp); remove(ion_tmp);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
     fprintf(manifest,
@@ -507,7 +684,9 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
         "  \"opacity_generation\": %llu,\n"
         "  \"emissivity_generation\": %llu,\n"
         "  \"shell_file\": \"physics_%s_iter%04d.shell.csv\",\n"
-        "  \"spectral_file\": \"physics_%s_iter%04d.spectral.csv\"\n"
+        "  \"spectral_file\": \"physics_%s_iter%04d.spectral.csv\",\n"
+        "  \"ion_file\": \"physics_%s_iter%04d.ion.csv\",\n"
+        "  \"ion_file_max_bytes\": %d\n"
         "}\n",
         in->iteration,in->epoch_s,in->n_shells,nb,
         4.0*M_PI_VAL,te->atomic_model_sha256,te->geometry_sha256,
@@ -517,15 +696,17 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
         (unsigned long long)te->committed_te_generation,
         (unsigned long long)te->opacity_generation,
         (unsigned long long)te->emissivity_generation,
-        in->lane,in->iteration,in->lane,in->iteration);
+        in->lane,in->iteration,in->lane,in->iteration,
+        in->lane,in->iteration,PHYSICS_COMPARISON_ION_MAX_BYTES);
     if (comparison_finish(manifest) != 0) {
-        remove(shell_tmp); remove(spectral_tmp); remove(manifest_tmp);
+        remove(shell_tmp); remove(spectral_tmp); remove(ion_tmp); remove(manifest_tmp);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
     if (rename(shell_tmp,shell_path) != 0 ||
         rename(spectral_tmp,spectral_path) != 0 ||
+        rename(ion_tmp,ion_path) != 0 ||
         rename(manifest_tmp,manifest_path) != 0) {
-        remove(shell_tmp); remove(spectral_tmp); remove(manifest_tmp);
+        remove(shell_tmp); remove(spectral_tmp); remove(ion_tmp); remove(manifest_tmp);
         return PHYSICS_COMPARISON_IO_ERROR;
     }
     return PHYSICS_COMPARISON_OK;
@@ -638,7 +819,7 @@ PhysicsComparisonStatus physics_comparison_dump_if_requested(
         geometry->r_inner,geometry->r_outer,geometry->v_inner,geometry->v_outer,
         plasma->T_e,plasma->n_electron,n_atom,u_atom,&nlte->radfield_view,
         &opacity->cpu_opacity,&opacity->cpu_emissivity,
-        &plasma->te_publication
+        &plasma->te_publication,atom,nlte
     };
     PhysicsComparisonStatus status =
         physics_comparison_snapshot_write(directory,&input);

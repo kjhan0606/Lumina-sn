@@ -17,6 +17,24 @@ static int close_rel(double got, double want, double rel)
            fabs(got - want) <= rel * fmax(fabs(want), DBL_MIN);
 }
 
+static int within_one_ulp(double got, double want)
+{
+    return got >= nextafter(want, -INFINITY) &&
+           got <= nextafter(want, INFINITY);
+}
+
+static LineNetResult aggregate_cell(double q, double u, LineNetStatus status)
+{
+    LineNetResult cell;
+    memset(&cell, 0, sizeof(cell));
+    cell.signed_rate = q;
+    cell.absolute_uncertainty = u;
+    cell.status = status;
+    if (status == LINE_NET_OK_COOLING) cell.cooling = q;
+    if (status == LINE_NET_OK_HEATING) cell.heating = -q;
+    return cell;
+}
+
 static int direct_cmfgen_exponx(double x, double *beta, double *companion)
 {
     if (!beta || !companion || !isfinite(x)) return -1;
@@ -269,6 +287,141 @@ int main(void)
         result.cooling != 0.0 || result.heating != 0.0)
         return fail("uncertainty-covered sign was published");
 
+    {
+        const double actual_q = -3.6777923334000619e-19;
+        const double actual_u = 4.0357808164132202e-19;
+        LineNetComponentInput actual_input = {
+            .emission_per_sr = 1.8559025261646409e-12,
+            .integrated_opacity = 2.1865003471530193e-06,
+            .jbar = 8.4880048514426357e-07,
+            .jbar_absolute_uncertainty = 1.4688186361125219e-14,
+            .other_net_absolute_uncertainty_per_sr = 0.0,
+            .deck_scale = 0.99999996047829831,
+            .exact_zero_provenance = 0
+        };
+        LineNetComponentInput actual_before = actual_input;
+        LineNetResult actual_cell;
+        if (line_net_rate_evaluate(&actual_input, &actual_cell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION ||
+            !within_one_ulp(actual_cell.signed_rate, actual_q) ||
+            !within_one_ulp(actual_cell.absolute_uncertainty, actual_u) ||
+            memcmp(&actual_input, &actual_before, sizeof(actual_input)) != 0)
+            return fail("337602 cell status/q/u/input preservation");
+
+        LineNetShellAccumulator resolved = {0};
+        LineNetResult positive = aggregate_cell(
+            2.0e-18, 1.0e-20, LINE_NET_OK_COOLING);
+        LineNetResult actual_cell_before = actual_cell;
+        LineNetShellResult shell;
+        double expected_positive_sum = (double)(
+            (long double)actual_cell.signed_rate +
+            (long double)positive.signed_rate);
+        if (line_net_shell_accumulate(&resolved, &actual_cell) != 0 ||
+            memcmp(&actual_cell, &actual_cell_before,
+                   sizeof(actual_cell)) != 0 ||
+            line_net_shell_qualify(&resolved, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("337602 cell-alone DET shell qualification");
+        if (line_net_shell_accumulate(&resolved, &positive) != 0 ||
+            line_net_shell_qualify(&resolved, &shell) != LINE_NET_OK_COOLING ||
+            shell.signed_rate != expected_positive_sum ||
+            !(shell.signed_rate > shell.absolute_uncertainty) ||
+            !(shell.absolute_uncertainty >= actual_u + 1.0e-20))
+            return fail("337602 cell omitted from resolved DET shell");
+
+        LineNetShellAccumulator negative = {0};
+        LineNetResult strong_negative = aggregate_cell(
+            -2.0e-18, 1.0e-20, LINE_NET_OK_HEATING);
+        if (line_net_shell_accumulate(&negative, &actual_cell) != 0 ||
+            line_net_shell_accumulate(&negative, &strong_negative) != 0 ||
+            line_net_shell_qualify(&negative, &shell) != LINE_NET_OK_HEATING ||
+            !(-shell.signed_rate > shell.absolute_uncertainty))
+            return fail("negative DET shell qualification");
+
+        LineNetShellAccumulator covered = {0};
+        LineNetResult covered_peer = aggregate_cell(
+            4.0e-19, 5.0e-19, LINE_NET_UNRESOLVED_CANCELLATION);
+        if (line_net_shell_accumulate(&covered, &actual_cell) != 0 ||
+            line_net_shell_accumulate(&covered, &covered_peer) != 0 ||
+            line_net_shell_qualify(&covered, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("sum-covered DET shell sign published");
+
+        LineNetShellAccumulator boundary = {0};
+        LineNetResult boundary_cell = aggregate_cell(
+            1.0, 1.0, LINE_NET_UNRESOLVED_CANCELLATION);
+        if (line_net_shell_accumulate(&boundary, &boundary_cell) != 0 ||
+            line_net_shell_qualify(&boundary, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("strict aggregate boundary published");
+
+        LineNetShellAccumulator double_boundary = {0};
+        LineNetResult double_boundary_cell = aggregate_cell(
+            nextafter(1.0, INFINITY), 1.0, LINE_NET_OK_COOLING);
+        if (line_net_shell_accumulate(
+                &double_boundary, &double_boundary_cell) != 0 ||
+            line_net_shell_qualify(&double_boundary, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION ||
+            shell.signed_rate != shell.absolute_uncertainty)
+            return fail("double-output rounding boundary published");
+
+        LineNetShellAccumulator cancelled_shell = {0};
+        LineNetResult plus_one = aggregate_cell(
+            1.0, 0.0, LINE_NET_OK_COOLING);
+        LineNetResult minus_one = aggregate_cell(
+            -1.0, 0.0, LINE_NET_OK_HEATING);
+        if (line_net_shell_accumulate(&cancelled_shell, &plus_one) != 0 ||
+            line_net_shell_accumulate(&cancelled_shell, &minus_one) != 0 ||
+            line_net_shell_qualify(&cancelled_shell, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("nonzero cancellation promoted to exact zero");
+
+        LineNetShellAccumulator certified_zero = {0};
+        LineNetResult typed_zero_cell = aggregate_cell(
+            0.0, 0.0, LINE_NET_EXACT_ZERO);
+        if (line_net_shell_accumulate(&certified_zero, &typed_zero_cell) != 0 ||
+            line_net_shell_qualify(&certified_zero, &shell) !=
+                LINE_NET_EXACT_ZERO)
+            return fail("certified zero shell rejected");
+        LineNetShellAccumulator untyped_zero = {0};
+        LineNetResult untyped_zero_cell = aggregate_cell(
+            0.0, 0.0, LINE_NET_UNRESOLVED_CANCELLATION);
+        if (line_net_shell_accumulate(&untyped_zero, &untyped_zero_cell) != 0 ||
+            line_net_shell_qualify(&untyped_zero, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("untyped zero promoted to exact zero");
+
+        LineNetShellAccumulator poison = resolved, poison_before = poison;
+        LineNetResult bad_cell = aggregate_cell(
+            NAN, 0.0, LINE_NET_UNRESOLVED_CANCELLATION);
+        if (line_net_shell_accumulate(&poison, &bad_cell) == 0 ||
+            memcmp(&poison, &poison_before, sizeof(poison)) != 0)
+            return fail("NaN aggregate input mutated accumulator");
+        bad_cell = aggregate_cell(INFINITY, 0.0, LINE_NET_OK_COOLING);
+        if (line_net_shell_accumulate(&poison, &bad_cell) == 0 ||
+            memcmp(&poison, &poison_before, sizeof(poison)) != 0)
+            return fail("Inf aggregate input mutated accumulator");
+
+        LineNetResult huge = aggregate_cell(
+            1.0e300, 0.0, LINE_NET_OK_COOLING);
+        LineNetResult tiny = aggregate_cell(
+            1.0, 0.0, LINE_NET_OK_COOLING);
+        LineNetResult minus_huge = aggregate_cell(
+            -1.0e300, 0.0, LINE_NET_OK_HEATING);
+        LineNetShellAccumulator order_a = {0}, order_b = {0};
+        if (line_net_shell_accumulate(&order_a, &huge) != 0 ||
+            line_net_shell_accumulate(&order_a, &tiny) != 0 ||
+            line_net_shell_accumulate(&order_a, &minus_huge) != 0 ||
+            line_net_shell_accumulate(&order_b, &huge) != 0 ||
+            line_net_shell_accumulate(&order_b, &minus_huge) != 0 ||
+            line_net_shell_accumulate(&order_b, &tiny) != 0 ||
+            line_net_shell_qualify(&order_a, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION ||
+            line_net_shell_qualify(&order_b, &shell) !=
+                LINE_NET_UNRESOLVED_CANCELLATION)
+            return fail("aggregate order/rounding enclosure");
+    }
+
     /* Classic product/subtraction witness.  Separate rounded multiplication
      * yields 1.0, but the exact double-input product is 1-2^-54.  FMA must
      * preserve the finite positive net rather than returning zero. */
@@ -300,7 +453,8 @@ int main(void)
 
     printf("[LINE-NET][SELFTEST] status=PASS fixture_q_cgs=%.17g "
            "fma_net=%.17g finite_cooling=1 finite_heating=1 exact_zero=1 "
-           "unresolved_cancellation=2 cmfgen_exponx_parity=1 "
+           "unresolved_cancellation=2 det_shell_aggregate=1 "
+           "det_shell_rounding_enclosure=1 cmfgen_exponx_parity=1 "
            "sobolev_direct_bracket_identity=1 "
            "feiii_line2164811_shell0=1 negative_control=1 "
            "clamp=0 floor=0 jitter=0 repair=0 rc=0\n",

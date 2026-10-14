@@ -7,11 +7,14 @@
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "line_jbar.h" /* amended A2-02C BB rate graph */
+#include "line_net_rate.h" /* DET-BB-ALI net radiative bracket */
 #include "lumina_radeq_col_pairs.h" /* withParityO: CMFGEN-faithful all-pair COL cooling */
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <float.h>
 #include <limits.h>
+#include <unistd.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -458,7 +461,13 @@ int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
 
 /* D3 coordinate 4: collisional bf has one policy in both owners. */
 int nlte_bf_collisional_enabled(void) {
-    return artis_parity_enabled();
+    static int init = 0, on = 0;
+    if (!init) {
+        const char *e = getenv("LUMINA_NLTE_COLL_ION");
+        on = (e && atoi(e) != 0) ? 1 : 0;
+        init = 1;
+    }
+    return artis_parity_enabled() || on;
 }
 
 /* A2-05 (SPEC_A2_05_V2): single choke point for the CPU bound-free
@@ -987,12 +996,6 @@ double omega_cmfgen_line(const AtomicData *atom, int line, double T_e, int *tier
 void omega_cmfgen_arm(AtomicData *atom) {
     if (!omega_cmfgen_enabled() || g_omcm_armed || !atom || atom->n_lines <= 0)
         return;
-    if (!artis_parity_enabled()) {
-        fprintf(stderr, "[OMEGA-CMFGEN][WARN] LUMINA_ARTIS_PARITY=0 -> no col "
-                        "tables are loaded and the parity Omega sites are not "
-                        "reached; gate has NO effect. Set LUMINA_ARTIS_PARITY=1.\n");
-        return;
-    }
     int n = atom->n_lines;
     g_omcm_line_src = (int *)malloc((size_t)n * sizeof(int));
     g_omcm_line_t   = (int *)malloc((size_t)n * sizeof(int));
@@ -2530,6 +2533,564 @@ static const double *g_nt_ioniz_rate;
 static int g_nt_ioniz_n;
 static int g_simul_on;   /* tentative; = -1 definition at the SIMUL module */
 
+/* DET-CONT-NLTE-BALANCE (rev 1, R1-3): DR-only alpha split + per-channel
+ * ionization-rate dump (env LUMINA_ION_CHANNEL_DUMP, default 0 => no file,
+ * byte-identical). Armed ONLY around the committed compute_ion_populations
+ * sweep (one call per shell), not the n_e Newton sub-iterations, so the max-gen
+ * block is exactly (Z 16/14/20) x 50 shells = 150 rows. */
+static double frozenin_alpha_dr(AtomicData *atom, int ip, double T);
+static int   g_ion_ch_gate  = -1;   /* -1 unread, 0 off, 1 on */
+static int   g_ion_ch_armed = 0;
+static long  g_ion_ch_gen   = 0;
+static int   g_ion_ch_prev_shell = -1;
+static FILE *g_ion_ch_fp = NULL;
+#define ION_CHANNEL_DUMP_HEADER \
+    "gen,shell,Z,stage,T_e,n_e,x_e,gamma_phot,gamma_nt,c_ion," \
+    "ne_alpha_rr,ne_alpha_dr,c_rec,r\n"
+static int ion_channel_dump_gate(void){
+    if (g_ion_ch_gate < 0) {
+        const char *e = getenv("LUMINA_ION_CHANNEL_DUMP");
+        g_ion_ch_gate = (e && atoi(e)) ? 1 : 0;
+    }
+    return g_ion_ch_gate;
+}
+static int ion_channel_dump_format(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, double T_e, double n_e, double x_e,
+        double gamma_phot, double gamma_nt, double c_ion,
+        double ne_alpha_rr, double ne_alpha_dr, double c_rec, double r){
+    return snprintf(buf, n,
+        "%ld,%d,%d,%d,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e\n",
+        gen, shell, Z, stage, T_e, n_e, x_e, gamma_phot, gamma_nt, c_ion,
+        ne_alpha_rr, ne_alpha_dr, c_rec, r);
+}
+
+/* ==========================================================================
+ * DET-DJDN-MVP: diagonal dJ/dN linearization on the LIVE ionization balance.
+ *
+ * gate LUMINA_POP_DJDN (default 0 => term not applied, no census file =>
+ * byte-identical to base). ON: the pairwise photoionization rate Gamma_phot(x)
+ * carries its diagonal source feedback dGamma/dx = a via the STORED diagonal
+ * lambda* (g_lre_lambda_star), the per-level sigma_bf row, and the stored bin
+ * source/opacity (S_fixed, chi_tot). NO new GPU kernel, NO new J solve.
+ *
+ *   a = Sum_l f_l Sum_b [4pi sigma_{l,b}/(h nu_b)] lambda*_{s,b} dS_b/dx dnu_b
+ *   dS_b/dx = [n_e*Ec_b + S_b*Xc_b] * N_tot/((1+x_lag)^2 chi_t,b)   (>= 0)
+ *     Ec_b = Sum_l Phi_l sigma_{l,b} (2h nu^3/c^2) exp(-h nu/kT)  (= eta_i,b/(N_i+1 n_e))
+ *     Xc_b = Sum_l f_l  sigma_{l,b} (1 - exp(-h nu/kT))           (= chi_i,b/N_i)
+ *   Phi_l = lam3 * g_l/(2 U_ion) * exp(chi_l/kT)   (frozenin_alpha_rr recipe)
+ *
+ * All three source terms are >=0 (sigma,f,Phi,S,chi_t,lambda* all >=0) => a>=0
+ * BY CONSTRUCTION (a>0 unless lambda* is all-zero -> a==0 no-op, the wiring
+ * negative control). "Restoration" is Newton finding the root, not the sign of
+ * a.
+ *
+ * DET-DJDN-DRIVE (PREREG 2026-09-20): the pairwise root-existence fallback of
+ * DET-DJDN-MVP (x* = (num - a*x_lag)/(den - a); den-a<=0 => root=0, off value)
+ * only saw half of the positive-root condition and switched the term OFF at every
+ * driving epoch (control run 387175). It is REPLACED by a damped log-variable
+ * Newton step with NO root-existence branch (pop_djdn_log_newton): u = ln x,
+ * one step Du = ln(rho) + c, correction c = ln(rho)*g/(rho-g), g = a/den,
+ * rho = x_map/x_lag, x_map = num/den. Damp the correction only (Picard quotient
+ * ln(rho) undamped): c_d = sign(c)*min(|c|, C_max) (env LUMINA_POP_DJDN_CMAX,
+ * default 1.0), damp = c_d/c. Commit x* = x_map*exp(c_d): positive & finite for
+ * ANY finite input. a=0 => g=0 => c=0 => x* == x_map (OFF value, Picard, no
+ * damping). x_lag<=0 or x_map<=0 => ln undefined => input absent => root=0, off
+ * value, recorded. NO state clamp/floor: only the step size |c| is bounded.
+ * x_lag = generation-committed ratio (read before the ladder overwrites
+ * ion_number_density).
+ * ==========================================================================*/
+/* Forward decls: the diagonal-ALI stored source arrays are defined with
+ * radeq_set_line_re_source far below (this MVP is their first consumer). The
+ * definitions there carry the initializers; these are tentative. */
+static const double *g_lre_lambda_star, *g_lre_S_fixed, *g_lre_chi_tot,
+                    *g_lre_nu, *g_lre_dnu;
+static int g_lre_nbins, g_lre_nshells;
+/* DET-PATHB-LOCAL: fixed-S formal-solve chi derivative (dJ_fs/dchi)[shell*nbins],
+ * registered by radeq_set_djdchi_fs far below (its first consumer is the A2-10
+ * a_dchi assembly). Tentative here; the definitions there carry the
+ * initializers. NULL / not registered => the a_dchi term is absent. */
+static const double *g_lre_djdchi;
+static int g_lre_djdchi_ns, g_lre_djdchi_nb;
+static int    g_pop_djdn_gate = -1;      /* -1 unread, 0 off, 1 on */
+static double g_pop_djdn_cmax = -1.0;    /* -1 unread; correction cap C_max */
+/* J/lambda* assembly generation = radeq_set_line_re_source call counter (one ++
+ * per outer iteration). census 'epoch' column; the G-CPL/G-DRV epoch key. */
+static long   g_pop_djdn_epoch = 0;
+static double g_pop_maxch_val  = -1.0;    /* -1 unread; 0 = off; >0 = MAX_CHNG */
+static double g_pop_maxch_factor = 1.0;   /* last applied step factor (census) */
+static FILE  *g_pop_djdn_fp = NULL;
+
+/* DET-PATHB-XSHELL: exact epoch-last production observations for the two
+ * preregistered generations.  They are populated at the same rate call and
+ * from the same x_lag snapshot as lumina_pop_djdn.csv. */
+typedef struct {
+    int valid;
+    long epoch;
+    int shell, Z, stage;
+    double T_e, n_e, x_lag, gamma;
+} XShellGammaObservation;
+static XShellGammaObservation g_xshell_gamma_observation[2];
+
+static int xshell_observation_enabled(void) {
+    const char *e = getenv("LUMINA_XSHELL_RESPONSE");
+    return e && strcmp(e, "1") == 0;
+}
+
+void parity_gamma_phot_observed_reset(void) {
+    memset(g_xshell_gamma_observation, 0,
+           sizeof(g_xshell_gamma_observation));
+}
+
+int parity_gamma_phot_observed(long epoch, int shell, int Z, int ion_stage,
+        double *T_e, double *n_e, double *x_lag, double *gamma_out) {
+    int slot = epoch == 6 ? 0 : epoch == 7 ? 1 : -1;
+    if (slot < 0) return -1;
+    const XShellGammaObservation *o = &g_xshell_gamma_observation[slot];
+    if (!o->valid || o->epoch != epoch || o->shell != shell || o->Z != Z ||
+        o->stage != ion_stage)
+        return -1;
+    if (T_e) *T_e = o->T_e;
+    if (n_e) *n_e = o->n_e;
+    if (x_lag) *x_lag = o->x_lag;
+    if (gamma_out) *gamma_out = o->gamma;
+    return 0;
+}
+
+static void xshell_observe_gamma(long epoch, int shell, int Z, int stage,
+        double T_e, double n_e, double x_lag, double gamma) {
+    int slot = epoch == 6 ? 0 : epoch == 7 ? 1 : -1;
+    if (slot < 0 || shell != 24 || Z != 16 || stage != 1 ||
+        !xshell_observation_enabled())
+        return;
+    XShellGammaObservation *o = &g_xshell_gamma_observation[slot];
+    o->valid = 1;
+    o->epoch = epoch;
+    o->shell = shell;
+    o->Z = Z;
+    o->stage = stage;
+    o->T_e = T_e;
+    o->n_e = n_e;
+    o->x_lag = x_lag;
+    o->gamma = gamma;
+}
+/* x_lag reference = the generation-committed (J-assembly-time) ion populations,
+ * NOT the live atom->ion_number_density. compute_electron_density's <=100 n_e
+ * sub-iterations overwrite the live array; reading it in place makes x_lag the
+ * previous sub-iterate, so the term self-cancels (x*->x_map=OFF, delta_{k+1}=
+ * -[g'/(1-g')]delta_k). The candidate solve's ion_before snapshot is the public
+ * committed pop that J/S_fixed/lambda* were assembled from (begin() re-copies the
+ * public pop at every n_e-closure iteration, and the public atom is not mutated
+ * until commit_bundle) -> the same linearization point as Gamma_lag. Set around
+ * compute_electron_density/compute_ion_populations; NULL on the legacy public
+ * path -> the diagonal term is not applied (root=0, reported, no clamp). */
+static const double *g_pop_djdn_xlag = NULL;
+static int g_pop_djdn_xlag_nions = 0, g_pop_djdn_xlag_nshells = 0;
+static void pop_djdn_set_xlag_snapshot(const double *snap, int n_ions,
+        int n_shells){
+    g_pop_djdn_xlag = snap;
+    g_pop_djdn_xlag_nions = n_ions;
+    g_pop_djdn_xlag_nshells = n_shells;
+}
+static void pop_djdn_clear_xlag_snapshot(void){
+    g_pop_djdn_xlag = NULL;
+    g_pop_djdn_xlag_nions = 0;
+    g_pop_djdn_xlag_nshells = 0;
+}
+/* x_lag = N_next/N_cur read from the GIVEN base array (the snapshot). A
+ * perturbation of the live populations cannot move it because it reads only
+ * `base`. Returns 1 with N_cur/N_next/x_lag on a valid lagged pair, else 0. */
+static int pop_djdn_xlag(const double *base, int n_ions, int n_shells,
+        int ip_cur, int ip_next, int s, double *N_cur_out,
+        double *N_next_out, double *x_lag_out){
+    if (!base || n_ions <= 0 || n_shells <= 0 || ip_cur < 0 || ip_next < 0 ||
+        ip_cur >= n_ions || ip_next >= n_ions || s < 0 || s >= n_shells)
+        return 0;
+    double N_cur  = base[(size_t)ip_cur  * n_shells + s];
+    double N_next = base[(size_t)ip_next * n_shells + s];
+    if (!isfinite(N_cur) || !isfinite(N_next) || !(N_cur > 0.0) ||
+        !(N_next >= 0.0) || !((N_cur + N_next) > 0.0))
+        return 0;
+    if (N_cur_out)  *N_cur_out  = N_cur;
+    if (N_next_out) *N_next_out = N_next;
+    if (x_lag_out)  *x_lag_out  = N_next / N_cur;
+    return 1;
+}
+#define POP_DJDN_DUMP_HEADER \
+    "gen,shell,Z,stage,x_lag,x_map,a,g,x_star,root,gamma_lag,gamma_eff," \
+    "maxch_factor,epoch,c_newton,damp\n"
+static int pop_djdn_gate(void){
+    if (g_pop_djdn_gate < 0) {
+        const char *e = getenv("LUMINA_POP_DJDN");
+        g_pop_djdn_gate = (e && atoi(e)) ? 1 : 0;
+    }
+    return g_pop_djdn_gate;
+}
+/* DET-PATHB-LOCAL: fixed-S dJ_fs/dchi channel gate (env LUMINA_POP_DJDN_CHI).
+ * unset/0 => a_dchi never assembled, chi census file absent, dJ_fs/dchi buffer
+ * unread => 388393 byte-identical. Effective only above LUMINA_POP_DJDN=1. */
+#define POP_DJDN_CHI_HEADER "gen,shell,Z,stage,epoch,a_ds,a_dchi,a_local\n"
+static int g_pop_djdn_chi_gate = -1;   /* -1 unread, 0 off, 1 on */
+static FILE *g_pop_djdn_chi_fp = NULL;
+static int pop_djdn_chi_gate(void){
+    if (g_pop_djdn_chi_gate < 0) {
+        const char *e = getenv("LUMINA_POP_DJDN_CHI");
+        g_pop_djdn_chi_gate = (e && atoi(e)) ? 1 : 0;
+    }
+    return g_pop_djdn_chi_gate;
+}
+static int pop_djdn_chi_row_format(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, long epoch, double a_ds, double a_dchi,
+        double a_local){
+    return snprintf(buf, n, "%ld,%d,%d,%d,%ld,%.9e,%.9e,%.9e\n",
+        gen, shell, Z, stage, epoch, a_ds, a_dchi, a_local);
+}
+/* correction cap C_max (env LUMINA_POP_DJDN_CMAX). unset/<=0 => default 1.0. */
+static double pop_djdn_cmax(void){
+    if (g_pop_djdn_cmax < 0.0) {
+        const char *e = getenv("LUMINA_POP_DJDN_CMAX");
+        double v = e ? atof(e) : 0.0;
+        g_pop_djdn_cmax = (e && v > 0.0) ? v : 1.0;
+    }
+    return g_pop_djdn_cmax;
+}
+/* MAX_CHNG-style Newton step limiter (CMFGEN solve_for_pops). Returns 1 when
+ * armed (env LUMINA_POP_MAXCH > 0) and writes the value to *out. Default OFF
+ * => the caller keeps the plain memcpy commit (byte-identical). */
+static int pop_maxch_enabled(double *out){
+    if (g_pop_maxch_val < -0.5) {
+        const char *e = getenv("LUMINA_POP_MAXCH");
+        g_pop_maxch_val = (e && atof(e) > 0.0) ? atof(e) : 0.0;
+    }
+    if (out) *out = g_pop_maxch_val;
+    return g_pop_maxch_val > 0.0;
+}
+/* Bin reduction: the load-bearing lambda*-consuming sum. lambda*==0 => a==0. */
+static double pop_djdn_a_reduce(int nb, const double *Gw, const double *Ec,
+        const double *Xc, const double *lam, const double *S,
+        const double *chi_t, double n_e, double N_tot, double x_lag){
+    if (nb <= 0 || !Gw || !Ec || !Xc || !lam || !S || !chi_t) return 0.0;
+    if (!(N_tot > 0.0) || !(x_lag >= 0.0)) return 0.0;
+    double onep = 1.0 + x_lag;
+    double geom = N_tot / (onep * onep);          /* dN_{i+1}/dx at the lag */
+    double a = 0.0;
+    for (int b = 0; b < nb; b++) {
+        double ct = chi_t[b];
+        if (!(ct > 0.0) || !isfinite(ct)) continue;
+        double lb = lam[b];
+        if (!(lb > 0.0)) continue;
+        double dSdx = (n_e * Ec[b] + S[b] * Xc[b]) * geom / ct;   /* >= 0 */
+        double term = Gw[b] * lb * dSdx;
+        if (isfinite(term) && term > 0.0) a += term;
+    }
+    return a;
+}
+/* DET-PATHB-LOCAL: the SIGNED fixed-S dJ_fs/dchi gain a_dchi. Distinct from
+ * pop_djdn_a_reduce above: NO term>0 filter -- the local chi response can be
+ * negative (ionization up => bound-free chi down => J up), and that restoring
+ * sign must survive into the Newton gain. dchi/dx = -Xc*geom (the sibling of
+ * a_ds's dS/dx opacity term, :2699), geom = N_tot/(1+x_lag)^2.
+ *   a_dchi = Sum_b Gw_b * (dJ_fs/dchi)|_S,b * (-Xc_b * geom).
+ * dJ_fs_dchi is the fixed-S formal-solve derivative from formal_djdchi_fs_S,
+ * NOT dS/dchi (a_ds already carries the |_eta scattering piece via lambda*). */
+static double pop_djdn_a_chi_reduce(int nb, const double *Gw, const double *Xc,
+        const double *dJ_fs_dchi, double N_tot, double x_lag){
+    if (nb <= 0 || !Gw || !Xc || !dJ_fs_dchi) return 0.0;
+    if (!(N_tot > 0.0) || !(x_lag >= 0.0)) return 0.0;
+    double onep = 1.0 + x_lag;
+    double geom = N_tot / (onep * onep);
+    double a = 0.0;
+    for (int b = 0; b < nb; b++) {
+        double dJ = dJ_fs_dchi[b];
+        if (!isfinite(dJ)) continue;
+        double dchi_dx = -Xc[b] * geom;         /* d(chi_bf)/dx <= 0 */
+        double term = Gw[b] * dJ * dchi_dx;     /* SIGNED: no >0 filter */
+        if (isfinite(term)) a += term;
+    }
+    return a;
+}
+/* Damped log-variable Newton for x*(den-a) = num - a*x_lag, applied at EVERY
+ * pair with a positive lagged ratio -- NO root-existence fallback. u = ln x,
+ * one Newton step Du = rho*ln(rho)/(rho-g) = ln(rho) + c, correction
+ * c = ln(rho)*g/(rho-g); g = a/den; rho = x_map/x_lag; x_map = num/den. Damp the
+ * CORRECTION only (Picard quotient ln(rho) undamped): c_d = sign(c)*min(|c|,
+ * C_max), damp = c_d/c (c=0 => 1). Commit x* = x_map*exp(c_d): positive & finite
+ * for any finite input. Writes the pre-damp c (*c_out) and damp (*damp_out) for
+ * the census. Returns 1 (input present, term applied) with x* in *x_star, or 0
+ * (x_lag<=0 or x_map<=0: ln undefined => input absent) with the off value x_map.
+ *   a=0 => g=0 => c=0 exactly => x* == x_map (OFF value, Picard, undamped).
+ *   Singular rho==g (F'=0): c -> +-inf => c_d saturates to +-C_max, damp -> 0;
+ *   if rho-g is EXACTLY 0 (measure zero) record c_d=0, damp=0, x* = x_map.
+ * NO state clamp/floor: only the step size |c| is bounded. */
+static int pop_djdn_log_newton(double num_lag, double den, double a,
+        double x_lag, double c_max, double *x_star, double *c_out,
+        double *damp_out){
+    double x_map = (den > 0.0) ? num_lag / den : 0.0;
+    if (!(c_max > 0.0) || !isfinite(c_max)) c_max = 1.0;
+    /* input absence: no positive lagged ratio to take a log of */
+    if (!(x_lag > 0.0) || !(x_map > 0.0) || !isfinite(x_lag) ||
+        !isfinite(x_map)) {
+        *x_star = x_map;
+        if (c_out)    *c_out = 0.0;
+        if (damp_out) *damp_out = 1.0;
+        return 0;
+    }
+    double rho = x_map / x_lag;
+    double g   = a / den;                    /* diagonal gain a/den (PREREG §0c) */
+    double c;
+    if (a == 0.0) {
+        c = 0.0;                             /* g==0 exactly => no correction */
+    } else {
+        double denom = rho - g;
+        if (denom == 0.0) {                  /* exact F'=0, measure zero */
+            *x_star = x_map;                 /* exp(c_d=0) */
+            if (c_out)    *c_out = 0.0;
+            if (damp_out) *damp_out = 0.0;
+            return 1;
+        }
+        c = log(rho) * g / denom;
+    }
+    double c_d, damp;
+    if (!isfinite(c)) {                       /* rho->g limit: saturate, damp->0 */
+        c_d = (c > 0.0) ? c_max : ((c < 0.0) ? -c_max : 0.0);
+        damp = 0.0;
+        c = c_d;                              /* keep the census value finite */
+    } else if (c == 0.0) {
+        c_d = 0.0; damp = 1.0;
+    } else {
+        double ac = fabs(c);
+        if (ac <= c_max) { c_d = c;   damp = 1.0; }
+        else { c_d = (c > 0.0) ? c_max : -c_max; damp = c_max / ac; }
+    }
+    *x_star = x_map * exp(c_d);
+    if (c_out)    *c_out = c;
+    if (damp_out) *damp_out = damp;
+    return 1;
+}
+static double pop_djdn_gamma_eff(double gamma_lag, double a, double x_star,
+        double x_lag){
+    return gamma_lag + a * (x_star - x_lag);
+}
+/* min(1, MAXCH/||dN/N||_inf); MAXCH<=0 (unset) or norm<=MAXCH => factor 1. */
+static double pop_djdn_maxch_factor(double maxch, double norm){
+    if (!(maxch > 0.0)) return 1.0;
+    if (!(norm > maxch)) return 1.0;
+    return maxch / norm;
+}
+static int pop_djdn_row_format(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, double x_lag, double x_map, double a, double g,
+        double x_star, int root, double gamma_lag, double gamma_eff,
+        double maxch_factor, long epoch, double c_newton, double damp){
+    return snprintf(buf, n,
+        "%ld,%d,%d,%d,%.9e,%.9e,%.9e,%.9e,%.9e,%d,%.9e,%.9e,%.9e,%ld,%.9e,%.9e\n",
+        gen, shell, Z, stage, x_lag, x_map, a, g, x_star, root,
+        gamma_lag, gamma_eff, maxch_factor, epoch, c_newton, damp);
+}
+
+/* ============================================================================
+ * DET-DJDN-SPLIT: neighbour-held (FDHOLD) counterfactual map reevaluation.
+ *
+ * gate LUMINA_POP_DJDN_FDHOLD (default unset/0 => no observe, no hold file,
+ * production path byte-identical). When armed, at the MAX epoch the orchestrator
+ * (a) snapshots state, (b) for the null pass and each judge shell re-runs the
+ * PRODUCTION assemble + cmfgen_solve_J + compute_ion_populations with the target
+ * shell's S II->III ratio reverted to x_lag^{K-1} while every neighbour stays
+ * pinned at the current lag, and (c) restores. This block owns ONLY the pure
+ * arithmetic, the per-judge-shell hold buffer, and the 16-col hold-census writer
+ * (`lumina_pop_djdn_hold.csv`, distinct from the production `lumina_pop_djdn.csv`
+ * which is left untouched). It drives no GPU and adds no kernel. NO state clamp/
+ * floor: s/s_hold/s_nl are exact quotients, redistribution conserves N_tot. */
+
+/* Z=16, stage=1 judge shells (PREREG §1); sh24 (index 3) is the null/vote shell. */
+static const int POP_DJDN_JUDGE_SHELLS[5] = {12, 16, 20, 24, 28};
+#define POP_DJDN_JUDGE_N        5
+#define POP_DJDN_NULL_JUDGE_IDX 3        /* sh24 */
+static int pop_djdn_judge_index(int shell){
+    for (int i = 0; i < POP_DJDN_JUDGE_N; i++)
+        if (POP_DJDN_JUDGE_SHELLS[i] == shell) return i;
+    return -1;
+}
+static int g_pop_djdn_fdhold_gate = -1;  /* -1 unread, 0 off, 1 on */
+static int pop_djdn_fdhold_gate(void){
+    if (g_pop_djdn_fdhold_gate < 0){
+        const char *e = getenv("LUMINA_POP_DJDN_FDHOLD");
+        g_pop_djdn_fdhold_gate = (e && atoi(e)) ? 1 : 0;
+    }
+    return g_pop_djdn_fdhold_gate;
+}
+#define POP_DJDN_HOLD_HEADER \
+    "shell,Z,stage,epoch,x_lag,x_lag_prev,x_map,x_map_hold,x_map_null,g,s," \
+    "s_hold,s_nl,denom,restore_ok,null_rel\n"
+static const char *pop_djdn_hold_header(void){ return POP_DJDN_HOLD_HEADER; }
+static int pop_djdn_hold_row_format(char *buf, size_t n, int shell, int Z,
+        int stage, long epoch, double x_lag, double x_lag_prev, double x_map,
+        double x_map_hold, double x_map_null, double g, double s, double s_hold,
+        double s_nl, double denom, int restore_ok, double null_rel){
+    return snprintf(buf, n,
+        "%d,%d,%d,%ld,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%.9e,%d,%.9e\n",
+        shell, Z, stage, epoch, x_lag, x_lag_prev, x_map, x_map_hold, x_map_null,
+        g, s, s_hold, s_nl, denom, restore_ok, null_rel);
+}
+/* The three secants of the split (PREREG §2). denom = x_lag^K - x_lag^{K-1};
+ * if x_lag is (near-)unchanged (|denom|/scale < 1e-3) the secants are undefined
+ * (NaN) and the shell is excluded from vote/sanity. NO clamp: pure quotients. */
+static int pop_djdn_split(double x_map_K, double x_map_Km1, double x_map_hold,
+        double x_lag_K, double x_lag_Km1, double *denom_out,
+        double *s_out, double *s_hold_out, double *s_nl_out){
+    double denom = x_lag_K - x_lag_Km1;
+    if (denom_out) *denom_out = denom;
+    double scale = fabs(x_lag_K), a2 = fabs(x_lag_Km1);
+    if (a2 > scale) scale = a2;
+    if (scale < 1.0) scale = 1.0;
+    if (!isfinite(denom) || fabs(denom) / scale < 1e-3){
+        if (s_out)      *s_out      = NAN;
+        if (s_hold_out) *s_hold_out = NAN;
+        if (s_nl_out)   *s_nl_out   = NAN;
+        return 0;
+    }
+    if (s_out)      *s_out      = (x_map_K    - x_map_Km1 ) / denom;
+    if (s_hold_out) *s_hold_out = (x_map_K    - x_map_hold) / denom;  /* -> g   */
+    if (s_nl_out)   *s_nl_out   = (x_map_hold - x_map_Km1 ) / denom;  /* -> s-g */
+    return 1;
+}
+/* Redistribute an S II/III pair to a target ratio x=N_III/N_II at FIXED total.
+ * Zero perturbation (x_target == current ratio, the null pass) is an EXACT
+ * no-op: the input is returned bit-identical so the reevaluation reproduces the
+ * production x_map. Otherwise N_II=N_tot/(1+x), N_III=N_tot-N_II (exact
+ * complement => N_II+N_III == N_tot). NO floor/clamp. */
+static void pop_djdn_hold_input(double N_lo, double N_hi, double x_target,
+        double *N_lo_out, double *N_hi_out){
+    double N_tot = N_lo + N_hi;
+    double x_cur = (N_lo > 0.0) ? N_hi / N_lo : -1.0;
+    if (x_target == x_cur){                  /* Delta x = 0 (null): exact no-op */
+        if (N_lo_out) *N_lo_out = N_lo;
+        if (N_hi_out) *N_hi_out = N_hi;
+        return;
+    }
+    double onep = 1.0 + x_target;
+    double lo = (onep > 0.0) ? N_tot / onep : N_tot;
+    if (N_lo_out) *N_lo_out = lo;
+    if (N_hi_out) *N_hi_out = N_tot - lo;
+}
+/* restore_ok = production x_star recovered to the %.9e census precision after
+ * the snapshot memcpy (PREREG §3). */
+static int pop_djdn_restore_ok(double x_snap, double x_after){
+    char sa[32], sb[32];
+    snprintf(sa, sizeof sa, "%.9e", x_snap);
+    snprintf(sb, sizeof sb, "%.9e", x_after);
+    return strcmp(sa, sb) == 0 ? 1 : 0;
+}
+
+/* Per-judge-shell hold state. [j][0] = previous epoch (K-1), [j][1] = latest
+ * (K); the last row seen within an epoch wins (production census emits many gen
+ * rows per epoch, only the epoch-last is the DRIVE secant point). */
+static double g_djdn_hold_xlag[POP_DJDN_JUDGE_N][2];
+static double g_djdn_hold_xmap[POP_DJDN_JUDGE_N][2];
+static double g_djdn_hold_g   [POP_DJDN_JUDGE_N][2];
+static long   g_djdn_hold_ep  [POP_DJDN_JUDGE_N][2];
+static int    g_djdn_hold_fill[POP_DJDN_JUDGE_N];         /* epochs stashed (0..2) */
+static double g_djdn_hold_xmap_hold[POP_DJDN_JUDGE_N];    /* captured reevaluation */
+static double g_djdn_hold_xmap_null[POP_DJDN_JUDGE_N];    /* sh24 only, else NaN */
+static int    g_djdn_hold_restore_ok[POP_DJDN_JUDGE_N];
+static int    g_djdn_hold_init = 0;
+/* mode: 0 production (roll stash), 1 hold-capture, 2 null-capture. target = the
+ * judge index whose x_map the reevaluation should record. Set by the orchestrator
+ * around each re-run of assemble+solve_J+compute_ion_populations. */
+static int g_pop_djdn_hold_mode   = 0;
+static int g_pop_djdn_hold_target = -1;
+static void pop_djdn_hold_reset(void){
+    for (int j = 0; j < POP_DJDN_JUDGE_N; j++){
+        g_djdn_hold_xlag[j][0]=g_djdn_hold_xlag[j][1]=0.0;
+        g_djdn_hold_xmap[j][0]=g_djdn_hold_xmap[j][1]=0.0;
+        g_djdn_hold_g[j][0]=g_djdn_hold_g[j][1]=0.0;
+        g_djdn_hold_ep[j][0]=g_djdn_hold_ep[j][1]=-1;
+        g_djdn_hold_fill[j]=0;
+        g_djdn_hold_xmap_hold[j]=NAN;
+        g_djdn_hold_xmap_null[j]=NAN;
+        g_djdn_hold_restore_ok[j]=0;
+    }
+    g_djdn_hold_init = 1;
+}
+/* Observe one production/reevaluation census point for a judge shell. In
+ * production mode rolls the (K-1,K) stash (epoch-last wins); in hold/null mode
+ * records the reevaluated x_map for the target shell. Never writes a file. */
+static void pop_djdn_hold_observe(int Z, int stage, int shell, double x_lag,
+        double x_map, double g_local){
+    if (!pop_djdn_fdhold_gate()) return;
+    if (Z != 16 || stage != 1) return;
+    int j = pop_djdn_judge_index(shell);
+    if (j < 0) return;
+    if (!g_djdn_hold_init) pop_djdn_hold_reset();
+    if (g_pop_djdn_hold_mode == 1){          /* hold reevaluation */
+        if (j == g_pop_djdn_hold_target) g_djdn_hold_xmap_hold[j] = x_map;
+        return;
+    }
+    if (g_pop_djdn_hold_mode == 2){          /* null reevaluation */
+        if (j == g_pop_djdn_hold_target) g_djdn_hold_xmap_null[j] = x_map;
+        return;
+    }
+    /* production: keep the epoch-last row; roll only when the epoch advances */
+    if (g_djdn_hold_fill[j] > 0 && g_djdn_hold_ep[j][1] == g_pop_djdn_epoch){
+        g_djdn_hold_xlag[j][1] = x_lag;
+        g_djdn_hold_xmap[j][1] = x_map;
+        g_djdn_hold_g[j][1]    = g_local;
+    } else {
+        g_djdn_hold_xlag[j][0]=g_djdn_hold_xlag[j][1];
+        g_djdn_hold_xmap[j][0]=g_djdn_hold_xmap[j][1];
+        g_djdn_hold_g[j][0]   =g_djdn_hold_g[j][1];
+        g_djdn_hold_ep[j][0]  =g_djdn_hold_ep[j][1];
+        g_djdn_hold_xlag[j][1]=x_lag;
+        g_djdn_hold_xmap[j][1]=x_map;
+        g_djdn_hold_g[j][1]   =g_local;
+        g_djdn_hold_ep[j][1]  =g_pop_djdn_epoch;
+        if (g_djdn_hold_fill[j] < 2) g_djdn_hold_fill[j]++;
+    }
+}
+/* Orchestrator hooks (used by the max-epoch reevaluation driver). */
+void pop_djdn_hold_set_mode(int mode, int judge_idx){
+    g_pop_djdn_hold_mode = mode; g_pop_djdn_hold_target = judge_idx;
+}
+int  pop_djdn_hold_judge_shell(int judge_idx){
+    return (judge_idx >= 0 && judge_idx < POP_DJDN_JUDGE_N)
+           ? POP_DJDN_JUDGE_SHELLS[judge_idx] : -1;
+}
+int  pop_djdn_hold_null_index(void){ return POP_DJDN_NULL_JUDGE_IDX; }
+void pop_djdn_hold_set_restore_ok(int judge_idx, int ok){
+    if (judge_idx >= 0 && judge_idx < POP_DJDN_JUDGE_N)
+        g_djdn_hold_restore_ok[judge_idx] = ok ? 1 : 0;
+}
+/* Write the 5-row hold census from the stash + captures. Called once, after the
+ * reevaluation passes and their restores, at the max epoch. */
+void pop_djdn_hold_write_csv(void){
+    if (!pop_djdn_fdhold_gate() || !g_djdn_hold_init) return;
+    FILE *fp = fopen("lumina_pop_djdn_hold.csv", "w");
+    if (!fp) return;
+    fputs(pop_djdn_hold_header(), fp);
+    for (int j = 0; j < POP_DJDN_JUDGE_N; j++){
+        double x_lag_K   = g_djdn_hold_xlag[j][1];
+        double x_lag_Km1 = g_djdn_hold_xlag[j][0];
+        double x_map_K   = g_djdn_hold_xmap[j][1];
+        double x_map_Km1 = g_djdn_hold_xmap[j][0];
+        double g_K       = g_djdn_hold_g[j][1];
+        double x_map_hold = g_djdn_hold_xmap_hold[j];
+        double x_map_null = g_djdn_hold_xmap_null[j];
+        double s = NAN, s_hold = NAN, s_nl = NAN, denom = x_lag_K - x_lag_Km1;
+        if (g_djdn_hold_fill[j] >= 2)
+            pop_djdn_split(x_map_K, x_map_Km1, x_map_hold, x_lag_K, x_lag_Km1,
+                           &denom, &s, &s_hold, &s_nl);
+        double null_rel = NAN;
+        if (j == POP_DJDN_NULL_JUDGE_IDX && isfinite(x_map_null) &&
+            x_map_K != 0.0)
+            null_rel = fabs(x_map_null / x_map_K - 1.0);
+        char row[512];
+        pop_djdn_hold_row_format(row, sizeof row, POP_DJDN_JUDGE_SHELLS[j], 16, 1,
+            g_djdn_hold_ep[j][1], x_lag_K, x_lag_Km1, x_map_K, x_map_hold,
+            x_map_null, g_K, s, s_hold, s_nl, denom, g_djdn_hold_restore_ok[j],
+            null_rel);
+        fputs(row, fp);
+    }
+    fclose(fp);
+}
+
 /* ============================================================================
  * [ARTIS-PARITY R1] true rate-statistical-equilibrium ionization closure.
  *
@@ -2578,11 +3139,12 @@ static int parity_field_built(NLTEConfig *nlte, int s) {
  * T_e (the B3 partition functions are built at T_e,W=1 under parity, so this
  * is self-consistent).  Blocked (non-VALID) levels contribute nothing and are
  * counted on the R6 counters. */
-static PopulationStatus parity_gamma_phot_checked(
+static PopulationStatus parity_gamma_phot_checked_impl(
         AtomicData *atom, NLTEConfig *nlte, int s, int n_shells, int ip,
         double T_e, double chi_erg,
         NLTEPopulationCandidate *candidate_diagnostic,
-        double *gamma_out) {
+        double *gamma_out, int use_partition_override,
+        double partition_override) {
     if (!gamma_out || !nlte) return POP_ATOMIC_MISSING;
     *gamma_out = 0.0;
     if (T_e <= 0.0 || !isfinite(T_e)) return POP_INVALID_TE;
@@ -2601,7 +3163,9 @@ static PopulationStatus parity_gamma_phot_checked(
         if (Zeff < 1) Zeff = 1;
         sigma_0 = 7.91e-18 / ((double)Zeff * (double)Zeff);
     }
-    double Z_part = atom->partition_functions[(size_t)ip * n_shells + s];
+    double Z_part = use_partition_override
+        ? partition_override
+        : atom->partition_functions[(size_t)ip * n_shells + s];
     if (!(Z_part > 0.0) || !isfinite(Z_part)) return POP_INVALID_PARTITION;
     PopulationAtomicView av = population_atomic_view(atom);
     int lev_start = atom->level_offset[ip];
@@ -2682,6 +3246,66 @@ static PopulationStatus parity_gamma_phot_checked(
     return Gamma == 0.0 ? POP_EXACT_ZERO : POP_OK;
 }
 
+static PopulationStatus parity_gamma_phot_checked(
+        AtomicData *atom, NLTEConfig *nlte, int s, int n_shells, int ip,
+        double T_e, double chi_erg,
+        NLTEPopulationCandidate *candidate_diagnostic,
+        double *gamma_out) {
+    return parity_gamma_phot_checked_impl(
+        atom, nlte, s, n_shells, ip, T_e, chi_erg,
+        candidate_diagnostic, gamma_out, 0, 0.0);
+}
+
+PopulationStatus parity_gamma_phot_explicit_field(
+        const AtomicData *atom, const NLTEConfig *nlte,
+        const double *canonical_J,
+        const RadiationFieldValidityState *canonical_validity,
+        const uint64_t *canonical_count,
+        const double *canonical_frequency_edges,
+        size_t n_shells, size_t n_bins, int shell, int Z, int ion_stage,
+        double T_e, double partition_value, double *gamma_out) {
+    if (!gamma_out) return POP_ATOMIC_MISSING;
+    *gamma_out = 0.0;
+    if (!atom || !nlte || !canonical_J || !canonical_validity ||
+        !canonical_count || !canonical_frequency_edges || n_shells == 0 ||
+        nlte->n_freq_bins != NLTE_N_FREQ_BINS ||
+        n_bins != LUMINA_RADFIELD_N_BINS || shell < 0 ||
+        (size_t)shell >= n_shells || !(T_e > 0.0) || !isfinite(T_e) ||
+        !(partition_value > 0.0) || !isfinite(partition_value))
+        return POP_ATOMIC_MISSING;
+    for (size_t b = 0; b < n_bins; ++b) {
+        if (!isfinite(canonical_J[(size_t)shell * n_bins + b]) ||
+            canonical_J[(size_t)shell * n_bins + b] < 0.0 ||
+            !isfinite(canonical_frequency_edges[b]) ||
+            !(canonical_frequency_edges[b + 1] >
+              canonical_frequency_edges[b]))
+            return POP_NONFINITE;
+    }
+    int ip = find_ion_pop_idx((AtomicData *)atom, Z, ion_stage);
+    double chi_eV = find_ioniz_energy((AtomicData *)atom, Z, ion_stage);
+    if (ip < 0 || !(chi_eV > 0.0) || !isfinite(chi_eV) || chi_eV >= 1e9)
+        return POP_ATOMIC_MISSING;
+
+    AtomicData atom_view = *atom;
+    NLTEConfig nlte_view = *nlte;
+    nlte_view.radfield_view.n_shells = n_shells;
+    nlte_view.radfield_view.n_bins = n_bins;
+    nlte_view.radfield_view.frequency_bin_edges = canonical_frequency_edges;
+    nlte_view.radfield_view.J_nu = canonical_J;
+    nlte_view.radfield_view.validity = canonical_validity;
+    nlte_view.radfield_view.count = canonical_count;
+    nlte_view.radfield_view_status = RADIATION_FIELD_VIEW_OK;
+    nlte_view.bf_view_rate_terms = 0;
+    nlte_view.bf_view_blocked_unsampled = 0;
+    nlte_view.bf_view_blocked_out_of_grid = 0;
+    nlte_view.bf_view_blocked_stale = 0;
+    memset(&nlte_view.population_counters, 0,
+           sizeof(nlte_view.population_counters));
+    return parity_gamma_phot_checked_impl(
+        &atom_view, &nlte_view, shell, (int)n_shells, ip, T_e,
+        chi_eV * EV_TO_ERG, NULL, gamma_out, 1, partition_value);
+}
+
 /* Rate-SE adjacent-ion ratio r = n(ip_next)/n(ip_cur). Reuses frozenin_alpha_rr
  * (Milne alpha) and the A4 Seaton C_ion/3-body (verbatim from simul_ladder).
  * Degenerate guard: Gamma=0 & recomb=0 -> keep phi_LTE_ratio (previous split);
@@ -2700,7 +3324,10 @@ static PopulationStatus parity_rate_se_ratio_checked(
         candidate_diagnostic, &Gamma);
     if (gamma_status != POP_OK && gamma_status != POP_EXACT_ZERO)
         return gamma_status;
+    double ch_gamma_phot = Gamma;                 /* R1-3 channel dump: photo Gamma */
     if (gamma_nt_atom > 0.0) Gamma += gamma_nt_atom;   /* ARTIS NT channel (additive) */
+    double ch_gamma_nt = (gamma_nt_atom > 0.0) ? gamma_nt_atom : 0.0;
+    double ch_c_ion = 0.0, ch_c_rec = 0.0;        /* R1-3: collisional channels */
     double alpha = frozenin_alpha_rr(atom, ip_cur, ip_next, T_e);
     double num = Gamma;                    /* + n_e*C_ion below            */
     double den = n_e * alpha;              /* + n_e^2*C_3body below (=R_rec)*/
@@ -2722,8 +3349,8 @@ static PopulationStatus parity_rate_se_ratio_checked(
                 double C_rec = n_e * n_e * SIM_SAHACONST *
                                ((double)glo / (double)gup) * 1.55e13 *
                                g_col * sig * K_BOLTZMANN / (T_e * chi_erg);
-                if (isfinite(C_ion) && C_ion > 0.0) num += C_ion;
-                if (isfinite(C_rec) && C_rec > 0.0) den += C_rec;
+                if (isfinite(C_ion) && C_ion > 0.0) { num += C_ion; ch_c_ion = C_ion; }
+                if (isfinite(C_rec) && C_rec > 0.0) { den += C_rec; ch_c_rec = C_rec; }
             }
         }
     }
@@ -2733,8 +3360,558 @@ static PopulationStatus parity_rate_se_ratio_checked(
     if (den == 0.0) return POP_RANK_INCOMPLETE;
     double r = num / den;
     if (!isfinite(r) || r < 0.0) return POP_NONFINITE;
+    /* DET-CONT-NLTE-BALANCE (rev 1, R1-3): per-channel dump for S/Si/Ca II->III.
+     * Split alpha into RR and DR (identical dr_lookup path) so the landing can be
+     * attributed. Identity r*(ne_alpha_rr+ne_alpha_dr+c_rec) == gamma_phot+
+     * gamma_nt+c_ion is true by construction (num/den) -> a wiring negative
+     * control, not a prediction. Armed only around the committed sweep. */
+    if (ion_channel_dump_gate() && g_ion_ch_armed) {
+        int Zc  = atom->ion_pop_Z[ip_cur];
+        int stc = atom->ion_pop_stage[ip_cur];
+        if ((Zc == 16 || Zc == 14 || Zc == 20) && stc == 1) {
+            if (s == 0 && g_ion_ch_prev_shell != 0) g_ion_ch_gen++;
+            g_ion_ch_prev_shell = s;
+            double alpha_dr    = frozenin_alpha_dr(atom, ip_cur, T_e);
+            double ne_alpha_dr = n_e * alpha_dr;
+            double ne_alpha_rr = n_e * alpha - ne_alpha_dr;
+            double n_atom = 0.0;
+            for (int ip = 0; ip < atom->n_ion_pops; ip++)
+                n_atom += atom->ion_number_density[(size_t)ip * n_shells + s];
+            double x_e = (n_atom > 0.0) ? n_e / n_atom : 0.0;
+            if (!g_ion_ch_fp) {
+                g_ion_ch_fp = fopen("lumina_ion_channels.csv", "a");
+                if (g_ion_ch_fp) fputs(ION_CHANNEL_DUMP_HEADER, g_ion_ch_fp);
+            }
+            if (g_ion_ch_fp) {
+                char row[256];
+                ion_channel_dump_format(row, sizeof row, g_ion_ch_gen, s,
+                    Zc, stc, T_e, n_e, x_e, ch_gamma_phot, ch_gamma_nt,
+                    ch_c_ion, ne_alpha_rr, ne_alpha_dr, ch_c_rec, r);
+                fputs(row, g_ion_ch_fp);
+                fflush(g_ion_ch_fp);
+            }
+        }
+    }
+    /* DET-DJDN-MVP: diagonal dJ/dN feedback on this pair's ionization ratio.
+     * Everything below is behind pop_djdn_gate() -> OFF is byte-identical (r
+     * untouched, no file). See the block header near the helpers above. */
+    if (pop_djdn_gate()) {
+        double a = 0.0, x_star = r, x_map = r, x_lag = 0.0, g_local = 0.0;
+        double a_ds = 0.0, a_dchi = 0.0;   /* DET-PATHB-LOCAL split of a=a_local */
+        double c_newton = 0.0, damp = 1.0;
+        double gamma_eff = ch_gamma_phot;
+        int root = 0;
+        int nfb = nlte->n_freq_bins;
+        int ip = ip_cur;
+        if (g_pop_djdn_xlag && g_pop_djdn_xlag_nshells == n_shells &&
+            g_lre_lambda_star && g_lre_S_fixed && g_lre_chi_tot && g_lre_nu &&
+            g_lre_dnu && g_lre_nbins == nfb && s < g_lre_nshells &&
+            nfb > 0 && nfb <= NLTE_N_FREQ_BINS && ip_next >= 0 &&
+            atom->cmfgen_loaded && atom->cmfgen_n_freq_bins == nfb &&
+            atom->cmfgen_has_sigma && atom->cmfgen_sigma_bf) {
+            /* lagged (generation-committed) pair densities from the J-assembly
+             * snapshot -- NOT the live atom->ion_number_density, which
+             * compute_electron_density's n_e sub-iterations already overwrote
+             * before this armed sweep (that in-place read self-cancelled the
+             * term to x_map=OFF). g_pop_djdn_xlag == ion_before (the candidate
+             * solve's committed pop) => a single x_lag across all sub-iterations
+             * and the armed sweep. */
+            double N_cur = 0.0, N_next = 0.0;
+            if (pop_djdn_xlag(g_pop_djdn_xlag, g_pop_djdn_xlag_nions,
+                              g_pop_djdn_xlag_nshells, ip_cur, ip_next, s,
+                              &N_cur, &N_next, &x_lag)) {
+                xshell_observe_gamma(g_pop_djdn_epoch, s,
+                    atom->ion_pop_Z[ip_cur], atom->ion_pop_stage[ip_cur],
+                    T_e, n_e, x_lag, ch_gamma_phot);
+                double N_tot = N_cur + N_next;
+                static __thread double Gw[NLTE_N_FREQ_BINS];
+                static __thread double Ec[NLTE_N_FREQ_BINS];
+                static __thread double Xc[NLTE_N_FREQ_BINS];
+                for (int b = 0; b < nfb; b++) { Gw[b]=0.0; Ec[b]=0.0; Xc[b]=0.0; }
+                double kT = K_BOLTZMANN * T_e;
+                /* upper-ion partition U_ion (same recipe as frozenin_alpha_rr) */
+                double U_ion = 1.0;
+                {
+                    int n0 = atom->level_offset[ip_next];
+                    int n1 = atom->level_offset[ip_next + 1];
+                    double u = 0.0;
+                    for (int l = n0; l < n1; l++) {
+                        double xx = atom->level_energy_eV[l] * EV_TO_ERG / kT;
+                        if (xx < 50.0) u += (double)atom->level_g[l] * exp(-xx);
+                    }
+                    if (u >= 1.0) U_ion = u;
+                    else if (n1 > n0) { int gg = atom->level_g[n0];
+                                        U_ion = (gg >= 1) ? (double)gg : 1.0; }
+                }
+                double lam3 = pow(H_PLANCK * H_PLANCK /
+                    (2.0 * M_PI_VAL * M_ELECTRON * kT), 1.5);
+                double Z_part =
+                    atom->partition_functions[(size_t)ip * n_shells + s];
+                PopulationAtomicView av = population_atomic_view(atom);
+                int lev_start = atom->level_offset[ip];
+                int lev_end   = atom->level_offset[ip + 1];
+                if (Z_part > 0.0 && isfinite(Z_part)) {
+                    for (int l = lev_start; l < lev_end; l++) {
+                        if (!atom->cmfgen_has_sigma[l]) continue;
+                        double E_l_erg = atom->level_energy_eV[l] * EV_TO_ERG;
+                        double chi_l = chi_erg - E_l_erg;
+                        if (chi_l <= 0.0) continue;
+                        double nu_th = chi_l / H_PLANCK;
+                        double f_lev = 0.0;
+                        PopulationStatus ps = population_lte_level_fraction(
+                            &av, (size_t)ip, (size_t)l, T_e, Z_part, &f_lev);
+                        if (ps == POP_EXACT_ZERO) f_lev = 0.0;
+                        else if (ps != POP_OK) continue;
+                        double Phi_l = lam3 * (double)atom->level_g[l] /
+                                       (2.0 * U_ion) * exp(chi_l / kT);
+                        const double *srow =
+                            &atom->cmfgen_sigma_bf[(size_t)l * (size_t)nfb];
+                        for (int b = 0; b < nfb; b++) {
+                            double sig = srow[b];
+                            if (!(sig > 0.0)) continue;
+                            double nu_b = g_lre_nu[b];
+                            if (!(nu_b >= nu_th)) continue;
+                            double dnu_b = g_lre_dnu[b];
+                            double x_hn = H_PLANCK * nu_b / kT;
+                            double emB  = (x_hn < 700.0) ? exp(-x_hn) : 0.0;
+                            double twohnu3c2 = 2.0 * H_PLANCK * nu_b * nu_b *
+                                nu_b / (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                            Gw[b] += f_lev * 4.0 * M_PI_VAL * sig /
+                                     (H_PLANCK * nu_b) * dnu_b;
+                            Xc[b] += f_lev * sig * (1.0 - emB);
+                            Ec[b] += Phi_l * sig * twohnu3c2 * emB;
+                        }
+                    }
+                    const double *lam = &g_lre_lambda_star[(size_t)s * nfb];
+                    const double *Sb  = &g_lre_S_fixed[(size_t)s * nfb];
+                    const double *ctb = &g_lre_chi_tot[(size_t)s * nfb];
+                    a_ds = pop_djdn_a_reduce(nfb, Gw, Ec, Xc, lam, Sb, ctb,
+                                             n_e, N_tot, x_lag);
+                    /* DET-PATHB-LOCAL: add the fixed-S local chi response term
+                     * (signed, OUTSIDE the positive-only a_ds filter). CHI OFF
+                     * or buffer unregistered => a_dchi stays 0 => a==a_ds =>
+                     * 388393 byte-identical. */
+                    a_dchi = 0.0;
+                    if (pop_djdn_chi_gate() && g_lre_djdchi &&
+                        g_lre_djdchi_ns == n_shells && g_lre_djdchi_nb == nfb &&
+                        s < g_lre_djdchi_ns) {
+                        const double *dJc = &g_lre_djdchi[(size_t)s * nfb];
+                        a_dchi = pop_djdn_a_chi_reduce(nfb, Gw, Xc, dJc,
+                                                       N_tot, x_lag);
+                    }
+                    a = a_ds + a_dchi;       /* a_local (Newton consumes this) */
+                    root = pop_djdn_log_newton(num, den, a, x_lag,
+                                               pop_djdn_cmax(), &x_star,
+                                               &c_newton, &damp);
+                    gamma_eff = pop_djdn_gamma_eff(ch_gamma_phot, a,
+                                                   x_star, x_lag);
+                    g_local = (den > 0.0) ? a / den : 0.0;   /* g = a_local/den */
+                    if (root) r = x_star;    /* apply the damped log-Newton step */
+                }
+            }
+        }
+        /* census: same arming as the channel dump (committed sweep only). */
+        if (g_ion_ch_armed) {
+            int Zc  = atom->ion_pop_Z[ip_cur];
+            int stc = atom->ion_pop_stage[ip_cur];
+            /* DET-DJDN-SPLIT: observe the judge-shell Picard x_map for the hold
+             * split (fdhold armed only). In a hold/null reevaluation this records
+             * x_map_hold/x_map_null; in production epochs it rolls the (K-1,K)
+             * stash. Writes no file and does not touch r/x_star. */
+            if (pop_djdn_fdhold_gate())
+                pop_djdn_hold_observe(Zc, stc, s, x_lag, x_map, g_local);
+            /* Production 16-col census is suppressed during a hold/null
+             * reevaluation so the counterfactual passes leave the production
+             * trajectory and file untouched (fdhold OFF => mode==0 always =>
+             * byte-identical). */
+            if (g_pop_djdn_hold_mode == 0 &&
+                (Zc == 16 || Zc == 14 || Zc == 20) && stc == 1) {
+                if (!g_pop_djdn_fp) {
+                    g_pop_djdn_fp = fopen("lumina_pop_djdn.csv", "a");
+                    if (g_pop_djdn_fp)
+                        fputs(POP_DJDN_DUMP_HEADER, g_pop_djdn_fp);
+                }
+                if (g_pop_djdn_fp) {
+                    char row[320];    /* 16 cols (13 + epoch,c_newton,damp) */
+                    pop_djdn_row_format(row, sizeof row, g_ion_ch_gen, s,
+                        Zc, stc, x_lag, x_map, a, g_local, x_star, root,
+                        ch_gamma_phot, gamma_eff, g_pop_maxch_factor,
+                        g_pop_djdn_epoch, c_newton, damp);
+                    fputs(row, g_pop_djdn_fp);
+                    fflush(g_pop_djdn_fp);
+                }
+                /* DET-PATHB-LOCAL: companion 8-col chi census (a_ds/a_dchi/
+                 * a_local), same arming as the production row. CHI OFF => no
+                 * file (388393). a == a_local == a_ds + a_dchi by construction. */
+                if (pop_djdn_chi_gate()) {
+                    if (!g_pop_djdn_chi_fp) {
+                        g_pop_djdn_chi_fp = fopen("lumina_pop_djdn_chi.csv", "a");
+                        if (g_pop_djdn_chi_fp)
+                            fputs(POP_DJDN_CHI_HEADER, g_pop_djdn_chi_fp);
+                    }
+                    if (g_pop_djdn_chi_fp) {
+                        char crow[256];
+                        pop_djdn_chi_row_format(crow, sizeof crow, g_ion_ch_gen,
+                            s, Zc, stc, g_pop_djdn_epoch, a_ds, a_dchi, a);
+                        fputs(crow, g_pop_djdn_chi_fp);
+                        fflush(g_pop_djdn_chi_fp);
+                    }
+                }
+            }
+        }
+    }
     *ratio_out = r;
     return r == 0.0 ? POP_EXACT_ZERO : POP_OK;
+}
+
+/* DET-COLDSTART (docs/PREREG_DET_COLDSTART_2026-09-24.md §2): pin-then-release
+ * of the S/Si/Ca/Fe/Co/Ni ion-stage totals to the public StaNdaRT CMFGEN toy06
+ * 19.480 d ion fractions.  The only entry condition is LUMINA_INIT_IONFRAC_DIR,
+ * read by coldstart_dir() at exactly two points (build_bundle armed judgment,
+ * commit level witness).  g_coldstart_armed can become 1 only inside the
+ * DIR-set branch of nlte_population_candidate_build_bundle, so with DIR unset
+ * the injection and the three lock ORs see a constant 0. */
+#define COLDSTART_NEL 6
+#define COLDSTART_MAX_PUB 6
+#define COLDSTART_MAX_LUM COLDSTART_MAX_PUB
+#define COLDSTART_MAX_NVEL 4096
+static const int coldstart_Z[COLDSTART_NEL] = {14, 16, 20, 26, 27, 28};
+static const char *const coldstart_sym[COLDSTART_NEL] =
+    {"si", "s", "ca", "fe", "co", "ni"};
+static int g_coldstart_armed = 0;
+static struct {
+    int loaded;
+    int n_shells;
+    int n_lum[COLDSTART_NEL];
+    double *v_mid_cm_s;   /* [n_shells] */
+    double *f;            /* [(s*COLDSTART_NEL+el)*COLDSTART_MAX_LUM+k] */
+    double *n_pre;        /* same layout: rate-solve stage density read just
+                             before the last armed injection (applied.csv) */
+} g_coldstart_tab;
+
+static const char *coldstart_dir(void) {
+    return getenv("LUMINA_INIT_IONFRAC_DIR");
+}
+
+static int coldstart_pin_armed(void) { return g_coldstart_armed; }
+
+/* Reads the #TIME: 19.480 block of one public ionfrac file.  No floor, no
+ * substitute: missing/duplicate block, row/column mismatch, non-increasing
+ * velocity or a non-finite fraction is a failure (non-positive cells are
+ * rejected at the ln in lumina_init_ionfrac_table). */
+static int coldstart_read_block(const char *dir, const char *sym, int *n_pub,
+                                int *n_vel, double *v, double *f) {
+    char path[4096], line[8192];
+    if (snprintf(path, sizeof(path), "%s/ionfrac_%s_toy06_cmfgen.txt", dir,
+                 sym) >= (int)sizeof(path)) return -1;
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        fprintf(stderr, "[COLDSTART][FATAL] reason=OPEN path=%s\n", path);
+        return -1;
+    }
+    int found = 0, rc = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        char *end;
+        if (strncmp(line, "#TIME:", 6) != 0) continue;
+        double t = strtod(line + 6, &end);
+        if (end == line + 6 || fabs(t - 19.480) > 1e-9) continue;
+        if (found++) { rc = -1; break; }
+        int nv = 0, nc = 0;
+        if (!fgets(line, sizeof(line), fp) ||
+            sscanf(line, "#NVEL: %d", &nv) != 1 || nv < 2 ||
+            nv > COLDSTART_MAX_NVEL || !fgets(line, sizeof(line), fp) ||
+            strncmp(line, "#vel_mid", 8) != 0) { rc = -1; break; }
+        for (char *tok = strtok(line, " \t\r\n"); tok;
+             tok = strtok(NULL, " \t\r\n")) nc++;
+        nc -= 1;
+        if (nc < 3 || nc > COLDSTART_MAX_PUB) { rc = -1; break; }
+        for (int i = 0; i < nv && rc == 0; i++) {
+            if (!fgets(line, sizeof(line), fp) || line[0] == '#') {
+                rc = -1; break;
+            }
+            char *p = line;
+            v[i] = strtod(p, &end);
+            if (end == p || !isfinite(v[i]) || v[i] <= 0.0 ||
+                (i > 0 && !(v[i] > v[i - 1]))) { rc = -1; break; }
+            for (int k = 0; k < nc; k++) {
+                p = end;
+                double x = strtod(p, &end);
+                if (end == p || !isfinite(x)) { rc = -1; break; }
+                f[i * COLDSTART_MAX_PUB + k] = x;
+            }
+            if (rc == 0) {
+                while (*end == ' ' || *end == '\t') end++;
+                if (*end != '\n' && *end != '\r' && *end != '\0') rc = -1;
+            }
+        }
+        if (rc == 0 && fgets(line, sizeof(line), fp) &&
+            strncmp(line, "#TIME:", 6) != 0 && strspn(line, " \t\r\n") !=
+            strlen(line)) rc = -1;
+        *n_pub = nc;
+        *n_vel = nv;
+        if (rc) break;
+    }
+    fclose(fp);
+    if (rc || found != 1) {
+        fprintf(stderr, "[COLDSTART][FATAL] reason=BLOCK_19.480 path=%s "
+                "found=%d rc=%d floor=0 fallback=0\n", path, found, rc);
+        return -1;
+    }
+    return 0;
+}
+
+/* §2 rule (rev 6): per public stage, ln f linear in ln v between the two rows
+ * that bracket v_mid; renormalise to Σ=1.  Public p_0..p_{K-1} (I..), Lumina
+ * k = 0..K-1 (II..), K = public stage count = Lumina stage count:
+ * o[0] = p_0+p_1, o[k] = p_{k+1} (1 <= k <= K-3), o[K-2] = o[K-1] = p_{K-1}
+ * (the top two Lumina stages share the public top stage; split at injection).
+ * f_out[(s*6+el)*6+k], k < n_lum[el] = K. */
+int lumina_init_ionfrac_table(const char *dir, const double *v_mid_cm_s,
+                              int n_shells, double *f_out, int *n_lum) {
+    if (!dir || !v_mid_cm_s || n_shells <= 0 || !f_out || !n_lum) return -1;
+    double *v = malloc(COLDSTART_MAX_NVEL * sizeof(double));
+    double *f = malloc((size_t)COLDSTART_MAX_NVEL * COLDSTART_MAX_PUB *
+                       sizeof(double));
+    if (!v || !f) { free(v); free(f); return -1; }
+    int rc = 0;
+    for (int el = 0; el < COLDSTART_NEL && rc == 0; el++) {
+        int n_pub = 0, n_vel = 0;
+        if (coldstart_read_block(dir, coldstart_sym[el], &n_pub, &n_vel, v,
+                                 f)) { rc = -1; break; }
+        n_lum[el] = n_pub;
+        for (int s = 0; s < n_shells; s++) {
+            double vm = v_mid_cm_s[s] / 1.0e5;
+            int i = -1;
+            for (int j = 0; j + 1 < n_vel; j++)
+                if (v[j] <= vm && vm <= v[j + 1]) { i = j; break; }
+            if (!isfinite(vm) || i < 0) {
+                fprintf(stderr, "[COLDSTART][FATAL] reason=V_OUT_OF_RANGE "
+                        "element=%s shell=%d v_mid_km_s=%.17g range=[%.17g,"
+                        "%.17g] floor=0 fallback=0\n", coldstart_sym[el], s,
+                        vm, v[0], v[n_vel - 1]);
+                rc = -1; break;
+            }
+            double w = (log(vm) - log(v[i])) / (log(v[i + 1]) - log(v[i]));
+            double fp[COLDSTART_MAX_PUB], sum = 0.0;
+            for (int k = 0; k < n_pub; k++) {
+                double f0 = f[i * COLDSTART_MAX_PUB + k];
+                double f1 = f[(i + 1) * COLDSTART_MAX_PUB + k];
+                if (!(f0 > 0.0) || !(f1 > 0.0)) {
+                    fprintf(stderr, "[COLDSTART][FATAL] reason=ZERO_CELL "
+                            "element=%s shell=%d public_stage=%d rows=%d,%d "
+                            "f=%.17g,%.17g floor=0 fallback=0\n",
+                            coldstart_sym[el], s, k, i, i + 1, f0, f1);
+                    rc = -1; break;
+                }
+                double a = log(f0);
+                double b = log(f1);
+                fp[k] = exp(a + w * (b - a));
+                sum += fp[k];
+            }
+            if (rc) break;
+            if (!isfinite(sum) || !(sum > 0.0)) { rc = -1; break; }
+            double *o = f_out + ((size_t)s * COLDSTART_NEL + el) *
+                        COLDSTART_MAX_LUM;
+            for (int k = 0; k < COLDSTART_MAX_LUM; k++) o[k] = 0.0;
+            o[0] = fp[0] / sum + fp[1] / sum;
+            for (int k = 1; k <= n_pub - 3; k++) o[k] = fp[k + 1] / sum;
+            o[n_pub - 2] = o[n_pub - 1] = fp[n_pub - 1] / sum;
+        }
+    }
+    free(v); free(f);
+    return rc;
+}
+
+static void coldstart_fatal_exit(const char *reason) {
+    fprintf(stderr, "[COLDSTART][FATAL] reason=%s action=TERMINATE floor=0 "
+            "fallback=0\n", reason);
+    fflush(stdout); fflush(stderr);
+    exit(EXIT_FAILURE);
+}
+
+static int coldstart_pin_iters(void) {
+    const char *e = getenv("LUMINA_INIT_IONFRAC_PIN_ITERS");
+    char *end = NULL;
+    if (!e || !*e) coldstart_fatal_exit("PIN_ITERS_UNSET");
+    errno = 0;
+    long n = strtol(e, &end, 10);
+    if (errno || end == e || *end != '\0' || n < 1 || n > INT_MAX)
+        coldstart_fatal_exit("PIN_ITERS_INVALID");
+    return (int)n;
+}
+
+/* Called only from the DIR-set branch.  Loads once, then proves every later
+ * call sees the same shell velocities and the same Lumina stage ladders. */
+static void coldstart_prepare(const char *dir,
+                              const NLTEPopulationBundleRequest *request) {
+    const AtomicData *atom = request->public_atom;
+    int ns = (int)request->n_shells;
+    if (!atom || !request->velocity_cm_s || ns <= 0 ||
+        (size_t)ns != request->n_shells)
+        coldstart_fatal_exit("REQUEST_LAYOUT");
+    if (!g_coldstart_tab.loaded) {
+        g_coldstart_tab.v_mid_cm_s = malloc((size_t)ns * sizeof(double));
+        g_coldstart_tab.f = malloc((size_t)ns * COLDSTART_NEL *
+                                   COLDSTART_MAX_LUM * sizeof(double));
+        g_coldstart_tab.n_pre = calloc((size_t)ns * COLDSTART_NEL *
+                                       COLDSTART_MAX_LUM, sizeof(double));
+        if (!g_coldstart_tab.v_mid_cm_s || !g_coldstart_tab.f ||
+            !g_coldstart_tab.n_pre)
+            coldstart_fatal_exit("ALLOCATION");
+        memcpy(g_coldstart_tab.v_mid_cm_s, request->velocity_cm_s,
+               (size_t)ns * sizeof(double));
+        if (lumina_init_ionfrac_table(dir, g_coldstart_tab.v_mid_cm_s, ns,
+                                      g_coldstart_tab.f, g_coldstart_tab.n_lum))
+            coldstart_fatal_exit("TABLE");
+        g_coldstart_tab.n_shells = ns;
+        g_coldstart_tab.loaded = 1;
+    } else if (g_coldstart_tab.n_shells != ns ||
+               memcmp(g_coldstart_tab.v_mid_cm_s, request->velocity_cm_s,
+                      (size_t)ns * sizeof(double)) != 0) {
+        coldstart_fatal_exit("VELOCITY_CHANGED");
+    }
+    for (int el = 0; el < COLDSTART_NEL; el++) {
+        int e = -1;
+        for (int i = 0; i < atom->n_elements; i++)
+            if (atom->element_Z[i] == coldstart_Z[el]) { e = i; break; }
+        if (e < 0) coldstart_fatal_exit("ELEMENT_ABSENT");
+        int ip0 = atom->elem_ion_offset[e];
+        int n_pops = atom->elem_ion_offset[e + 1] - ip0;
+        if (n_pops != g_coldstart_tab.n_lum[el]) {
+            fprintf(stderr, "[COLDSTART][FATAL] reason=STAGE_COUNT Z=%d "
+                    "lumina_stages=%d public_stages=%d\n", coldstart_Z[el],
+                    n_pops, g_coldstart_tab.n_lum[el]);
+            coldstart_fatal_exit("STAGE_COUNT");
+        }
+        for (int k = 0; k < n_pops; k++)
+            if (atom->ion_pop_stage[ip0 + k] != k + 1)
+                coldstart_fatal_exit("STAGE_LADDER");
+    }
+}
+
+/* Injection point ① (rev 6): n_element = the total this call's rate solve just
+ * partitioned.  k <= K-3 (0-based): n_ion(k) <- f_k * n_element; the top two
+ * stages share f_{K-2} * n_element in this call's own rate-solve ratio
+ * w = n_pre(K-2)/(n_pre(K-2)+n_pre(K-1)), n_pre read before overwriting. */
+static void coldstart_inject_element(AtomicData *atom, int Z_elem, int ip_start,
+                                     int n_pops, double n_element, int s,
+                                     int n_shells) {
+    for (int el = 0; el < COLDSTART_NEL; el++) {
+        if (coldstart_Z[el] != Z_elem) continue;
+        const double *f = g_coldstart_tab.f +
+            ((size_t)s * COLDSTART_NEL + el) * COLDSTART_MAX_LUM;
+        double *pre = g_coldstart_tab.n_pre +
+            ((size_t)s * COLDSTART_NEL + el) * COLDSTART_MAX_LUM;
+        double *n = atom->ion_number_density;
+        for (int k = 0; k < n_pops; k++)
+            pre[k] = n[(size_t)(ip_start + k) * n_shells + s];
+        double top = f[n_pops - 2] * n_element;
+        double den = pre[n_pops - 2] + pre[n_pops - 1];
+        if (n_element > 0.0 && !(den > 0.0)) {
+            fprintf(stderr, "[COLDSTART][FATAL] reason=TOP_SPLIT_UNDEFINED "
+                    "Z=%d shell=%d n_element=%.17g n_pre=%.17g,%.17g\n",
+                    Z_elem, s, n_element, pre[n_pops - 2], pre[n_pops - 1]);
+            coldstart_fatal_exit("TOP_SPLIT_UNDEFINED");
+        }
+        for (int k = 0; k <= n_pops - 3; k++)
+            n[(size_t)(ip_start + k) * n_shells + s] = f[k] * n_element;
+        n[(size_t)(ip_start + n_pops - 2) * n_shells + s] =
+            n_element > 0.0 ? top * (pre[n_pops - 2] / den) : 0.0;
+        n[(size_t)(ip_start + n_pops - 1) * n_shells + s] =
+            n_element > 0.0 ? top * (pre[n_pops - 1] / den) : 0.0;
+        return;
+    }
+}
+
+/* SEED-only evidence: committed stage arrays against the applied fractions. */
+static void coldstart_applied_write(const AtomicData *a, const PlasmaState *p,
+                                    size_t ns) {
+    size_t rows = 0;
+    int rc = -1;
+    int fd = open("lumina_init_ionfrac_applied.csv",
+                  O_WRONLY | O_CREAT | O_EXCL, 0644);
+    FILE *fp = fd >= 0 ? fdopen(fd, "w") : NULL;
+    if (fd >= 0 && !fp) close(fd);
+    if (fp && g_coldstart_tab.loaded && (size_t)g_coldstart_tab.n_shells == ns &&
+        p && p->rho && a && a->ion_number_density) {
+        rc = 0;
+        fprintf(fp, "shell,Z,stage,v_mid,f_pub,n_ion_pre,n_ion,n_element\n");
+        for (size_t s = 0; s < ns && rc == 0; s++)
+            for (int el = 0; el < COLDSTART_NEL && rc == 0; el++) {
+                int e = -1;
+                for (int i = 0; i < a->n_elements; i++)
+                    if (a->element_Z[i] == coldstart_Z[el]) { e = i; break; }
+                if (e < 0) { rc = -1; break; }
+                int ip0 = a->elem_ion_offset[e];
+                double n_element = (a->abundances[(size_t)e * ns + s] *
+                                    p->rho[s]) /
+                                   (a->element_mass_amu[e] * AMU);
+                const double *f = g_coldstart_tab.f +
+                    (s * COLDSTART_NEL + el) * COLDSTART_MAX_LUM;
+                const double *pre = g_coldstart_tab.n_pre +
+                    (s * COLDSTART_NEL + el) * COLDSTART_MAX_LUM;
+                for (int k = 0; k < g_coldstart_tab.n_lum[el]; k++, rows++)
+                    fprintf(fp, "%zu,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g\n", s,
+                            coldstart_Z[el], a->ion_pop_stage[ip0 + k],
+                            g_coldstart_tab.v_mid_cm_s[s] / 1.0e5, f[k], pre[k],
+                            a->ion_number_density[(size_t)(ip0 + k) * ns + s],
+                            n_element);
+            }
+    }
+    if (fp) {
+        if (fflush(fp) || ferror(fp) || fsync(fileno(fp))) rc = -1;
+        if (fclose(fp)) rc = -1;
+    }
+    fprintf(stderr, "[COLDSTART][APPLIED] rows=%zu rc=%d\n", rows, rc);
+}
+
+/* Level witness (rev 3): every material commit, S II + S III, all NLTE levels
+ * x all shells, read-only; never changes the commit's return value. */
+static void coldstart_levels_write(const NLTEConfig *n, const AtomicData *a,
+                                   const PlasmaState *p, size_t ns) {
+    unsigned long long gen = a ? (unsigned long long)
+        a->population_committed_generation : 0ULL;
+    size_t rows = 0;
+    int rc = -1;
+    char path[64];
+    snprintf(path, sizeof(path), "coldstart_levels_gen%03llu.csv", gen);
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    FILE *fp = fd >= 0 ? fdopen(fd, "w") : NULL;
+    if (fd >= 0 && !fp) close(fd);
+    if (fp && n && a && p && p->T_e && p->n_electron &&
+        n->nlte_level_populations && n->nlte_to_global_level &&
+        a->level_energy_eV && a->level_g && a->ion_number_density) {
+        rc = 0;
+        fprintf(fp, "Z,ion,shell,level_idx,global_idx,E_eV,g,n_pop,T_e,n_e,"
+                "n_ion_total,population_generation\n");
+        for (int ii = 0; ii < n->n_nlte_ions && rc == 0; ++ii) {
+            if (n->nlte_Z[ii] != 16 ||
+                (n->nlte_ion[ii] != 1 && n->nlte_ion[ii] != 2)) continue;
+            int ip = -1, b = n->nlte_ion_level_offset[ii],
+                e = n->nlte_ion_level_offset[ii + 1];
+            for (int i = 0; i < a->n_ion_pops; ++i)
+                if (a->ion_pop_Z[i] == 16 &&
+                    a->ion_pop_stage[i] == n->nlte_ion[ii]) { ip = i; break; }
+            if (ip < 0 || b < 0 || e < b) { rc = -1; break; }
+            for (int l = b; l < e && rc == 0; ++l) {
+                int gi = n->nlte_to_global_level[l];
+                if (gi < 0 || gi >= a->n_levels) { rc = -1; break; }
+                for (size_t s = 0; s < ns; ++s, ++rows)
+                    fprintf(fp, "16,%d,%zu,%d,%d,%.17g,%d,%.17g,%.17g,%.17g,"
+                            "%.17g,%llu\n", n->nlte_ion[ii], s, l - b, gi,
+                            a->level_energy_eV[gi], a->level_g[gi],
+                            n->nlte_level_populations[(size_t)l * ns + s],
+                            p->T_e[s], p->n_electron[s],
+                            a->ion_number_density[(size_t)ip * ns + s], gen);
+            }
+        }
+    }
+    if (fp) {
+        if (fflush(fp) || ferror(fp) || fsync(fileno(fp))) rc = -1;
+        if (fclose(fp)) rc = -1;
+    }
+    fprintf(stderr, "[COLDSTART][LEVELS] gen=%llu rows=%zu rc=%d\n", gen, rows,
+            rc);
 }
 
 /* steady-state nebular-Saha ion partition for ONE shell (all elements). Extracted
@@ -2996,6 +4173,9 @@ static PopulationStatus compute_ion_populations_shell(
                 atom->ion_number_density[(ip_start + k + 1) * n_shells + s] =
                     n_ion;
             }
+            if (g_coldstart_armed)
+                coldstart_inject_element(atom, Z_elem, ip_start, n_pops,
+                                         n_element, s, n_shells);
 
             free(ratios);
         }
@@ -3009,6 +4189,11 @@ static PopulationStatus compute_ion_populations(
         int n_shells, int emit_progress) {
     /* LUMINA_RADEQ_SIMUL owns the ion partition; skip the nebular rewrite. */
     if (g_simul_on == 1) return POP_OK;
+    /* DET-CONT-NLTE-BALANCE (rev 1, R1-3): arm the channel dump only around the
+     * committed ion-population sweep (one call per shell), not the n_e Newton
+     * sub-iterations in compute_electron_density. prev_shell reset => this
+     * sweep's shell 0 opens a fresh gen. */
+    if (ion_channel_dump_gate()) { g_ion_ch_armed = 1; g_ion_ch_prev_shell = -1; }
     if (emit_progress && artis_parity_enabled()) {
         static int b2_banner = 0;
         if (!b2_banner) {
@@ -3032,8 +4217,9 @@ static PopulationStatus compute_ion_populations(
             compute_ion_populations_shell(
                 atom, plasma, rate_nlte, candidate_diagnostic,
                 s, n_shells);
-        if (status != POP_OK) return status;
+        if (status != POP_OK) { g_ion_ch_armed = 0; return status; }
     }
+    g_ion_ch_armed = 0;
     if (emit_progress && r1_on)
         printf("  [ARTIS-PARITY R1] rate-SE closure: %ld shells rate-driven, "
                "%ld blocked-no-view\n", r1_rate_n, r1_lte_n);
@@ -6601,6 +7787,26 @@ double lumina_rates_alpha_probe(AtomicData *atom, int Z, int stage, double T) {
     return frozenin_alpha_rr(atom, ip, ip_next, T);
 }
 
+/* DET-CONT-NLTE-BALANCE (rev 1, R1-3): the DR-only part of frozenin_alpha_rr,
+ * recomputed with the identical dr_lookup/dr_alpha_eval path so the channel dump
+ * can split alpha into RR and DR (ne_alpha_rr = n_e*(alpha - alpha_dr)). Returns
+ * 0 when LUMINA_FROZENIN_DR is off or no DR coefficient is tabulated. This is a
+ * read-only recompute: frozenin_alpha_rr and every existing caller stay
+ * byte-identical. */
+static double frozenin_alpha_dr(AtomicData *atom, int ip, double T) {
+    if (!atom->cmfgen_loaded || T <= 0.0) return 0.0;
+    static int fz_dr = -1;
+    if (fz_dr < 0) {
+        const char *e = getenv("LUMINA_FROZENIN_DR");
+        fz_dr = (e && atoi(e)) ? 1 : 0;
+    }
+    if (!fz_dr) return 0.0;
+    int Z = atom->ion_pop_Z[ip];
+    int stage = atom->ion_pop_stage[ip];
+    const DRCoefficient *coef = dr_lookup(Z, stage + 1);
+    return coef ? dr_alpha_eval(coef, T) : 0.0;
+}
+
 /* dy/dt for the homologous recombination cascade (fraction space). State y is
  * [nelem * FROZENIN_MAXSTAGE], indexed [e*MS + k] with k = absolute charge.
  * n_e(t) = (t_exp/t)^3 * sum_e n_elem0[e] * <Z>_e(t) (self-consistent). */
@@ -7447,9 +8653,11 @@ int bf_opacity_init_checked(BFOpacity *bf, int n_shells) {
     bf->event_chi_bf_comparison = (double *)calloc(
         (size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
     bf->eta_bf = (double *)calloc((size_t)n_shells * NLTE_N_FREQ_BINS, sizeof(double));
+    bf->eta_milne_ok = (int *)calloc((size_t)n_shells, sizeof(int));
     bf->activation_level = (int *)malloc((size_t)n_shells * NLTE_N_FREQ_BINS * sizeof(int));
     if (!bf->chi_bf || !bf->event_chi_bf ||
         !bf->event_chi_bf_comparison || !bf->eta_bf ||
+        !bf->eta_milne_ok ||
         !bf->activation_level) {
         bf_opacity_free(bf);
         return -1;
@@ -7465,6 +8673,7 @@ void bf_opacity_init(BFOpacity *bf, int n_shells) {
 void bf_opacity_free(BFOpacity *bf) {
     free(bf->chi_bf);
     free(bf->eta_bf);
+    free(bf->eta_milne_ok);
     free(bf->activation_level);
     free(bf->event_level_offset);
     free(bf->event_element);
@@ -7925,6 +9134,7 @@ static int compute_bf_opacity_impl(
     size_t grid_size = (size_t)n_shells * bf->n_freq_bins;
     memset(bf->chi_bf, 0, grid_size * sizeof(double));
     if (bf->eta_bf) memset(bf->eta_bf, 0, grid_size * sizeof(double));
+    if (bf->eta_milne_ok) memset(bf->eta_milne_ok, 0, (size_t)n_shells * sizeof(int));
     memset(bf->activation_level, -1, grid_size * sizeof(int));
     bf->event_enabled = lumina_fix_bf_continuum_event_enabled();
     bf->event_measure_provenance = bf->event_enabled
@@ -8590,6 +9800,22 @@ static int compute_bf_opacity_impl(
                bf_nlte_used, bf_nlte_fb);
     }
 
+    /* DET-CONT-NLTE-BALANCE (rev 1, R1-1): record, per shell, whether the Milne
+     * (bf) emissivity has any positive bin BEFORE free-free is summed in below.
+     * The continuum-NLTE-source assembler's fail-closed consults this so a
+     * pure-ff (Milne all-zero) shell cannot silently pass -- bf_get_eta includes
+     * ff, so an "eta_bf all-zero" test at consume time is toothless. On the GPU
+     * GEMM path (taken only when !bf_milne) eta_bf carries no Milne term and this
+     * scan is skipped by the goto, leaving the memset-0 flags (correct). */
+    if (bf->eta_milne_ok) {
+        for (int s = 0; s < n_shells; ++s) {
+            int ok = 0;
+            for (int b = 0; b < bf->n_freq_bins; ++b)
+                if (bf->eta_bf[(size_t)s * bf->n_freq_bins + b] > 0.0) { ok = 1; break; }
+            bf->eta_milne_ok[s] = ok;
+        }
+    }
+
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
 compute_ff:
 #endif
@@ -8950,13 +10176,85 @@ static int nlte_tau_line_uses_nlte_by(
             a,shell,n_shells,ew_tau_authority,ew_tau_authority_nshells);
 }
 
+typedef enum {
+ DPROXY_POP_SOURCE_UNKNOWN=0,
+ DPROXY_POP_SOURCE_NLTE_COMMITTED,
+ DPROXY_POP_SOURCE_LTE_TE,
+ DPROXY_POP_SOURCE_LTE_CACHE
+} DProxyPopulationSource;
+
+typedef struct {
+ int used_nlte,super_mode,outer_iter;
+ int upper_global,nlte_upper_index,runtime_sl_id,super_anchor_global;
+ uint64_t nlte_population_generation,atom_population_generation;
+ uint64_t te_generation;
+ double within_sl_frac;
+ DProxyPopulationSource source;
+} DProxyRowPopulationProvenance;
+
+static int dproxy_population_provenance_enabled(void){
+ const char *value=getenv("LUMINA_DPROXY_POPULATION_PROVENANCE");
+ return value&&strcmp(value,"1")==0;
+}
+
+static const char *dproxy_population_source_name(DProxyPopulationSource source){
+ switch(source){
+ case DPROXY_POP_SOURCE_NLTE_COMMITTED:return "NLTE_COMMITTED";
+ case DPROXY_POP_SOURCE_LTE_TE:return "LTE_TE";
+ case DPROXY_POP_SOURCE_LTE_CACHE:return "LTE_CACHE";
+ default:return "UNKNOWN";
+ }
+}
+
+static void dproxy_row_population_provenance_reset(
+ DProxyRowPopulationProvenance *provenance){
+ if(!provenance)return;
+ memset(provenance,0,sizeof(*provenance));
+ provenance->outer_iter=-1;
+ provenance->upper_global=-1;
+ provenance->nlte_upper_index=-1;
+ provenance->runtime_sl_id=-1;
+ provenance->super_anchor_global=-1;
+ provenance->within_sl_frac=NAN;
+ provenance->source=DPROXY_POP_SOURCE_UNKNOWN;
+}
+
+static void dproxy_row_population_provenance_init(
+ DProxyRowPopulationProvenance *provenance,const AtomicData *atom,
+ const PlasmaState *plasma,const NLTEConfig *nlte,
+ const NLTETauLineAuthority *authority,int use_nlte,int lte_cache){
+ if(!provenance)return;
+ dproxy_row_population_provenance_reset(provenance);
+ provenance->upper_global=authority?authority->upper_global:-1;
+ provenance->nlte_upper_index=authority?authority->nlte_up:-1;
+ provenance->used_nlte=use_nlte;
+ provenance->source=use_nlte?DPROXY_POP_SOURCE_NLTE_COMMITTED:
+                    (lte_cache?DPROXY_POP_SOURCE_LTE_CACHE:
+                               DPROXY_POP_SOURCE_LTE_TE);
+ provenance->super_mode=nlte?nlte->super_mode:0;
+ provenance->outer_iter=nlte?nlte->current_iter:-1;
+ provenance->nlte_population_generation=
+     nlte?nlte->population_committed_generation:0;
+ provenance->atom_population_generation=
+     atom?atom->population_committed_generation:0;
+ provenance->te_generation=plasma?plasma->T_e_generation:0;
+ if(nlte&&authority&&authority->nlte_up>=0&&
+    authority->nlte_up<nlte->n_nlte_levels_total&&nlte->fl_to_super){
+  int sl=nlte->fl_to_super[authority->nlte_up];
+  provenance->runtime_sl_id=sl;
+  if(sl>=0&&sl<nlte->n_super_total&&nlte->super_anchor_global)
+   provenance->super_anchor_global=nlte->super_anchor_global[sl];
+ }
+}
+
 static EmissivityStatus a209_upper_population_for_tau(
  const AtomicData *atom,const PlasmaState *plasma,const NLTEConfig *nlte,
  const NLTETauLineAuthority*authority,size_t shell,
  size_t n_shells,const int *ew_tau_authority,
  int ew_tau_authority_nshells,const double *lte_level_density,
- double *n_upper,int *used_nlte){
+ double *n_upper,int *used_nlte,DProxyRowPopulationProvenance *provenance){
  if(used_nlte)*used_nlte=0;
+ dproxy_row_population_provenance_reset(provenance);
  if(!atom||!plasma||!nlte||!authority||!n_upper||authority->ip<0||
     authority->upper_global<0||shell>=n_shells)return EMISS_ATOMIC_MISSING;
  *n_upper=NAN;
@@ -8967,6 +10265,13 @@ static EmissivityStatus a209_upper_population_for_tau(
                   authority,shell,n_shells,ew_tau_authority,
                   ew_tau_authority_nshells);
  if(used_nlte)*used_nlte=use_nlte;
+ dproxy_row_population_provenance_init(
+     provenance,atom,plasma,nlte,authority,use_nlte,
+     !use_nlte&&lte_level_density!=NULL);
+ if(provenance&&authority->nlte_up>=0&&
+    authority->nlte_up<nlte->n_nlte_levels_total&&nlte->within_sl_frac)
+  provenance->within_sl_frac=nlte->within_sl_frac[
+      (size_t)authority->nlte_up*n_shells+shell];
  if(!plasma->T_e||!atom->ion_number_density||!atom->partition_functions||
     (use_nlte&&!nlte->nlte_level_populations))
   return EMISS_STALE_POP;
@@ -9008,7 +10313,7 @@ EmissivityStatus lumina_line_upper_population_for_tau(
  return a209_upper_population_for_tau(
      atom,plasma,nlte,&authority,shell,n_shells,
      g_ew_tau_authority,g_ew_tau_authority_nshells,
-     NULL,n_upper,NULL);
+     NULL,n_upper,NULL,NULL);
 }
 
 /* Bulk form for the deterministic Q_E formal producer.  Resolving authority
@@ -9037,7 +10342,7 @@ int lumina_line_upper_population_fill_for_tau(
    EmissivityStatus status=a209_upper_population_for_tau(
        atom,plasma,nlte,&authority,shell,n_shells,
        g_ew_tau_authority,g_ew_tau_authority_nshells,
-       lte_level_density,&value,NULL);
+       lte_level_density,&value,NULL,NULL);
    if((status!=EMISS_OK&&status!=EMISS_EXACT_ZERO)||
       !isfinite(value)||value<0.0){rc=-1;break;}
    n_upper_line_shell[line*n_shells+shell]=value;
@@ -9045,6 +10350,233 @@ int lumina_line_upper_population_fill_for_tau(
  }
  free(lte_level_density);
  return rc;
+}
+
+/* DET-LTEUNMAP-EPS: companion bulk producer of the per-(line,shell) NLTE-mapping
+ * flag used by the cmf_fine parity branch to decide LTE-unmapped ε application.
+ * Emits exactly the `used_nlte` byte a209_upper_population_for_tau already computes
+ * (1 = the line's upper level is NLTE-tracked in this shell, 0 = LTE-unmapped),
+ * with the SAME authority/predicate the population fill uses. Kept as a separate
+ * direct-call entry (not the registered function-pointer typedef) so the frozen
+ * public API (lumina.h) is unchanged; the changeset stays inside the four gated
+ * files. n_upper is discarded here (the population fill already published it). */
+int lumina_line_used_nlte_fill_for_tau(
+ const AtomicData *atom,const PlasmaState *plasma,const NLTEConfig *nlte,
+ size_t n_lines,size_t n_shells,unsigned char *used_nlte_line_shell){
+ if(!atom||!plasma||!nlte||!used_nlte_line_shell||n_lines==0||n_shells==0||
+    n_lines!=(size_t)atom->n_lines||n_shells>(size_t)INT_MAX||
+    n_lines>SIZE_MAX/n_shells)return-1;
+ double *lte_level_density=build_lte_level_density_cache(
+     atom,plasma,(int)n_shells);
+ if(!lte_level_density)return-1;
+ unsigned char pair_owned[NLTE_MAX_IONS]={0};
+ nlte_tau_build_pair_ownership(pair_owned);
+ int rc=0;
+ for(size_t line=0;line<n_lines&&rc==0;line++){
+  NLTETauLineAuthority authority=nlte_tau_line_authority(
+      atom,nlte,(int)line,pair_owned);
+  if(authority.ip<0||authority.upper_global<0){rc=-1;break;}
+  for(size_t shell=0;shell<n_shells;shell++){
+   double value=NAN;
+   int used_nlte=0;
+   EmissivityStatus status=a209_upper_population_for_tau(
+       atom,plasma,nlte,&authority,shell,n_shells,
+       g_ew_tau_authority,g_ew_tau_authority_nshells,
+       lte_level_density,&value,&used_nlte,NULL);
+   if((status!=EMISS_OK&&status!=EMISS_EXACT_ZERO)||
+      !isfinite(value)||value<0.0){rc=-1;break;}
+   used_nlte_line_shell[line*n_shells+shell]=used_nlte?1:0;
+  }
+ }
+ free(lte_level_density);
+ return rc;
+}
+
+static int dproxy_committed_population_view_valid(
+ const NLTEConfig *nlte,const AtomicData *atom,const PlasmaState *plasma,
+ size_t n_shells){
+ if(!nlte||!atom||!plasma||n_shells==0||nlte->super_mode!=1||
+    nlte->n_nlte_levels_total<=0||nlte->n_super_total<=0||
+    nlte->n_nlte_ions<=0||nlte->n_nlte_ions>NLTE_MAX_IONS||
+    atom->n_levels<=0||atom->n_ion_pops<=0||
+    !atom->element_Z||!atom->elem_ion_offset||!atom->ion_pop_stage||
+    !nlte->fl_to_super||!nlte->super_anchor_global||
+    !nlte->nlte_to_global_level||!nlte->nlte_level_populations||
+    !nlte->within_sl_frac||nlte->population_committed_generation==0||
+    nlte->population_committed_generation!=
+        atom->population_committed_generation||
+    (size_t)nlte->n_nlte_levels_total>SIZE_MAX/n_shells||
+    (size_t)nlte->n_super_total>SIZE_MAX/n_shells||
+    nlte->nlte_ion_super_offset[0]!=0||
+    nlte->nlte_ion_super_offset[nlte->n_nlte_ions]!=nlte->n_super_total)
+  return 0;
+ for(int ion_slot=0;ion_slot<nlte->n_nlte_ions;ion_slot++){
+  int begin=nlte->nlte_ion_super_offset[ion_slot];
+  int end=nlte->nlte_ion_super_offset[ion_slot+1];
+  if(begin<0||end<=begin||end>nlte->n_super_total)return 0;
+ }
+ unsigned char *seen=calloc((size_t)nlte->n_super_total,sizeof(*seen));
+ if(!seen)return 0;
+ int valid=1;
+ for(int level=0;level<nlte->n_nlte_levels_total&&valid;level++){
+  int sl=nlte->fl_to_super[level];
+  int global=nlte->nlte_to_global_level[level];
+  if(sl<0||sl>=nlte->n_super_total||global<0||global>=atom->n_levels)
+   valid=0;
+  else
+   seen[sl]=1;
+ }
+ for(int sl=0;sl<nlte->n_super_total&&valid;sl++)
+  if(!seen[sl]||nlte->super_anchor_global[sl]<0||
+     nlte->super_anchor_global[sl]>=atom->n_levels)valid=0;
+ free(seen);
+ return valid;
+}
+
+int lumina_dproxy_population_provenance_emit(
+ const NLTEConfig *nlte,const AtomicData *atom,const PlasmaState *plasma,
+ size_t n_shells){
+ if(!dproxy_population_provenance_enabled())return 0;
+ const char *schema="DPROXY_SL_POP_PROVENANCE_V1";
+ int outer_iter=nlte?nlte->current_iter:-1;
+ uint64_t pop_generation=nlte?nlte->population_committed_generation:0;
+ uint64_t atom_generation=atom?atom->population_committed_generation:0;
+ uint64_t te_generation=plasma?plasma->T_e_generation:0;
+ int nlevels=nlte?nlte->n_nlte_levels_total:0;
+ int nsuper=nlte?nlte->n_super_total:0;
+ int precondition_ok=dproxy_committed_population_view_valid(
+     nlte,atom,plasma,n_shells);
+ if(!precondition_ok){
+  if(fprintf(stderr,
+      "[DPROXY][SL-POP-COMPLETE] schema=%s outer_iter=%d "
+      "population_generation=%llu atom_population_generation=%llu "
+      "te_generation=%llu super_mode=%d expected_shells=%zu "
+      "actual_shells=0 expected_sl_records=0 "
+      "actual_sl_records=0 expected_member_records=0 "
+      "actual_member_records=0 n_shells=%zu blocked=1 "
+      "status=BLOCKED reason=INVALID_COMMITTED_VIEW\n",
+      schema,outer_iter,(unsigned long long)pop_generation,
+      (unsigned long long)atom_generation,(unsigned long long)te_generation,
+      nlte?nlte->super_mode:0,n_shells,n_shells)<0)return -1;
+  return -1;
+ }
+ size_t actual_groups=0,actual_members=0,blocked=0;
+ for(size_t shell=0;shell<n_shells;shell++){
+  for(int sl=0;sl<nsuper;sl++){
+   int nlte_ion_slot=-1;
+   for(int ion_index=0;ion_index<nlte->n_nlte_ions;ion_index++){
+    if(sl>=nlte->nlte_ion_super_offset[ion_index]&&
+       sl<nlte->nlte_ion_super_offset[ion_index+1]){
+     nlte_ion_slot=ion_index;break;
+    }
+   }
+   int Z=nlte_ion_slot>=0?nlte->nlte_Z[nlte_ion_slot]:-1;
+   int ion=nlte_ion_slot>=0?nlte->nlte_ion[nlte_ion_slot]:-1;
+   int ion_slot=nlte_ion_slot>=0?
+       a209_find_ion_pop_idx(atom,Z,ion):-1;
+   int member_count=0;
+   double proxy_first=NAN,proxy_min=INFINITY,proxy_max=-INFINITY;
+   const char *group_reason="NONE";
+   for(int level=0;level<nlevels;level++){
+    if(nlte->fl_to_super[level]!=sl)continue;
+    member_count++;
+    double fraction=nlte->within_sl_frac[(size_t)level*n_shells+shell];
+    double population=
+        nlte->nlte_level_populations[(size_t)level*n_shells+shell];
+    if(!isfinite(fraction)||fraction<=0.0){
+     group_reason="INVALID_WITHIN_SL_FRAC";continue;
+    }
+    if(!isfinite(population)||population<0.0){
+     group_reason="INVALID_LEVEL_POPULATION";continue;
+    }
+    double proxy=population/fraction;
+    if(!isfinite(proxy)||proxy<0.0){
+     group_reason="INVALID_SL_PROXY";continue;
+    }
+    if(!isfinite(proxy_first))proxy_first=proxy;
+    if(proxy<proxy_min)proxy_min=proxy;
+    if(proxy>proxy_max)proxy_max=proxy;
+   }
+   if(member_count==0)group_reason="EMPTY_RUNTIME_SL";
+   if(nlte_ion_slot<0||ion_slot<0)group_reason="INVALID_RUNTIME_ION";
+   double spread=NAN;
+   if(isfinite(proxy_first)&&isfinite(proxy_min)&&isfinite(proxy_max)){
+    double scale=fmax(fabs(proxy_min),fabs(proxy_max));
+    spread=scale>0.0?(proxy_max-proxy_min)/scale:0.0;
+    if(!isfinite(spread)||spread>1.0e-10)
+     group_reason="SL_PROXY_SPREAD";
+   }else if(strcmp(group_reason,"NONE")==0){
+    group_reason="INVALID_SL_PROXY";
+   }
+   int group_ok=strcmp(group_reason,"NONE")==0;
+   for(int level=0;level<nlevels;level++){
+    if(nlte->fl_to_super[level]!=sl)continue;
+    int global_level=nlte->nlte_to_global_level[level];
+    double fraction=nlte->within_sl_frac[(size_t)level*n_shells+shell];
+    double population=
+        nlte->nlte_level_populations[(size_t)level*n_shells+shell];
+    double proxy=isfinite(fraction)&&fraction>0.0?
+        population/fraction:NAN;
+    int member_ok=global_level>=0&&global_level<atom->n_levels&&
+        isfinite(fraction)&&fraction>0.0&&isfinite(population)&&
+        population>=0.0&&isfinite(proxy)&&proxy>=0.0;
+    if(fprintf(stderr,
+        "[DPROXY][SL-POP-MEMBER] schema=%s outer_iter=%d "
+        "population_generation=%llu atom_population_generation=%llu "
+        "te_generation=%llu super_mode=%d shell=%zu Z=%d ion=%d "
+        "ion_slot=%d "
+        "runtime_sl_id=%d super_anchor_global=%d member_count=%d "
+        "nlte_level_index=%d global_level=%d within_sl_frac=%.17g "
+        "within_sl_frac_hex=%a n_level=%.17g n_level_hex=%a "
+        "sl_proxy=%.17g sl_proxy_hex=%a status=%s reason=%s\n",
+        schema,outer_iter,(unsigned long long)pop_generation,
+        (unsigned long long)atom_generation,(unsigned long long)te_generation,
+        nlte->super_mode,shell,Z,ion,ion_slot,sl,
+        nlte->super_anchor_global[sl],member_count,
+        level,global_level,fraction,fraction,population,population,proxy,proxy,
+        member_ok?"OK":"BLOCKED",member_ok?"NONE":"INVALID_MEMBER")<0)
+     return -1;
+    actual_members++;
+    if(!member_ok)blocked++;
+   }
+   if(fprintf(stderr,
+       "[DPROXY][SL-POP] schema=%s outer_iter=%d "
+       "population_generation=%llu atom_population_generation=%llu "
+       "te_generation=%llu super_mode=%d shell=%zu Z=%d ion=%d "
+       "ion_slot=%d "
+       "runtime_sl_id=%d super_anchor_global=%d member_count=%d "
+       "sl_proxy=%.17g sl_proxy_hex=%a max_relative_spread=%.17g "
+       "max_relative_spread_hex=%a "
+       "status=%s reason=%s\n",
+       schema,outer_iter,(unsigned long long)pop_generation,
+       (unsigned long long)atom_generation,(unsigned long long)te_generation,
+       nlte->super_mode,shell,Z,ion,ion_slot,sl,
+       nlte->super_anchor_global[sl],member_count,
+       proxy_first,proxy_first,spread,spread,
+       group_ok?"OK":"BLOCKED",group_reason)<0)return -1;
+   actual_groups++;
+   if(!group_ok)blocked++;
+  }
+ }
+ size_t expected_groups=(size_t)nsuper*n_shells;
+ size_t expected_members=(size_t)nlevels*n_shells;
+ int complete=blocked==0&&actual_groups==expected_groups&&
+     actual_members==expected_members;
+ if(fprintf(stderr,
+     "[DPROXY][SL-POP-COMPLETE] schema=%s outer_iter=%d "
+     "population_generation=%llu atom_population_generation=%llu "
+     "te_generation=%llu super_mode=%d expected_shells=%zu "
+     "actual_shells=%zu expected_sl_records=%zu "
+     "actual_sl_records=%zu expected_member_records=%zu "
+     "actual_member_records=%zu n_shells=%zu blocked=%zu "
+     "status=%s reason=%s\n",
+     schema,outer_iter,(unsigned long long)pop_generation,
+     (unsigned long long)atom_generation,(unsigned long long)te_generation,
+     nlte->super_mode,n_shells,n_shells,expected_groups,actual_groups,
+     expected_members,
+     actual_members,n_shells,blocked,complete?"COMPLETE":"BLOCKED",
+     complete?"NONE":"LEDGER_INCOMPLETE")<0)return -1;
+ return complete?0:-1;
 }
 
 static A209LineGenerationView a209_line_generation_snapshot(
@@ -9242,7 +10774,7 @@ static int a209_publish_cpu_emissivity_impl(
    int used_nlte=0;
    EmissivityStatus ps=a209_upper_population_for_tau(
        atom,plasma,nlte,&authority,s,ns,ew_tau_authority,
-       ew_tau_authority_nshells,lte_level_density,&nupper,&used_nlte);
+       ew_tau_authority_nshells,lte_level_density,&nupper,&used_nlte,NULL);
    double beta=NAN,eta=NAN;
    EmissivityStatus es=(ps==EMISS_OK||ps==EMISS_EXACT_ZERO)
        ?a209_sobolev_line_eta(nupper,Aul,atomic_nu,tau,dnu,&beta,&eta):ps;
@@ -10753,7 +12285,7 @@ static void build_radeq_line_table(NLTEConfig *nlte, AtomicData *atom,
      * CMFGEN 3-tier (table as-is | vR gbar-floor | OMEGA_SET) instead of
      * "real-Upsilon then clamp everything to Upsilon>=om_floor". Mutually
      * exclusive with the floor; the floor loses. */
-    const int omcm_on = omega_cmfgen_enabled() && artis_parity_enabled();
+    const int omcm_on = omega_cmfgen_enabled();
     long omcm_cnt[4] = {0, 0, 0, 0};
     if (artis_parity_enabled()) {
         const char *of = getenv("LUMINA_RADEQ_OMEGA_FLOOR");
@@ -10989,6 +12521,27 @@ void lumina_oracle_prepare_line_eps(NLTEConfig *nlte, AtomicData *atom,
     build_radeq_line_table(nlte, atom, opacity);
 }
 #endif
+
+/* DET-LTEUNMAP-EPS: unconditional public wrapper (no #ifdef) that guarantees the
+ * RADEQ collisional line-cooling table (which radeq_line_eps_phys reads) is built
+ * before the cmf_fine parity branch consumes ε. In the twin-T_e run radeq_simul_all
+ * is never entered (fixed-T_e profile), so the table's lazy builders never fire and
+ * every ε would be -1; this ensures the table on demand. build_radeq_line_table is
+ * idempotent (guards on radeq_n_lines >= 0), so repeated / later calls are no-ops. */
+void radeq_line_table_ensure(NLTEConfig *nlte, AtomicData *atom,
+                             const OpacityState *opacity) {
+    if (!nlte || !atom || !opacity) return;
+    /* build_radeq_line_table only READS opacity (n_lines + line/level tables);
+     * the const cast is safe and lets const callers (the bin assembler) use it. */
+    build_radeq_line_table(nlte, atom, (OpacityState *)opacity);
+}
+
+/* DET-LTEUNMAP-EPS: 1 iff the RADEQ line table has been built (build attempted).
+ * Lets cmf_fine fail-closed at start (BLOCKED) rather than consume ε from an
+ * unbuilt table. */
+int radeq_line_table_is_built(void) {
+    return radeq_n_lines >= 0 ? 1 : 0;
+}
 
 /* Net energy rate H(T_e) - C(T_e) [erg/s/cm^3] for one shell. The lagged,
  * T_e-independent heating (H_photo + H_gamma) and the per-line cooling
@@ -13223,6 +14776,18 @@ void radeq_set_tri_response(const double *lo, const double *up,
     g_tri_ns = n_shells; g_tri_nb = n_bins;
 }
 
+/* DET-PATHB-LOCAL: register the fixed-S formal-solve dJ_fs/dchi buffer
+ * (cmfgen_run's formal_djdchi_fs_S output). CHI OFF => cmfgen_run never calls
+ * this => g_lre_djdchi stays NULL => the a_dchi term is absent. Definition of
+ * the (tentative) forward decls near pop_djdn_a_reduce above. */
+static const double *g_lre_djdchi = NULL;
+static int g_lre_djdchi_ns = 0, g_lre_djdchi_nb = 0;
+void radeq_set_djdchi_fs(const double *dJdchi, int n_shells, int n_bins) {
+    g_lre_djdchi = dJdchi;
+    g_lre_djdchi_ns = n_shells;
+    g_lre_djdchi_nb = n_bins;
+}
+
 void radeq_set_tail_color(const double *t_color, int n_shells) {
     g_tail_color = t_color;
     g_tail_color_n = n_shells;
@@ -13238,6 +14803,7 @@ void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_line_full,
                               const double *chi_line_cls,
                               int n_shells, int n_bins) {
+    g_pop_djdn_epoch++;              /* DET-DJDN-DRIVE: J/lambda* assembly gen */
     g_lre_chi_line_full = chi_line_full;
     g_lre_chi_line_cls = chi_line_cls;
     if (n_shells > 0 && g_a4_boot_n != n_shells) {
@@ -13663,9 +15229,8 @@ static const char *a210_uniform_endpoint_phase(
            all_requested?"REQUESTED_TE":NULL;
 }
 
-/* Opt-in forensic lane.  It changes only how many independent cells are
- * inspected before returning the same fail-closed status.  No unresolved
- * cell is accumulated or published. */
+/* Opt-in forensic lane.  It changes only the diagnostic detail emitted for
+ * the same deterministic shell aggregation and qualification. */
 static int a210_cancellation_census_enabled(void){
     const char *value=getenv("LUMINA_A210_CANCELLATION_CENSUS");
     return value&&strcmp(value,"1")==0;
@@ -13689,6 +15254,7 @@ typedef struct {
     uint64_t *cooling_cells;
     uint64_t *heating_cells;
     uint64_t *exact_zero_cells;
+    uint64_t *unresolved_cells;
     uint64_t *srce_chk_cells;
 } A210LineIonOwnerDiagnostic;
 
@@ -13698,7 +15264,8 @@ static void a210_line_ion_owner_free(A210LineIonOwnerDiagnostic *owner){
     free(owner->uncertainty_sum);free(owner->emission_sum);
     free(owner->absorption_sum);free(owner->eligible_cells);
     free(owner->cooling_cells);free(owner->heating_cells);
-    free(owner->exact_zero_cells);free(owner->srce_chk_cells);
+    free(owner->exact_zero_cells);free(owner->unresolved_cells);
+    free(owner->srce_chk_cells);
     memset(owner,0,sizeof(*owner));
 }
 
@@ -13733,12 +15300,14 @@ static int a210_line_ion_owner_init(
     owner->cooling_cells=calloc(cells,sizeof(*owner->cooling_cells));
     owner->heating_cells=calloc(cells,sizeof(*owner->heating_cells));
     owner->exact_zero_cells=calloc(cells,sizeof(*owner->exact_zero_cells));
+    owner->unresolved_cells=calloc(cells,sizeof(*owner->unresolved_cells));
     owner->srce_chk_cells=calloc(cells,sizeof(*owner->srce_chk_cells));
     if(!owner->signed_sum||!owner->absolute_sum||
        !owner->uncertainty_sum||!owner->emission_sum||
        !owner->absorption_sum||!owner->eligible_cells||
        !owner->cooling_cells||!owner->heating_cells||
-       !owner->exact_zero_cells||!owner->srce_chk_cells){
+       !owner->exact_zero_cells||!owner->unresolved_cells||
+       !owner->srce_chk_cells){
         fprintf(stderr,
             "[A2-10][LINE-ION-OWNER-BLOCKED] reason=ALLOCATION_FAILED "
             "shells=%zu ions=%zu cells=%zu complete=0 "
@@ -13768,7 +15337,10 @@ static int a210_line_ion_owner_add(
     owner->eligible_cells[cell]++;
     if(result->status==LINE_NET_OK_COOLING)owner->cooling_cells[cell]++;
     else if(result->status==LINE_NET_OK_HEATING)owner->heating_cells[cell]++;
-    else owner->exact_zero_cells[cell]++;
+    else if(result->status==LINE_NET_EXACT_ZERO)owner->exact_zero_cells[cell]++;
+    else if(result->status==LINE_NET_UNRESOLVED_CANCELLATION)
+        owner->unresolved_cells[cell]++;
+    else return-1;
     if(material->srce_chk_applied)owner->srce_chk_cells[cell]++;
     return 0;
 }
@@ -13804,7 +15376,8 @@ static void a210_line_ion_owner_log_complete(
                 "absolute_signed_sum=%.21Lg uncertainty=%.21Lg "
                 "scaled_emission=%.21Lg scaled_absorption=%.21Lg "
                 "eligible_cells=%llu cooling_cells=%llu heating_cells=%llu "
-                "exact_zero_cells=%llu srce_chk_cells=%llu complete=1 "
+                "exact_zero_cells=%llu unresolved_cells=%llu "
+                "srce_chk_cells=%llu complete=1 "
                 "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
                 "clamp=0 floor=0 jitter=0 repair=0\n",
                 label,s,candidate->trial_te[s],candidate->electron_density[s],
@@ -13816,6 +15389,7 @@ static void a210_line_ion_owner_log_complete(
                 (unsigned long long)owner->cooling_cells[cell],
                 (unsigned long long)owner->heating_cells[cell],
                 (unsigned long long)owner->exact_zero_cells[cell],
+                (unsigned long long)owner->unresolved_cells[cell],
                 (unsigned long long)owner->srce_chk_cells[cell]);
         }
         fprintf(stderr,
@@ -13851,6 +15425,7 @@ static void a210_line_ion_owner_log_complete(
  * measured contribution reaches 90% of the combined target-ion emission.
  * Nothing stored here is read by a physical producer or publication. */
 typedef struct {
+    size_t shell;
     int line;
     int Z;
     int ion;
@@ -13897,6 +15472,8 @@ typedef struct {
     int producer_srce_chk;
     int producer_exact_zero;
     int producer_raw_defined;
+    int population_provenance_active;
+    DProxyRowPopulationProvenance population_provenance;
 } A210LineSaturationRow;
 
 typedef struct {
@@ -13951,6 +15528,68 @@ static void a210_sproducer_suffix(
              " producer_exact_zero=%s producer_raw_defined=%d",
              continuum,local,terms_defined,eta,tau,srce,zero,
              row->producer_raw_defined);
+}
+
+static const char *a210_dproxy_population_provenance_reason(
+        const A210LineSaturationRow *row){
+    if(!row||!row->population_provenance_active)return "NOT_REQUESTED";
+    const DProxyRowPopulationProvenance *provenance=
+        &row->population_provenance;
+    if(provenance->source==DPROXY_POP_SOURCE_UNKNOWN)
+        return "UNKNOWN_POPULATION_SOURCE";
+    if(provenance->upper_global!=row->upper_global)
+        return "UPPER_GLOBAL_MISMATCH";
+    if(!isfinite(row->n_upper)||row->n_upper<0.0)
+        return "INVALID_N_UPPER";
+    if(provenance->used_nlte!=
+       (provenance->source==DPROXY_POP_SOURCE_NLTE_COMMITTED))
+        return "SOURCE_FLAG_MISMATCH";
+    if(provenance->source==DPROXY_POP_SOURCE_NLTE_COMMITTED&&
+       (provenance->nlte_population_generation==0||
+        provenance->nlte_population_generation!=
+            provenance->atom_population_generation||
+        provenance->nlte_upper_index<0||provenance->runtime_sl_id<0||
+        provenance->super_anchor_global<0||
+        !isfinite(provenance->within_sl_frac)||
+        provenance->within_sl_frac<=0.0))
+        return "INVALID_NLTE_COMMITTED_JOIN";
+    return "NONE";
+}
+
+static int a210_dproxy_population_suffix(
+        const A210LineSaturationRow *row,char *text,size_t size){
+    if(!text||size==0)return-1;
+    text[0]='\0';
+    if(!row||!row->population_provenance_active)return 0;
+    const DProxyRowPopulationProvenance *provenance=
+        &row->population_provenance;
+    const char *reason=a210_dproxy_population_provenance_reason(row);
+    int written=snprintf(text,size,
+        " population_source=%s used_nlte=%d"
+        " nlte_population_generation=%llu"
+        " atom_population_generation=%llu te_generation=%llu"
+        " super_mode=%d outer_iter=%d population_upper_global=%d"
+        " nlte_upper_index=%d runtime_sl_id=%d"
+        " super_anchor_global=%d within_sl_frac=%.17g"
+        " within_sl_frac_hex=%a n_upper_hex=%a"
+        " ledger_join_key=%d:%llu:%llu:%zu:%d:%d:%d:%d"
+        " population_provenance_status=%s"
+        " population_provenance_reason=%s",
+        dproxy_population_source_name(provenance->source),
+        provenance->used_nlte,
+        (unsigned long long)provenance->nlte_population_generation,
+        (unsigned long long)provenance->atom_population_generation,
+        (unsigned long long)provenance->te_generation,
+        provenance->super_mode,provenance->outer_iter,
+        provenance->upper_global,provenance->nlte_upper_index,
+        provenance->runtime_sl_id,provenance->super_anchor_global,
+        provenance->within_sl_frac,provenance->within_sl_frac,row->n_upper,
+        provenance->outer_iter,
+        (unsigned long long)provenance->nlte_population_generation,
+        (unsigned long long)provenance->te_generation,row->shell,row->Z,
+        row->ion,row->ion_slot,provenance->runtime_sl_id,
+        strcmp(reason,"NONE")==0?"OK":"BLOCKED",reason);
+    return written>=0&&(size_t)written<size?0:-1;
 }
 
 static int a210_line_saturation_target_ion(void) {
@@ -14046,7 +15685,9 @@ static int a210_line_saturation_target(int target_ion,int Z,int ion){
 static int a210_line_saturation_add(
         A210LineSaturationDiagnostic *diag,size_t shell,int line,int Z,int ion,
         const NLTETauLineAuthority *authority,const AtomicData *atom,
-        A208Validity tau_validity,double tau,double n_upper,double A_ul,
+        A208Validity tau_validity,double tau,double n_upper,
+        const DProxyRowPopulationProvenance *population_provenance,
+        double A_ul,
         double nu,const LineNetSobolevMaterial *material,
         const LineNetResult *result,double jbar,double jbar_absolute_bound,
         double j_cont,double j_cont_absolute_bound,int independent_capture,
@@ -14078,7 +15719,7 @@ static int a210_line_saturation_add(
        !isfinite(result->absorption_per_sr)||
        !isfinite(result->net_per_sr)||!isfinite(result->signed_rate)||
        !isfinite(result->absolute_uncertainty)||
-       !isfinite(result->cancellation_condition)||
+       isnan(result->cancellation_condition)||
        !isfinite((double)rate_factor)||rate_factor<=0.0L){
         return a210_line_saturation_fail(
             diag,"INVALID_ROW_PROVENANCE","REQUESTED_TE",-1);
@@ -14155,7 +15796,8 @@ static int a210_line_saturation_add(
     memset(row,0,sizeof(*row));
     if(independent_capture&&!source_defined)
         diag->sprobe_undefined_rows++;
-    row->line=line;row->Z=Z;row->ion=ion;row->ion_slot=authority->ip;
+    row->shell=shell;row->line=line;row->Z=Z;row->ion=ion;
+    row->ion_slot=authority->ip;
     row->lower_global=authority->lower_global;
     row->upper_global=authority->upper_global;
     row->lower_level=atom->line_level_lower[line];
@@ -14188,6 +15830,10 @@ static int a210_line_saturation_add(
     row->producer_exact_zero=producer_exact_zero;
     row->producer_eta=row->producer_raw_defined?producer_eta:-1.0;
     row->producer_tau_eff=row->producer_raw_defined?producer_tau_eff:-1.0;
+    if(population_provenance){
+        row->population_provenance_active=1;
+        row->population_provenance=*population_provenance;
+    }
     row->beta=beta;row->one_minus_beta_over_tau=companion;
     row->one_minus_beta=one_minus_beta;
     row->source_function=source_function;
@@ -14329,6 +15975,13 @@ static int a210_line_saturation_log_per_ion_union(
         }
         char sproducer_suffix[512];
         a210_sproducer_suffix(row,sproducer_suffix,sizeof(sproducer_suffix));
+        char population_suffix[1024];
+        if(a210_dproxy_population_suffix(
+                row,population_suffix,sizeof(population_suffix))!=0){
+            free(selected);
+            return a210_line_saturation_fail(
+                diag,"DPROXY_POPULATION_SUFFIX_FAILED","REQUESTED_TE",-1);
+        }
         if(fprintf(stderr,
             "[A2-10][LINE-SATURATION-ROW] phase=REQUESTED_TE shell=0 "
             "rank=%zu line=%d Z=%d ion=%d ion_label=%d ion_slot=%d "
@@ -14348,7 +16001,7 @@ static int a210_line_saturation_log_per_ion_union(
             "cumulative_scaled_emission=%.21Lg cumulative_fraction=%.21Lg "
             "selection_target_fraction=0.9 scan_complete=1 "
             "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
-            "clamp=0 floor=0 cap=0 jitter=0 repair=0%s\n",
+            "clamp=0 floor=0 cap=0 jitter=0 repair=0%s%s\n",
             i+1,row->line,row->Z,row->ion,row->ion+1,row->ion_slot,
             row->lower_global,row->upper_global,row->lower_level,
             row->upper_level,row->nu,row->tau_raw,row->tau_effective,
@@ -14363,7 +16016,7 @@ static int a210_line_saturation_log_per_ion_union(
             row->signed_rate,row->absolute_uncertainty,
             row->cancellation_condition,row->scaled_emission,
             row->scaled_absorption,candidate_cumulative,fraction,
-            sproducer_suffix)<0||
+            sproducer_suffix,population_suffix)<0||
            fprintf(stderr,
             "[A2-10][LINE-SATURATION-UNION-META] phase=REQUESTED_TE shell=0 "
             "line=%d Z=%d ion=%d global_rank=%zu ion_rank=%zu "
@@ -14472,6 +16125,12 @@ static int a210_line_saturation_log_complete(
         }
         char sproducer_suffix[512];
         a210_sproducer_suffix(row,sproducer_suffix,sizeof(sproducer_suffix));
+        char population_suffix[1024];
+        if(a210_dproxy_population_suffix(
+                row,population_suffix,sizeof(population_suffix))!=0){
+            return a210_line_saturation_fail(
+                diag,"DPROXY_POPULATION_SUFFIX_FAILED","REQUESTED_TE",-1);
+        }
         if(fprintf(stderr,
             "[A2-10][LINE-SATURATION-ROW] phase=REQUESTED_TE shell=0 "
             "rank=%zu line=%d Z=%d ion=%d ion_label=%d ion_slot=%d "
@@ -14491,7 +16150,7 @@ static int a210_line_saturation_log_complete(
             "cumulative_scaled_emission=%.21Lg cumulative_fraction=%.21Lg "
             "selection_target_fraction=0.9 scan_complete=1 "
             "interpretation=DIAGNOSTIC_ONLY physical_values_modified=0 "
-            "clamp=0 floor=0 cap=0 jitter=0 repair=0%s\n",
+            "clamp=0 floor=0 cap=0 jitter=0 repair=0%s%s\n",
             i+1,row->line,row->Z,row->ion,row->ion+1,row->ion_slot,
             row->lower_global,row->upper_global,row->lower_level,
             row->upper_level,row->nu,row->tau_raw,row->tau_effective,
@@ -14506,7 +16165,7 @@ static int a210_line_saturation_log_complete(
             row->signed_rate,row->absolute_uncertainty,
             row->cancellation_condition,row->scaled_emission,
             row->scaled_absorption,cumulative,fraction,
-            sproducer_suffix)<0){
+            sproducer_suffix,population_suffix)<0){
             return a210_line_saturation_fail(
                 diag,"STDERR_WRITE_FAILED","REQUESTED_TE",-1);
         }
@@ -14768,6 +16427,8 @@ static RadeqStatus a210_private_line_energy_build(
     long double *signed_sum = calloc(ns, sizeof(*signed_sum));
     long double *absolute_sum = calloc(ns, sizeof(*absolute_sum));
     long double *uncertainty_sum = calloc(ns, sizeof(*uncertainty_sum));
+    LineNetShellAccumulator *shell_aggregate =
+        calloc(ns, sizeof(*shell_aggregate));
     long double *emission_sum = calloc(ns, sizeof(*emission_sum));
     long double *absorption_sum = calloc(ns, sizeof(*absorption_sum));
     long double *einstein_consistent_sum =
@@ -14786,13 +16447,14 @@ static RadeqStatus a210_private_line_energy_build(
     uint64_t *einstein_srce_chk_cells =
         calloc(ns, sizeof(*einstein_srce_chk_cells));
     if (!super_average || !lte_level_density || !signed_sum ||
-        !absolute_sum || !uncertainty_sum || !emission_sum ||
+        !absolute_sum || !uncertainty_sum || !shell_aggregate || !emission_sum ||
         !absorption_sum || !einstein_consistent_sum || !exact_constant_sum ||
         !einstein_positive_tau_delta || !einstein_negative_tau_delta ||
         !exact_positive_tau_delta || !exact_negative_tau_delta ||
         !einstein_raw_cells || !einstein_srce_chk_cells) {
         free(super_average); free(lte_level_density); free(signed_sum);
         free(absolute_sum); free(uncertainty_sum); free(emission_sum);
+        free(shell_aggregate);
         free(absorption_sum); free(einstein_consistent_sum);
         free(exact_constant_sum);
         free(einstein_positive_tau_delta);
@@ -14814,6 +16476,7 @@ static RadeqStatus a210_private_line_energy_build(
     if (!isfinite(exact_sobolev_ratio) || exact_sobolev_ratio <= 0.0) {
         free(super_average); free(lte_level_density); free(signed_sum);
         free(absolute_sum); free(uncertainty_sum); free(emission_sum);
+        free(shell_aggregate);
         free(absorption_sum); free(einstein_consistent_sum);
         free(exact_constant_sum);
         free(einstein_positive_tau_delta);
@@ -14844,6 +16507,8 @@ static RadeqStatus a210_private_line_energy_build(
     size_t first_unresolved_shell = 0;
     int first_invalid_line = -1;
     size_t first_invalid_shell = 0;
+    const int dproxy_population_provenance=
+        dproxy_population_provenance_enabled();
     for (size_t e = 0; e < view->n_lines && status == RADEQ_OK; ++e) {
         uint64_t line_id = view->line_id[e];
         if (line_id >= (uint64_t)opacity->n_lines) {
@@ -14863,7 +16528,19 @@ static RadeqStatus a210_private_line_energy_build(
         int inactive = (Z > 0 && Z < 100 && opacity_skip_z[Z]) ||
             lumina_zinert_Z_inactive_or_absent(atom, Z, (int)ns);
         if (inactive) {
-            for (size_t s = 0; s < ns; ++s) shell_out[s].exact_zero_cells++;
+            const LineNetResult inactive_zero = {
+                .status = LINE_NET_EXACT_ZERO
+            };
+            for (size_t s = 0; s < ns; ++s) {
+                shell_out[s].exact_zero_cells++;
+                if (deterministic && line_net_shell_accumulate(
+                        &shell_aggregate[s], &inactive_zero) != 0) {
+                    status = RADEQ_TERM_SCHEMA;
+                    first_bad_line = line;
+                    first_bad_shell = s;
+                    break;
+                }
+            }
             continue;
         }
         NLTETauLineAuthority authority = nlte_tau_line_authority(
@@ -14899,11 +16576,13 @@ static RadeqStatus a210_private_line_energy_build(
                 first_bad_shell = s; break;
             }
             double n_upper = NAN;
+            DProxyRowPopulationProvenance population_provenance;
             EmissivityStatus pop_status = a209_upper_population_for_tau(
                 atom, &candidate->plasma, nlte, &authority, s, ns,
                 candidate->ew_tau_authority,
                 candidate->ew_tau_authority_count == 2 * ns ? (int)ns : 0,
-                lte_level_density, &n_upper, NULL);
+                lte_level_density, &n_upper, NULL,
+                dproxy_population_provenance?&population_provenance:NULL);
             if (pop_status != EMISS_OK && pop_status != EMISS_EXACT_ZERO) {
                 status = RADEQ_STALE_POP; first_bad_line = line;
                 first_bad_shell = s; break;
@@ -14945,6 +16624,9 @@ static RadeqStatus a210_private_line_energy_build(
             LineNetStatus line_status =
                 line_net_rate_evaluate(&input, &result);
             if (cancellation_census) census_evaluated++;
+            int requested_cell_match = requested_diagnostic_cell &&
+                line == requested_diagnostic_line &&
+                s == requested_diagnostic_shell;
             if (line_status == LINE_NET_UNRESOLVED_CANCELLATION ||
                 line_status == LINE_NET_INVALID_INPUT) {
                 double uncertainty_to_abs_rate =
@@ -14952,8 +16634,14 @@ static RadeqStatus a210_private_line_energy_build(
                     isfinite(result.signed_rate) && result.signed_rate != 0.0
                     ? result.absolute_uncertainty / fabs(result.signed_rate)
                     : INFINITY;
-                fprintf(stderr,
-                    "[A2-10][LINE-NET-CELL-BLOCKED] status=%s phase=%s "
+                int first_det_unresolved = deterministic &&
+                    line_status == LINE_NET_UNRESOLVED_CANCELLATION &&
+                    first_unresolved_line < 0;
+                if (line_status == LINE_NET_INVALID_INPUT || !deterministic ||
+                    cancellation_census || requested_cell_match ||
+                    first_det_unresolved)
+                    fprintf(stderr,
+                    "[A2-10][LINE-NET-CELL-%s] status=%s phase=%s "
                     "line=%d "
                     "shell=%zu Z=%d ion=%d ion_slot=%d "
                     "lower_global=%d upper_global=%d "
@@ -14967,6 +16655,9 @@ static RadeqStatus a210_private_line_energy_build(
                     "uncertainty_to_abs_rate=%.17g "
                     "cancellation_condition=%.17g exact_zero=%d "
                     "clamp=0 floor=0 jitter=0\n",
+                    deterministic &&
+                        line_status == LINE_NET_UNRESOLVED_CANCELLATION
+                        ? "UNRESOLVED" : "BLOCKED",
                     line_net_status_name(line_status),
                     endpoint_phase ? endpoint_phase : "INTERIOR",
                     line, s, Z,
@@ -14984,19 +16675,25 @@ static RadeqStatus a210_private_line_energy_build(
                     result.signed_rate, result.absolute_uncertainty,
                     uncertainty_to_abs_rate, result.cancellation_condition,
                     material.exact_zero_provenance);
-                if (cancellation_census) {
-                    if (line_status == LINE_NET_INVALID_INPUT) {
+                if (line_status == LINE_NET_INVALID_INPUT) {
+                    if (cancellation_census) {
                         census_invalid++;
                         if (first_invalid_line < 0) {
                             first_invalid_line = line;
                             first_invalid_shell = s;
                         }
-                    } else {
+                        continue;
+                    }
+                    status = RADEQ_NONFINITE;
+                    first_bad_line = line; first_bad_shell = s;
+                    first_line_status = line_status; break;
+                } else {
+                    if (first_unresolved_line < 0) {
+                        first_unresolved_line = line;
+                        first_unresolved_shell = s;
+                    }
+                    if (cancellation_census) {
                         census_unresolved++;
-                        if (first_unresolved_line < 0) {
-                            first_unresolved_line = line;
-                            first_unresolved_shell = s;
-                        }
                         if (!isfinite(uncertainty_to_abs_rate)) {
                             census_ratio_infinite++;
                         } else {
@@ -15014,18 +16711,13 @@ static RadeqStatus a210_private_line_energy_build(
                                 census_ratio_gt_100++;
                         }
                     }
-                    /* Diagnostic continuation only.  The cell is not added to
-                     * any physical sum and the publication is rejected below. */
-                    continue;
+                    if (!deterministic) {
+                        status = RADEQ_SIGN_MISMATCH;
+                        first_bad_line = line; first_bad_shell = s;
+                        first_line_status = line_status; break;
+                    }
                 }
-                status = line_status == LINE_NET_UNRESOLVED_CANCELLATION
-                       ? RADEQ_SIGN_MISMATCH : RADEQ_NONFINITE;
-                first_bad_line = line; first_bad_shell = s;
-                first_line_status = line_status; break;
             }
-            int requested_cell_match = requested_diagnostic_cell &&
-                line == requested_diagnostic_line &&
-                s == requested_diagnostic_shell;
             /* Keep the original finite endpoint witnesses and also preserve
              * the two cells that first exhausted the K24 certified Jbar
              * envelope.  At stronger proof rungs these records expose the
@@ -15079,14 +16771,30 @@ static RadeqStatus a210_private_line_energy_build(
                     requested_cell_match);
             }
             A210LineNetShell *out = &shell_out[s];
-            out->eligible_cells++;
-            if (line_status == LINE_NET_OK_COOLING) out->cooling_cells++;
-            else if (line_status == LINE_NET_OK_HEATING) out->heating_cells++;
-            else out->exact_zero_cells++;
             if (material.srce_chk_applied) out->srce_chk_cells++;
-            signed_sum[s] += (long double)result.signed_rate;
-            absolute_sum[s] += fabsl((long double)result.signed_rate);
-            uncertainty_sum[s] += (long double)result.absolute_uncertainty;
+            if (deterministic) {
+                RadeqStatus add_status=a210_det_line_net_shell_add(
+                    out,&shell_aggregate[s],&result);
+                if (add_status != RADEQ_OK) {
+                    status = add_status; first_bad_line = line;
+                    first_bad_shell = s; break;
+                }
+                signed_sum[s] = shell_aggregate[s].signed_rate;
+                absolute_sum[s] =
+                    shell_aggregate[s].absolute_signed_rate_sum;
+                uncertainty_sum[s] =
+                    shell_aggregate[s].absolute_uncertainty;
+            } else {
+                out->eligible_cells++;
+                if (line_status == LINE_NET_OK_COOLING) out->cooling_cells++;
+                else if (line_status == LINE_NET_OK_HEATING)
+                    out->heating_cells++;
+                else out->exact_zero_cells++;
+                signed_sum[s] += (long double)result.signed_rate;
+                absolute_sum[s] += fabsl((long double)result.signed_rate);
+                uncertainty_sum[s] +=
+                    (long double)result.absolute_uncertainty;
+            }
             long double factor =
                 (long double)LINE_NET_FOUR_PI * deck_scale;
             emission_sum[s] +=
@@ -15145,7 +16853,9 @@ static RadeqStatus a210_private_line_energy_build(
             }
             (void)a210_line_saturation_add(
                 &saturation_diag,s,line,Z,ion,&authority,atom,tau_validity,
-                tau,n_upper,Aul,nu,&material,&result,jbar.jbar,
+                tau,n_upper,dproxy_population_provenance
+                    ?&population_provenance:NULL,
+                Aul,nu,&material,&result,jbar.jbar,
                 jbar_uncertainty,independent_j_cont,
                 independent_j_cont_bound,independent_capture,
                 producer_continuum_term,producer_local_emission_term,
@@ -15217,7 +16927,7 @@ static RadeqStatus a210_private_line_energy_build(
             "max_finite_uncertainty_to_abs_rate=%.17g "
             "first_unresolved_line=%d first_unresolved_shell=%zu "
             "first_invalid_line=%d first_invalid_shell=%zu "
-            "physical_values_modified=0 publication=BLOCKED_IF_ANY "
+            "physical_values_modified=0 publication=SHELL_SIGN_QUALIFIED "
             "clamp=0 floor=0 jitter=0\n",
             endpoint_phase ? endpoint_phase : "INTERIOR", scan_complete,
             (unsigned long long)census_evaluated,
@@ -15236,19 +16946,23 @@ static RadeqStatus a210_private_line_energy_build(
             first_bad_line = first_invalid_line;
             first_bad_shell = first_invalid_shell;
             first_line_status = LINE_NET_INVALID_INPUT;
-        } else if (status == RADEQ_OK && census_unresolved != 0) {
-            status = RADEQ_SIGN_MISMATCH;
-            first_bad_line = first_unresolved_line;
-            first_bad_shell = first_unresolved_shell;
-            first_line_status = LINE_NET_UNRESOLVED_CANCELLATION;
         }
     }
 
     for (size_t s = 0; s < ns && status == RADEQ_OK; ++s) {
         A210LineNetShell *out = &shell_out[s];
-        out->signed_rate = (double)signed_sum[s];
-        out->absolute_uncertainty = (double)uncertainty_sum[s];
-        out->absolute_signed_rate_sum = (double)absolute_sum[s];
+        if (deterministic) {
+            RadeqStatus aggregate_status=a210_det_line_net_shell_finish(
+                out,&shell_aggregate[s]);
+            if(aggregate_status!=RADEQ_OK){
+                status=aggregate_status;first_bad_shell=s;
+                first_line_status=out->status;break;
+            }
+        } else {
+            out->signed_rate = (double)signed_sum[s];
+            out->absolute_uncertainty = (double)uncertainty_sum[s];
+            out->absolute_signed_rate_sum = (double)absolute_sum[s];
+        }
         out->scaled_emission_rate = (double)emission_sum[s];
         out->scaled_absorption_rate = (double)absorption_sum[s];
         if (!isfinite(out->signed_rate) ||
@@ -15258,7 +16972,7 @@ static RadeqStatus a210_private_line_energy_build(
             !isfinite(out->scaled_absorption_rate)) {
             status = RADEQ_NONFINITE; first_bad_shell = s; break;
         }
-        if (out->signed_rate == 0.0) {
+        if (!deterministic && out->signed_rate == 0.0) {
             if (out->absolute_signed_rate_sum != 0.0 ||
                 out->absolute_uncertainty != 0.0) {
                 status = RADEQ_SIGN_MISMATCH;
@@ -15268,7 +16982,7 @@ static RadeqStatus a210_private_line_energy_build(
             }
             out->status = LINE_NET_EXACT_ZERO;
             out->cancellation_condition = 0.0;
-        } else {
+        } else if (!deterministic) {
             out->cancellation_condition =
                 out->absolute_signed_rate_sum / fabs(out->signed_rate);
             if (fabs(out->signed_rate) <= out->absolute_uncertainty ||
@@ -15363,6 +17077,7 @@ static RadeqStatus a210_private_line_energy_build(
     }
     free(super_average); free(lte_level_density); free(signed_sum);
     free(absolute_sum); free(uncertainty_sum); free(emission_sum);
+    free(shell_aggregate);
     free(absorption_sum); free(einstein_consistent_sum);
     free(exact_constant_sum);
     free(einstein_positive_tau_delta); free(einstein_negative_tau_delta);
@@ -15989,6 +17704,9 @@ static int a210_production_solve(PlasmaState*plasma,GammaDeposition*gamma,
         root.te_lane=A210_TE_LANE_FREE_T;
         root.re_root_required=1;
     }
+    if(nlte_ne_closure_candidate(&replay,"R7",stderr)!=0){
+        ct->blocked_schema++;goto cleanup;
+    }
     memcpy(root_ne,replay.electron_density,n*sizeof(*root_ne));
     memcpy(root.n_e,replay.electron_density,n*sizeof(*root.n_e));
     root.radfield_generation=nlte->radfield_view.generation;
@@ -16195,6 +17913,11 @@ int lumina_init_seed_material_predictor(OpacityState *opacity,
             plasma->T_e, n, te_generation, population_before + 1,
             atom->population_committed_generation,
             nlte->population_committed_generation);
+        nlte_population_candidate_free(&candidate);
+        free(velocity); free(radius);
+        return 4;
+    }
+    if (nlte_ne_closure_candidate(&candidate, "SEED", stderr) != 0) {
         nlte_population_candidate_free(&candidate);
         free(velocity); free(radius);
         return 4;
@@ -16931,6 +18654,84 @@ static void nlte_cpu_matrix_dump(const char *phase, int capture_allowed,
     }
 }
 
+/* DET-BB-ALI: LUMINA_BB_NRB "0"/unset = off, "1" = on, else fatal. */
+static int bb_nrb_request(void)
+{
+    static int mode = -2;
+    int m;
+#ifdef _OPENMP
+#pragma omp critical(bb_nrb_env)
+#endif
+    {
+        if (mode == -2) {
+            const char *e = getenv("LUMINA_BB_NRB");
+            if (!e || !*e || strcmp(e, "0") == 0) mode = 0;
+            else if (strcmp(e, "1") == 0) mode = 1;
+            else {
+                fprintf(stderr, "[BB-NRB][FATAL] reason=ENV_INVALID "
+                        "value=%s\n", e);
+                mode = -1;
+            }
+        }
+        m = mode;
+    }
+    return m;
+}
+
+/* Arms the bracket for one assembly call.  Returns 1 armed, 0 not armed
+ * (off, or init operator), -1 fatal.  Emits the witness tag once per
+ * (iter, operator) change while the env key is on. */
+static int bb_nrb_arm(const NLTEConfig *nlte, const OpacityState *opacity,
+                      int n_shells)
+{
+    int req = bb_nrb_request();
+    if (req <= 0) return req;
+    nlte_skip_z_load();
+    int op = opacity->jbar_line_det_operator;
+    if (op != 1 && op != 2) {
+        fprintf(stderr, "[BB-NRB][FATAL] reason=OPERATOR_UNKNOWN iter=%d "
+                "operator=%d\n", nlte->current_iter, op);
+        return -1;
+    }
+    int armed = (op == 2);
+    int captured = opacity->line_producer_terms_captured == 1 &&
+                   opacity->line_producer_terms_n_shells == n_shells &&
+                   opacity->line_producer_continuum_term &&
+                   opacity->line_producer_local_emission_term &&
+                   opacity->line_producer_eta &&
+                   opacity->line_producer_tau_eff &&
+                   opacity->line_producer_provenance;
+    static int last_iter = -1, last_op = -1;
+#ifdef _OPENMP
+#pragma omp critical(bb_nrb_tag)
+#endif
+    {
+        if (nlte->current_iter != last_iter || op != last_op) {
+            last_iter = nlte->current_iter;
+            last_op = op;
+            char zl[128];
+            size_t o = 0;
+            zl[0] = 0;
+            for (int z = 1; z < 100; z++)
+                if (nlte_skip_z[z] && o + 5 < sizeof(zl))
+                    o += (size_t)snprintf(zl + o, sizeof(zl) - o, "%s%d",
+                                          o ? "," : "", z);
+            fprintf(stderr, "[BB-NRB] iter=%d operator=%d armed=%d "
+                    "captured=%d n_shells=%d skip_z=%s\n",
+                    nlte->current_iter, op, armed, captured, n_shells,
+                    o ? zl : "none");
+        }
+    }
+    if (armed && !captured) {
+        fprintf(stderr, "[BB-NRB][FATAL] reason=LEDGER_ABSENT iter=%d "
+                "captured=%d n_shells=%d ledger_n_shells=%d\n",
+                nlte->current_iter, opacity->line_producer_terms_captured,
+                n_shells, opacity->line_producer_terms_n_shells);
+        return -1;
+    }
+    return armed;
+}
+
 static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
@@ -16961,6 +18762,8 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
     const int ew_capture = nlte_ew_capture_active();
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
+    const int bb_nrb_armed = bb_nrb_arm(nlte, opacity, n_shells);
+    if (bb_nrb_armed < 0) return -1;
     double T_rad = plasma->T_e[shell];
     double T_e   = plasma->T_e[shell];
     double n_e   = plasma->n_electron[shell];
@@ -16974,11 +18777,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
     /* Real Fe III collisions from Zhang col_data active for this call? (gate ON
      * AND table loaded). Used to suppress the per-line proxy + METACOLL for Fe
      * III and to run the dedicated Zhang pass below. */
-    int feiii_coldata_on = (nlte_feiii_coldata_enabled() || artis_parity_enabled())
-                           && atom->feiii_col_loaded;
     int parity_on = artis_parity_enabled();
-    /* [OMEGA-CMFGEN] per-transition 3-tier Omega for the bb collision block. */
-    const int omcm_on = omega_cmfgen_enabled() && parity_on;
+    /* [OMEGA-CMFGEN] per-transition 3-tier Omega for the bb collision block.
+     * Independent of the parity master (CMFGEN collision footprint). */
+    const int omcm_on = omega_cmfgen_enabled();
+    int feiii_coldata_on = (nlte_feiii_coldata_enabled() || parity_on || omcm_on)
+                           && atom->feiii_col_loaded;
 
     /* Column-major access: ACM(i,j) = A_cm[j*N + i] */
     #define ACM(i,j) A_cm[(j) * N + (i)]
@@ -17368,13 +19172,14 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
          * falsifier; every ordinary path consumes only the checked line view. */
         {
             double Jbar_view = 0.0;
+            int view_rc = 0;
             if (jeqb) {
                 Jbar_view = planck_bnu(T_e, nu_line);
                 jd_mode = 5;  /* diagnostic code: JEQB */
             } else {
                 if (nlte_bb_rate_graph_contains(nlte, nu_line)) {
-                    (void)nlte_bb_jbar_canonical(nlte, shell, line, nu_line,
-                                                 &Jbar_view);
+                    view_rc = nlte_bb_jbar_canonical(nlte, shell, line,
+                                                     nu_line, &Jbar_view);
                     jd_mode = 6;  /* diagnostic code: A2-06 view */
                 } else {
                     jd_mode = 7;  /* explicit BB_EXCLUDED_OUTSIDE_DOMAIN */
@@ -17385,6 +19190,43 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             R_absorb = atom->line_B_lu[line] * Jbar_view;
             R_stim   = atom->line_B_ul[line] * Jbar_view;
             R_spont  = atom->line_A_ul[line];
+
+            /* DET-BB-ALI net radiative bracket (prereg §2(a')(d)(e)):
+             * only lines whose producer material is this matrix's NLTE
+             * population (not SKIP_Z), with a valid checked view. */
+            int z_line = nlte->nlte_Z[map];
+            if (bb_nrb_armed && !jeqb && view_rc == 1 &&
+                !(z_line > 0 && z_line < 100 && nlte_skip_z[z_line])) {
+                size_t cell = (size_t)line * n_shells + shell;
+                LineNetBracketRates br;
+                int brc = line_net_bracket_rates(
+                    opacity->line_producer_continuum_term[cell],
+                    opacity->line_producer_local_emission_term[cell],
+                    opacity->line_producer_tau_eff[cell], Jbar_view,
+                    opacity->line_producer_provenance[cell],
+                    atom->line_B_lu[line], atom->line_B_ul[line],
+                    atom->line_A_ul[line], &br);
+                if (brc == LINE_NET_BRACKET_OK) {
+                    R_absorb = br.R_absorb;
+                    R_stim   = br.R_stim;
+                    R_spont  = br.R_spont;
+                    jd_mode = 8;  /* diagnostic code: DET-BB-ALI bracket */
+                    jd_beta = br.beta;
+                } else if (brc != LINE_NET_BRACKET_NOT_APPLICABLE) {
+                    fprintf(stderr,
+                            "[BB-NRB][FATAL] reason=%s iter=%d line=%d "
+                            "shell=%d ct=%.17g le=%.17g tau_eff=%.17g "
+                            "jbar_view=%.17g provenance=%u\n",
+                            line_net_bracket_status_name(brc),
+                            nlte->current_iter, line, shell,
+                            opacity->line_producer_continuum_term[cell],
+                            opacity->line_producer_local_emission_term[cell],
+                            opacity->line_producer_tau_eff[cell], Jbar_view,
+                            (unsigned)opacity->line_producer_provenance[cell]);
+                    if (bb_connected) free(bb_connected);
+                    return -1;
+                }
+            }
         }
 
         /* [withParityP GATE2] Observe the per-line jbar the matrix just consumed,
@@ -17477,7 +19319,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
          * Boltzmann@T_e (DB-preserved; the equilibrium is independent of ε so the
          * floor only sets the approach, not a new fixed point). Floor on C_down (not
          * C_up) avoids the exp(+dE/kTe) blow-up for UV lines. */
-        if (!ew_capture && !artis_parity_enabled() &&
+        if (!ew_capture && !artis_parity_enabled() && !omcm_on &&
             coll_floor > 0.0 && T_e > 0.0 && g_lo > 0 && g_up > 0) {
             double cd_min = coll_floor * atom->line_A_ul[line];
             if (C_down < cd_min) {
@@ -17844,7 +19686,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
      * Rate form is CMFGEN's C(i,k)=8.63e-8*Omega*exp(-U0)/g_i/sqrt(T_4) (identical
      * to Lumina's 8.629e-6/sqrt(T_e) convention); detailed balance exact per
      * channel: C_up/C_down = (g_hi/g_lo)*exp(-dE/kTe). Only under the master gate. */
-    if (parity_on && atom->ncol_ions > 0 && T_e > 0.0 && n_e > 0.0) {
+    if ((parity_on || omcm_on) && atom->ncol_ions > 0 && T_e > 0.0 && n_e > 0.0) {
         for (int ion = ion_idx_lo; ion <= ion_idx_hi; ion++) {
             int Zi = nlte->nlte_Z[ion], ioni = nlte->nlte_ion[ion];
             int c = -1;
@@ -19305,6 +21147,7 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
          * pin each ion to its own nebular total. Combined renorm scales O III
          * by the O II-dominated pair sum → O III 1e13x / O I 500x blowup. */
         int lock = nlte_ion_lock_active(nlte->current_iter) ||
+                   coldstart_pin_armed() ||
                    nlte_per_ion_rescale_active() || pair_shares_slot;
 
         int n_lo_levels = nlte->nlte_ion_level_offset[ion_idx_lo + 1] -
@@ -19414,6 +21257,15 @@ static NLTEIonSolveStatus nlte_solve_ion_shell(NLTEConfig *nlte, AtomicData *ato
                             ? n_lo_total / sum_lo : (n_lo_total == 0.0 ? 0.0 : 1.0);
             double scale_hi = (sum_hi > 0.0 && n_hi_total > 0.0)
                             ? n_hi_total / sum_hi : (n_hi_total == 0.0 ? 0.0 : 1.0);
+            /* DET-COLDSTART-NT §2: the scale=1.0 fallback leaves the level
+             * sum off the injected total; report it (armed window only). */
+            if (coldstart_pin_armed() &&
+                ((!(sum_lo > 0.0 && n_lo_total > 0.0) && n_lo_total != 0.0) ||
+                 (!(sum_hi > 0.0 && n_hi_total > 0.0) && n_hi_total != 0.0)))
+                fprintf(stderr, "[COLDSTART][RESCALE-FALLBACK] Z=%d ion_lo=%d "
+                        "shell=%d sum_lo=%.17g n_lo=%.17g sum_hi=%.17g "
+                        "n_hi=%.17g\n", Z_nl, nlte->nlte_ion[ion_idx_lo],
+                        shell, sum_lo, n_lo_total, sum_hi, n_hi_total);
             for (int i = 0; i < n_lo_levels; i++) {
                 nlte->nlte_level_populations[(lev_start + i) * n_shells + shell] =
                     xfl[i] * scale_lo;
@@ -19659,6 +21511,252 @@ int nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
                                    PlasmaState *plasma, int n_shells) {
     return nlte_precompute_within_sl_frac_checked(
         nlte, atom, plasma, n_shells);
+}
+
+static int nlte_ne_closure_target(int Z, int charge) {
+    if (charge != 1 && charge != 2) return 0;
+    return Z == 14 || Z == 16 || Z == 20 ||
+           Z == 26 || Z == 27 || Z == 28;
+}
+
+enum {
+    NLTE_NE_CLOSURE_MAX_ITERATIONS = 32
+};
+
+static const double NLTE_NE_CLOSURE_DAMPING = 0.5;
+static const double NLTE_NE_CLOSURE_RELATIVE_TOLERANCE = 1.0e-8;
+
+static int nlte_ne_closure_enabled(void) {
+    const char *gate = getenv("LUMINA_NLTE_NE_CLOSURE");
+    return gate && strcmp(gate, "1") == 0;
+}
+
+static int nlte_ne_closure_slot(const NLTEConfig *nlte, int Z, int charge) {
+    int found = -1;
+    for (int slot = 0; slot < nlte->n_nlte_ions; slot++) {
+        if (nlte->nlte_Z[slot] != Z || nlte->nlte_ion[slot] != charge)
+            continue;
+        if (found >= 0) return -2;
+        found = slot;
+    }
+    return found;
+}
+
+static PopulationStatus nlte_ne_closure_layout_check(
+        const NLTEConfig *nlte, const AtomicData *atom,
+        const double *level_population, const double *ion_population,
+        const double *electron_density, int n_shells) {
+    if (!nlte || !atom || n_shells <= 0 ||
+        atom->n_ion_pops <= 0 || atom->n_levels < 0 ||
+        nlte->n_nlte_ions <= 0 ||
+        nlte->n_nlte_ions > NLTE_MAX_IONS ||
+        nlte->n_nlte_levels_total < 0 ||
+        !atom->ion_pop_Z || !atom->ion_pop_stage || !atom->level_offset ||
+        !atom->level_Z || !atom->level_ion ||
+        !nlte->nlte_to_global_level ||
+        !level_population || !ion_population || !electron_density)
+        return POP_ATOMIC_MISSING;
+
+    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+        int Z = atom->ion_pop_Z[ip];
+        int charge = atom->ion_pop_stage[ip];
+        if (Z <= 0 || charge < 0 || charge > Z)
+            return POP_ATOMIC_MISSING;
+        for (int other = ip + 1; other < atom->n_ion_pops; other++)
+            if (atom->ion_pop_Z[other] == Z &&
+                atom->ion_pop_stage[other] == charge)
+                return POP_ATOMIC_MISSING;
+    }
+
+    const int target_Z[] = {14, 16, 20, 26, 27, 28};
+    for (size_t target = 0;
+         target < sizeof(target_Z) / sizeof(target_Z[0]); ++target) {
+        int present = 0;
+        int ip_q1 = -1;
+        int ip_q2 = -1;
+        for (int ip = 0; ip < atom->n_ion_pops; ++ip) {
+            if (atom->ion_pop_Z[ip] != target_Z[target]) continue;
+            present = 1;
+            if (atom->ion_pop_stage[ip] == 1) ip_q1 = ip;
+            if (atom->ion_pop_stage[ip] == 2) ip_q2 = ip;
+        }
+        if (present &&
+            (ip_q1 < 0 || ip_q2 < 0 ||
+             nlte_ne_closure_slot(nlte, target_Z[target], 1) < 0 ||
+             nlte_ne_closure_slot(nlte, target_Z[target], 2) < 0))
+            return POP_ATOMIC_MISSING;
+    }
+
+    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+        int Z = atom->ion_pop_Z[ip];
+        int charge = atom->ion_pop_stage[ip];
+        if (!nlte_ne_closure_target(Z, charge)) continue;
+
+        int slot = nlte_ne_closure_slot(nlte, Z, charge);
+        if (slot < 0) return POP_ATOMIC_MISSING;
+        int nlte_begin = nlte->nlte_ion_level_offset[slot];
+        int nlte_end = nlte->nlte_ion_level_offset[slot + 1];
+        int global_begin = atom->level_offset[ip];
+        int global_end = atom->level_offset[ip + 1];
+        if (nlte_begin < 0 || nlte_end < nlte_begin ||
+            nlte_end > nlte->n_nlte_levels_total ||
+            global_begin < 0 || global_end < global_begin ||
+            global_end > atom->n_levels ||
+            nlte_end - nlte_begin != global_end - global_begin)
+            return POP_ATOMIC_MISSING;
+        for (int level = nlte_begin; level < nlte_end; level++) {
+            int global = nlte->nlte_to_global_level[level];
+            int expected = global_begin + level - nlte_begin;
+            if (global != expected || atom->level_Z[global] != Z ||
+                atom->level_ion[global] != charge)
+                return POP_ATOMIC_MISSING;
+        }
+    }
+    return POP_OK;
+}
+
+/* Sum q*n over every ion stage of one shell.  Target (Z, charge) stages take
+ * the NLTE level sum of the supplied level array; every other stage takes the
+ * Saha stage density of the supplied ion array.  q_saha is the same sum with
+ * every stage taken from the Saha array, so q_closed - q_saha is exactly the
+ * NLTE re-split contribution. */
+static PopulationStatus nlte_ne_closure_charge(
+        const NLTEConfig *nlte, const AtomicData *atom,
+        const double *level_population, const double *ion_population,
+        int n_shells, int shell, double *q_closed_out, double *q_saha_out) {
+    double closed_sum = 0.0;
+    double saha_sum = 0.0;
+    for (int ip = 0; ip < atom->n_ion_pops; ip++) {
+        int charge = atom->ion_pop_stage[ip];
+        double saha_population =
+            ion_population[(size_t)ip * n_shells + shell];
+        if (!isfinite(saha_population) || saha_population < 0.0)
+            return POP_NONFINITE;
+        saha_sum += (double)charge * saha_population;
+        if (!isfinite(saha_sum)) return POP_NONFINITE;
+        if (nlte_ne_closure_target(atom->ion_pop_Z[ip], charge)) {
+            int slot = nlte_ne_closure_slot(
+                nlte, atom->ion_pop_Z[ip], charge);
+            if (slot < 0) return POP_ATOMIC_MISSING;
+            double ion_sum = 0.0;
+            for (int level = nlte->nlte_ion_level_offset[slot];
+                 level < nlte->nlte_ion_level_offset[slot + 1]; level++) {
+                double population =
+                    level_population[(size_t)level * n_shells + shell];
+                if (!isfinite(population) || population < 0.0)
+                    return POP_NONFINITE;
+                ion_sum += population;
+                if (!isfinite(ion_sum)) return POP_NONFINITE;
+            }
+            closed_sum += (double)charge * ion_sum;
+        } else {
+            closed_sum += (double)charge * saha_population;
+        }
+        if (!isfinite(closed_sum)) return POP_NONFINITE;
+    }
+    *q_closed_out = closed_sum;
+    *q_saha_out = saha_sum;
+    return POP_OK;
+}
+
+PopulationStatus nlte_ne_closure_trial_step(
+        const NLTEPopulationCandidate *candidate, double *next_ne,
+        double *max_relative_residual, int *worst_shell) {
+    if (max_relative_residual) *max_relative_residual = INFINITY;
+    if (worst_shell) *worst_shell = -1;
+    if (!candidate || !next_ne || !max_relative_residual || !worst_shell ||
+        candidate->n_shells == 0 ||
+        candidate->n_shells > (size_t)INT_MAX)
+        return POP_ATOMIC_MISSING;
+    int n_shells = (int)candidate->n_shells;
+    const NLTEConfig *nlte = &candidate->nlte;
+    const AtomicData *atom = &candidate->atom;
+    PopulationStatus status = nlte_ne_closure_layout_check(
+        nlte, atom, candidate->level_population, candidate->ion_population,
+        candidate->electron_density, n_shells);
+    if (status != POP_OK) return status;
+    double max_residual = 0.0;
+    int max_shell = -1;
+    for (int shell = 0; shell < n_shells; shell++) {
+        double n_e_trial = candidate->electron_density[shell];
+        double q_closed = 0.0, q_saha = 0.0, check_closed = 0.0, check_saha = 0.0;
+        status = nlte_ne_closure_charge(
+            nlte, atom, candidate->level_population, candidate->ion_population,
+            n_shells, shell, &q_closed, &q_saha);
+        if (status == POP_OK)
+            status = nlte_ne_closure_charge(
+                nlte, atom, candidate->level_population,
+                candidate->ion_population, n_shells, shell,
+                &check_closed, &check_saha);
+        if (status != POP_OK) return status;
+        if (!isfinite(n_e_trial) || n_e_trial <= 0.0 ||
+            !isfinite(q_closed) || q_closed <= 0.0 ||
+            !isfinite(q_saha) || q_saha <= 0.0 ||
+            !isfinite(check_closed) || check_closed <= 0.0 ||
+            !isfinite(check_saha) || check_saha <= 0.0)
+            return POP_NONFINITE;
+        double self_scale = fmax(fabs(check_closed), fabs(q_closed));
+        double self_residual = fabs(check_closed - q_closed) / self_scale;
+        double scale = fmax(fabs(n_e_trial), fabs(q_closed));
+        double residual = fabs(q_closed - n_e_trial) / scale;
+        double damped = (1.0 - NLTE_NE_CLOSURE_DAMPING) * n_e_trial +
+                        NLTE_NE_CLOSURE_DAMPING * q_closed;
+        if (!isfinite(self_residual) || self_residual > 1.0e-12 ||
+            !isfinite(residual) || !isfinite(damped) || damped <= 0.0)
+            return POP_NONFINITE;
+        next_ne[shell] = damped;
+        if (residual > max_residual) {
+            max_residual = residual;
+            max_shell = shell;
+        }
+    }
+    *max_relative_residual = max_residual;
+    *worst_shell = max_shell;
+    return POP_OK;
+}
+
+/* Final read-only invariant check.  The accepted candidate must retain the
+ * exact n_e used by both its stage ladder and pair solve; this API can no
+ * longer turn a mismatched post-solve state into an apparently closed one. */
+int nlte_ne_closure_candidate(NLTEPopulationCandidate *candidate,
+                              const char *commit_label, FILE *diagnostic) {
+    if (!nlte_ne_closure_enabled()) return 0;
+    if (!candidate || !diagnostic || !commit_label ||
+        candidate->n_shells == 0 ||
+        candidate->n_shells > SIZE_MAX / sizeof(double))
+        return 1;
+    double *unused_next = malloc(
+        candidate->n_shells * sizeof(*unused_next));
+    if (!unused_next) return 1;
+    double residual = INFINITY;
+    int worst_shell = -1;
+    PopulationStatus status = nlte_ne_closure_trial_step(
+        candidate, unused_next, &residual, &worst_shell);
+    free(unused_next);
+    if (status != POP_OK || !isfinite(residual) ||
+        residual > NLTE_NE_CLOSURE_RELATIVE_TOLERANCE) {
+        fprintf(diagnostic,
+                "[A2-07][NE-CLOSURE][FATAL] commit=%s generation=%llu "
+                "reason=%s iterations=%d max_relative_residual=%.17g "
+                "worst_shell=%d tolerance=%.17g public_mutation=0\n",
+                commit_label,
+                (unsigned long long)candidate->required_population_generation,
+                status == POP_OK ? "NOT_CONVERGED" :
+                                   population_status_name(status),
+                candidate->ne_closure_iterations, residual, worst_shell,
+                NLTE_NE_CLOSURE_RELATIVE_TOLERANCE);
+        return 1;
+    }
+    if (fprintf(diagnostic,
+            "[A2-07][NE-CLOSURE] commit=%s generation=%llu "
+            "iterations=%d max_relative_residual=%.17g worst_shell=%d "
+            "tolerance=%.17g consumed_ne_preserved=1 public_mutation=0\n",
+            commit_label,
+            (unsigned long long)candidate->required_population_generation,
+            candidate->ne_closure_iterations, residual, worst_shell,
+            NLTE_NE_CLOSURE_RELATIVE_TOLERANCE) < 0)
+        return 1;
+    return 0;
 }
 
 static int nlte_solve_all_impl(
@@ -20442,8 +22540,9 @@ static double candidate_relative_change(double before, double after) {
     return scale > DBL_MIN ? fabs(after - before) / scale : 0.0;
 }
 
-NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
-        NLTEPopulationCandidate *candidate) {
+static NLTEPopulationCandidateStatus
+nlte_population_candidate_prepare_ionization_impl(
+        NLTEPopulationCandidate *candidate, int solve_stage_ne) {
     if (!candidate || !candidate->active)
         return NLTE_CANDIDATE_INVALID_ARGUMENT;
     AtomicData *atom = &candidate->atom;
@@ -20490,19 +22589,41 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
     memcpy(ion_before, candidate->ion_population,
            candidate->n_ion_values * sizeof(*ion_before));
 
-    if (compute_electron_density(
-            atom, plasma, rate_nlte, candidate,
-            n_shells, 0) != 0) {
-        PopulationStatus status = rate_nlte->population_error_count
-                                ? rate_nlte->population_first_error
-                                : POP_NE_NOT_CONVERGED;
-        free(ne_before);
-        free(ion_before);
-        return candidate_ionization_fail(candidate, status);
+    /* DET-DJDN-MVP: ion_before is the generation-committed (J-assembly-time)
+     * population -- begin() re-copied the public pop at the top of this solve
+     * and the public atom is not mutated until commit_bundle. Pin it as the
+     * x_lag reference for the whole solve so the diagonal term reads the same
+     * lag across every n_e sub-iteration (which overwrite the live array) and
+     * the final armed sweep, instead of self-cancelling to x_map. Cleared after
+     * compute_ion_populations. */
+    pop_djdn_set_xlag_snapshot(ion_before, atom->n_ion_pops, n_shells);
+
+    if (solve_stage_ne) {
+        if (compute_electron_density(
+                atom, plasma, rate_nlte, candidate,
+                n_shells, 0) != 0) {
+            PopulationStatus status = rate_nlte->population_error_count
+                                    ? rate_nlte->population_first_error
+                                    : POP_NE_NOT_CONVERGED;
+            pop_djdn_clear_xlag_snapshot();
+            free(ne_before);
+            free(ion_before);
+            return candidate_ionization_fail(candidate, status);
+        }
+    } else {
+        for (int s = 0; s < n_shells; ++s)
+            if (!isfinite(candidate->electron_density[s]) ||
+                candidate->electron_density[s] <= 0.0) {
+                pop_djdn_clear_xlag_snapshot();
+                free(ne_before);
+                free(ion_before);
+                return candidate_ionization_fail(candidate, POP_NONFINITE);
+            }
     }
     PopulationStatus ion_status = compute_ion_populations(
         atom, plasma, rate_nlte, candidate,
         n_shells, 0);
+    pop_djdn_clear_xlag_snapshot();
     if (ion_status != POP_OK) {
         free(ne_before);
         free(ion_before);
@@ -20608,6 +22729,17 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;
     return NLTE_CANDIDATE_OK;
+}
+
+NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
+        NLTEPopulationCandidate *candidate) {
+    return nlte_population_candidate_prepare_ionization_impl(candidate, 1);
+}
+
+NLTEPopulationCandidateStatus
+nlte_population_candidate_prepare_ionization_at_ne(
+        NLTEPopulationCandidate *candidate) {
+    return nlte_population_candidate_prepare_ionization_impl(candidate, 0);
 }
 
 NLTEPopulationCandidateStatus nlte_population_candidate_solve_core(
@@ -20931,11 +23063,11 @@ NLTEPopulationCandidateStatus nlte_population_candidate_produce_publications(
     return NLTE_CANDIDATE_OK;
 }
 
-NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
+static NLTEPopulationCandidateStatus
+nlte_population_candidate_prepare_through_core(
         NLTEPopulationCandidate *candidate,
-        const NLTEPopulationBundleRequest *request) {
-    if (!candidate || !request)
-        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+        const NLTEPopulationBundleRequest *request,
+        const double *prescribed_ne) {
     NLTEPopulationCandidateStatus status = nlte_population_candidate_begin(
         candidate, request->public_nlte, request->public_atom,
         request->public_plasma, request->trial_te, request->n_shells,
@@ -20945,7 +23077,14 @@ NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
     status = nlte_population_candidate_prepare_opacity_view(
         candidate, request->public_opacity);
     if (status != NLTE_CANDIDATE_OK) return status;
-    status = nlte_population_candidate_prepare_ionization(candidate);
+    if (prescribed_ne) {
+        memcpy(candidate->electron_density, prescribed_ne,
+               request->n_shells * sizeof(*prescribed_ne));
+        status = nlte_population_candidate_prepare_ionization_at_ne(
+            candidate);
+    } else {
+        status = nlte_population_candidate_prepare_ionization(candidate);
+    }
     if (status != NLTE_CANDIDATE_OK) return status;
     const char *precore_tau_refresh =
         getenv("LUMINA_A210_PRECORE_TAU_REFRESH");
@@ -20954,9 +23093,103 @@ NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
             candidate, request->time_explosion);
         if (status != NLTE_CANDIDATE_OK) return status;
     }
-    status = nlte_population_candidate_solve_core(
+    return nlte_population_candidate_solve_core(
         candidate, request->time_explosion, request->gamma_dep);
-    if (status != NLTE_CANDIDATE_OK) return status;
+}
+
+static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body(
+        NLTEPopulationCandidate *candidate,
+        const NLTEPopulationBundleRequest *request) {
+    if (!candidate || !request)
+        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    NLTEPopulationCandidateStatus status;
+    if (!nlte_ne_closure_enabled()) {
+        /* Gate-off is the original single stage-only n_e + pair solve. */
+        status = nlte_population_candidate_prepare_through_core(
+            candidate, request, NULL);
+        if (status != NLTE_CANDIDATE_OK) return status;
+    } else {
+        if (request->n_shells == 0 ||
+            request->n_shells > SIZE_MAX / sizeof(double) ||
+            !request->public_plasma ||
+            !request->public_plasma->n_electron ||
+            request->public_plasma->n_shells <= 0 ||
+            (size_t)request->public_plasma->n_shells != request->n_shells) {
+            memset(candidate, 0, sizeof(*candidate));
+            candidate->status = NLTE_CANDIDATE_INVALID_LAYOUT;
+            return candidate->status;
+        }
+        double *trial_ne = malloc(
+            request->n_shells * sizeof(*trial_ne));
+        double *next_ne = malloc(
+            request->n_shells * sizeof(*next_ne));
+        if (!trial_ne || !next_ne) {
+            free(trial_ne);
+            free(next_ne);
+            memset(candidate, 0, sizeof(*candidate));
+            candidate->status = NLTE_CANDIDATE_ALLOCATION_FAILED;
+            return candidate->status;
+        }
+        memcpy(trial_ne, request->public_plasma->n_electron,
+               request->n_shells * sizeof(*trial_ne));
+        int accepted = 0;
+        for (int iteration = 1;
+             iteration <= NLTE_NE_CLOSURE_MAX_ITERATIONS; ++iteration) {
+            status = nlte_population_candidate_prepare_through_core(
+                candidate, request, trial_ne);
+            if (status != NLTE_CANDIDATE_OK) {
+                free(trial_ne);
+                free(next_ne);
+                return status;
+            }
+            double max_residual = INFINITY;
+            int worst_shell = -1;
+            PopulationStatus closure_status = nlte_ne_closure_trial_step(
+                candidate, next_ne, &max_residual, &worst_shell);
+            candidate->ne_closure_active = 1;
+            candidate->ne_closure_iterations = iteration;
+            candidate->ne_closure_max_relative_residual = max_residual;
+            candidate->ne_closure_worst_shell = worst_shell;
+            if (closure_status != POP_OK) {
+                candidate_ionization_fail(candidate, closure_status);
+                free(trial_ne);
+                free(next_ne);
+                return candidate->status;
+            }
+            if (max_residual <=
+                NLTE_NE_CLOSURE_RELATIVE_TOLERANCE) {
+                accepted = 1;
+                break;
+            }
+            if (iteration == NLTE_NE_CLOSURE_MAX_ITERATIONS) {
+                fprintf(stderr,
+                        "[A2-07][NE-CLOSURE][FATAL] commit=PRIVATE "
+                        "generation=%llu reason=NOT_CONVERGED "
+                        "iterations=%d max_relative_residual=%.17g "
+                        "worst_shell=%d tolerance=%.17g "
+                        "public_mutation=0 fallback=0 floor=0 clamp=0\n",
+                        (unsigned long long)
+                            request->required_population_generation,
+                        iteration, max_residual, worst_shell,
+                        NLTE_NE_CLOSURE_RELATIVE_TOLERANCE);
+                candidate_ionization_fail(
+                    candidate, POP_NE_NOT_CONVERGED);
+                free(trial_ne);
+                free(next_ne);
+                return candidate->status;
+            }
+            memcpy(trial_ne, next_ne,
+                   request->n_shells * sizeof(*trial_ne));
+            nlte_population_candidate_free(candidate);
+        }
+        free(trial_ne);
+        free(next_ne);
+        if (!accepted) {
+            memset(candidate, 0, sizeof(*candidate));
+            candidate->status = NLTE_CANDIDATE_SOLVE_FAILED;
+            return candidate->status;
+        }
+    }
     status = nlte_population_candidate_produce_tau_source(
         candidate, request->time_explosion);
     if (status != NLTE_CANDIDATE_OK) return status;
@@ -20987,6 +23220,29 @@ NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;
     return NLTE_CANDIDATE_OK;
+}
+
+/* DET-COLDSTART armed judgment (the single place): armed = DIR set ∧
+ * current_iter < N_pin, evaluated per call (not env-cached) and released on
+ * every return of the body. */
+NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle(
+        NLTEPopulationCandidate *candidate,
+        const NLTEPopulationBundleRequest *request) {
+    const char *dir = coldstart_dir();
+    if (!dir)
+        return nlte_population_candidate_build_bundle_body(candidate, request);
+    if (!candidate || !request || !request->public_nlte)
+        coldstart_fatal_exit("REQUEST_NULL");
+    int n_pin = coldstart_pin_iters();
+    int current_iter = request->public_nlte->current_iter;
+    coldstart_prepare(dir, request);
+    g_coldstart_armed = current_iter < n_pin;
+    fprintf(stderr, "[COLDSTART] current_iter=%d armed=%d n_pin=%d\n",
+            current_iter, g_coldstart_armed, n_pin);
+    NLTEPopulationCandidateStatus status =
+        nlte_population_candidate_build_bundle_body(candidate, request);
+    g_coldstart_armed = 0;
+    return status;
 }
 
 static uint64_t candidate_counter_add(uint64_t a,uint64_t b) {
@@ -21268,8 +23524,32 @@ NLTEPopulationCandidateStatus nlte_population_candidate_commit_bundle(
     memcpy(public_opacity->t_electrons,candidate->trial_te,ns*sizeof(double));
     memcpy(public_opacity->electron_density,candidate->electron_density,
            ns*sizeof(double));
-    memcpy(public_atom->ion_number_density,candidate->ion_population,
-           candidate->n_ion_values*sizeof(double));
+    /* DET-DJDN-MVP: optional MAX_CHNG step limiter on the committed ion
+     * densities (env LUMINA_POP_MAXCH). OFF (default) => plain memcpy =>
+     * byte-identical. STEP limiter (scales dN, not a state clamp): at the fixed
+     * point dN->0 so factor->1. Records the factor for the census column. */
+    {
+        double maxch = 0.0;
+        if (pop_maxch_enabled(&maxch)) {
+            size_t nv = candidate->n_ion_values;
+            const double *cand = candidate->ion_population;
+            double *cur = public_atom->ion_number_density;
+            double norm = 0.0;
+            for (size_t i = 0; i < nv; i++) {
+                double old = cur[i];
+                double dd = (fabs(old) > 1e-300) ? fabs(old) : 1e-300;
+                double rel = fabs(cand[i] - old) / dd;
+                if (isfinite(rel) && rel > norm) norm = rel;
+            }
+            double factor = pop_djdn_maxch_factor(maxch, norm);
+            g_pop_maxch_factor = factor;
+            for (size_t i = 0; i < nv; i++)
+                cur[i] = cur[i] + factor * (cand[i] - cur[i]);
+        } else {
+            memcpy(public_atom->ion_number_density,candidate->ion_population,
+                   candidate->n_ion_values*sizeof(double));
+        }
+    }
     memcpy(public_atom->partition_functions,candidate->partition,
            candidate->n_ion_values*sizeof(double));
     memcpy(public_nlte->nlte_level_populations,candidate->level_population,
@@ -21339,6 +23619,13 @@ NLTEPopulationCandidateStatus nlte_population_candidate_commit_bundle(
         else{a210->line_collisional_escape_owner_shells++;
              a210->line_replaced_radiative_terms+=2;}
     }
+
+    /* Read-only diagnostic emitted only after all public population owners
+     * and generations have committed.  Its status never changes the commit. */
+    (void)lumina_dproxy_population_provenance_emit(
+        public_nlte,public_atom,public_plasma,ns);
+    if(coldstart_dir())
+        coldstart_levels_write(public_nlte,public_atom,public_plasma,ns);
 
     a208_publication_free(&old_opacity);
     a209_publication_free(&old_emissivity);
@@ -21431,6 +23718,10 @@ NLTEPopulationCandidateStatus nlte_population_candidate_commit_seed_material(
         a208_counters(),&candidate->opacity_counters);
     candidate_a209_counters_merge(
         a209_counters(),&candidate->emissivity_counters);
+    if(coldstart_dir()){
+        coldstart_levels_write(public_nlte,public_atom,public_plasma,ns);
+        coldstart_applied_write(public_atom,public_plasma,ns);
+    }
 
     a208_publication_free(&old_opacity);
     a209_publication_free(&old_emissivity);
@@ -22892,6 +25183,100 @@ void macro_atom_cycle_print(const char *label) {
            MA_CYCLE_BINS - 1, cap_hits,
            100.0 * (double)cap_hits / (double)total);
 }
+
+#ifdef LUMINA_CMF_FINE_UNMAPPED_EPS_SELFTEST
+/* DET-CONT-NLTE-BALANCE (rev 1, R1-3): channel-dump formatter hooks so the CPU
+ * selftest exercises the exact CSV row/header used in production (one source of
+ * truth for column count/order). */
+int ion_channel_dump_format_test(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, double T_e, double n_e, double x_e,
+        double gamma_phot, double gamma_nt, double c_ion,
+        double ne_alpha_rr, double ne_alpha_dr, double c_rec, double r){
+    return ion_channel_dump_format(buf, n, gen, shell, Z, stage, T_e, n_e, x_e,
+        gamma_phot, gamma_nt, c_ion, ne_alpha_rr, ne_alpha_dr, c_rec, r);
+}
+const char *ion_channel_dump_header_test(void){ return ION_CHANNEL_DUMP_HEADER; }
+#endif
+
+#ifdef LUMINA_POP_DJDN_SELFTEST
+/* DET-DJDN-MVP: external linkage for the pure diagonal-term helpers so the CPU
+ * selftest exercises the exact production arithmetic (one source of truth). */
+double pop_djdn_a_reduce_test(int nb, const double *Gw, const double *Ec,
+        const double *Xc, const double *lam, const double *S,
+        const double *chi_t, double n_e, double N_tot, double x_lag){
+    return pop_djdn_a_reduce(nb, Gw, Ec, Xc, lam, S, chi_t, n_e, N_tot, x_lag);
+}
+int pop_djdn_log_newton_test(double num_lag, double den, double a,
+        double x_lag, double c_max, double *x_star, double *c_out,
+        double *damp_out){
+    return pop_djdn_log_newton(num_lag, den, a, x_lag, c_max, x_star,
+                               c_out, damp_out);
+}
+double pop_djdn_gamma_eff_test(double gamma_lag, double a, double x_star,
+        double x_lag){
+    return pop_djdn_gamma_eff(gamma_lag, a, x_star, x_lag);
+}
+double pop_djdn_maxch_factor_test(double maxch, double norm){
+    return pop_djdn_maxch_factor(maxch, norm);
+}
+int pop_djdn_row_format_test(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, double x_lag, double x_map, double a, double g,
+        double x_star, int root, double gamma_lag, double gamma_eff,
+        double maxch_factor, long epoch, double c_newton, double damp){
+    return pop_djdn_row_format(buf, n, gen, shell, Z, stage, x_lag, x_map, a, g,
+        x_star, root, gamma_lag, gamma_eff, maxch_factor, epoch, c_newton, damp);
+}
+const char *pop_djdn_header_test(void){ return POP_DJDN_DUMP_HEADER; }
+int pop_djdn_xlag_test(const double *base, int n_ions, int n_shells,
+        int ip_cur, int ip_next, int s, double *x_lag){
+    double nc = 0.0, nn = 0.0;
+    return pop_djdn_xlag(base, n_ions, n_shells, ip_cur, ip_next, s,
+                         &nc, &nn, x_lag);
+}
+/* DET-DJDN-SPLIT hooks: same pure functions the FDHOLD reevaluation uses. */
+const char *pop_djdn_hold_header_test(void){ return pop_djdn_hold_header(); }
+int pop_djdn_hold_row_format_test(char *buf, size_t n, int shell, int Z,
+        int stage, long epoch, double x_lag, double x_lag_prev, double x_map,
+        double x_map_hold, double x_map_null, double g, double s, double s_hold,
+        double s_nl, double denom, int restore_ok, double null_rel){
+    return pop_djdn_hold_row_format(buf, n, shell, Z, stage, epoch, x_lag,
+        x_lag_prev, x_map, x_map_hold, x_map_null, g, s, s_hold, s_nl, denom,
+        restore_ok, null_rel);
+}
+int pop_djdn_split_test(double x_map_K, double x_map_Km1, double x_map_hold,
+        double x_lag_K, double x_lag_Km1, double *denom, double *s,
+        double *s_hold, double *s_nl){
+    return pop_djdn_split(x_map_K, x_map_Km1, x_map_hold, x_lag_K, x_lag_Km1,
+                          denom, s, s_hold, s_nl);
+}
+void pop_djdn_hold_input_test(double N_lo, double N_hi, double x_target,
+        double *N_lo_out, double *N_hi_out){
+    pop_djdn_hold_input(N_lo, N_hi, x_target, N_lo_out, N_hi_out);
+}
+int pop_djdn_restore_ok_test(double x_snap, double x_after){
+    return pop_djdn_restore_ok(x_snap, x_after);
+}
+int pop_djdn_fdhold_gate_test(void){ return pop_djdn_fdhold_gate(); }
+/* DET-PATHB-LOCAL hooks: the signed chi-response gain and its census format. */
+double pop_djdn_a_chi_reduce_test(int nb, const double *Gw, const double *Xc,
+        const double *dJ_fs_dchi, double N_tot, double x_lag){
+    return pop_djdn_a_chi_reduce(nb, Gw, Xc, dJ_fs_dchi, N_tot, x_lag);
+}
+/* NC3: the POSITIVE-only production a_reduce filter -- a negative-term fixture
+ * fed here vanishes (demonstrating why a_dchi must NOT route through it). */
+double pop_djdn_a_reduce_pos_test(int nb, const double *Gw, const double *Ec,
+        const double *Xc, const double *lam, const double *S,
+        const double *chi_t, double n_e, double N_tot, double x_lag){
+    return pop_djdn_a_reduce(nb, Gw, Ec, Xc, lam, S, chi_t, n_e, N_tot, x_lag);
+}
+const char *pop_djdn_chi_header_test(void){ return POP_DJDN_CHI_HEADER; }
+int pop_djdn_chi_row_format_test(char *buf, size_t n, long gen, int shell,
+        int Z, int stage, long epoch, double a_ds, double a_dchi,
+        double a_local){
+    return pop_djdn_chi_row_format(buf, n, gen, shell, Z, stage, epoch,
+        a_ds, a_dchi, a_local);
+}
+#endif
 
 #ifdef __cplusplus   /* Phase 6 - Step 9: close extern C guard */
 }                    /* Phase 6 - Step 9 */

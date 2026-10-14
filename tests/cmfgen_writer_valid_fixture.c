@@ -12,8 +12,14 @@ static void stamp(PopulationDerivedStamp *s, const char *hash, size_t items) {
 }
 
 int main(int argc, char **argv) {
-    static const int zs[6] = {20, 27, 26, 28, 14, 16};
-    static const double masses[6] = {56, 59, 58, 60, 56, 56};
+    static const int zs[6] = {14, 20, 26, 16, 27, 28};
+    static const int target_z[31] = {14,14,20,20,26,26,16,16,27,27,28,28,
+                                     6,6,12,12,22,22,24,24,13,13,21,21,
+                                     23,23,25,25,8,8,8};
+    static const int target_ion[31] = {1,2,1,2,1,2,1,2,1,2,1,2,
+                                       1,2,1,2,1,2,1,2,1,2,1,2,
+                                       1,2,1,2,0,1,2};
+    static const double masses[6] = {56, 56, 58, 56, 59, 60};
     static const char hash[] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     double te[2] = {10000, 12000}, ne[2] = {1.1, 1.1};
     int iz[18], stage[18], to_global[12], level_g[12];
@@ -29,19 +35,22 @@ int main(int argc, char **argv) {
         }
         for (int q = 0; q < 2; ++q) {
             int i = 2 * e + q, ip = 3 * e + q;
-            n.nlte_Z[i] = zs[e]; n.nlte_ion[i] = q + 1;
-            n.nlte_ion_level_offset[i] = i; to_global[i] = i; level_g[i] = 2; energy[i] = q * 10;
+            to_global[i] = i; level_g[i] = 2; energy[i] = q * 10;
             levels[2 * i] = ion[2 * ip]; levels[2 * i + 1] = ion[2 * ip + 1];
         }
     }
-    n.nlte_ion_level_offset[12] = 12;
+    for (int i = 0; i < 31; ++i) {
+        n.nlte_Z[i] = target_z[i]; n.nlte_ion[i] = target_ion[i];
+        n.nlte_ion_level_offset[i] = i < 12 ? i : 12;
+    }
+    n.nlte_ion_level_offset[31] = 12;
     p.n_shells = 2; p.T_e = te; p.n_electron = ne; p.T_e_generation = 11;
     p.te_publication.required_te_generation = p.te_publication.committed_te_generation = 11;
     memcpy(p.te_publication.te_manifest_sha256, hash, 65);
     a.n_ion_pops = 18; a.n_levels = 12; a.ion_pop_Z = iz; a.ion_pop_stage = stage;
     a.ion_number_density = ion; a.level_energy_eV = energy; a.level_g = level_g;
     a.population_committed_generation = 7; stamp(&a.partition_stamp, hash, 18);
-    n.n_nlte_ions = 12; n.n_nlte_levels_total = 12; n.nlte_to_global_level = to_global;
+    n.n_nlte_ions = 31; n.n_nlte_levels_total = 12; n.nlte_to_global_level = to_global;
     n.nlte_level_populations = levels; n.population_required_generation = n.population_committed_generation = 7;
     stamp(&n.within_sl_stamp, hash, 12);
     setenv("LUMINA_ION_POP_DUMP", "1", 1); setenv("LUMINA_NLTE_LEVEL_DUMP", "1", 1);

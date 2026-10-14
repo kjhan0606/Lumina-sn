@@ -209,6 +209,33 @@ def equal_decimal_tokens(a: str, b: str) -> bool | None:
         return None
 
 
+def temperature_equality_mode(expectations: dict[str, Any]) -> str | None:
+    if "temperature_equality" not in expectations:
+        return None
+    mode = expectations["temperature_equality"]
+    if mode != "BINARY64_ROUNDTRIP_V1":
+        fail("TEMPERATURE_EQUALITY_MODE_INVALID", repr(mode))
+    return mode
+
+
+def equal_temperature_tokens(a: str, b: str, mode: str | None) -> bool | None:
+    if mode is None:
+        return equal_decimal_tokens(a, b)
+    if mode != "BINARY64_ROUNDTRIP_V1":
+        fail("TEMPERATURE_EQUALITY_MODE_INVALID", repr(mode))
+    binary64: list[float] = []
+    for token in (a, b):
+        try:
+            decimal = Decimal(token)
+            value = float(decimal)
+        except (InvalidOperation, OverflowError, ValueError):
+            return None
+        if not decimal.is_finite() or decimal <= 0 or not math.isfinite(value) or value <= 0:
+            return None
+        binary64.append(value)
+    return binary64[0].hex() == binary64[1].hex()
+
+
 def _safe_output_target(parent_fd: int, name: str, display: Path) -> None:
     """Reject links/shared inodes without resolving the parent again."""
     try:
@@ -805,6 +832,7 @@ def cell_template(
 def public_state_row(
     item: dict[str, Any], public: dict[str, str] | None, inventory: dict[str, Any],
     epoch: Decimal, *, generation_known: bool, abs_delta_t: Decimal | None = None,
+    temperature_equality: str | None = None,
 ) -> dict[str, Any]:
     shell = item["shell_id"]
     ref: RawRow = item["row"]
@@ -851,7 +879,7 @@ def public_state_row(
         z_c = decimal_token(ref.tokens[3]) / ref_atom if ref_atom > 0 else None
     except Failure:
         z_prod = q_cmp = z_c = None
-    te_match = equal_decimal_tokens(public["T_e"], ref.tokens[1])
+    te_match = equal_temperature_tokens(public["T_e"], ref.tokens[1], temperature_equality)
     status = "VALID"
     reasons: list[str] = []
     for metric in (ne, rho, natom, zmetric):
@@ -972,6 +1000,12 @@ def paired_ez_structure(
 
 
 def prepare(args: argparse.Namespace) -> int:
+    formal_iteration_cap = getattr(args, "formal_iteration_cap", None)
+    if formal_iteration_cap is not None:
+        validate_formal_iteration_cap(formal_iteration_cap)
+    nlte_bf_stage_weights = getattr(args, "nlte_bf_stage_weights", None)
+    if nlte_bf_stage_weights is not None:
+        validate_nlte_bf_stage_weights(nlte_bf_stage_weights)
     base = require_real_path(args.base)
     reference = Path(args.reference_dir)
     if not base.is_dir():
@@ -1096,6 +1130,10 @@ def prepare(args: argparse.Namespace) -> int:
         "saha_production_stages": {str(z): sorted(stages) for z, stages in production_saha_stages(base).items()},
         "nlte_production_ions": {str(z): sorted(ion for zz, ion in effective_nlte_levels(base) if zz == z) for z in TARGET_ELEMENTS.values()},
     }
+    if formal_iteration_cap is not None:
+        expectation["formal_iteration_cap"] = formal_iteration_cap
+    if nlte_bf_stage_weights is not None:
+        expectation["nlte_bf_stage_weights"] = nlte_bf_stage_weights
     json_write(evidence / "offline/expectations.json", expectation)
     input_size = sum(path.stat().st_size for path in (base / "input").rglob("*") if path.is_file() and not path.is_symlink())
     work_size = sum(path.stat().st_size for path in (base / "work").rglob("*") if path.is_file() and not path.is_symlink())
@@ -1269,7 +1307,51 @@ def _independent_token_interval(text: str) -> tuple[Decimal, Decimal]:
     return value - half, value + half
 
 
-def exports_delta_is_registered(base: Path, run: Path) -> bool:
+def validate_formal_iteration_cap(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value not in (64, 128):
+        fail("FORMAL_ITERATION_CAP_INVALID", repr(value))
+    return value
+
+
+def registered_formal_iteration_cap(expectations: dict[str, Any]) -> int | None:
+    if "formal_iteration_cap" not in expectations:
+        return None
+    return validate_formal_iteration_cap(expectations["formal_iteration_cap"])
+
+
+def validate_nlte_bf_stage_weights(value: Any) -> str:
+    if value != "LAST_COMMITTED_NLTE":
+        fail("NLTE_BF_STAGE_WEIGHTS_INVALID", repr(value))
+    return value
+
+
+def registered_nlte_bf_stage_weights(expectations: dict[str, Any]) -> str | None:
+    if "nlte_bf_stage_weights" not in expectations:
+        return None
+    return validate_nlte_bf_stage_weights(expectations["nlte_bf_stage_weights"])
+
+
+GPU_PROFILES = {
+    "h200x1": {"partitions": "h200", "count": 1, "kinds": ("H200",), "minimum_memory_mib": 140000},
+    "h100-a100x2": {"partitions": "h100,a100", "count": 2, "kinds": ("H100", "A100"), "minimum_memory_mib": 80000},
+}
+
+
+def validate_gpu_profile(value: Any) -> str:
+    if not isinstance(value, str) or value not in GPU_PROFILES:
+        fail("GPU_PROFILE_INVALID", repr(value))
+    return value
+
+
+def exports_delta_is_registered(base: Path, run: Path, formal_iteration_cap: int | None = None,
+                                gpu_profile: str | None = None,
+                                nlte_bf_stage_weights: str | None = None) -> bool:
+    if formal_iteration_cap is not None:
+        validate_formal_iteration_cap(formal_iteration_cap)
+    if gpu_profile is not None:
+        validate_gpu_profile(gpu_profile)
+    if nlte_bf_stage_weights is not None:
+        validate_nlte_bf_stage_weights(nlte_bf_stage_weights)
     old = read_exports(base / "input/resolved_lumina.exports")
     new = read_exports(run / "input/resolved_lumina.exports")
     base_s, run_s = str(base), str(run)
@@ -1277,6 +1359,12 @@ def exports_delta_is_registered(base: Path, run: Path) -> bool:
     expected["LUMINA_FIXED_TE_PROFILE"] = f"{run_s}/input/fixed_te_profile.txt"
     expected.pop("LUMINA_RADEQ_DIAG_TE_K", None)
     expected.update(LUMINA_ION_POP_DUMP="1", LUMINA_ION_POP_DUMP_ITER="1", LUMINA_NLTE_LEVEL_DUMP="1")
+    if gpu_profile is not None:
+        expected["LUMINA_CMF_FINE_MGPU_DEVICES"] = str(GPU_PROFILES[gpu_profile]["count"])
+    if nlte_bf_stage_weights is not None:
+        expected["LUMINA_NLTE_BF_STAGE_WEIGHTS"] = nlte_bf_stage_weights
+    if formal_iteration_cap is not None:
+        expected["LUMINA_CMF_FINE_ALI"] = str(formal_iteration_cap)
     return new == expected
 
 
@@ -1321,6 +1409,9 @@ def analyze(args: argparse.Namespace) -> int:
     if contract.resolve() != (evidence / "offline/expectations.json").resolve():
         fail("EXPECTATIONS_PATH_MISMATCH")
     expectations = json.loads(contract.read_text(encoding="utf-8"))
+    selected_temperature_equality = temperature_equality_mode(expectations)
+    formal_iteration_cap = registered_formal_iteration_cap(expectations)
+    nlte_bf_stage_weights = registered_nlte_bf_stage_weights(expectations)
     identity = json.loads(identity_path.read_text(encoding="utf-8"))
     writer_contract = json.loads(writer_path.read_text(encoding="utf-8"))
     resource = json.loads(resource_path.read_text(encoding="utf-8"))
@@ -1388,6 +1479,62 @@ def analyze(args: argparse.Namespace) -> int:
             target.update(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines() if "=" in line)
         else:
             pending.append(reason)
+    stage_gpu_profile = stage_identity.get("gpu_profile")
+    footer_gpu_profile = footer.get("gpu_profile")
+    gpu_profile = None
+    gpu_profile_exact = True
+    if stage_gpu_profile is not None or footer_gpu_profile is not None:
+        if stage_gpu_profile is not None:
+            gpu_profile = validate_gpu_profile(stage_gpu_profile)
+        if footer_gpu_profile is not None:
+            footer_profile = validate_gpu_profile(footer_gpu_profile)
+            if gpu_profile is None:
+                gpu_profile = footer_profile
+        if stage_gpu_profile is None or footer_gpu_profile is None or stage_gpu_profile != footer_gpu_profile:
+            gpu_profile_exact = False
+        if gpu_profile is not None:
+            gpu_spec = GPU_PROFILES[gpu_profile]
+            expected_stage = {
+                "expected_partitions": gpu_spec["partitions"],
+                "expected_gpu_count": str(gpu_spec["count"]),
+                "expected_gpu_kinds": ",".join(gpu_spec["kinds"]),
+                "minimum_gpu_memory_mib": str(gpu_spec["minimum_memory_mib"]),
+                "sealed_mgpu_devices": str(gpu_spec["count"]),
+            }
+            if any(stage_identity.get(key) != value for key, value in expected_stage.items()):
+                gpu_profile_exact = False
+            if (footer.get("partition") not in gpu_spec["partitions"].split(",") or
+                footer.get("allocated_gpus") != str(gpu_spec["count"]) or
+                footer.get("gpu_kind") not in gpu_spec["kinds"]):
+                gpu_profile_exact = False
+            identity_path_gpu = run / "gpu_identity.csv"
+            if not identity_path_gpu.is_file() or identity_path_gpu.is_symlink():
+                gpu_profile_exact = False
+            else:
+                try:
+                    with identity_path_gpu.open(newline="", encoding="utf-8") as stream:
+                        gpu_rows = list(csv.DictReader(stream))
+                    if len(gpu_rows) != gpu_spec["count"]:
+                        gpu_profile_exact = False
+                    observed_kinds = []
+                    observed_uuids = []
+                    for gpu_row in gpu_rows:
+                        name = gpu_row.get("name", "")
+                        kind = "H200" if "H200" in name else "H100" if "H100" in name else "A100" if "A100" in name else ""
+                        observed_kinds.append(kind)
+                        observed_uuids.append(gpu_row.get("uuid", ""))
+                        if (kind not in gpu_spec["kinds"] or
+                            int(gpu_row.get("memory_total_mib", "")) < gpu_spec["minimum_memory_mib"]):
+                            gpu_profile_exact = False
+                    if len(set(observed_kinds)) != 1 or len(set(observed_uuids)) != len(observed_uuids):
+                        gpu_profile_exact = False
+                    if observed_kinds and (observed_kinds[0] != footer.get("gpu_kind") or
+                                           footer.get("partition") != observed_kinds[0].lower()):
+                        gpu_profile_exact = False
+                except (OSError, TypeError, ValueError):
+                    gpu_profile_exact = False
+        if not gpu_profile_exact:
+            pending.append("GPU_PROFILE_RESOURCE_MISMATCH")
     before_manifest = before_path.read_text(encoding="utf-8") if before_path.is_file() and not before_path.is_symlink() else ""
     if not before_manifest: pending.append("base_before_manifest")
 
@@ -1613,8 +1760,8 @@ def analyze(args: argparse.Namespace) -> int:
             intervention = abs(Decimal(str(base_by_shell[shell]["temperature_public_K"])) - decimal_token(ref.tokens[1]))
         except (KeyError, InvalidOperation, Failure):
             intervention = None
-        output_rows.append(public_state_row(item, public, inventory, epoch, generation_known=generation_known, abs_delta_t=intervention))
-        te_match = equal_decimal_tokens(public["T_e"], ref.tokens[1]) if public else None
+        output_rows.append(public_state_row(item, public, inventory, epoch, generation_known=generation_known, abs_delta_t=intervention, temperature_equality=selected_temperature_equality))
+        te_match = equal_temperature_tokens(public["T_e"], ref.tokens[1], selected_temperature_equality) if public else None
         for element, z in TARGET_ELEMENTS.items():
             cmf = ion_lookup.get(element, {}).get(ref.velocity)
             if cmf is None:
@@ -1831,7 +1978,7 @@ def analyze(args: argparse.Namespace) -> int:
             pending.append(f"RUN_SOURCE_IDENTITY_MISMATCH:{member.get('path', '')}")
     exports_exact = False
     try:
-        exports_exact = exports_delta_is_registered(base, run)
+        exports_exact = exports_delta_is_registered(base, run, formal_iteration_cap, gpu_profile, nlte_bf_stage_weights)
     except Failure:
         pass
     if not exports_exact: pending.append("EXPORT_DELTA_NOT_EXACT")
@@ -1850,6 +1997,8 @@ def analyze(args: argparse.Namespace) -> int:
         "observed_outputs": [item["path"] for item in files],
         "exports_delta_exact": exports_exact,
     }
+    if gpu_profile is not None:
+        execution["gpu_profile"] = gpu_profile
     try:
         elapsed = int(footer["elapsed_seconds"])
         gpu_count = int(footer["allocated_gpus"])
@@ -1857,7 +2006,9 @@ def analyze(args: argparse.Namespace) -> int:
         if footer.get("terminal_state") != "SUCCESS": pending.append("RUN_TERMINAL_FAILURE")
         if footer.get("registered_runs") != "1": pending.append("RUN_COUNT_MISMATCH")
         if footer.get("outer_iterations") != str(expectations.get("registered_outer_iterations")): pending.append("ITERATION_COUNT_MISMATCH")
-        if elapsed > 4 * 3600 or gpu_count != 2 or gpu_count * elapsed > 8 * 3600: pending.append("GPU_TIME_LIMIT_EXCEEDED")
+        expected_gpu_count = GPU_PROFILES[gpu_profile]["count"] if gpu_profile is not None else 2
+        if elapsed > 4 * 3600 or gpu_count != expected_gpu_count or gpu_count not in (1, 2) or gpu_count * elapsed > 8 * 3600:
+            pending.append("GPU_TIME_LIMIT_EXCEEDED")
         if cpu_count > 32 or cpu_count * elapsed > 128 * 3600: pending.append("CPU_TIME_LIMIT_EXCEEDED")
     except (KeyError, TypeError, ValueError):
         pending.append("RUN_RESOURCE_RECORD_INVALID")
@@ -1907,6 +2058,10 @@ def analyze(args: argparse.Namespace) -> int:
         "execution_observations": execution,
         "independent_reproduction": {"shared_inputs": ["reference files", "geometry", "run raw outputs", "sealed identity records"], "shared_implementation": [], "production_parser_arithmetic_aggregation_reused": False, "required_method": "driver-authored direct csv/decimal/hashlib commands recorded with stdout, stderr, rc and hashes"},
     }
+    if selected_temperature_equality is not None:
+        summary["temperature_equality"] = selected_temperature_equality
+    if nlte_bf_stage_weights is not None:
+        summary["nlte_bf_stage_weights"] = nlte_bf_stage_weights
     map_text = csv_text(MAP_FIELDS, output_rows)
     summary_text = json.dumps(summary, indent=2, sort_keys=True) + "\n"
     planned = {after_path: current_manifest, evidence / "result/divergence_map.csv": map_text, evidence / "result/summary.json": summary_text}
@@ -1962,7 +2117,7 @@ def _replace_text(path: Path, old: str, new: str) -> None:
     text_write(path, text.replace(old, new, 1))
 
 
-def _private_fixture(root: Path) -> tuple[Path, Path, Path, Path, Path]:
+def _private_fixture(root: Path, nlte_bf_stage_weights: str | None = None) -> tuple[Path, Path, Path, Path, Path]:
     global BASE_BINARY_SHA256
     base, reference, evidence, run, repo = (root / name for name in ("base", "reference", "evidence", "run", "source"))
     for path in (base / "input/model", base / "work", reference, repo / "src"):
@@ -2018,7 +2173,7 @@ def _private_fixture(root: Path) -> tuple[Path, Path, Path, Path, Path]:
     for element in TARGET_ELEMENTS:
         values = "\n".join(f"{velocity} 0.100 0.400 0.500" for velocity in ("0.1", "0.6", "1.4", "1.6"))
         text_write(reference / f"ionfrac_{element}_toy06_cmfgen.txt", f"#NSTAGES: 3\n#TIME: 1.0\n#NVEL: 4\n#vel_mid[km/s] {element}0 {element}1 {element}2\n{values}\n")
-    prepare(argparse.Namespace(base=str(base), reference_dir=str(reference), evidence=str(evidence)))
+    prepare(argparse.Namespace(base=str(base), reference_dir=str(reference), evidence=str(evidence), nlte_bf_stage_weights=nlte_bf_stage_weights))
     writer_path = evidence / "offline/writer_contract.json"
     writer = json.loads(writer_path.read_text(encoding="utf-8")); writer.update(pending=[]); json_write(writer_path, writer)
     resource_path = evidence / "offline/resource_card.json"
@@ -2446,13 +2601,194 @@ def _real_input_prepare_selftest(emit: bool) -> str:
     return "REAL_REFERENCE_PREPARE_CONSUMED"
 
 
+def _formal_iteration_cap_selftest(emit: bool) -> list[str]:
+    observations: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="cmfgen-twin-ali-cap-selftest.") as raw:
+        root = Path(raw); base = root / "base"; run = root / "run"
+        (base / "input").mkdir(parents=True); (run / "input").mkdir(parents=True)
+        text_write(base / "input/resolved_lumina.exports", (
+            f'declare -x LUMINA_MODEL_DIR="{base}/input/model"\n'
+            'declare -x LUMINA_CMF_FINE_ALI="64"\n'
+            'declare -x LUMINA_CMF_FINE_TOL="1e-8"\n'
+            'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"\n'
+        ))
+
+        def write_run(cap: str, tolerance: str = "1e-8") -> None:
+            path = run / "input/resolved_lumina.exports"
+            if path.exists(): path.unlink()
+            text_write(path, (
+                f'declare -x LUMINA_MODEL_DIR="{run}/input/model"\n'
+                f'declare -x LUMINA_CMF_FINE_ALI="{cap}"\n'
+                f'declare -x LUMINA_CMF_FINE_TOL="{tolerance}"\n'
+                f'declare -x LUMINA_FIXED_TE_PROFILE="{run}/input/fixed_te_profile.txt"\n'
+                'declare -x LUMINA_ION_POP_DUMP="1"\n'
+                'declare -x LUMINA_ION_POP_DUMP_ITER="1"\n'
+                'declare -x LUMINA_NLTE_LEVEL_DUMP="1"\n'
+            ))
+
+        write_run("128")
+        if not exports_delta_is_registered(base, run, 128): fail("SELFTEST_REGISTERED_CAP128_REJECTED")
+        observations.append("REGISTERED_CAP128_ACCEPTED")
+        if exports_delta_is_registered(base, run): fail("SELFTEST_UNREGISTERED_CAP128_ACCEPTED")
+        observations.append("UNREGISTERED_CAP128_REJECTED")
+        if exports_delta_is_registered(base, run, 64): fail("SELFTEST_CAP64_MISMATCH_ACCEPTED")
+        observations.append("CAP64_MISMATCH_REJECTED")
+        write_run("128", "2e-8")
+        if exports_delta_is_registered(base, run, 128): fail("SELFTEST_TOLERANCE_MUTATION_ACCEPTED")
+        observations.append("TOLERANCE_MUTATION_REJECTED")
+        try:
+            registered_formal_iteration_cap({"formal_iteration_cap": True})
+        except Failure:
+            observations.append("INVALID_BOOL_CAP_REJECTED")
+        else:
+            fail("SELFTEST_INVALID_BOOL_CAP_ACCEPTED")
+    if emit:
+        for observation in observations:
+            print(f"CMFGEN_TWIN_MAP_ALI_CAP_SELFTEST observation={observation}")
+    return observations
+
+
+def _nlte_bf_stage_weights_selftest(emit: bool) -> list[str]:
+    global BASE_BINARY_SHA256
+    saved_binary = BASE_BINARY_SHA256
+    observations: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="cmfgen-twin-bf-stage-weights-selftest.") as raw:
+            root = Path(raw)
+            base, _reference, evidence, run, expectations = _private_fixture(root, "LAST_COMMITTED_NLTE")
+            exports_path = run / "input/resolved_lumina.exports"
+            values = read_exports(exports_path)
+            values["LUMINA_NLTE_BF_STAGE_WEIGHTS"] = "LAST_COMMITTED_NLTE"
+            text_write(exports_path, "".join(f'declare -x {key}="{value}"\n' for key, value in values.items()))
+            text_write(run / "STAGE_IDENTITY.txt", f"effective_exports_sha256={sha256(exports_path)}\n")
+            analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            _, summary = _read_results(evidence)
+            if (summary.get("nlte_bf_stage_weights") != "LAST_COMMITTED_NLTE" or
+                "EXPORT_DELTA_NOT_EXACT" in summary["pending"]):
+                fail("SELFTEST_BF_STAGE_WEIGHTS_ROUNDTRIP_REJECTED")
+            observations.append("LAST_COMMITTED_NLTE_ROUNDTRIP_ACCEPTED")
+
+            contract = json.loads(expectations.read_text(encoding="utf-8"))
+            contract.pop("nlte_bf_stage_weights")
+            json_write(expectations, contract)
+            analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            _, unregistered = _read_results(evidence)
+            if "EXPORT_DELTA_NOT_EXACT" not in unregistered["pending"] or "nlte_bf_stage_weights" in unregistered:
+                fail("SELFTEST_UNREGISTERED_BF_SELECTOR_ACCEPTED")
+            observations.append("UNREGISTERED_SELECTOR_REJECTED")
+
+            contract["nlte_bf_stage_weights"] = "LAST_COMMITTED_NLTE"
+            json_write(expectations, contract)
+            text_write(exports_path, exports_path.read_text(encoding="utf-8").replace(
+                'LUMINA_NLTE_BF_STAGE_WEIGHTS="LAST_COMMITTED_NLTE"',
+                'LUMINA_NLTE_BF_STAGE_WEIGHTS="UNREGISTERED"'))
+            analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            _, mismatch = _read_results(evidence)
+            if "EXPORT_DELTA_NOT_EXACT" not in mismatch["pending"]:
+                fail("SELFTEST_BF_SELECTOR_EXPORT_MISMATCH_ACCEPTED")
+            observations.append("CONTRACT_EXPORT_MISMATCH_REJECTED")
+
+            result_paths = (evidence / "result/divergence_map.csv", evidence / "result/summary.json")
+            preserved = tuple(path.read_bytes() for path in result_paths)
+            contract["nlte_bf_stage_weights"] = "UNKNOWN"
+            json_write(expectations, contract)
+            try:
+                analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+            except Failure as exc:
+                if exc.reason != "NLTE_BF_STAGE_WEIGHTS_INVALID":
+                    raise
+            else:
+                fail("SELFTEST_UNKNOWN_BF_SELECTOR_ACCEPTED")
+            if preserved != tuple(path.read_bytes() for path in result_paths):
+                fail("SELFTEST_UNKNOWN_BF_SELECTOR_CHANGED_OUTPUT")
+            observations.append("UNKNOWN_SELECTOR_REJECTED_BEFORE_WRITE")
+    finally:
+        BASE_BINARY_SHA256 = saved_binary
+    if emit:
+        for observation in observations:
+            print(f"CMFGEN_TWIN_MAP_BF_STAGE_WEIGHTS_SELFTEST observation={observation}")
+    return observations
+
+
+def _gpu_profile_selftest(emit: bool) -> list[str]:
+    global BASE_BINARY_SHA256
+    saved_binary = BASE_BINARY_SHA256
+    observations: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="cmfgen-twin-gpu-profile-selftest.") as raw:
+            for profile, partition, kind, count, memory in (
+                ("h200x1", "h200", "H200", 1, 143771),
+                ("h100-a100x2", "h100", "H100", 2, 81559),
+            ):
+                base, _reference, evidence, run, expectations = _private_fixture(Path(raw) / profile)
+                spec = GPU_PROFILES[profile]
+                exports = read_exports(run / "input/resolved_lumina.exports")
+                exports["LUMINA_CMF_FINE_MGPU_DEVICES"] = str(count)
+                text_write(run / "input/resolved_lumina.exports", "".join(f'declare -x {key}="{value}"\n' for key, value in exports.items()))
+                text_write(run / "STAGE_IDENTITY.txt", "\n".join((
+                    f"effective_exports_sha256={sha256(run / 'input/resolved_lumina.exports')}",
+                    f"gpu_profile={profile}", f"expected_partitions={spec['partitions']}",
+                    f"expected_gpu_count={count}", f"expected_gpu_kinds={','.join(spec['kinds'])}",
+                    f"minimum_gpu_memory_mib={spec['minimum_memory_mib']}", f"sealed_mgpu_devices={count}",
+                )) + "\n")
+                text_write(run / "RUN_FOOTER.txt", f"outer_iterations=2\nbinary_sha256={BASE_BINARY_SHA256}\nterminal_state=SUCCESS\nregistered_runs=1\nelapsed_seconds=100\ngpu_profile={profile}\npartition={partition}\nallocated_gpus={count}\nallocated_cpus=32\ngpu_kind={kind}\nfixed_te_loader_consumed=1\n")
+                gpu_rows = "".join(
+                    f"{ordinal},GPU-{ordinal},NVIDIA {kind},{memory},GPU-{profile}-{ordinal},555.1,9.0\n"
+                    for ordinal in range(count)
+                )
+                text_write(run / "gpu_identity.csv", "visible_ordinal,cuda_visible_token,name,memory_total_mib,uuid,driver_version,compute_capability\n" + gpu_rows)
+                analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+                _, summary = _read_results(evidence)
+                if any(reason in summary["pending"] for reason in ("GPU_PROFILE_RESOURCE_MISMATCH", "GPU_TIME_LIMIT_EXCEEDED", "EXPORT_DELTA_NOT_EXACT")):
+                    fail("SELFTEST_GPU_PROFILE_POSITIVE_REJECTED", profile)
+                observations.append(f"GPU_PROFILE_ACCEPTED profile={profile} count={count} kind={kind}")
+
+                if profile == "h200x1":
+                    footer_path = run / "RUN_FOOTER.txt"
+                    valid_footer = footer_path.read_text(encoding="utf-8")
+                    text_write(footer_path, valid_footer.replace("allocated_gpus=1", "allocated_gpus=0"))
+                    analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+                    _, bad_count = _read_results(evidence)
+                    if "GPU_PROFILE_RESOURCE_MISMATCH" not in bad_count["pending"] or "GPU_TIME_LIMIT_EXCEEDED" not in bad_count["pending"]:
+                        fail("SELFTEST_GPU_COUNT_MISMATCH_ACCEPTED")
+                    observations.append("GPU_COUNT_ZERO_REJECTED")
+                    text_write(footer_path, valid_footer)
+
+                    identity_path = run / "gpu_identity.csv"
+                    valid_identity = identity_path.read_text(encoding="utf-8")
+                    text_write(identity_path, valid_identity.replace("NVIDIA H200", "NVIDIA H100"))
+                    analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+                    _, bad_kind = _read_results(evidence)
+                    if "GPU_PROFILE_RESOURCE_MISMATCH" not in bad_kind["pending"]:
+                        fail("SELFTEST_GPU_KIND_MISMATCH_ACCEPTED")
+                    observations.append("GPU_KIND_MISMATCH_REJECTED")
+                    text_write(identity_path, valid_identity)
+
+                    valid_exports = (run / "input/resolved_lumina.exports").read_text(encoding="utf-8")
+                    text_write(run / "input/resolved_lumina.exports", valid_exports.replace('LUMINA_CMF_FINE_MGPU_DEVICES="1"', 'LUMINA_CMF_FINE_MGPU_DEVICES="2"'))
+                    analyze(argparse.Namespace(contract=str(expectations), run=str(run), evidence=str(evidence)))
+                    _, bad_exports = _read_results(evidence)
+                    if "EXPORT_DELTA_NOT_EXACT" not in bad_exports["pending"]:
+                        fail("SELFTEST_GPU_EXPORT_MISMATCH_ACCEPTED")
+                    observations.append("GPU_EXPORT_MISMATCH_REJECTED")
+    finally:
+        BASE_BINARY_SHA256 = saved_binary
+    if emit:
+        for observation in observations:
+            print(f"CMFGEN_TWIN_MAP_GPU_PROFILE_SELFTEST observation={observation}")
+    return observations
+
+
 def run_selftest(emit: bool = True, include_e2e: bool = True) -> dict[str, Any]:
     _assert_arithmetic()
     boundary = _write_boundary_selftest(emit)
     production = _production_path_selftest(emit) if include_e2e else {"observations": []}
     real_input = _real_input_prepare_selftest(emit) if include_e2e else "SKIPPED"
-    report = {"schema": SCHEMA, "arithmetic": "fixed constants matched", "write_boundary": boundary, "production_path": production, "real_input_prepare": real_input}
-    if emit: print(f"CMFGEN_TWIN_MAP_SELFTEST_PASS observations={len(production['observations']) + 8}")
+    formal_iteration_cap = _formal_iteration_cap_selftest(emit)
+    nlte_bf_stage_weights = _nlte_bf_stage_weights_selftest(emit) if include_e2e else []
+    gpu_profiles = _gpu_profile_selftest(emit) if include_e2e else []
+    report = {"schema": SCHEMA, "arithmetic": "fixed constants matched", "write_boundary": boundary, "production_path": production, "real_input_prepare": real_input, "formal_iteration_cap": formal_iteration_cap, "nlte_bf_stage_weights": nlte_bf_stage_weights, "gpu_profiles": gpu_profiles}
+    if emit: print(f"CMFGEN_TWIN_MAP_SELFTEST_PASS observations={len(production['observations']) + 8 + len(formal_iteration_cap) + len(nlte_bf_stage_weights) + len(gpu_profiles)}")
     return report
 
 def parser() -> argparse.ArgumentParser:
@@ -2461,6 +2797,8 @@ def parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command")
     prep = sub.add_parser("prepare")
     prep.add_argument("--base", required=True); prep.add_argument("--reference-dir", required=True); prep.add_argument("--evidence", required=True)
+    prep.add_argument("--formal-iteration-cap", type=int, choices=(64, 128))
+    prep.add_argument("--nlte-bf-stage-weights", choices=("LAST_COMMITTED_NLTE",))
     prep.add_argument("--run-build-identity", help="CMFGEN_TWIN_RUN_BUILD_V1 JSON for the separately built run binary/source")
     ana = sub.add_parser("analyze")
     ana.add_argument("--contract", required=True); ana.add_argument("--run", required=True); ana.add_argument("--evidence", required=True)

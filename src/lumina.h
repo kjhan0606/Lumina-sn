@@ -858,6 +858,12 @@ typedef struct {
     double *eta_bf;         /* [n_shells * n_freq_bins] erg/s/cm^3/Hz/sr — bf(+ff)
                              * emissivity; = chi*B(T_e) thermal, or NLTE Milne
                              * source-function form under LUMINA_CMF_BF_MILNE */
+    int    *eta_milne_ok;   /* [n_shells] DET-CONT-NLTE-BALANCE (rev 1, R1-1): 1 if
+                             * the Milne (bf) emissivity has any positive bin in
+                             * this shell recorded BEFORE free-free is summed in,
+                             * else 0. The continuum-NLTE-source assembler consults
+                             * this for fail-closed: bf_get_eta includes ff, so an
+                             * "eta_bf all-zero" test at consume time is toothless. */
     int    *activation_level; /* [n_shells * n_freq_bins] macro-atom level or -1 */
 
     /* [Wave-2 D-1] Exact bf continuum-event identity, allocated only under
@@ -1176,6 +1182,12 @@ double nlte_get_J_at_nu(NLTEConfig *nlte, int shell, double nu);
  * and freeze-plasma-transport-only (in iter driver). To enable only the
  * post-solve per-ion rescale path without either, set LUMINA_NLTE_PER_ION_RESCALE=1. */
 int  nlte_ion_lock_active(int current_iter);
+/* DET-COLDSTART: public toy06 19.480 d ion-fraction table (selftest entry).
+ * f_out[(s*6+el)*6+k], el = Si,S,Ca,Fe,Co,Ni; k = Lumina stage II.. ;
+ * n_lum[el] = public stage count K (= Lumina stage count); the top two rows
+ * both carry the public top stage.  Returns 0, or -1 fail-closed. */
+int  lumina_init_ionfrac_table(const char *dir, const double *v_mid_cm_s,
+                               int n_shells, double *f_out, int *n_lum);
 int  nlte_per_ion_rescale_active(void);
 int  nlte_skip_dead_pairs(void);
 /* COLD-CASE-P fix gate (LUMINA_NLTE_METASTABLE_COLL). Default OFF => byte-identical.
@@ -1257,6 +1269,11 @@ int  nlte_solve_all(NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
  * every solve on both CPU and GPU paths; see definition in lumina_plasma.c). */
 int  nlte_precompute_within_sl_frac(NLTEConfig *nlte, AtomicData *atom,
                                     PlasmaState *plasma, int n_shells);
+/* Diagnostic-only, read-only population provenance ledger.  The function is
+ * a no-op unless LUMINA_DPROXY_POPULATION_PROVENANCE=1. */
+int  lumina_dproxy_population_provenance_emit(
+        const NLTEConfig *nlte, const AtomicData *atom,
+        const PlasmaState *plasma, size_t n_shells);
 
 /* L0 Z-INERT: audit the exact-zero composition boundary.  The validator is
  * read-only and returns nonzero if an element-shell with abundance == 0 owns
@@ -1565,6 +1582,35 @@ void radeq_set_tail_color(const double *t_color, int n_shells);
  * (cs->tri_lo/tri_up/tri_r) for the global Newton's delta-J resolvent. */
 void radeq_set_tri_response(const double *lo, const double *up,
                             const double *r, int n_shells, int n_bins);
+
+/* DET-PATHB-LOCAL: register the fixed-S formal-solve chi derivative buffer
+ * (cmfgen_run's formal_djdchi_fs_S output, [n_shells*n_bins]) that the A2-10
+ * log-Newton gain assembly folds in as the local a_dchi term. NULL / not
+ * registered (LUMINA_POP_DJDN_CHI unset) => the term is absent (byte-identical
+ * production path). Does NOT change radeq_set_line_re_source or
+ * coupled_newton_solve_all signatures. */
+void radeq_set_djdchi_fs(const double *dJdchi, int n_shells, int n_bins);
+
+/* DET-PATHB-XSHELL: read-only production-rate adapter.  The caller supplies a
+ * canonical radiation field explicitly, including its validity/count/grid,
+ * and the frozen partition value used for the selected ion.  The adapter
+ * reuses parity_gamma_phot_checked and nlte_bf_gamma_canonical; it does not
+ * publish a field, mutate the caller's NLTEConfig/AtomicData, or substitute a
+ * rate when any BF level is blocked/unsampled/out of grid. */
+PopulationStatus parity_gamma_phot_explicit_field(
+    const AtomicData *atom, const NLTEConfig *nlte,
+    const double *canonical_J,
+    const RadiationFieldValidityState *canonical_validity,
+    const uint64_t *canonical_count,
+    const double *canonical_frequency_edges,
+    size_t n_shells, size_t n_bins, int shell, int Z, int ion_stage,
+    double T_e, double partition_value, double *gamma_out);
+
+/* Exact production-census observation used only by the XSHELL measurement.
+ * epoch-last wins, matching lumina_pop_djdn.csv semantics. */
+void parity_gamma_phot_observed_reset(void);
+int parity_gamma_phot_observed(long epoch, int shell, int Z, int ion_stage,
+    double *T_e, double *n_e, double *x_lag, double *gamma_out);
 
 void radeq_set_line_re_source(const double *chi_line, const double *chi_abs,
                               const double *chi_tot, const double *S_fixed,

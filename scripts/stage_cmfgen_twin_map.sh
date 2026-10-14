@@ -5,10 +5,15 @@ umask 027
 
 readonly EXPECTED_BINARY_SHA256=ca721b07cb4fef632b1a0a0b2d3c7b11cdaac0e95f74e6cc56b131a7c5449059
 readonly STORAGE_CAP_BYTES=$((16 * 1024 * 1024 * 1024))
+readonly DEFAULT_GPU_PROFILE=h200x1
 
 die() {
   printf 'CMFGEN_TWIN_MAP_STAGE_FAIL reason=%s\n' "$*" >&2
   exit 70
+}
+
+validate_gpu_profile() {
+  [[ "$1" == h200x1 || "$1" == h100-a100x2 ]]
 }
 
 is_below() {
@@ -218,12 +223,20 @@ verify_no_shared_inode() {
 }
 
 rewrite_exports() {
-  local source="$1" base="$2" run="$3" output="$4"
-  python3 -B - "$source" "$base" "$run" "$output" <<'PY'
+  local source="$1" base="$2" run="$3" output="$4" formal_iteration_cap="${5:-}" gpu_profile="${6:-$DEFAULT_GPU_PROFILE}" nlte_bf_stage_weights="${7:-}"
+  validate_gpu_profile "$gpu_profile" || return 1
+  python3 -B - "$source" "$base" "$run" "$output" "$formal_iteration_cap" "$gpu_profile" "$nlte_bf_stage_weights" <<'PY'
 import os, re, sys
 import os
 from pathlib import Path
-source, base, run, output = map(Path, sys.argv[1:])
+source, base, run, output = map(Path, sys.argv[1:5])
+formal_iteration_cap = sys.argv[5]
+gpu_profile = sys.argv[6]
+nlte_bf_stage_weights = sys.argv[7]
+if formal_iteration_cap and formal_iteration_cap not in {"64", "128"}:
+    raise SystemExit("invalid formal iteration cap")
+if nlte_bf_stage_weights and nlte_bf_stage_weights != "LAST_COMMITTED_NLTE":
+    raise SystemExit("invalid NLTE BF stage weights")
 pattern = re.compile(r'^declare -x ([A-Za-z_][A-Za-z0-9_]*)="(.*)"$')
 values = {}
 order = []
@@ -246,6 +259,17 @@ for key in ("LUMINA_ION_POP_DUMP", "LUMINA_ION_POP_DUMP_ITER", "LUMINA_NLTE_LEVE
     if key not in values:
         order.append(key)
     values[key] = "1"
+if "LUMINA_CMF_FINE_MGPU_DEVICES" not in values:
+    order.append("LUMINA_CMF_FINE_MGPU_DEVICES")
+values["LUMINA_CMF_FINE_MGPU_DEVICES"] = {"h200x1": "1", "h100-a100x2": "2"}[gpu_profile]
+if nlte_bf_stage_weights:
+    if "LUMINA_NLTE_BF_STAGE_WEIGHTS" not in values:
+        order.append("LUMINA_NLTE_BF_STAGE_WEIGHTS")
+    values["LUMINA_NLTE_BF_STAGE_WEIGHTS"] = nlte_bf_stage_weights
+if formal_iteration_cap:
+    if "LUMINA_CMF_FINE_ALI" not in values:
+        order.append("LUMINA_CMF_FINE_ALI")
+    values["LUMINA_CMF_FINE_ALI"] = formal_iteration_cap
 parent = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
 try:
     for component in os.path.dirname(str(output)).split(os.sep)[1:]:
@@ -260,10 +284,18 @@ PY
 }
 
 verify_export_delta() {
-  local source="$1" staged="$2" base="$3" run="$4"
-  python3 -B - "$source" "$staged" "$base" "$run" <<'PY'
+  local source="$1" staged="$2" base="$3" run="$4" formal_iteration_cap="${5:-}" gpu_profile="${6:-$DEFAULT_GPU_PROFILE}" nlte_bf_stage_weights="${7:-}"
+  validate_gpu_profile "$gpu_profile" || return 1
+  python3 -B - "$source" "$staged" "$base" "$run" "$formal_iteration_cap" "$gpu_profile" "$nlte_bf_stage_weights" <<'PY'
 import os, re, sys
 from pathlib import Path
+formal_iteration_cap = sys.argv[5]
+gpu_profile = sys.argv[6]
+nlte_bf_stage_weights = sys.argv[7]
+if formal_iteration_cap and formal_iteration_cap not in {"64", "128"}:
+    raise SystemExit(1)
+if nlte_bf_stage_weights and nlte_bf_stage_weights != "LAST_COMMITTED_NLTE":
+    raise SystemExit(1)
 pattern = re.compile(r'^declare -x ([A-Za-z_][A-Za-z0-9_]*)="(.*)"$')
 def load(path):
     result = {}
@@ -274,11 +306,16 @@ def load(path):
         result[match.group(1)] = match.group(2)
     return result
 old, new = load(sys.argv[1]), load(sys.argv[2])
-base, run = sys.argv[3:]
+base, run = sys.argv[3:5]
 expected = {key: value.replace(base, run) for key, value in old.items()}
 expected["LUMINA_FIXED_TE_PROFILE"] = f"{run}/input/fixed_te_profile.txt"
 expected.pop("LUMINA_RADEQ_DIAG_TE_K", None)
 expected.update(LUMINA_ION_POP_DUMP="1", LUMINA_ION_POP_DUMP_ITER="1", LUMINA_NLTE_LEVEL_DUMP="1")
+expected["LUMINA_CMF_FINE_MGPU_DEVICES"] = {"h200x1": "1", "h100-a100x2": "2"}[gpu_profile]
+if nlte_bf_stage_weights:
+    expected["LUMINA_NLTE_BF_STAGE_WEIGHTS"] = nlte_bf_stage_weights
+if formal_iteration_cap:
+    expected["LUMINA_CMF_FINE_ALI"] = formal_iteration_cap
 if new != expected:
     raise SystemExit(1)
 PY
@@ -291,6 +328,32 @@ import json, sys
 value = json.load(open(sys.argv[1], encoding="utf-8"))
 for key in sys.argv[2].split('.'):
     value = value[key]
+print(value)
+PY
+}
+
+registered_formal_iteration_cap() {
+  python3 -B - "$1" <<'PY'
+import json, sys
+expectations = json.load(open(sys.argv[1], encoding="utf-8"))
+if "formal_iteration_cap" not in expectations:
+    raise SystemExit(0)
+value = expectations["formal_iteration_cap"]
+if isinstance(value, bool) or not isinstance(value, int) or value not in (64, 128):
+    raise SystemExit(1)
+print(value)
+PY
+}
+
+registered_nlte_bf_stage_weights() {
+  python3 -B - "$1" <<'PY'
+import json, sys
+expectations = json.load(open(sys.argv[1], encoding="utf-8"))
+if "nlte_bf_stage_weights" not in expectations:
+    raise SystemExit(0)
+value = expectations["nlte_bf_stage_weights"]
+if value != "LAST_COMMITTED_NLTE":
+    raise SystemExit(1)
 print(value)
 PY
 }
@@ -357,19 +420,25 @@ binary_sm90_check() {
 }
 
 rewrite_job_resources() {
-  local source="$1" output="$2" old_root="${3:-}" new_root="${4:-}"
-  python3 -B - "$source" "$output" "$old_root" "$new_root" <<'PY'
+  local source="$1" output="$2" gpu_profile="${3:-$DEFAULT_GPU_PROFILE}" old_root="${4:-}" new_root="${5:-}"
+  validate_gpu_profile "$gpu_profile" || return 1
+  python3 -B - "$source" "$output" "$gpu_profile" "$old_root" "$new_root" <<'PY'
 import os, re, sys
 from pathlib import Path
 source, output = map(Path, sys.argv[1:3])
 text = source.read_text(encoding="utf-8")
-if sys.argv[3]:
-    text = text.replace(sys.argv[3], sys.argv[4])
+gpu_profile = sys.argv[3]
+if sys.argv[4]:
+    text = text.replace(sys.argv[4], sys.argv[5])
 if "requires A100 hardware" in text or "must use partition a100" in text:
     raise SystemExit("INPUT_PENDING: legacy A100-only runner is not qualified for H200/H100")
+profiles = {
+    "h200x1": {"partition": "h200", "gres": "gpu:1"},
+    "h100-a100x2": {"partition": "h100,a100", "gres": "gpu:2"},
+}
 required = {
-    "partition": "#SBATCH --partition=h200,h100",
-    "gres": "#SBATCH --gres=gpu:2",
+    "partition": f"#SBATCH --partition={profiles[gpu_profile]['partition']}",
+    "gres": f"#SBATCH --gres={profiles[gpu_profile]['gres']}",
     "cpus-per-task": "#SBATCH --cpus-per-task=32",
     "time": "#SBATCH --time=04:00:00",
 }
@@ -380,6 +449,10 @@ for key, replacement in required.items():
     if len(hits) != 1:
         raise SystemExit(f"INPUT_PENDING: runner directive {key} count={len(hits)}")
     lines[hits[0]] = replacement
+profile_hits = [i for i, line in enumerate(lines) if line.startswith("readonly GPU_PROFILE=")]
+if len(profile_hits) != 1:
+    raise SystemExit(f"INPUT_PENDING: runner GPU_PROFILE count={len(profile_hits)}")
+lines[profile_hits[0]] = f"readonly GPU_PROFILE={gpu_profile}"
 parent = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
 try:
     for component in os.path.dirname(str(output)).split(os.sep)[1:]:
@@ -394,13 +467,19 @@ PY
 }
 
 stage_transaction() {
-  local run_binary="${5:-$1/input/lumina_cuda}" run_build_identity="${6:-}"
-  python3 -B - "$1" "$2" "$3" "$4" "$STORAGE_CAP_BYTES" "$run_binary" "$run_build_identity" <<'PY'
+  local run_binary="${5:-$1/input/lumina_cuda}" run_build_identity="${6:-}" gpu_profile="${7:-$DEFAULT_GPU_PROFILE}"
+  validate_gpu_profile "$gpu_profile" || return 1
+  python3 -B - "$1" "$2" "$3" "$4" "$STORAGE_CAP_BYTES" "$run_binary" "$run_build_identity" "$gpu_profile" <<'PY'
 import hashlib, json, os, re, stat, sys
 
 base, evidence, run, runner = sys.argv[1:5]
 cap = int(sys.argv[5])
-run_binary, run_build_identity = sys.argv[6:8]
+run_binary, run_build_identity, gpu_profile = sys.argv[6:9]
+profiles = {
+    "h200x1": {"partitions": "h200", "count": 1, "kinds": "H200", "minimum_memory_mib": 140000},
+    "h100-a100x2": {"partitions": "h100,a100", "count": 2, "kinds": "H100,A100", "minimum_memory_mib": 80000},
+}
+gpu = profiles[gpu_profile]
 
 def directory_fd(path):
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -454,7 +533,7 @@ def read_file(root_fd, rel):
         return b"".join(chunks)
     finally: os.close(fd)
 
-def transform_exports(data):
+def transform_exports(data, formal_iteration_cap, nlte_bf_stage_weights):
     pattern = re.compile(r'^declare -x ([A-Za-z_][A-Za-z0-9_]*)="(.*)"$')
     values, order = {}, []
     for raw in data.decode().splitlines():
@@ -468,19 +547,30 @@ def transform_exports(data):
     for key in ("LUMINA_ION_POP_DUMP", "LUMINA_ION_POP_DUMP_ITER", "LUMINA_NLTE_LEVEL_DUMP"):
         if key not in values: order.append(key)
         values[key] = "1"
+    if "LUMINA_CMF_FINE_MGPU_DEVICES" not in values: order.append("LUMINA_CMF_FINE_MGPU_DEVICES")
+    values["LUMINA_CMF_FINE_MGPU_DEVICES"] = str(gpu["count"])
+    if nlte_bf_stage_weights is not None:
+        if "LUMINA_NLTE_BF_STAGE_WEIGHTS" not in values: order.append("LUMINA_NLTE_BF_STAGE_WEIGHTS")
+        values["LUMINA_NLTE_BF_STAGE_WEIGHTS"] = nlte_bf_stage_weights
+    if formal_iteration_cap is not None:
+        if "LUMINA_CMF_FINE_ALI" not in values: order.append("LUMINA_CMF_FINE_ALI")
+        values["LUMINA_CMF_FINE_ALI"] = str(formal_iteration_cap)
     return "".join(f'declare -x {key}="{values[key]}"\n' for key in order).encode()
 
 def transform_job(data):
     text = data.decode().replace(base, run)
     if "requires A100 hardware" in text or "must use partition a100" in text:
         raise RuntimeError("legacy A100-only runner is not qualified")
-    required = {"partition":"#SBATCH --partition=h200,h100", "gres":"#SBATCH --gres=gpu:2", "cpus-per-task":"#SBATCH --cpus-per-task=32", "time":"#SBATCH --time=04:00:00"}
+    required = {"partition":f"#SBATCH --partition={gpu['partitions']}", "gres":f"#SBATCH --gres=gpu:{gpu['count']}", "cpus-per-task":"#SBATCH --cpus-per-task=32", "time":"#SBATCH --time=04:00:00"}
     lines = text.splitlines()
     for key, replacement in required.items():
         pattern = re.compile(rf"^#SBATCH --{re.escape(key)}(?:=|\s).*$")
         hits = [i for i, line in enumerate(lines) if pattern.match(line)]
         if len(hits) != 1: raise RuntimeError(f"runner directive {key} count={len(hits)}")
         lines[hits[0]] = replacement
+    profile_hits = [i for i, line in enumerate(lines) if line.startswith("readonly GPU_PROFILE=")]
+    if len(profile_hits) != 1: raise RuntimeError(f"runner GPU_PROFILE count={len(profile_hits)}")
+    lines[profile_hits[0]] = f"readonly GPU_PROFILE={gpu_profile}"
     return ("\n".join(lines) + "\n").encode()
 
 def open_relative(root_fd, parts, create=False):
@@ -546,9 +636,16 @@ try:
     input_files, input_dirs = scan_tree(input_fd)
     evidence_files, _evidence_dirs = scan_tree(evidence_fd)
     profile = read_file(evidence_fd, "inputs/fixed_te_profile.txt")
-    exports = transform_exports(read_file(input_fd, "resolved_lumina.exports"))
+    expectations = json.loads(read_file(evidence_fd, "offline/expectations.json"))
+    formal_iteration_cap = expectations.get("formal_iteration_cap")
+    if "formal_iteration_cap" in expectations and (isinstance(formal_iteration_cap, bool) or not isinstance(formal_iteration_cap, int) or formal_iteration_cap not in (64, 128)):
+        raise RuntimeError("invalid registered formal iteration cap")
+    nlte_bf_stage_weights = expectations.get("nlte_bf_stage_weights")
+    if "nlte_bf_stage_weights" in expectations and nlte_bf_stage_weights != "LAST_COMMITTED_NLTE":
+        raise RuntimeError("invalid registered NLTE BF stage weights")
+    exports = transform_exports(read_file(input_fd, "resolved_lumina.exports"), formal_iteration_cap, nlte_bf_stage_weights)
     with open(runner, "rb") as stream:
-        job = stream.read()
+        job = transform_job(stream.read())
     binary_path = os.path.realpath(run_binary)
     if binary_path != run_binary or not os.path.isfile(binary_path) or os.path.islink(run_binary):
         raise RuntimeError("run binary unsafe")
@@ -568,7 +665,7 @@ try:
         build_identity = json.dumps({"schema":"CMFGEN_TWIN_RUN_BUILD_V1_SELFTEST", "binary":{"path":run_binary,"sha256":binary_hash}}, sort_keys=True).encode() + b"\n"
     text = job.decode()
     required_directives = {
-        "partition": "h200,h100", "nodes": "1", "ntasks": "1", "gres": "gpu:2",
+        "partition": gpu["partitions"], "nodes": "1", "ntasks": "1", "gres": f"gpu:{gpu['count']}",
         "cpus-per-task": "32", "mem": "64G", "time": "04:00:00", "no-requeue": None,
     }
     for key, value in required_directives.items():
@@ -587,7 +684,7 @@ try:
         staged_files[rel] = (len(data), mode, (-1, -1), hashlib.sha256(data).hexdigest())
     input_manifest = manifest(staged_files)
     base_binary_hash = input_files["lumina_cuda"][3]
-    stage_identity = ("\n".join(("schema=CMFGEN_TWIN_MAP_STAGE_V2", f"base={base}", f"evidence={evidence}", f"run={run}", "registered_runs=1", "outer_iterations=2", f"base_binary_sha256={base_binary_hash}", f"run_binary_sha256={binary_hash}", f"run_build_identity_sha256={hashlib.sha256(build_identity).hexdigest()}", f"effective_exports_sha256={hashlib.sha256(exports).hexdigest()}", f"runner_sha256={hashlib.sha256(job).hexdigest()}", f"fixed_te_profile_file_sha256={hashlib.sha256(profile).hexdigest()}", "state=STAGED_NOT_RUN")) + "\n").encode()
+    stage_identity = ("\n".join(("schema=CMFGEN_TWIN_MAP_STAGE_V2", f"base={base}", f"evidence={evidence}", f"run={run}", "registered_runs=1", "outer_iterations=2", f"gpu_profile={gpu_profile}", f"expected_partitions={gpu['partitions']}", f"expected_gpu_count={gpu['count']}", f"expected_gpu_kinds={gpu['kinds']}", f"minimum_gpu_memory_mib={gpu['minimum_memory_mib']}", f"sealed_mgpu_devices={gpu['count']}", f"base_binary_sha256={base_binary_hash}", f"run_binary_sha256={binary_hash}", f"run_build_identity_sha256={hashlib.sha256(build_identity).hexdigest()}", f"effective_exports_sha256={hashlib.sha256(exports).hexdigest()}", f"runner_sha256={hashlib.sha256(job).hexdigest()}", f"fixed_te_profile_file_sha256={hashlib.sha256(profile).hexdigest()}", "state=STAGED_NOT_RUN")) + "\n").encode()
     card = json.loads(read_file(evidence_fd, "offline/resource_card.json"))
     estimate = card.get("dump_upper_bound_formula_bytes")
     future_fields = card.get("future_storage_upper_bounds_bytes")
@@ -671,7 +768,7 @@ PY
 }
 
 stager_selftest() {
-  local scratch base evidence dest before after exports staged bad free input_bytes job staged_job valid_expectations
+  local scratch base evidence dest before after exports staged bad cap_staged free input_bytes job staged_job valid_expectations
   local runner_template
   local positive=0 negative=0
   scratch="$(mktemp -d /tmp/cmfgen-twin-stage-selftest.XXXXXX)"
@@ -686,6 +783,7 @@ stager_selftest() {
   printf '%s\n' \
     "declare -x LUMINA_MODEL_DIR=\"$base/input/model\"" \
     'declare -x LUMINA_FIXED_TE_PROFILE="/sealed/old.txt"' \
+    'declare -x LUMINA_CMF_FINE_TOL="1e-8"' \
     'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"' > "$exports"
 
   require_safe_base "$base" || die "SELFTEST_POSITIVE_BASE_REJECTED"
@@ -695,7 +793,44 @@ stager_selftest() {
   printf 'STAGER_SELFTEST control=independent_roots observation=accepted\n'; positive=$((positive + 1))
   rewrite_exports "$exports" "$base" "$dest" "$staged"
   verify_export_delta "$exports" "$staged" "$base" "$dest" || die "SELFTEST_POSITIVE_DELTA_REJECTED"
+  grep -qx 'declare -x LUMINA_CMF_FINE_MGPU_DEVICES="1"' "$staged" || die "SELFTEST_H200X1_EXPORT_MISSING"
   printf 'STAGER_SELFTEST control=exports_delta observation=accepted\n'; positive=$((positive + 1))
+  local alt_staged="$scratch/staged-h100-a100x2.exports"
+  rewrite_exports "$exports" "$base" "$dest" "$alt_staged" '' h100-a100x2
+  verify_export_delta "$exports" "$alt_staged" "$base" "$dest" '' h100-a100x2 || die "SELFTEST_ALT_PROFILE_DELTA_REJECTED"
+  grep -qx 'declare -x LUMINA_CMF_FINE_MGPU_DEVICES="2"' "$alt_staged" || die "SELFTEST_ALT_PROFILE_EXPORT_MISSING"
+  printf 'STAGER_SELFTEST control=gpu_profile_exports profiles=h200x1,h100-a100x2 observation=accepted\n'; positive=$((positive + 1))
+  local selector_staged="$scratch/staged-bf-selector.exports"
+  rewrite_exports "$exports" "$base" "$dest" "$selector_staged" '' h200x1 LAST_COMMITTED_NLTE
+  verify_export_delta "$exports" "$selector_staged" "$base" "$dest" '' h200x1 LAST_COMMITTED_NLTE || die "SELFTEST_BF_SELECTOR_ROUNDTRIP_REJECTED"
+  grep -qx 'declare -x LUMINA_NLTE_BF_STAGE_WEIGHTS="LAST_COMMITTED_NLTE"' "$selector_staged" || die "SELFTEST_BF_SELECTOR_EXPORT_MISSING"
+  printf 'STAGER_SELFTEST control=NLTE_BF_STAGE_WEIGHTS observation=roundtrip_accepted\n'; positive=$((positive + 1))
+  if verify_export_delta "$exports" "$selector_staged" "$base" "$dest" '' h200x1; then die "SELFTEST_UNREGISTERED_BF_SELECTOR_ACCEPTED"; fi
+  printf 'STAGER_SELFTEST inject=UNREGISTERED_BF_SELECTOR observation=rejected\n'; negative=$((negative + 1))
+  sed 's/LAST_COMMITTED_NLTE/UNREGISTERED/' "$selector_staged" > "$bad"
+  if verify_export_delta "$exports" "$bad" "$base" "$dest" '' h200x1 LAST_COMMITTED_NLTE; then die "SELFTEST_BF_SELECTOR_MISMATCH_ACCEPTED"; fi
+  printf 'STAGER_SELFTEST inject=BF_SELECTOR_CONTRACT_EXPORT_MISMATCH observation=rejected\n'; negative=$((negative + 1))
+  printf '{"nlte_bf_stage_weights":"UNKNOWN"}\n' > "$scratch/invalid-selector.json"
+  if registered_nlte_bf_stage_weights "$scratch/invalid-selector.json" >/dev/null; then die "SELFTEST_UNKNOWN_BF_SELECTOR_ACCEPTED"; fi
+  if rewrite_exports "$exports" "$base" "$dest" "$scratch/invalid-selector.exports" '' h200x1 UNKNOWN >/dev/null 2>&1; then die "SELFTEST_UNKNOWN_BF_SELECTOR_REWRITE_ACCEPTED"; fi
+  [[ ! -e "$scratch/invalid-selector.exports" ]] || die "SELFTEST_UNKNOWN_BF_SELECTOR_WROTE_OUTPUT"
+  printf 'STAGER_SELFTEST inject=UNKNOWN_BF_SELECTOR observation=rejected_before_write\n'; negative=$((negative + 1))
+  cap_staged="$scratch/staged-cap128.exports"
+  rewrite_exports "$exports" "$base" "$dest" "$cap_staged" 128
+  verify_export_delta "$exports" "$cap_staged" "$base" "$dest" 128 || die "SELFTEST_REGISTERED_CAP128_REJECTED"
+  grep -qx 'declare -x LUMINA_CMF_FINE_ALI="128"' "$cap_staged" || die "SELFTEST_REGISTERED_CAP128_MISSING"
+  printf 'STAGER_SELFTEST control=REGISTERED_CAP128 observation=accepted\n'; positive=$((positive + 1))
+  if verify_export_delta "$exports" "$cap_staged" "$base" "$dest"; then die "SELFTEST_ACCEPTED_UNREGISTERED_CAP128"; fi
+  printf 'STAGER_SELFTEST inject=UNREGISTERED_CAP128 observation=rejected\n'; negative=$((negative + 1))
+  if verify_export_delta "$exports" "$cap_staged" "$base" "$dest" 64; then die "SELFTEST_ACCEPTED_CAP64_MISMATCH"; fi
+  printf 'STAGER_SELFTEST inject=REGISTERED_CAP64_ACTUAL128 observation=rejected\n'; negative=$((negative + 1))
+  sed 's/LUMINA_CMF_FINE_TOL="1e-8"/LUMINA_CMF_FINE_TOL="2e-8"/' "$cap_staged" > "$bad"
+  if verify_export_delta "$exports" "$bad" "$base" "$dest" 128; then die "SELFTEST_ACCEPTED_TOLERANCE_MUTATION"; fi
+  printf 'STAGER_SELFTEST inject=TOLERANCE_MUTATION observation=rejected\n'; negative=$((negative + 1))
+  printf '{"formal_iteration_cap":true}\n' > "$scratch/invalid-cap.json"
+  if registered_formal_iteration_cap "$scratch/invalid-cap.json" >/dev/null; then die "SELFTEST_ACCEPTED_INVALID_BOOL_CAP"; fi
+  if rewrite_exports "$exports" "$base" "$dest" "$scratch/invalid-cap.exports" 65 >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_INVALID_VALUE_CAP"; fi
+  printf 'STAGER_SELFTEST inject=INVALID_CAP_BOOL_OR_VALUE observation=rejected\n'; negative=$((negative + 1))
   manifest_tree "$base" "$before"; manifest_tree "$base" "$after"; cmp -s "$before" "$after" || die "SELFTEST_POSITIVE_SEAL_REJECTED"
   printf 'STAGER_SELFTEST control=base_manifest observation=unchanged\n'; positive=$((positive + 1))
   mkdir "$scratch/publish-source" "$scratch/publish-target"
@@ -810,10 +945,15 @@ stager_selftest() {
   printf 'STAGER_SELFTEST inject=TOP_BIN_SEMANTICS_SOURCE_MISSING observation=rejected reason=INPUT_PENDING\n'; negative=$((negative + 1))
 
   job="$scratch/job.slurm"; staged_job="$scratch/job.staged.slurm"
-  printf '%s\n' '#!/usr/bin/env bash' '#SBATCH --partition=a100' '#SBATCH --gres=gpu:1' '#SBATCH --cpus-per-task=64' '#SBATCH --time=2-00:00:00' '[[ "${#dproxy_visible_tokens[@]}" -eq 2 ]]' > "$job"
+  printf '%s\n' '#!/usr/bin/env bash' '#SBATCH --partition=a100' '#SBATCH --gres=gpu:1' '#SBATCH --cpus-per-task=64' '#SBATCH --time=2-00:00:00' 'readonly GPU_PROFILE=fixture' '[[ "${#dproxy_visible_tokens[@]}" -eq 2 ]]' > "$job"
   rewrite_job_resources "$job" "$staged_job"
-  grep -qx '#SBATCH --partition=h200,h100' "$staged_job" && grep -qx '#SBATCH --gres=gpu:2' "$staged_job" && grep -qx '#SBATCH --cpus-per-task=32' "$staged_job" && grep -qx '#SBATCH --time=04:00:00' "$staged_job" || die "SELFTEST_RUNNER_LIMITS_NOT_ENFORCED"
-  printf 'STAGER_SELFTEST control=runner_limits observation=enforced\n'; positive=$((positive + 1))
+  grep -qx '#SBATCH --partition=h200' "$staged_job" && grep -qx '#SBATCH --gres=gpu:1' "$staged_job" && grep -qx 'readonly GPU_PROFILE=h200x1' "$staged_job" && grep -qx '#SBATCH --cpus-per-task=32' "$staged_job" && grep -qx '#SBATCH --time=04:00:00' "$staged_job" || die "SELFTEST_H200_RUNNER_LIMITS_NOT_ENFORCED"
+  local alt_job="$scratch/job.alt.staged.slurm"
+  rewrite_job_resources "$job" "$alt_job" h100-a100x2
+  grep -qx '#SBATCH --partition=h100,a100' "$alt_job" && grep -qx '#SBATCH --gres=gpu:2' "$alt_job" && grep -qx 'readonly GPU_PROFILE=h100-a100x2' "$alt_job" || die "SELFTEST_ALT_RUNNER_LIMITS_NOT_ENFORCED"
+  if rewrite_job_resources "$job" "$scratch/must-not-exist-job" invalid-profile >/dev/null 2>&1; then die "SELFTEST_INVALID_GPU_PROFILE_ACCEPTED"; fi
+  [[ ! -e "$scratch/must-not-exist-job" ]] || die "SELFTEST_INVALID_GPU_PROFILE_WROTE_OUTPUT"
+  printf 'STAGER_SELFTEST control=runner_limits profiles=h200x1,h100-a100x2 observation=enforced\n'; positive=$((positive + 1)); negative=$((negative + 1))
   mkdir "$scratch/tool-bin"
   printf '#!/usr/bin/env bash\nprintf "ELF file: fixture.sm_90.cubin\\n"\n' > "$scratch/tool-bin/cuobjdump"; chmod +x "$scratch/tool-bin/cuobjdump"
   PATH="$scratch/tool-bin:$PATH" binary_sm90_check "$base/input/data" >/dev/null || die "SELFTEST_SM90_BINARY_REJECTED"
@@ -827,19 +967,40 @@ stager_selftest() {
   printf 'payload\n' > "$tx_base/input/data"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$tx_base/input/lumina_cuda"; chmod +x "$tx_base/input/lumina_cuda"
   sha256sum "$tx_base/input/lumina_cuda" | awk '{print $1}' > "$tx_base/input/binary.sha256"
-  printf '%s\n' "declare -x LUMINA_MODEL_DIR=\"$tx_base/input/model\"" 'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"' > "$tx_base/input/resolved_lumina.exports"
+  printf '%s\n' "declare -x LUMINA_MODEL_DIR=\"$tx_base/input/model\"" 'declare -x LUMINA_FIXED_TE_PROFILE="/sealed/old.txt"' 'declare -x LUMINA_RADEQ_DIAG_TE_K="10020"' > "$tx_base/input/resolved_lumina.exports"
   printf '%s\n' '#!/usr/bin/env bash' '#SBATCH --partition=a100' '#SBATCH --gres=gpu:1' '#SBATCH --cpus-per-task=64' '#SBATCH --time=2-00:00:00' > "$tx_base/input/job.slurm"
   printf '0 18900\n' > "$tx_evidence/inputs/fixed_te_profile.txt"
+  printf '{"formal_iteration_cap":128,"nlte_bf_stage_weights":"LAST_COMMITTED_NLTE"}\n' > "$tx_evidence/offline/expectations.json"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":0,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":0}}\n' > "$tx_evidence/offline/resource_card.json"
   stage_transaction "$tx_base" "$tx_evidence" "$tx_run" "$runner_template" || die "SELFTEST_NORMAL_STAGE_REJECTED"
   [[ -f "$tx_run/input/fixed_te_profile.txt" && "$(cat "$tx_run/input/fixed_te_profile.txt")" == '0 18900' ]] || die "SELFTEST_NORMAL_NEW_PROFILE_MISSING"
   [[ -x "$tx_run/input/lumina_cuda" ]] || die "SELFTEST_STAGED_BINARY_NOT_EXECUTABLE"
+  grep -qx 'declare -x LUMINA_CMF_FINE_ALI="128"' "$tx_run/input/resolved_lumina.exports" || die "SELFTEST_TRANSACTION_CAP128_MISSING"
+  grep -qx 'declare -x LUMINA_NLTE_BF_STAGE_WEIGHTS="LAST_COMMITTED_NLTE"' "$tx_run/input/resolved_lumina.exports" || die "SELFTEST_TRANSACTION_BF_SELECTOR_MISSING"
+  grep -qx 'declare -x LUMINA_CMF_FINE_MGPU_DEVICES="1"' "$tx_run/input/resolved_lumina.exports" || die "SELFTEST_TRANSACTION_H200_MGPU_MISSING"
+  grep -qx 'gpu_profile=h200x1' "$tx_run/STAGE_IDENTITY.txt" && grep -qx 'expected_gpu_count=1' "$tx_run/STAGE_IDENTITY.txt" || die "SELFTEST_TRANSACTION_GPU_IDENTITY_MISSING"
+  grep -qx '#SBATCH --partition=h200' "$tx_run/input/job.slurm" && grep -qx '#SBATCH --gres=gpu:1' "$tx_run/input/job.slurm" || die "SELFTEST_TRANSACTION_H200_JOB_MISMATCH"
   "$tx_run/input/lumina_cuda" || die "SELFTEST_STAGED_BINARY_EXECUTION_FAILED"
   printf 'STAGER_SELFTEST control=NORMAL_STAGING_NEW_PROFILE observation=accepted destination_was_absent=1\n'; positive=$((positive + 1))
+
+  local render_evidence="$scratch/render-evidence" render_run="$scratch/render-run" render_output="$scratch/render-output"
+  mkdir -p "$render_evidence"/{inputs,offline,run,result}
+  printf '0 18900\n' > "$render_evidence/inputs/fixed_te_profile.txt"
+  printf '{"formal_iteration_cap":128,"nlte_bf_stage_weights":"LAST_COMMITTED_NLTE"}\n' > "$render_evidence/offline/expectations.json"
+  render_artifacts "$tx_base" "$render_evidence" "$render_run" "$render_output" >/dev/null || die "SELFTEST_RENDER_CAP128_REJECTED"
+  grep -qx 'declare -x LUMINA_CMF_FINE_ALI="128"' "$render_output/resolved_lumina.exports" || die "SELFTEST_RENDER_CAP128_MISSING"
+  grep -qx 'declare -x LUMINA_NLTE_BF_STAGE_WEIGHTS="LAST_COMMITTED_NLTE"' "$render_output/resolved_lumina.exports" || die "SELFTEST_RENDER_BF_SELECTOR_MISSING"
+  printf 'STAGER_SELFTEST control=RENDER_REGISTERED_CAP128 observation=accepted\n'; positive=$((positive + 1))
+  local render_alt_run="$scratch/render-alt-run" render_alt_output="$scratch/render-alt-output"
+  render_artifacts "$tx_base" "$render_evidence" "$render_alt_run" "$render_alt_output" h100-a100x2 >/dev/null || die "SELFTEST_RENDER_ALT_PROFILE_REJECTED"
+  grep -qx '#SBATCH --partition=h100,a100' "$render_alt_output/job.slurm" && grep -qx '#SBATCH --gres=gpu:2' "$render_alt_output/job.slurm" && grep -qx 'readonly GPU_PROFILE=h100-a100x2' "$render_alt_output/job.slurm" || die "SELFTEST_RENDER_ALT_JOB_MISMATCH"
+  grep -qx 'declare -x LUMINA_CMF_FINE_MGPU_DEVICES="2"' "$render_alt_output/resolved_lumina.exports" || die "SELFTEST_RENDER_ALT_EXPORT_MISMATCH"
+  printf 'STAGER_SELFTEST control=RENDER_GPU_PROFILE profile=h100-a100x2 observation=accepted\n'; positive=$((positive + 1))
 
   local cap_evidence="$scratch/cap-evidence" cap_run="$scratch/cap-run"
   mkdir -p "$cap_evidence"/{inputs,offline,run,result}
   printf '0 18900\n' > "$cap_evidence/inputs/fixed_te_profile.txt"
+  printf '{}\n' > "$cap_evidence/offline/expectations.json"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":17179869184,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":0}}\n' > "$cap_evidence/offline/resource_card.json"
   if stage_transaction "$tx_base" "$cap_evidence" "$cap_run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_PREWRITE_RESERVATION_EXCESS"; fi
   [[ ! -e "$cap_run" ]] || die "SELFTEST_PREWRITE_RESERVATION_CREATED_RUN"
@@ -847,6 +1008,7 @@ stager_selftest() {
   local future_evidence="$scratch/future-evidence" future_run="$scratch/future-run"
   mkdir -p "$future_evidence"/{inputs,offline,run,result}
   printf '0 18900\n' > "$future_evidence/inputs/fixed_te_profile.txt"
+  printf '{}\n' > "$future_evidence/offline/expectations.json"
   printf '{"pending":[],"dump_upper_bound_formula_bytes":0,"future_storage_upper_bounds_bytes":{"run_logs":0,"result_and_summary":0,"reproduction_and_audit":17179869184}}\n' > "$future_evidence/offline/resource_card.json"
   if stage_transaction "$tx_base" "$future_evidence" "$future_run" "$runner_template" >/dev/null 2>&1; then die "SELFTEST_ACCEPTED_FUTURE_AUDIT_RESERVATION_EXCESS"; fi
   [[ ! -e "$future_run" ]] || die "SELFTEST_FUTURE_AUDIT_RESERVATION_CREATED_RUN"
@@ -868,30 +1030,40 @@ stager_selftest() {
 }
 
 render_artifacts() {
-  local base="$1" evidence="$2" run="$3" output="$4" runner_template staged_exports
+  local base="$1" evidence="$2" run="$3" output="$4" gpu_profile="${5:-$DEFAULT_GPU_PROFILE}" runner_template staged_exports formal_iteration_cap nlte_bf_stage_weights
+  validate_gpu_profile "$gpu_profile" || die "GPU_PROFILE_INVALID value=$gpu_profile"
   runner_template="$(dirname "$(realpath -e -- "$0")")/run_cmfgen_twin_map.sh"
   require_safe_base "$base" || die "BASE_NOT_SAFE_OR_SEALED"
   canonical_no_symlink "$evidence" existing && [[ -d "$evidence" ]] || die "EVIDENCE_ROOT_UNSAFE"
   require_new_root "$run" "$base" "$evidence" || die "RUN_NOT_NEW_INDEPENDENT_ROOT"
   canonical_no_symlink "$output" new || die "RENDER_OUTPUT_NOT_NEW_SAFE"
   [[ -f "$evidence/inputs/fixed_te_profile.txt" && ! -L "$evidence/inputs/fixed_te_profile.txt" ]] || die "FIXED_TE_PROFILE_UNSAFE"
+  [[ -f "$evidence/offline/expectations.json" && ! -L "$evidence/offline/expectations.json" ]] || die "EXPECTATIONS_UNSAFE"
   [[ -f "$runner_template" && ! -L "$runner_template" ]] || die "DEDICATED_RUNNER_UNSAFE"
+  formal_iteration_cap="$(registered_formal_iteration_cap "$evidence/offline/expectations.json")" || die "FORMAL_ITERATION_CAP_INVALID"
+  nlte_bf_stage_weights="$(registered_nlte_bf_stage_weights "$evidence/offline/expectations.json")" || die "NLTE_BF_STAGE_WEIGHTS_INVALID"
   mkdir -- "$output"
   staged_exports="$output/resolved_lumina.exports"
-  rewrite_exports "$base/input/resolved_lumina.exports" "$base" "$run" "$staged_exports"
-  cp -- "$runner_template" "$output/job.slurm"
+  rewrite_exports "$base/input/resolved_lumina.exports" "$base" "$run" "$staged_exports" "$formal_iteration_cap" "$gpu_profile" "$nlte_bf_stage_weights"
+  rewrite_job_resources "$runner_template" "$output/job.slurm" "$gpu_profile"
   cp -- "$evidence/inputs/fixed_te_profile.txt" "$output/fixed_te_profile.txt"
-  verify_export_delta "$base/input/resolved_lumina.exports" "$staged_exports" "$base" "$run" || die "RENDERED_EXPORT_DELTA_INVALID"
+  verify_export_delta "$base/input/resolved_lumina.exports" "$staged_exports" "$base" "$run" "$formal_iteration_cap" "$gpu_profile" "$nlte_bf_stage_weights" || die "RENDERED_EXPORT_DELTA_INVALID"
   printf 'CMFGEN_TWIN_MAP_RENDER_COMPLETE job=%s exports=%s profile=%s run=%s\n' \
     "$output/job.slurm" "$staged_exports" "$output/fixed_te_profile.txt" "$run"
 }
 
+gpu_profile="$DEFAULT_GPU_PROFILE"
+if [[ $# -ge 1 && "$1" == --gpu-profile ]]; then
+  [[ $# -ge 2 ]] || die "GPU_PROFILE_VALUE_MISSING"
+  gpu_profile="$2"; shift 2
+  validate_gpu_profile "$gpu_profile" || die "GPU_PROFILE_INVALID value=$gpu_profile"
+fi
 if [[ $# -eq 1 && "$1" == --selftest ]]; then
   stager_selftest
   exit 0
 fi
 if [[ $# -eq 5 && "$1" == --render ]]; then
-  render_artifacts "$2" "$3" "$4" "$5"
+  render_artifacts "$2" "$3" "$4" "$5" "$gpu_profile"
   exit 0
 fi
 
@@ -937,4 +1109,4 @@ actual_exports="$(sha256sum "$base/input/resolved_lumina.exports" | awk '{print 
 
 runner_template="$(dirname "$(realpath -e -- "$0")")/run_cmfgen_twin_map.sh"
 [[ -f "$runner_template" && ! -L "$runner_template" ]] || die "DEDICATED_RUNNER_UNSAFE"
-stage_transaction "$base" "$evidence" "$run" "$runner_template" "$run_binary" "$run_build_identity" || die "STAGE_TRANSACTION_FAILED"
+stage_transaction "$base" "$evidence" "$run" "$runner_template" "$run_binary" "$run_build_identity" "$gpu_profile" || die "STAGE_TRANSACTION_FAILED"
