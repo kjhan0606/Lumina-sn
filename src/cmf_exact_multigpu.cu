@@ -1802,8 +1802,8 @@ static CMFMultiGPUStatus solve_impl(
     for (size_t idx = 0; idx < cells; ++idx) {
         double ct = chi_tot[idx], ce = chi_es[idx];
         double sf = S_fixed[idx], j = J[idx];
-        if (!(ct >= 0.0) || !(ce >= 0.0) ||
-            (ct == 0.0 && ce != 0.0) || !(sf >= 0.0) || !(j >= 0.0) ||
+        if (!cmf_exact_extinction_valid(ct,ce,geometry.a_lam) ||
+            !cmf_exact_material_source_valid(ct,sf) || !(j >= 0.0) ||
             !std::isfinite(ct) || !std::isfinite(ce) ||
             !std::isfinite(sf) || !std::isfinite(j)) {
             local.status = CMF_MGPU_NONFINITE;
@@ -2262,8 +2262,8 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
         double ce = chi_es[idx];
         double sf = S_fixed[idx];
         double j = input_J[idx];
-        if (!(ct >= 0.0) || !(ce >= 0.0) ||
-            (ct == 0.0 && ce != 0.0) || !(sf >= 0.0) || !(j >= 0.0) ||
+        if (!cmf_exact_extinction_valid(ct,ce,geometry.a_lam) ||
+            !cmf_exact_material_source_valid(ct,sf) || !(j >= 0.0) ||
             !std::isfinite(ct) || !std::isfinite(ce) ||
             !std::isfinite(sf) || !std::isfinite(j)) {
             local.status = CMF_MGPU_NONFINITE;
@@ -2433,7 +2433,7 @@ static CMFMultiGPUStatus apply_positive_bounds_impl(
             } else {
                 double scattering, fixed;
                 if (!host_positive_multiply_bound(
-                        fixed_weight, S_fixed[idx], rounding, &fixed) ||
+                        std::fabs(fixed_weight), std::fabs(S_fixed[idx]), rounding, &fixed) ||
                     !host_positive_multiply_bound(
                         ratio, input_J[idx], rounding, &scattering) ||
                     !host_positive_add_bound(
@@ -2752,8 +2752,7 @@ struct PersistentBoundContext {
             return allocation_report.status;
         }
         for (size_t idx = 0; idx < cell_count; ++idx) {
-            if (!(ct[idx] >= 0.0) || !(ce[idx] >= 0.0) ||
-                (ct[idx] == 0.0 && ce[idx] != 0.0) ||
+            if (!cmf_exact_extinction_valid(ct[idx],ce[idx],geometry.a_lam) ||
                 !std::isfinite(ct[idx]) || !std::isfinite(ce[idx])) {
                 allocation_report.status = CMF_MGPU_NONFINITE;
                 return allocation_report.status;
@@ -2967,7 +2966,7 @@ struct PersistentBoundContext {
             return CMF_MGPU_INVALID_INPUT;
         double phase_start = monotonic_seconds();
         for (size_t idx = 0; idx < cells; ++idx) {
-            if (!(fixed[idx] >= 0.0) || !(input[idx] >= 0.0) ||
+            if (!cmf_exact_material_source_valid(chi_tot[idx],fixed[idx]) || !(input[idx] >= 0.0) ||
                 !std::isfinite(fixed[idx]) || !std::isfinite(input[idx]))
                 return CMF_MGPU_NONFINITE;
             double extinction = chi_tot[idx] + 3.0 * geometry.a_lam;
@@ -2979,7 +2978,7 @@ struct PersistentBoundContext {
             } else {
                 double scattering, material;
                 if (!host_positive_multiply_bound(
-                        fixed_weight, fixed[idx], rounding, &material) ||
+                        std::fabs(fixed_weight), std::fabs(fixed[idx]), rounding, &material) ||
                     !host_positive_multiply_bound(
                         ratio, input[idx], rounding, &scattering) ||
                     !host_positive_add_bound(
@@ -3344,6 +3343,21 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     local.envelope_residual_seconds = monotonic_seconds() - phase_start;
     local.componentwise_residual_upper_max = max_residual;
     local.max_scattering_ratio = max_scattering_ratio;
+    double operator_norm=max_scattering_ratio;
+    if (!(operator_norm<1.0)) {
+        std::fill(candidate.begin(),candidate.end(),1.0);
+        status=persistent.apply_round(zero_fixed.data(),candidate.data(),true,1,upper.data());
+        if(status!=CMF_MGPU_OK){local.status=status;if(report)*report=local;return status;}
+        operator_norm=0;
+        for(double value:upper){
+            if(!std::isfinite(value)||value<0){
+                local.status=CMF_MGPU_ERROR_ENVELOPE_FAILED;
+                if(report)*report=local;return local.status;
+            }
+            operator_norm=std::max(operator_norm,value);
+        }
+    }
+    local.scattering_operator_norm_upper=operator_norm;
     if (max_scattering_ratio < 1.0) {
         double factor = max_scattering_ratio == 0.0 ? 0.0
             : max_scattering_ratio / (1.0 - max_scattering_ratio);
@@ -3352,8 +3366,8 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     } else {
         local.fixed_point_absolute_error_bound = INFINITY;
     }
-    if (!(max_scattering_ratio >= 0.0) ||
-        !(max_scattering_ratio < 1.0) || !std::isfinite(max_residual)) {
+    if (!(operator_norm >= 0.0) ||
+        !(operator_norm < 1.0) || !std::isfinite(max_residual)) {
         local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
         if (report) *report = local;
         return local.status;
@@ -3362,7 +3376,7 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     double seed = 0.0;
     if (max_residual != 0.0) {
         double denominator = std::nextafter(
-            1.0 - max_scattering_ratio, 0.0);
+            1.0 - operator_norm, 0.0);
         if (!(denominator > 0.0)) {
             local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
             if (report) *report = local;
@@ -3437,6 +3451,8 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         envelope_report.iterations_completed;
     local.componentwise_error_upper_min = bound_min;
     local.componentwise_error_upper_max = bound_max;
+    if (!(max_scattering_ratio<1.0))
+        local.fixed_point_absolute_error_bound=bound_max;
     local.persistent_context_initializations =
         persistent.allocation_report.persistent_context_initializations;
     local.persistent_bound_applications = persistent.bound_applications;

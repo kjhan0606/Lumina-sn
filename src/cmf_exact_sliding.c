@@ -950,7 +950,8 @@ CMFExactStatus cmf_exact_formal_moments(
     ExactSweepStatus sweep;
     for(size_t i=0;i<cells;i++){
         double ct=chi_tot[i],ce=chi_es[i],sf=S_fixed[i],value=input_J[i];
-        if(!(ct>=0) || !(ce>=0) || (ct==0 && ce!=0) || !(sf>=0) || !(value>=0) ||
+        if(!cmf_exact_extinction_valid(ct,ce,p.a_lam) ||
+           !cmf_exact_material_source_valid(ct,sf) || !(value>=0) ||
            !isfinite(ct) || !isfinite(ce) || !isfinite(sf) || !isfinite(value)){
             status=CMF_EXACT_INVALID_INPUT;goto moment_cleanup;
         }
@@ -1058,8 +1059,8 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
     for (size_t idx = 0; idx < cells; ++idx) {
         double ct = chi_tot[idx], ce = chi_es[idx];
         double sf = S_fixed[idx], j = input_J[idx];
-        if (!(ct >= 0.0) || !(ce >= 0.0) ||
-            (ct == 0.0 && ce != 0.0) || !(sf >= 0.0) || !(j >= 0.0) ||
+        if (!cmf_exact_extinction_valid(ct,ce,p.a_lam) ||
+            !cmf_exact_material_source_valid(ct,sf) || !(j >= 0.0) ||
             !isfinite(ct) || !isfinite(ce) ||
             !isfinite(sf) || !isfinite(j)) {
             invalid = 1;
@@ -1089,7 +1090,7 @@ CMFExactStatus cmf_exact_characteristic_apply_positive_bounds(
                 source_cell[idx] = (1.0 - t1[idx]) * source[idx];
             } else {
                 double scattering, fixed;
-                if (positive_multiply_bound(fixed_weight, S_fixed[idx], rounding,
+                if (positive_multiply_bound(fabs(fixed_weight), fabs(S_fixed[idx]), rounding,
                                             &fixed) != 0 ||
                     positive_multiply_bound(ratio, input_J[idx], rounding,
                                             &scattering) != 0 ||
@@ -1221,7 +1222,7 @@ static int exact_componentwise_error_envelope(
             double fixed_weight = chi_tot[idx] / extinction;
             double ratio = chi_es[idx] / extinction;
             double scattering, fixed;
-            if (positive_multiply_bound(fixed_weight, S_fixed[idx], rounding,
+            if (positive_multiply_bound(fabs(fixed_weight), fabs(S_fixed[idx]), rounding,
                                         &fixed) != 0 ||
                 positive_multiply_bound(ratio, J[idx], rounding,
                                         &scattering) != 0 ||
@@ -1253,14 +1254,32 @@ static int exact_componentwise_error_envelope(
         componentwise_error_upper[idx] = residual;
         if (residual > max_residual) max_residual = residual;
     }
-    if (!(max_scattering_ratio >= 0.0) ||
-        !(max_scattering_ratio < 1.0) || !isfinite(max_residual)) return -1;
+    ExactEnvelopeOperator operator_context = {
+        p, dt1, t1, chi_tot, chi_es, source, source_cell,
+        inner_physical, in, out, cells
+    };
+    /* 지역 ce/(chi+3a)는 1을 넘더라도 유한 광로의 K는 수축할 수 있다.
+     * 필요할 때만 같은 형식해의 K*1을 상향 반올림으로 계산한다.
+     * source는 콜백이 먼저 모두 소비하므로 입력 scratch로 재사용 가능. */
+    double operator_norm=max_scattering_ratio;
+    if (!(operator_norm<1.0)) {
+        for(size_t i=0;i<cells;i++)work[i]=1.0;
+        if(exact_apply_scattering_upper(work,work,cells,&operator_context)!=0)return -1;
+        operator_norm=0;
+        for(size_t i=0;i<cells;i++){
+            if(!isfinite(work[i])||work[i]<0)return -1;
+            if(work[i]>operator_norm)operator_norm=work[i];
+        }
+    }
+    if(report)report->scattering_operator_norm_upper=operator_norm;
+    if (!(operator_norm >= 0.0) || !(operator_norm < 1.0) ||
+        !isfinite(max_residual)) return -1;
 
     double seed;
     if (max_residual == 0.0) {
         seed = 0.0;
     } else {
-        double denominator = 1.0 - max_scattering_ratio;
+        double denominator = 1.0 - operator_norm;
         if (!(denominator > 0.0)) return -1;
         denominator = nextafter(denominator, 0.0);
         if (!(denominator > 0.0)) return -1;
@@ -1268,10 +1287,6 @@ static int exact_componentwise_error_envelope(
         if (!isfinite(seed)) return -1;
         seed = nextafter(seed, INFINITY);
     }
-    ExactEnvelopeOperator operator_context = {
-        p, dt1, t1, chi_tot, chi_es, source, source_cell,
-        inner_physical, in, out, cells
-    };
     CMFEnvelopeReport envelope_report;
     CMFEnvelopeStatus envelope_status = CMF_ENVELOPE_INVALID_INPUT;
     size_t seed_attempts = 0;
@@ -1299,6 +1314,8 @@ static int exact_componentwise_error_envelope(
         if (work[idx] > bound_max) bound_max = work[idx];
     }
     if (report) {
+        if (!(max_scattering_ratio<1.0))
+            report->fixed_point_absolute_error_bound=bound_max;
         report->componentwise_error_envelope_verified = 1;
         report->componentwise_error_seed_attempts = seed_attempts + 1U;
         report->componentwise_error_refinement_iterations =
@@ -1334,6 +1351,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     local.componentwise_error_upper_min = INFINITY;
     local.componentwise_error_upper_max = INFINITY;
     local.first_negative_recurrence = NAN;
+    local.scattering_operator_norm_upper = INFINITY;
     if (report) *report = local;
     if (!J || iteration_cap < 2 || !(tolerance > 0.0) ||
         !isfinite(tolerance) || !(T_inner > 0.0) || !isfinite(T_inner) ||
@@ -1394,12 +1412,10 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
 #endif
     for (size_t idx = 0; idx < cells; ++idx) {
         double ct = chi_tot[idx], ce = chi_es[idx], sf = S_fixed[idx], j = J[idx];
-        /* ce may exceed ct when a mild, explicitly signed line opacity
-         * (-0.5 <= tau < 0) subtracts from otherwise positive extinction.
-         * That is not invalid by itself; the actual extinction must stay
-         * nonnegative and the iteration must still converge. */
-        if (!(ct >= 0.0) || !(ce >= 0.0) || (ct == 0.0 && ce != 0.0) ||
-            !(sf >= 0.0) || !(j >= 0.0) || !isfinite(ct) || !isfinite(ce) ||
+        /* 판단 대상은 signed 물질 chi가 아니라 실제 chi+3a와 방출률이다. */
+        if (!cmf_exact_extinction_valid(ct,ce,p.a_lam) ||
+            !cmf_exact_material_source_valid(ct,sf) ||
+            !(j >= 0.0) || !isfinite(ct) || !isfinite(ce) ||
             !isfinite(sf) || !isfinite(j)) {
             invalid = 1;
             dt1[idx] = t1[idx] = 0.0;

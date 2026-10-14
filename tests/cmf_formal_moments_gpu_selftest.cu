@@ -20,7 +20,8 @@ struct Moments {
 static void run_case(int kind)
 {
     const int ns=5,nb=256;const size_t cells=(size_t)ns*nb;
-    const double dlog=kind==2?1e-4:0.02,time=kind==2?1e5:1e30;
+    const double dlog=kind==2?1e-4:0.02;
+    const double time=kind==2?1e5:(kind==4?1683072:1e30);
     std::vector<double> ri(ns),ro(ns),nu(nb),ct(cells),ce(cells),sf(cells),input(cells);
     for(int s=0;s<ns;++s){ri[s]=(s+(kind==3?0:1))*1e13;ro[s]=ri[s]+1e13;}
     for(int b=0;b<nb;++b)nu[b]=1e14*std::exp((b+.5)*dlog);
@@ -31,6 +32,13 @@ static void run_case(int kind)
             ct[i]=(1+.4*std::sin(b*.13+s))*(s+1)*1e-13;
             ce[i]=.75*ct[i];sf[i]=1e-6*(1+.6*std::cos(b*.07+s));
             input[i]=1e-6*(1+.3*std::sin(b*.2));
+        }
+        if(kind==4){
+            /* 423030 첫 실패 셀의 실제 계수. 기하만 작은 합성 외피다. */
+            ct[i]=-3.6516509489148456e-17;
+            ce[i]=7.2222128090546361e-16;
+            sf[i]=1.1096205597289692e-20/ct[i];
+            input[i]=1e-6;
         }
     }
     Moments cpu(cells,nb),gpu(cells,nb),other(cells,nb);
@@ -72,6 +80,45 @@ static void run_case(int kind)
     CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
         10000,1,ct.data(),ce.data(),sf.data(),input.data(),&other.m,&schedule,1,nullptr)==CMF_MGPU_OK);
     CHECK(std::memcmp(other.data.data(),gpu.data.data(),gpu.data.size()*sizeof(double))==0);
+    if(kind==4){
+        auto jc=input,jg=input,jref=input;
+        std::vector<double> ec(cells),eg(cells);
+        CMFExactReport cr;CMFMultiGPUReport gr;
+        CHECK(cmf_exact_characteristic_solve_with_envelope(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
+            10000,1,ct.data(),ce.data(),sf.data(),jc.data(),ec.data(),8,128,1e-11,
+            CMF_EXACT_MODE_POSITIVE_SLIDING,&cr)==CMF_EXACT_OK);
+        CHECK(cmf_exact_multigpu_positive_solve_envelope_epoch_partitioned(ns,nb,dlog,nu.data(),
+            ri.data(),ro.data(),time,10000,1,ct.data(),ce.data(),sf.data(),jg.data(),eg.data(),8,
+            CMF_MGPU_PARTITION_WEIGHTED_SEGMENTS,&schedule,1,128,1e-11,&gr)==CMF_MGPU_OK);
+        CHECK(cr.max_scattering_ratio>1 && gr.max_scattering_ratio>1);
+        CHECK(cr.scattering_operator_norm_upper<1 && gr.scattering_operator_norm_upper<1);
+        CHECK(cr.componentwise_error_envelope_verified && gr.componentwise_error_envelope_verified);
+        CHECK(std::isfinite(cr.fixed_point_absolute_error_bound));
+        CHECK(std::isfinite(gr.fixed_point_absolute_error_bound));
+        CHECK(cmf_exact_characteristic_solve(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
+            10000,1,ct.data(),ce.data(),sf.data(),jref.data(),256,1e-14,
+            CMF_EXACT_MODE_DIRECT_REFERENCE,nullptr)==CMF_EXACT_OK);
+        double max_error_fraction=0;
+        for(size_t i=0;i<cells;++i){
+            double error=std::fabs(jg[i]-jref[i]);
+            CHECK(std::fabs(jc[i]-jg[i])<=ec[i]+eg[i]);
+            CHECK(error<=eg[i]+32*2.2204460492503131e-16*std::fabs(jref[i]));
+            if(eg[i]>0)max_error_fraction=std::max(max_error_fraction,error/eg[i]);
+        }
+        std::printf("SIGNED_EXTINCTION_PASS local_ratio=%.17g norm_cpu=%.17g norm_gpu=%.17g "
+            "iterations=%d/%d direct_error_over_bound=%.9g floor=0 clamp=0\n",
+            gr.max_scattering_ratio,cr.scattering_operator_norm_upper,gr.scattering_operator_norm_upper,
+            cr.iterations_used,gr.iterations_used,max_error_fraction);
+        auto saved=gpu.data;
+        sf[0]=-sf[0]; /* 실제 음의 방출률은 허용하지 않는다. */
+        CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
+            10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
+        CHECK(std::memcmp(saved.data(),gpu.data.data(),saved.size()*sizeof(double))==0);
+        sf[0]=-sf[0];ct[0]=-4/(2.99792458e10*time);
+        CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
+            10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
+        CHECK(std::memcmp(saved.data(),gpu.data.data(),saved.size()*sizeof(double))==0);
+    }
     auto saved=gpu.data;input[cells-1]=NAN;
     CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
         10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,nullptr)!=CMF_MGPU_OK);
@@ -82,7 +129,7 @@ static void run_case(int kind)
 
 int main(void)
 {
-    for(int kind=0;kind<4;++kind)run_case(kind);
+    for(int kind=0;kind<5;++kind)run_case(kind);
     std::printf("CMF_FORMAL_MOMENTS_GPU_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
     return failures?1:0;
 }

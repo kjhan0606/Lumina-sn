@@ -3,6 +3,23 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
+#include <float.h>
+
+/* 음의 물질 소광은 곧 음의 광도가 아니다. eta=chi*S>=0이며 팽창을
+ * 포함한 감쇠가 양수인 범위를 지원한다. 이 API는 chi=0,eta>0 또는
+ * chi+3/(ct)<=0인 일반 증폭 셀의 표현/해법을 제공하지 않는다. */
+static inline int cmf_exact_extinction_valid(double ct, double ce, double a)
+{
+    double effective = ct + 3.0*a;
+    return fabs(ct)<=DBL_MAX && ce>=0 && ce<=DBL_MAX &&
+           a>0 && a<=DBL_MAX && effective>0 && effective<=DBL_MAX;
+}
+static inline int cmf_exact_material_source_valid(double ct, double sf)
+{
+    return fabs(ct)<=DBL_MAX && fabs(sf)<=DBL_MAX &&
+           (ct<0 ? sf<=0 : sf>=0);
+}
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +55,8 @@ typedef struct {
      * has row sum <=1, so max(chi_es/(chi_tot+3/(ct))) bounds the fixed-
      * point iteration norm.  A finite error bound is published only below 1. */
     double max_scattering_ratio;
+    /* 실제 양의 산란 연산자의 ||K||_infinity 상계. 지역 계수비와 구별. */
+    double scattering_operator_norm_upper;
     double fixed_point_absolute_error_bound;
     double max_characteristic_drift_bins;
     uint64_t negative_recurrence_count;

@@ -7858,6 +7858,7 @@ static int cmf_fine_exact_owner_solve(
     result->exact.final_max_relative_change = INFINITY;
     result->exact.final_max_absolute_change = INFINITY;
     result->exact.max_scattering_ratio = INFINITY;
+    result->exact.scattering_operator_norm_upper = INFINITY;
     result->exact.fixed_point_absolute_error_bound = INFINITY;
     result->exact.componentwise_residual_upper_max = INFINITY;
     result->exact.componentwise_error_upper_min = INFINITY;
@@ -7952,6 +7953,7 @@ static int cmf_fine_exact_owner_solve(
     result->exact.final_max_absolute_change =
         report.final_max_absolute_change;
     result->exact.max_scattering_ratio = report.max_scattering_ratio;
+    result->exact.scattering_operator_norm_upper = report.scattering_operator_norm_upper;
     result->exact.fixed_point_absolute_error_bound =
         report.fixed_point_absolute_error_bound;
     result->exact.max_characteristic_drift_bins =
@@ -8022,8 +8024,8 @@ int cmf_exact_owner_selftest(void)
         gpu_result.exact.status != CMF_EXACT_OK ||
         !gpu_result.exact.componentwise_error_envelope_verified ||
         gpu_result.exact.componentwise_error_refinement_iterations != 8U ||
-        !(gpu_result.exact.max_scattering_ratio >= 0.0) ||
-        !(gpu_result.exact.max_scattering_ratio < 1.0) ||
+        !(gpu_result.exact.scattering_operator_norm_upper >= 0.0) ||
+        !(gpu_result.exact.scattering_operator_norm_upper < 1.0) ||
         !isfinite(gpu_result.exact.fixed_point_absolute_error_bound)) {
         fprintf(stderr,
                 "CMF_EXACT_OWNER_SELFTEST_FAIL owner cpu_status=%s "
@@ -9240,7 +9242,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 numerator = w5_cont_selftest_off_inject(idx, (size_t)(NS / 2) * NF +
                                                    (size_t)(NF / 2), numerator);
 #endif
-            if (isfinite(ct) && isfinite(numerator) && ct > 0.0 &&
+            if (isfinite(ct) && isfinite(numerator) && ct != 0.0 &&
                 numerator >= 0.0)
                 fs.S_fixed[idx] = numerator / ct;
             else if (ct == 0.0 && numerator == 0.0)
@@ -9264,7 +9266,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                                             fs.nu[bad_bin]) +
                         eta[first_assembly_invalid];
         fprintf(stderr,
-                "[cmf_fine][BLOCKED] reason=NEGATIVE_OR_NONFINITE_TOTAL_SOURCE "
+                "[cmf_fine][BLOCKED] reason=NONFINITE_OR_UNREPRESENTABLE_EMISSIVITY "
                 "shell=%zu bin=%zu nu=%.17g chi_es=%.17g chi_abs=%.17g "
                 "chi_line=%.17g chi_tot=%.17g eta_line=%.17g "
                 "source_numerator=%.17g floor=0 clamp=0 fallback=0\n",
@@ -10509,7 +10511,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     opac->jbar_line_det_exact_absolute_error_bound =
         exact_report.fixed_point_absolute_error_bound;
     opac->jbar_line_det_exact_max_scattering_ratio =
-        exact_report.max_scattering_ratio;
+        exact_report.scattering_operator_norm_upper;
     opac->jbar_line_det_error_envelope_verified =
         exact_report.componentwise_error_envelope_verified;
     opac->jbar_line_det_error_refinement_iterations =

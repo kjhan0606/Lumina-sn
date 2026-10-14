@@ -126,6 +126,32 @@ int main(int argc,char **argv) {
     double err=fabs(L[0]/(8*pi*pi*integ)-1);
     printf("static_homogeneous_continuous_integral_relative=%.17g\n",err);
     CHECK(err<1e-3);
+    /* 부호를 유지한 균질 증폭 외피. 독립 각도 적분과 절대 광도 대조. */
+    for(int i=0;i<NS*NF;++i){chi[i]=-2e-15;es[i]=5e-16;src[i]=-3e-5;}
+    CHECK(cmf_observer_cpu(&in,L)==0);
+    integ=0;
+    for(int j=0;j<200000;++j){
+        double u=(j+0.5)/200000,p=ri[0]*sqrt(1-u*u);
+        double ds=sqrt(ro[NS-1]*ro[NS-1]-p*p)-ri[0]*u;
+        double I=obs_bb(nu[0],in.T_inner)*in.inner_scale*exp(2e-15*ds)+
+                 3.25e-5*expm1(2e-15*ds);
+        integ+=ri[0]*ri[0]*u*I/200000;
+        u=(j+0.5)*umax/200000;
+        I=3.25e-5*expm1(2e-15*2*ro[NS-1]*u);
+        integ+=ro[NS-1]*ro[NS-1]*u*I*umax/200000;
+    }
+    err=fabs(L[0]/(8*pi*pi*integ)-1);
+    printf("signed_homogeneous_absolute_luminosity_relative=%.17g\n",err);
+    CHECK(err<1e-3);
+#ifdef OBSERVER_TEST_GPU
+    CHECK(cmf_observer_gpu(&in,save)==0);
+    worst=0;
+    for(int f=0;f<NO;++f){err=fabs(save[f]/L[f]-1);if(err>worst)worst=err;}
+    printf("signed_cpu_gpu_relative=%.17g\n",worst);CHECK(worst<1e-10);
+#endif
+    memcpy(save,L,sizeof L);src[0]=-src[0];
+    CHECK(cmf_observer_cpu(&in,L)!=0);CHECK(memcmp(save,L,sizeof L)==0);
+    src[0]=-src[0];
     /* 팽창 연속장과 주파수 가변 Gaussian 선. 같은 J의 산란 방출을 포함. */
     in.t_exp=2e14/(0.12*2.99792458e10);
     for(int s=0;s<NS;++s)for(int b=0;b<NF;++b) {

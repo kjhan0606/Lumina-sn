@@ -28,9 +28,10 @@ int cmf_observer_validate(const CMFObserverInput *in) {
        (size_t)in->nobs>SIZE_MAX/sizeof(double)/(size_t)(in->ncore+in->nouter))return -1;
     const size_t n=(size_t)in->ns*in->nf;
     for(size_t k=0;k<n;++k)
-        if(!isfinite(in->chi[k]) || in->chi[k]<0 ||
+        if(!isfinite(in->chi[k]) ||
            !isfinite(in->es[k]) || in->es[k]<0 ||
-           !isfinite(in->source[k]) || in->source[k]<0 ||
+           !isfinite(in->source[k]) ||
+           (in->chi[k]<0 ? in->source[k]>0 : in->source[k]<0) ||
            !isfinite(in->J[k]) || in->J[k]<0)return -1;
     return 0;
 }

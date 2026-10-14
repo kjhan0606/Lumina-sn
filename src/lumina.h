@@ -310,6 +310,8 @@ typedef struct {
     double  jbar_line_det_exact_residual;
     double  jbar_line_det_exact_tolerance;
     double  jbar_line_det_exact_absolute_error_bound;
+    /* 과거 필드명 보존: R6에는 실제 K의 무한대 노름 상계를 게시한다.
+     * 정상 물질은 기존 지역비 상계, signed 물질은 필요시 K*1 상계를 쓴다. */
     double  jbar_line_det_exact_max_scattering_ratio;
     int     jbar_line_det_error_envelope_verified;
     size_t  jbar_line_det_error_refinement_iterations;
