@@ -42,9 +42,9 @@ nvcc -O2 -arch=sm_86 -std=c++14 -Xcompiler -fopenmp -Isrc \
  src/cmf_error_envelope.c src/cmf_exact_multigpu.cu -lm -o "$probe_out/prefix" \
  > "$probe_out/prefix-build.log" 2>&1
 "$probe_out/prefix" > "$probe_out/prefix.log" 2> "$probe_out/prefix.err"
-compute-sanitizer --tool memcheck --error-exitcode=79 "$probe_out/prefix" \
+compute-sanitizer --tool memcheck --error-exitcode=79 "$probe_out/prefix" --sanitizer \
  > "$probe_out/prefix-memcheck.log" 2>&1
-compute-sanitizer --tool racecheck --error-exitcode=79 "$probe_out/prefix" \
+compute-sanitizer --tool racecheck --error-exitcode=79 "$probe_out/prefix" --sanitizer \
  > "$probe_out/prefix-racecheck.log" 2>&1
 sha256sum -c "$probe_out/source.sha256" > "$probe_out/verify.log"
 echo "result=$probe_out"

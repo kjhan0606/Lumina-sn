@@ -7,8 +7,13 @@
 #include <cstring>
 #include <vector>
 #define REQUIRE(x) do{if(!(x)){fprintf(stderr,"PREFIX_FAIL line=%d: %s\n",__LINE__,#x);return 1;}}while(0)
-int main() {
-    const int ns=3,nb=4096;const size_t cells=(size_t)ns*nb;
+int main(int argc,char **argv) {
+    const bool sanitizer=argc==2 && strcmp(argv[1],"--sanitizer")==0;
+    REQUIRE(argc==1 || sanitizer);
+    /* 전체 수치/고정점 검증은4096칸을 유지한다. 도구 계측은 긴 누적을
+       유지한256칸으로 같은 메모리·동기화 경로를 제한 시간 안에 검사한다. */
+    const int ns=3,nb=sanitizer?256:4096;const size_t cells=(size_t)ns*nb;
+    printf("PREFIX_MODE sanitizer=%d nb=%d\n",sanitizer,nb);
     double ri[3]={3e14,4e14,5e14},ro[3]={4e14,5e14,6e14};
     std::vector<double> nu(nb),chi(cells),es(cells),src(cells),J(cells);
     std::vector<double> cl(cells),cn(cells),cu(cells),sl(cells),sn(cells),su(cells);
@@ -56,7 +61,7 @@ int main() {
                "bound_relative_width=%.17g schedule_bitwise=1\n",test,
                report.max_positive_window_bins,worst,width);
         REQUIRE(worst<1e-10);
-        if(test==0) {
+        if(test==0 && !sanitizer) {
             std::vector<double> cj=J,gj=J,ce(cells),ge(cells);
             CMFExactReport cr;
             REQUIRE(cmf_exact_characteristic_solve_with_envelope(ns,nb,dlog,nu.data(),ri,ro,
