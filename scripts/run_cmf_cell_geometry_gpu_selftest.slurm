@@ -21,6 +21,7 @@ probe_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/cell-geometry-g
 mkdir "$probe_out"
 cd "$probe_repo"
 sha256sum tests/cmf_boundary_geometry_selftest.c tests/cmf_exact_multigpu_selftest.cu \
+ tests/cmf_parallel_prefix_selftest.cu \
  src/cmf_exact_sliding.c src/cmf_exact_sliding.h src/cmf_error_envelope.c \
  src/cmf_error_envelope.h src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h \
  src/cmf_cell_geometry.h scripts/run_cmf_cell_geometry_gpu_selftest.slurm > "$probe_out/source.sha256"
@@ -36,5 +37,14 @@ nvcc -O2 -arch=sm_86 -std=c++14 -Xcompiler -fopenmp \
 "$probe_out/regression" > "$probe_out/regression.log" 2> "$probe_out/regression.err"
 compute-sanitizer --tool memcheck --error-exitcode=79 "$probe_out/regression" \
  > "$probe_out/memcheck.log" 2> "$probe_out/memcheck.err"
+nvcc -O2 -arch=sm_86 -std=c++14 -Xcompiler -fopenmp -Isrc \
+ tests/cmf_parallel_prefix_selftest.cu src/cmf_exact_sliding.c \
+ src/cmf_error_envelope.c src/cmf_exact_multigpu.cu -lm -o "$probe_out/prefix" \
+ > "$probe_out/prefix-build.log" 2>&1
+"$probe_out/prefix" > "$probe_out/prefix.log" 2> "$probe_out/prefix.err"
+compute-sanitizer --tool memcheck --error-exitcode=79 "$probe_out/prefix" \
+ > "$probe_out/prefix-memcheck.log" 2>&1
+compute-sanitizer --tool racecheck --error-exitcode=79 "$probe_out/prefix" \
+ > "$probe_out/prefix-racecheck.log" 2>&1
 sha256sum -c "$probe_out/source.sha256" > "$probe_out/verify.log"
 echo "result=$probe_out"

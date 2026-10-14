@@ -21,6 +21,7 @@ namespace {
 constexpr double kC = 2.99792458e10;
 constexpr double kH = 6.62607015e-27;
 constexpr double kKB = 1.380649e-16;
+constexpr int kPrefixGroups=64;
 
 static double monotonic_seconds()
 {
@@ -435,7 +436,7 @@ static cudaError_t allocate_positive_sweep_workspace(
                 cudaSuccess)
             return cudaErrorMemoryAllocation;
     } else if (max_positive_window >
-               epoch_schedule->direct_replay_max_window) {
+               std::min(epoch_schedule->direct_replay_max_window,kPrefixGroups-1)) {
         if ((size_t)n_bins > std::numeric_limits<size_t>::max() -
                                  (size_t)max_positive_window)
             return cudaErrorInvalidValue;
@@ -1031,6 +1032,62 @@ __global__ void positive_epoch_replay_segment_kernel(
             failure, 37, segment, lr, outward ? 1 : 0, rounding);
 }
 
+/* 수학적으로 같은 양의 affine 누적. 고정64그룹이므로 block 크기를 바꿔도
+ * 결합 순서는 동일하다. 직렬 CPU와는 반올림 순서가 다를 수 있다. */
+__device__ bool parallel_positive_prefix(int count,int first,int step,bool prepend,
+        int nb,const double *t1,const double *source_cell,int rounding,
+        PositiveTransformPair *output,PositiveTransformPair *scratch_a,
+        PositiveTransformPair *scratch_b) {
+    int chunk=(count+kPrefixGroups-1)/kPrefixGroups;
+    bool okay=true;
+    for(int g=(int)threadIdx.x;g<kPrefixGroups;g+=(int)blockDim.x) {
+        int begin=g*chunk,end=begin+chunk;
+        if(end>count)end=count;
+        PositiveTransformPair aggregate={1,0};
+        for(int i=begin;i<end;++i) {
+            PositiveTransformPair value=positive_pair_at(first+step*i,nb,t1,source_cell);
+            PositiveTransformPair next={NAN,NAN};
+            if(i==begin)aggregate=value;
+            else {
+                okay=(prepend ? positive_pair_reverse_compose(value,aggregate,rounding,&next)
+                              : positive_pair_reverse_compose(aggregate,value,rounding,&next)) && okay;
+                aggregate=next;
+            }
+            output[i]=aggregate;
+        }
+        scratch_a[g]=aggregate;
+    }
+    __syncthreads();
+    PositiveTransformPair *read=scratch_a,*write=scratch_b;
+    for(int offset=1;offset<kPrefixGroups;offset*=2) {
+        for(int g=(int)threadIdx.x;g<kPrefixGroups;g+=(int)blockDim.x) {
+            PositiveTransformPair value=read[g];
+            if(g>=offset) {
+                PositiveTransformPair next={NAN,NAN};
+                okay=(prepend ? positive_pair_reverse_compose(value,read[g-offset],rounding,&next)
+                              : positive_pair_reverse_compose(read[g-offset],value,rounding,&next)) && okay;
+                value=next;
+            }
+            write[g]=value;
+        }
+        __syncthreads();
+        PositiveTransformPair *swap=read;read=write;write=swap;
+    }
+    for(int g=(int)threadIdx.x;g<kPrefixGroups;g+=(int)blockDim.x) {
+        if(g==0)continue;
+        int begin=g*chunk,end=begin+chunk;
+        if(end>count)end=count;
+        for(int i=begin;i<end;++i) {
+            PositiveTransformPair next={NAN,NAN};
+            okay=(prepend ? positive_pair_reverse_compose(output[i],read[g-1],rounding,&next)
+                          : positive_pair_reverse_compose(read[g-1],output[i],rounding,&next)) && okay;
+            output[i]=next;
+        }
+    }
+    __syncthreads();
+    return okay;
+}
+
 __global__ void positive_epoch_large_segment_kernel(
     int nb, int local_rays, int segment, bool outward, bool after_center,
     int replay_max_window, int epoch_begin, size_t workspace_span,
@@ -1042,6 +1099,7 @@ __global__ void positive_epoch_large_segment_kernel(
     PositiveTransformPair *back_workspace, int *failure, int rounding)
 {
     extern __shared__ double shared_values[];
+    __shared__ PositiveTransformPair prefix_a[kPrefixGroups],prefix_b[kPrefixGroups];
     PositiveTransformPair *boundary_value =
         reinterpret_cast<PositiveTransformPair *>(shared_values);
     int lr = (int)blockIdx.y;
@@ -1078,7 +1136,14 @@ __global__ void positive_epoch_large_segment_kernel(
     const double *src = source + (size_t)s * (size_t)nb;
     const double *src_cell = source_cell + (size_t)s * (size_t)nb;
     bool okay = true;
-    if (threadIdx.x == 0) {
+    if(window>=kPrefixGroups) {
+        okay=parallel_positive_prefix(window,boundary_bin+1,1,true,nb,tr,src_cell,
+            rounding,front,prefix_a,prefix_b);
+        bool back_okay=parallel_positive_prefix(epoch_outputs-1,boundary_bin,-1,false,
+            nb,tr,src_cell,rounding,new_back,prefix_a,prefix_b);
+        okay=okay && back_okay;
+        if(threadIdx.x==0)*boundary_value=front[window-1];
+    } else if (threadIdx.x == 0) {
         PositiveTransformPair aggregate = positive_pair_at(
             boundary_bin + window, nb, tr, src_cell);
         for (int node = 1; node < window; ++node) {
@@ -1319,11 +1384,14 @@ static int launch_positive_segment(
     }
 
     int threads = epoch_schedule->block_size;
+    /* 긴 구간은 항상 같은64그룹 결합을 사용한다. replay 요청 상한이 커도
+     * 이 수치 경로는 바꾸지 않아 일정별 bitwise 재현성을 유지한다. */
+    const int replay_window=std::min(epoch_schedule->direct_replay_max_window,kPrefixGroups-1);
     size_t total = (size_t)shard.local_rays * (size_t)geometry.nb;
     int blocks = (int)((total + (size_t)threads - 1U) / (size_t)threads);
     positive_epoch_replay_segment_kernel<<<blocks, threads>>>(
         geometry.nb, shard.local_rays, segment, outward, after_center,
-        epoch_schedule->direct_replay_max_window,
+        replay_window,
         shard.rn, shard.segment_offset, shard.shell, shard.core,
         shard.beta, shard.dt1, shard.t1,
         shard.source, shard.source_cell, shard.inner, shard.in, shard.out,
@@ -1332,7 +1400,7 @@ static int launch_positive_segment(
 
     int maximum_epochs = max_large_epochs_for_segment(
         geometry, shard, segment, outward!=after_center,
-        epoch_schedule->direct_replay_max_window);
+        replay_window);
     for (int epoch_begin = 0; epoch_begin < maximum_epochs;
          epoch_begin += epoch_schedule->epoch_batch_cardinality) {
         int count = std::min(
@@ -1342,7 +1410,7 @@ static int launch_positive_segment(
         positive_epoch_large_segment_kernel<<<
             grid, threads, sizeof(PositiveTransformPair)>>>(
             geometry.nb, shard.local_rays, segment,
-            outward, after_center, epoch_schedule->direct_replay_max_window, epoch_begin,
+            outward, after_center, replay_window, epoch_begin,
             shard.epoch_workspace_span, shard.rn, shard.segment_offset,
             shard.shell, shard.core, shard.beta, shard.dt1, shard.t1,
             shard.source,
