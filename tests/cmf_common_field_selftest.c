@@ -157,6 +157,24 @@ static int producer_test(void) {
     REQUIRE(bb_change>1e-3 && bf_change>1e-3);
     printf("neighbor_removal BB_relative_change=%.17g BF_band_max_relative_change=%.17g\n",bb_change,bf_change);
     free(with_neighbor);
+    /* 실제 기본 출력 격자와 단위 변환도 실행한다. 수치적 선 분해능의
+     * 물리 수렴 인증은 아니며, 이 fixture의 선폭은 여전히1000km/s다. */
+    cs.common_obs_n=0;
+    REQUIRE(cmfgen_fine_jbar(&cs,&geo,&op,12000,&plasma,
+                CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)==0);
+    REQUIRE(cs.common_obs_ready && cs.common_obs_n>6900);
+    REQUIRE(fabs(2.99792458e18/cs.common_obs_nu[0]/25500-1)<2e-15);
+    REQUIRE(fabs(2.99792458e18/cs.common_obs_nu[cs.common_obs_n-1]/2500-1)<2e-15);
+    REQUIRE(cmfgen_write_common_observer(&cs,"common_default.csv","common_default.json",5,3,3)==0);
+    FILE *written=fopen("common_default.csv","r");REQUIRE(written);
+    char header[80];double wave=0,flux=0;
+    REQUIRE(fgets(header,sizeof header,written));
+    REQUIRE(fscanf(written,"%lf,%lf",&wave,&flux)==2);fclose(written);
+    double lastnu=cs.common_obs_nu[cs.common_obs_n-1];
+    double expected_flux=cs.common_obs_lnu[cs.common_obs_n-1]*lastnu*lastnu/2.99792458e18;
+    REQUIRE(fabs(wave/2500-1)<2e-15 && fabs(flux/expected_flux-1)<2e-15);
+    printf("observer_default_grid bins=%d first_wavelength=%.17g units_roundtrip_relative=%.17g\n",
+        cs.common_obs_n,wave,fabs(flux/expected_flux-1));
     removed_line=-1;
     for(int s=0;s<NS;++s){tau[2*NS+s]=2;valid[2*NS+s]=A208_VALID;}
     /* 기준 초기화 경로는 계속 BF 쪽 장을 바꾸지 않아야 한다. */
