@@ -1,0 +1,10 @@
+2026-10-14T22:25:24+09:00
+MainPID=1121431
+MemoryCurrent=73820610560
+CPUUsageNSec=217990670000
+ActiveState=active
+SubState=running
+index, name, memory.used [MiB], utilization.gpu [%]
+0, NVIDIA RTX 5000 Ada Generation, 32228 MiB, 100 %
+pid, process_name, used_gpu_memory [MiB]
+1121552, /gpfs/kjhan/lumina/cmfgen_map/sprint_20261012/ada_20261014/build1/lumina_cuda, 17152 MiB

@@ -1,0 +1,14 @@
+Restart=no
+TimeoutStopUSec=2min
+RuntimeMaxUSec=23h 58min
+MainPID=1121431
+Result=success
+ControlGroup=/user.slice/user-10396.slice/user@10396.service/app.slice/lumina-r2-ada-20261014.service
+CPUQuotaPerSecUSec=16s
+MemoryMax=206158430208
+TasksMax=512
+KillMode=control-group
+ActiveState=active
+SubState=running
+index, name, memory.used [MiB], utilization.gpu [%]
+0, NVIDIA RTX 5000 Ada Generation, 4 MiB, 0 %
