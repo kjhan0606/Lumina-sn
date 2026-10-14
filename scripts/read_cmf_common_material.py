@@ -70,6 +70,83 @@ def write_csv(path, data):
         writer.writerows(data)
 
 
+def iteration_changes(work, nuclei, final, obs, day):
+    """기존 반복 파일의 변화량만 읽는다. 최종 새 장에서의 잔차/수렴은 판정하지 않는다."""
+    paths = sorted((work/"physics_comparison").glob("physics_DET_iter*.manifest.json"))
+    snapshots, used = [], []
+    for path in paths:
+        manifest = json.loads(path.read_text())
+        iteration = manifest["iteration"]
+        prefix = f"physics_DET_iter{iteration:04d}"
+        if (path.name != prefix+".manifest.json" or
+                manifest["schema"] != "LUMINA_PHYSICS_COMPARISON_V1" or
+                manifest["transaction_status"] != "COMMITTED" or manifest["lane"] != "DET" or
+                abs(manifest["epoch_s"]-day*86400) > 1e-6 or
+                manifest["n_shells"] != len(nuclei)):
+            raise ValueError("반복 표의 정체성/시점/셸 수 불일치")
+        files = []
+        for suffix in ("shell", "ion"):
+            name = manifest[suffix+"_file"]
+            if name != prefix+f".{suffix}.csv":
+                raise ValueError("반복 파일 이름 불일치")
+            source = path.parent/name
+            values = {}
+            for row in rows(source):
+                shell = int(row["shell_id"])
+                if shell in values:
+                    raise ValueError("반복 표의 중복 셸")
+                values[shell] = row
+            if set(values) != set(nuclei):
+                raise ValueError("반복 표의 누락/추가 셸")
+            files.append(values)
+            used.append(source)
+        for row in files[1].values():
+            if int(row["population_generation"]) != manifest["population_generation"]:
+                raise ValueError("반복 이온 표의 개체수 세대 불일치")
+        if snapshots:
+            previous = snapshots[-1][0]
+            if (iteration != previous["iteration"]+1 or
+                    manifest["population_generation"] <= previous["population_generation"] or
+                    manifest["radiation_generation"] <= previous["radiation_generation"] or
+                    any(manifest[k] != previous[k] for k in ("atomic_model_sha256", "geometry_sha256"))):
+                raise ValueError("반복 순서/세대/모델 변경")
+        snapshots.append((manifest, *files))
+        used.append(path)
+    if snapshots:
+        last = snapshots[-1][0]
+        if (last["population_generation"] != final["population_generation"] or
+                last["iteration"] != obs["material_iteration"] or
+                last["radiation_generation"]+1 != obs["radiation_generation"]):
+            raise ValueError("마지막 반복과 최종 물질/새 복사장 불일치")
+    changes = []
+    for old,new in zip(snapshots, snapshots[1:]):
+        measurements = {}
+        quantities = [("T_e_K", 1, None), ("n_e_cm3", 1, None)]
+        quantities += [(f"Z{z}_{authority}_q{q}_cm3", 2, z)
+                       for z in ELEMENTS for authority in ("stage", "nlte") for q in (1,2)]
+        for quantity, slot, z in quantities:
+            candidates = []
+            for shell in nuclei:
+                a,b = (nonnegative(item[slot][shell][quantity]) for item in (old,new))
+                if z is not None:
+                    denominator = nuclei[shell][z]
+                    if denominator == 0:
+                        continue  # 원소가 없는 셸의 이온 분율은 정의하지 않는다.
+                    a,b = a/denominator,b/denominator
+                delta = abs(b-a)
+                measured = delta if z is not None else (delta/max(a,b) if max(a,b) else 0)
+                candidates.append(dict(shell=shell,previous=a,current=b,absolute_change=delta,value=measured))
+            measurements[quantity] = dict(
+                metric="absolute_fraction_change" if z is not None else "symmetric_relative_change",
+                previous_current_units="fraction" if z is not None else ("K" if quantity=="T_e_K" else "cm^-3"),
+                compared_shells=len(candidates),worst=max(candidates,key=lambda x:x["value"]) if candidates else None)
+        changes.append(dict(previous_iteration=old[0]["iteration"],iteration=new[0]["iteration"],measurements=measurements))
+    return dict(status="MEASURED" if changes else "INSUFFICIENT_HISTORY",snapshots=len(snapshots),
+        changes=changes,convergence_verdict="NOT_JUDGED",
+        warning="Material changes are not final-radiation NLTE/energy residuals. "
+                "Stored R7 ledgers use the preceding field, not the final frozen-material R6 field."),used
+
+
 def analyze(run, model, public, out, day=19.48):
     work = run/"work"
     final = json.loads((work/"cmfgen_final_publication.json").read_text())
@@ -147,6 +224,9 @@ def analyze(run, model, public, out, day=19.48):
                 metrics.append(dict(Z=z,stage=ion,authority=authority,compared_shells=len(errors),
                     mean_absolute_fraction_difference=math.fsum(errors)/len(errors) if errors else None,
                     max_absolute_fraction_difference=max(errors) if errors else None))
+    nuclei = {shell:{z:nonnegative(abundance[z][str(shell)])*rho[shell]/mass[z]/AMU
+                     for z in ELEMENTS} for shell in geo}
+    history,history_inputs = iteration_changes(work,nuclei,final,obs,day)
     out.mkdir(parents=True,exist_ok=False)
     write_csv(out/"ion_fractions.csv",result)
     write_csv(out/"element_totals.csv",totals)
@@ -154,6 +234,7 @@ def analyze(run, model, public, out, day=19.48):
                                     "lumina_ion_pops.csv","nlte_levels_final.csv")]
     inputs += [model/name for name in ("geometry.csv","density.csv","abundances.csv","atom_masses.csv","levels.csv")]
     inputs += [public/f"ionfrac_{name}_toy06_cmfgen.txt" for name in ELEMENTS.values()]
+    inputs += history_inputs
     hashes = {}
     for path in inputs+[Path(__file__)]:
         digest = hashlib.sha256()
@@ -164,7 +245,7 @@ def analyze(run, model, public, out, day=19.48):
     summary = dict(day=day,population_generation=pg,radiation_generation=obs["radiation_generation"],
         outer_convergence_verified=obs["outer_convergence_verified"],goal_verdict="NOT_JUDGED",
         denominator="rho*abundance/(mass_amu*AMU); no renormalization",interpolation="linear velocity; no extrapolation",
-        metrics=metrics,input_sha256=hashes)
+        metrics=metrics,iteration_history=history,input_sha256=hashes)
     (out/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
     return summary
 

@@ -55,6 +55,29 @@ class ReadoutTest(unittest.TestCase):
     def run_reader(self):
         return reader.analyze(self.run,self.model,self.public,self.root/"output")
 
+    def write_history(self):
+        folder = self.work/"physics_comparison"
+        folder.mkdir()
+        self.obs["material_iteration"] = 1
+        self.write_obs()
+        for iteration,pg in ((0,11),(1,13)):
+            prefix = f"physics_DET_iter{iteration:04d}"
+            manifest = dict(schema="LUMINA_PHYSICS_COMPARISON_V1",transaction_status="COMMITTED",
+                lane="DET",iteration=iteration,epoch_s=19.48*86400,n_shells=1,
+                population_generation=pg,radiation_generation=6+iteration,
+                atomic_model_sha256="a"*64,geometry_sha256="b"*64,
+                shell_file=prefix+".shell.csv",ion_file=prefix+".ion.csv")
+            (folder/(prefix+".manifest.json")).write_text(json.dumps(manifest))
+            self.write(folder/manifest["shell_file"],"shell_id,T_e_K,n_e_cm3",
+                       [(0,8000+2000*iteration,100+100*iteration)])
+            header = "population_generation,shell_id"
+            values = [pg,0]
+            for z in (14,16):
+                header += f",Z{z}_stage_q1_cm3,Z{z}_stage_q2_cm3,Z{z}_nlte_q1_cm3,Z{z}_nlte_q2_cm3"
+                values += ([30-10*iteration,20+10*iteration,35-15*iteration,15+15*iteration]
+                           if z==14 else [20-10*iteration,30+10*iteration,25-15*iteration,25+15*iteration])
+            self.write(folder/manifest["ion_file"],header,[values])
+
     def test_full_identity_and_fraction(self):
         summary = self.run_reader()
         for m in summary["metrics"]:
@@ -97,6 +120,49 @@ class ReadoutTest(unittest.TestCase):
         original = (self.root/"output/summary.json").read_bytes()
         with self.assertRaises(FileExistsError):self.run_reader()
         self.assertEqual(original,(self.root/"output/summary.json").read_bytes())
+
+    def test_iteration_changes_keep_values_and_no_verdict(self):
+        self.write_history()
+        summary = self.run_reader()
+        history = summary["iteration_history"]
+        self.assertEqual(history["snapshots"],2)
+        self.assertEqual(history["convergence_verdict"],"NOT_JUDGED")
+        measure = history["changes"][0]["measurements"]
+        self.assertEqual(measure["T_e_K"]["worst"]["previous"],8000)
+        self.assertEqual(measure["T_e_K"]["worst"]["current"],10000)
+        self.assertAlmostEqual(measure["T_e_K"]["worst"]["value"],.2)
+        self.assertEqual(measure["T_e_K"]["previous_current_units"],"K")
+        self.assertAlmostEqual(measure["n_e_cm3"]["worst"]["value"],.5)
+        self.assertAlmostEqual(measure["Z14_stage_q1_cm3"]["worst"]["value"],.2)
+        self.assertAlmostEqual(measure["Z14_nlte_q1_cm3"]["worst"]["value"],.3)
+        self.assertEqual(len([p for p in summary["input_sha256"] if "physics_comparison" in p]),6)
+
+    def test_missing_history_does_not_claim_convergence(self):
+        history = self.run_reader()["iteration_history"]
+        self.assertEqual(history["status"],"INSUFFICIENT_HISTORY")
+        self.assertEqual(history["changes"],[])
+
+    def test_stale_final_history_rejected(self):
+        self.write_history()
+        self.obs["radiation_generation"] = 7
+        self.write_obs()
+        with self.assertRaisesRegex(ValueError,"마지막 반복"):
+            self.run_reader()
+
+    def test_duplicate_history_shell_rejected(self):
+        self.write_history()
+        path = self.work/"physics_comparison/physics_DET_iter0000.shell.csv"
+        self.write(path,"shell_id,T_e_K,n_e_cm3",[(0,8000,100),(0,8000,100)])
+        with self.assertRaisesRegex(ValueError,"중복 셸"):
+            self.run_reader()
+
+    def test_zero_element_history_is_not_a_zero_fraction(self):
+        self.write_history()
+        final = json.loads((self.work/"cmfgen_final_publication.json").read_text())
+        history,_ = reader.iteration_changes(self.work,{0:{14:0,16:50}},final,self.obs,19.48)
+        metric = history["changes"][0]["measurements"]["Z14_nlte_q1_cm3"]
+        self.assertEqual(metric["compared_shells"],0)
+        self.assertIsNone(metric["worst"])
 
 
 if __name__ == "__main__":
