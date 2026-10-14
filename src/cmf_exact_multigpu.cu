@@ -84,6 +84,10 @@ struct DeviceShard {
     double *in = nullptr;
     double *out = nullptr;
     double *partial = nullptr;
+    /* Optional time-transport closure: weights H/K + outer J/H/K;
+     * partials H/K at cells + J/H/K at the actual outer face. */
+    double *moment_weight = nullptr;
+    double *moment_partial = nullptr;
     PositiveWindowNode *positive_window = nullptr;
     PositiveTransformPair *epoch_front = nullptr;
     PositiveTransformPair *epoch_back = nullptr;
@@ -335,6 +339,8 @@ static void cleanup_shard(DeviceShard *s)
     cudaFree(s->in);
     cudaFree(s->out);
     cudaFree(s->partial);
+    cudaFree(s->moment_weight);
+    cudaFree(s->moment_partial);
     cudaFree(s->positive_window);
     cudaFree(s->epoch_front);
     cudaFree(s->epoch_back);
@@ -1318,6 +1324,47 @@ __global__ void partial_j_bound_kernel(
     } else partial[tid]=sum;
 }
 
+__global__ void partial_hk_kernel(
+    int ns, int nb, int nr, int segment, int ray_begin, int ray_end,
+    const int *rn, const double *weight, const double *center,
+    double *partial, bool outward)
+{
+    int b=blockIdx.x*blockDim.x+threadIdx.x;
+    if(b>=nb)return;
+    int s=ns-1-segment;
+    size_t cells=(size_t)ns*nb, angles=(size_t)nr*ns;
+    double h=0,k=0;
+    for(int ray=ray_end-1;ray>=ray_begin;--ray){
+        int lr=ray-ray_begin;
+        if(segment>=rn[lr])continue;
+        size_t a=(size_t)ray*ns+s;
+        double value=0.5*center[(size_t)lr*nb+b];
+        h+=weight[a]*value;k+=weight[angles+a]*value;
+    }
+    size_t at=(size_t)s*nb+b;
+    partial[at]=outward?partial[at]+h:-h;
+    partial[cells+at]=outward?partial[cells+at]+k:k;
+}
+
+__global__ void partial_outer_moments_kernel(
+    int ns,int nb,int nr,int ray_begin,int ray_end,
+    const double *weight,const double *face,double *partial)
+{
+    int b=blockIdx.x*blockDim.x+threadIdx.x;
+    if(b>=nb)return;
+    size_t offset=2*(size_t)nr*ns, cells=(size_t)ns*nb;
+    double j=0,h=0,k=0;
+    for(int ray=ray_end-1;ray>=ray_begin;--ray){
+        double value=0.5*face[(size_t)(ray-ray_begin)*nb+b];
+        j+=weight[offset+ray]*value;
+        h+=weight[offset+nr+ray]*value;
+        k+=weight[offset+2*nr+ray]*value;
+    }
+    partial[2*cells+b]=j;
+    partial[2*cells+nb+b]=h;
+    partial[2*cells+2*nb+b]=k;
+}
+
 /* 중심 강도는 이 셸의 각도 적분 직후 재사용한다. 이전 셸의 중심 강도는
  * 전파에 쓰이지 않으며 반구간 경계 강도 face만 다음 구간에 전달된다. */
 static int reduce_current_centers(DeviceShard &s,const HostGeometry &g,
@@ -1331,6 +1378,13 @@ static int reduce_current_centers(DeviceShard &s,const HostGeometry &g,
     else
         partial_j_kernel<<<blocks,threads>>>(g.ns,g.nb,segment,
             s.ray_begin,s.ray_end,s.rn,s.angle_weight,center,s.partial,outward);
+    if(cudaGetLastError()!=cudaSuccess)return 1;
+    if(s.moment_partial){
+        if(rounding!=0)return 1;
+        partial_hk_kernel<<<blocks,threads>>>(g.ns,g.nb,g.nr,segment,
+            s.ray_begin,s.ray_end,s.rn,s.moment_weight,center,
+            s.moment_partial,outward);
+    }
     return cudaGetLastError()==cudaSuccess?0:1;
 }
 
@@ -1485,6 +1539,12 @@ static int launch_sweep(DeviceShard *shards, int ndev,
                 return 1;
             if(half==0 && reduce_current_centers(s,g,segment,true,
                                                 positive_sliding,rounding))return 1;
+            if(segment==0 && half==1 && s.moment_partial){
+                partial_outer_moments_kernel<<<(g.nb+threads-1)/threads,threads>>>(
+                    g.ns,g.nb,g.nr,s.ray_begin,s.ray_end,s.moment_weight,
+                    s.face,s.moment_partial);
+                if(cudaGetLastError()!=cudaSuccess)return 1;
+            }
         }
       }
     }
@@ -2996,6 +3056,75 @@ struct PersistentBoundContext {
         return CMF_MGPU_OK;
     }
 
+    CMFMultiGPUStatus formal_moments(
+        const double *fixed,const double *input,double core_radius,
+        double outer_radius,CMFFormalMoments *output)
+    {
+        if(!ready || !output || !output->J || !output->H || !output->K ||
+           !output->outer_J || !output->outer_H || !output->outer_K)
+            return CMF_MGPU_INVALID_INPUT;
+        size_t angles=(size_t)geometry.nr*n_shells;
+        size_t edge_cells=3*(size_t)n_bins,edge_angles=3*(size_t)geometry.nr;
+        const size_t limit=std::numeric_limits<size_t>::max()/sizeof(double);
+        if(edge_cells>limit || edge_angles>limit ||
+           cells>(limit-edge_cells)/2 || angles>(limit-edge_angles)/2)
+            return CMF_MGPU_ALLOCATION_FAILED;
+        size_t values=2*cells+edge_cells;
+        std::vector<double> weights(2*angles+edge_angles),j(cells),
+                            moments(values,0.0),scratch(values);
+        for(int ray=0;ray<geometry.nr;++ray){
+            for(int s=0;s<n_shells;++s){
+                size_t at=(size_t)ray*n_shells+s;
+                weights[at]=cmf_cell_angle_moment_weight(ray,geometry.nr,
+                    geometry.impact.data(),geometry.rmid[s],core_radius,1);
+                weights[angles+at]=cmf_cell_angle_moment_weight(ray,geometry.nr,
+                    geometry.impact.data(),geometry.rmid[s],core_radius,2);
+            }
+            for(int m=0;m<3;++m)
+                weights[2*angles+(size_t)m*geometry.nr+ray]=
+                    cmf_cell_angle_moment_weight(ray,geometry.nr,
+                        geometry.impact.data(),outer_radius,core_radius,m);
+        }
+        for(DeviceShard &shard:shards){
+            if(shard.moment_partial || shard.moment_weight)
+                return CMF_MGPU_INVALID_INPUT;
+            size_t previous=shard.allocated_bytes;
+            if(cudaSetDevice(shard.device)!=cudaSuccess)
+                return CMF_MGPU_CUDA_FAILURE;
+            if(device_allocate(&shard.moment_weight,weights.size(),&shard)!=cudaSuccess ||
+               device_allocate(&shard.moment_partial,values,&shard)!=cudaSuccess)
+                return CMF_MGPU_ALLOCATION_FAILED;
+            if(cudaMemcpy(shard.moment_weight,weights.data(),weights.size()*sizeof(double),
+                          cudaMemcpyHostToDevice)!=cudaSuccess)
+                return CMF_MGPU_CUDA_FAILURE;
+            allocation_report.total_device_allocated_bytes+=shard.allocated_bytes-previous;
+            allocation_report.max_device_allocated_bytes=std::max(
+                allocation_report.max_device_allocated_bytes,shard.allocated_bytes);
+            if(shard.device<CMF_MGPU_REPORT_MAX_DEVICES)
+                allocation_report.device_allocated_bytes[shard.device]=shard.allocated_bytes;
+        }
+        CMFMultiGPUStatus status=apply_round(fixed,input,false,0,j.data());
+        if(status!=CMF_MGPU_OK)return status;
+        for(int d=requested_devices-1;d>=0;--d){
+            DeviceShard &shard=shards[(size_t)d];
+            if(cudaSetDevice(shard.device)!=cudaSuccess ||
+               cudaMemcpy(scratch.data(),shard.moment_partial,values*sizeof(double),
+                          cudaMemcpyDeviceToHost)!=cudaSuccess)
+                return CMF_MGPU_CUDA_FAILURE;
+            for(size_t i=0;i<values;++i)moments[i]+=scratch[i];
+        }
+        for(size_t i=0;i<values;++i)
+            if(!std::isfinite(moments[i]) || (i>=cells && !(moments[i]>=0)))
+                return CMF_MGPU_NONFINITE;
+        std::memcpy(output->J,j.data(),cells*sizeof(double));
+        std::memcpy(output->H,moments.data(),cells*sizeof(double));
+        std::memcpy(output->K,moments.data()+cells,cells*sizeof(double));
+        std::memcpy(output->outer_J,moments.data()+2*cells,n_bins*sizeof(double));
+        std::memcpy(output->outer_H,moments.data()+2*cells+n_bins,n_bins*sizeof(double));
+        std::memcpy(output->outer_K,moments.data()+2*cells+2*n_bins,n_bins*sizeof(double));
+        return CMF_MGPU_OK;
+    }
+
     CMFMultiGPUStatus apply_bounds(
         const double *fixed, const double *input, bool zero_inner,
         double *lower, double *nearest, double *upper)
@@ -3038,6 +3167,33 @@ static int multigpu_apply_scattering_upper(
 }
 
 }  // namespace
+
+extern "C" CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_epoch(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    double T_inner,double inner_boundary_scale,
+    const double *chi_tot,const double *chi_es,
+    const double *S_fixed,const double *input_J,CMFFormalMoments *moments,
+    const CMFMultiGPUEpochSchedule *schedule,int requested_devices,
+    CMFMultiGPUReport *report)
+{
+    PersistentBoundContext context;
+    CMFMultiGPUStatus status=CMF_MGPU_INVALID_INPUT;
+    if(report){*report=CMFMultiGPUReport{};report->status=status;}
+    if(!moments || !moments->J || !moments->H || !moments->K ||
+       !moments->outer_J || !moments->outer_H || !moments->outer_K ||
+       !S_fixed || !input_J || !valid_epoch_schedule(schedule))return status;
+    try{
+        status=context.initialize(n_shells,n_bins,dlognu,nu,r_inner,r_outer,
+            time_explosion,T_inner,inner_boundary_scale,chi_tot,chi_es,
+            requested_devices,CMF_MGPU_PARTITION_WEIGHTED_SEGMENTS,schedule);
+        if(status==CMF_MGPU_OK)
+            status=context.formal_moments(S_fixed,input_J,r_inner[0],
+                                         r_outer[n_shells-1],moments);
+    }catch(const std::bad_alloc &){status=CMF_MGPU_ALLOCATION_FAILED;}
+    if(report){*report=context.allocation_report;report->status=status;}
+    return status;
+}
 
 static CMFMultiGPUStatus positive_solve_envelope_impl(
     int n_shells, int n_bins, double dlognu, const double *nu,

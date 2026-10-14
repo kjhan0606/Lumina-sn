@@ -2,6 +2,7 @@
 #define LUMINA_CMF_EXACT_MULTIGPU_H
 
 #include <stddef.h>
+#include "cmf_exact_sliding.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -247,6 +248,18 @@ cmf_exact_multigpu_positive_solve_envelope_epoch_partitioned(
     CMFMultiGPUReport *report);
 
 const char *cmf_multigpu_status_name(CMFMultiGPUStatus status);
+
+/* 실제 형식해의 시간 수송용 각도 모멘트. 동일한 스트리밍 전파에서
+ * H/K와 외곽 J/H/K를 적분한다. 정상 고정점 해/오차 인증 API가 아니다.
+ * 기존 J 적분은 바꾸지 않는다. 모든 출력은 성공할 때만 함께 게시한다. */
+CMFMultiGPUStatus cmf_exact_multigpu_formal_moments_epoch(
+    int n_shells, int n_bins, double dlognu, const double *nu,
+    const double *r_inner, const double *r_outer, double time_explosion,
+    double T_inner, double inner_boundary_scale,
+    const double *chi_tot, const double *chi_es,
+    const double *S_fixed, const double *input_J, CMFFormalMoments *moments,
+    const CMFMultiGPUEpochSchedule *schedule, int requested_devices,
+    CMFMultiGPUReport *report);
 
 #ifdef __cplusplus
 }
