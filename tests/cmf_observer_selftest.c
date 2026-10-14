@@ -150,6 +150,19 @@ int main(int argc,char **argv) {
     for(int f=0;f<NO;++f){err=fabs(save[f]/L[f]-1);if(err>worst)worst=err;}
     printf("cpu_gpu_relative=%.17g\n",worst);CHECK(worst<1e-10);
 #endif
+    /* q(z)의 극소점을 실제로 지나는 광선도 역변환 양쪽 가지를 검증한다.
+     * 이 인공0.99c 시험이 실제 초신성의 상대론/시간 의존 검증은 아니다. */
+    CMFObserverInput saved=in;
+    in.nu_min=1e12;in.dlognu=log(1e6)/NF;
+    in.t_exp=2e14/(0.99*2.99792458e10);in.substeps=4;
+    for(int i=0;i<NS*NF;++i){chi[i]=1e-14;es[i]=1e-15;src[i]=2e-5;J[i]=1e-5;}
+    double pturn=0.9*2.99792458e10*in.t_exp;
+    double moving=cmf_observer_ray(&in,pturn,nu[1]);
+    double moving_ref=reference_ray(&in,pturn,nu[1]);
+    err=fabs(moving/moving_ref-1);
+    printf("doppler_turning_ray_independent_relative=%.17g\n",err);
+    CHECK(err<1e-4);
+    in=saved;
     memcpy(save,L,sizeof L);
     chi[0]=-1;
     CHECK(cmf_observer_cpu(&in,L)!=0 && memcmp(save,L,sizeof L)==0);
