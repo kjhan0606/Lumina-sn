@@ -106,6 +106,12 @@ typedef enum {
     "A2-10:line-Jbar:cmfgen-nonoverlap-sobolev-sigma0:v1"
 #define LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER \
     "CMF:common-line-continuum-gaussian-profile:v1"
+#define LUMINA_LINE_JBAR_TIME_PRODUCER \
+    "CMF:time-moment-gaussian-profile:iteration-delta:v1"
+typedef enum {
+    LINE_JBAR_UNCERTAINTY_LEGACY=0,
+    LINE_JBAR_UNCERTAINTY_ITERATION_DELTA=1
+} LineJbarUncertaintyKind;
 
 typedef struct {
     RadiationFieldProvenanceKind kind;
@@ -185,13 +191,14 @@ typedef struct {
      * It names Q_g for a legacy cache and Q_E for the production superset. */
     const char *q_set_hash;
     LineJbarSetKind set_kind;
-    /* COUNT means MC packet samples.  For DETERMINISTIC, sample_count is zero
-     * and variance_or_standard_error stores a certified absolute error upper
-     * when the producer supplies one (otherwise zero for legacy fixtures). */
+    /* COUNT means MC packet samples. For DETERMINISTIC, sample_count is zero.
+     * uncertainty_kind distinguishes a legacy certified bound (or fixture
+     * zero) from a time-field iteration delta, which is not an error bound. */
     RadiationFieldEstimatorStatisticKind statistic_kind;
     RadiationFieldUnits units;
     RadiationFieldFrame frame;
     RadiationFieldProvenance provenance;
+    LineJbarUncertaintyKind uncertainty_kind;
 } LineJbarCache;
 
 typedef struct {
@@ -300,8 +307,9 @@ typedef struct {
     uint64_t        line_n_packets;      /* N incl. zero contributors */
     int             line_error_latch;    /* accumulation failure => refuse */
     const double   *line_jbar;           /* [line_n*n_shells] deterministic */
-    const double   *line_error_upper;    /* certified |delta Jbar|, deterministic */
+    const double   *line_error_upper;    /* legacy: certified; time: iteration delta */
     const int32_t  *line_validity;       /* [line_n*n_shells] deterministic */
+    LineJbarUncertaintyKind line_uncertainty_kind;
 } RadiationFieldCommitRequest;
 
 #ifdef __cplusplus
@@ -397,6 +405,7 @@ typedef struct {
     LineJbarSetKind cache_set_kind;
     RadiationFieldEstimatorStatisticKind statistic_kind;
     uint64_t generation;
+    LineJbarUncertaintyKind uncertainty_kind;
 } LineJbarView;
 
 int radiation_field_line_jbar_view(const RadiationFieldOwner *owner,
@@ -432,6 +441,7 @@ typedef struct {
     uint64_t count;
     double se;
     RadiationFieldEstimatorStatisticKind statistic_kind;
+    LineJbarUncertaintyKind uncertainty_kind;
 } LineJbarValue;
 
 /* MISS (line_id not in the requested view membership) is a distinct error,

@@ -21,6 +21,7 @@
 #define LUMINA_CMFGEN_H
 
 #include "lumina.h"
+#include "cmf_time_field.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -118,6 +119,7 @@ typedef struct {
     double *common_obs_nu, *common_obs_lnu;
     int common_obs_fine_bins;
     double common_obs_fine_min, common_obs_fine_dlog;
+    CMFTimeRadiationTrial *time_trial; /* 빌린 실제 시간 입력/후보, cs가 free하지 않는다. */
 } CMFGENState;
 
 int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,

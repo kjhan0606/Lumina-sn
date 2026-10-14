@@ -23,18 +23,27 @@ export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 cd "$moment_src"
 git rev-parse HEAD > "$moment_out/commit.txt"
 cp src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_exact_sliding.c \
+ src/cmf_time_field.c src/cmf_time_field.h tests/cmf_time_field_selftest.c \
  src/cmfgen_adiabatic.c src/cmfgen_adiabatic.h tests/cmf_material_time_selftest.c \
  src/cmf_exact_sliding.h src/cmf_cell_geometry.h tests/cmf_time_moment_selftest.c \
  tests/cmf_formal_moments_selftest.c tests/cmf_exact_sliding_selftest.c \
  scripts/run_cmf_time_moment_selftest.slurm "$moment_out/"
 sha256sum src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_exact_sliding.c \
+ src/cmf_time_field.c src/cmf_time_field.h tests/cmf_time_field_selftest.c \
  src/cmfgen_adiabatic.c src/cmfgen_adiabatic.h tests/cmf_material_time_selftest.c \
  tests/cmfgen_adiabatic_selftest.c \
  src/cmf_exact_sliding.h src/cmf_cell_geometry.h src/cmf_error_envelope.c \
  src/cmf_error_envelope.h tests/cmf_time_moment_selftest.c \
  tests/cmf_formal_moments_selftest.c tests/cmf_exact_sliding_selftest.c \
  scripts/run_cmf_time_moment_selftest.slurm > "$moment_out/source.sha256"
-moment_units=(src/cmf_time_moment.c src/cmf_exact_sliding.c src/cmf_error_envelope.c)
+moment_units=(src/cmf_time_moment.c src/cmf_time_field.c src/cmf_exact_sliding.c src/cmf_error_envelope.c)
+gcc -O2 -std=c11 -Wall -Wextra -Werror -Isrc "${moment_units[@]}" \
+ tests/cmf_time_field_selftest.c -lm -o "$moment_out/field_test" > "$moment_out/field-build.log" 2>&1
+"$moment_out/field_test" > "$moment_out/field.log" 2> "$moment_out/field.err"
+gcc -O1 -g -std=c11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
+ "${moment_units[@]}" tests/cmf_time_field_selftest.c -lm -o "$moment_out/field_san" \
+ > "$moment_out/field-san-build.log" 2>&1
+ASAN_OPTIONS=detect_leaks=1 "$moment_out/field_san" > "$moment_out/field-san.log" 2> "$moment_out/field-san.err"
 gcc -O2 -std=c11 -Wall -Wextra -Werror -Isrc "${moment_units[@]}" \
  tests/cmf_time_moment_selftest.c -lm -o "$moment_out/selftest" > "$moment_out/build.log" 2>&1
 "$moment_out/selftest" > "$moment_out/test.log" 2> "$moment_out/test.err"

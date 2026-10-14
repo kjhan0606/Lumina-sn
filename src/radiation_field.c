@@ -605,8 +605,12 @@ static int radiation_field_prepare_line(
              strcmp(line_producer,
                     LUMINA_LINE_JBAR_CMFGEN_NONOVERLAP_SOBOLEV_PRODUCER) != 0 &&
              strcmp(line_producer,
-                    LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER) != 0))
+                    LUMINA_LINE_JBAR_COMMON_GAUSSIAN_PRODUCER) != 0 &&
+             strcmp(line_producer,LUMINA_LINE_JBAR_TIME_PRODUCER) != 0))
             return -1;
+        if(request->line_uncertainty_kind !=
+           (strcmp(line_producer,LUMINA_LINE_JBAR_TIME_PRODUCER)==0 ?
+            LINE_JBAR_UNCERTAINTY_ITERATION_DELTA : LINE_JBAR_UNCERTAINTY_LEGACY))return -1;
     } else {
         return -1;
     }
@@ -923,6 +927,7 @@ int radiation_field_commit(RadiationFieldOwner *shadow,
         staged_line.generation.required_generation = request->generation;
         staged_line.generation.computed_generation = request->generation;
         staged_line.statistic_kind = request->statistic_kind;
+        staged_line.uncertainty_kind = request->line_uncertainty_kind;
         staged_line.units = field->units;
         staged_line.frame = field->frame;
         staged_line.provenance.kind = line_provenance;
@@ -1152,6 +1157,7 @@ static LineJbarViewStatus radiation_field_line_jbar_view_base(
     out->rate_graph_hash = owner->line_rate_graph_hash_storage;
     out->cache_set_kind = cache->set_kind;
     out->statistic_kind = cache->statistic_kind;
+    out->uncertainty_kind = cache->uncertainty_kind;
     out->generation = expected_generation;
     return LINE_JBAR_VIEW_OK;
 }
@@ -1274,6 +1280,7 @@ static int line_jbar_lookup_resolved(const LineJbarView *view, size_t shell,
     out->count = view->count[i];
     out->se = view->se[i];
     out->statistic_kind = view->statistic_kind;
+    out->uncertainty_kind = view->uncertainty_kind;
     return 0;
 }
 

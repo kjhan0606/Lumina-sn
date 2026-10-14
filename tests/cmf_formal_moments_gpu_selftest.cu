@@ -1,4 +1,5 @@
 #include "cmf_exact_multigpu.h"
+#include "cmf_time_field.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -127,8 +128,60 @@ static void run_case(int kind)
         kind,maximum,report.max_device_allocated_bytes,report.max_characteristic_drift_bins);
 }
 
+struct TimeContext {
+    int ns,nb,gpu;
+    double dlog,epoch;
+    const double *nu,*ri,*ro,*chi,*scat,*eta;
+};
+static int time_formal(void *arg,const double *J,CMFFormalMoments *m){
+    TimeContext *c=(TimeContext*)arg;
+    if(!c->gpu)return cmf_exact_formal_moments_emissivity(c->ns,c->nb,c->dlog,c->nu,
+        c->ri,c->ro,c->epoch,10000,1,c->chi,c->scat,c->eta,J,m)!=CMF_EXACT_OK;
+    CMFMultiGPUEpochSchedule schedule={128,64,32};
+    return cmf_exact_multigpu_formal_moments_emissivity_epoch(c->ns,c->nb,c->dlog,c->nu,
+        c->ri,c->ro,c->epoch,10000,1,c->chi,c->scat,c->eta,J,m,&schedule,1,nullptr)!=CMF_MGPU_OK;
+}
+static void time_case(){
+    const int ns=3,nb=64,nc=ns*nb,nf=(ns+1)*nb;
+    double epoch=1001000,dlog=std::log(300.)/nb;
+    std::vector<double> nu(nb),edges(nb+1),radius(ns+1),ri(ns),ro(ns),chi(nc),scat(nc),eta(nc);
+    std::vector<double> oldj(nc),oldh(nf),inner(nb),cpu(nc),gpu(nc),hc(nf),hg(nf),delta(nc);
+    for(int b=0;b<=nb;b++)edges[b]=1e13*std::exp(b*dlog);
+    for(int b=0;b<nb;b++)nu[b]=std::sqrt(edges[b]*edges[b+1]);
+    for(int s=0;s<=ns;s++)radius[s]=(3e8+s*1e8)*epoch;
+    for(int s=0;s<ns;s++){
+        ri[s]=radius[s];ro[s]=radius[s+1];
+        for(int b=0;b<nb;b++){
+            double B=2*6.62607015e-27*nu[b]*nu[b]*nu[b]/(2.99792458e10*2.99792458e10)/
+                     std::expm1(6.62607015e-27*nu[b]/(1.380649e-16*10000));
+            int i=s*nb+b;chi[i]=3e-14;scat[i]=2e-14;eta[i]=1e-14*B;oldj[i]=.5*B;
+        }
+    }
+    CMFTimeMomentInput p={};p.n_shells=ns;p.n_bins=nb;p.time_old=1e6;p.time_new=epoch;
+    p.radius_edges=radius.data();p.frequency_edges=edges.data();p.chi_total=chi.data();
+    p.chi_scattering=scat.data();p.eta_fixed=eta.data();p.old_J=oldj.data();
+    p.old_H=oldh.data();p.inner_H=inner.data();
+    TimeContext ctx={ns,nb,0,dlog,epoch,nu.data(),ri.data(),ro.data(),chi.data(),scat.data(),eta.data()};
+    CMFTimeFieldReport cr,gr;
+    CHECK(cmf_time_field_solve(&p,oldj.data(),time_formal,&ctx,128,1e-9,
+        cpu.data(),hc.data(),delta.data(),&cr)==CMF_TIME_OK);
+    ctx.gpu=1;
+    CHECK(cmf_time_field_solve(&p,oldj.data(),time_formal,&ctx,128,1e-9,
+        gpu.data(),hg.data(),delta.data(),&gr)==CMF_TIME_OK);
+    double error=0;
+    for(int i=0;i<nc;i++)error=std::max(error,std::fabs(cpu[i]-gpu[i])/cpu[i]);
+    for(int i=0;i<nf;i++){
+        double scale=cpu[std::min(i,nc-1)];error=std::max(error,std::fabs(hc[i]-hg[i])/scale);
+    }
+    CHECK(cr.converged&&gr.converged&&cr.iterations==gr.iterations&&error<3e-11);
+    CHECK(cr.equation_residual<1e-10&&gr.equation_residual<1e-10);
+    std::printf("TIME_FIELD_GPU max_delta_over_J=%.17g iterations=%d/%d equation_residual=%.17g/%.17g\n",
+        error,cr.iterations,gr.iterations,cr.equation_residual,gr.equation_residual);
+}
+
 int main(void)
 {
+    time_case();
     for(int kind=0;kind<5;++kind)run_case(kind);
     std::printf("CMF_FORMAL_MOMENTS_GPU_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
     return failures?1:0;

@@ -22,6 +22,7 @@ moment_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/formal-moments
 mkdir "$moment_out"
 cd "$moment_src"
 moment_files=(src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h src/cmf_exact_sliding.c
+ src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_time_field.c src/cmf_time_field.h
  src/cmf_exact_sliding.h src/cmf_error_envelope.c src/cmf_error_envelope.h src/cmf_cell_geometry.h
  tests/cmf_formal_moments_gpu_selftest.cu tests/cmf_exact_multigpu_selftest.cu
  tests/cmf_exact_sliding_selftest.c
@@ -39,6 +40,9 @@ gcc -O2 -std=c11 -Isrc -c src/cmf_error_envelope.c -o "$moment_out/envelope.o" >
 nvcc -O2 -arch=sm_86 -std=c++14 -Isrc -c src/cmf_exact_multigpu.cu \
  -o "$moment_out/multigpu.o" > "$moment_out/cuda-build.log" 2>&1
 moment_objects=("$moment_out/multigpu.o" "$moment_out/sliding.o" "$moment_out/envelope.o")
+gcc -O2 -std=c11 -Isrc -c src/cmf_time_moment.c -o "$moment_out/time-moment.o" >> "$moment_out/c-build.log" 2>&1
+gcc -O2 -std=c11 -Isrc -c src/cmf_time_field.c -o "$moment_out/time-field.o" >> "$moment_out/c-build.log" 2>&1
+moment_objects+=("$moment_out/time-moment.o" "$moment_out/time-field.o")
 nvcc -O2 -arch=sm_86 -std=c++14 -Isrc tests/cmf_emissivity_selftest.cu \
  "${moment_objects[@]}" -lm -o "$moment_out/emissivity" > "$moment_out/emissivity-build.log" 2>&1
 "$moment_out/emissivity" > "$moment_out/emissivity.log" 2> "$moment_out/emissivity.err"

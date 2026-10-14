@@ -49,7 +49,7 @@ build_units=(
  src/emissivity_publication.c src/radeq_publication.c src/line_net_rate.c
  src/cmfgen_adiabatic.c src/nlte_population_candidate.c src/physics_comparison.c
  src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c
- src/cmf_error_envelope.c src/cmf_time_moment.c src/seed_capability.c src/lumina_element_wide.c
+ src/cmf_error_envelope.c src/cmf_time_moment.c src/cmf_time_field.c src/seed_capability.c src/lumina_element_wide.c
  src/lumina_cmfgen.c src/cmfgen_final_writer.c src/a210_coupled_newton.c
 )
 nvcc -O2 "${build_arch[@]}" -std=c++14 -Xcompiler -fopenmp \

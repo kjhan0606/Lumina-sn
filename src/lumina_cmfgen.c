@@ -6713,6 +6713,15 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
         return -1;
     }
 
+    const int time_field=opac->jbar_line_det_time_new>0;
+    if(time_field){
+        if(!cs->time_trial||!cs->time_trial->old||!cs->time_trial->report.converged||
+           opac->jbar_line_det_operator!=CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN||
+           opac->jbar_line_det_time_new!=geo->time_explosion||
+           opac->jbar_line_det_time_new!=cs->time_trial->epoch_s||
+           opac->jbar_line_det_time_old!=cs->time_trial->old->epoch_s)return -1;
+        line_producer=LUMINA_LINE_JBAR_TIME_PRODUCER;
+    }
     const LineJbarQSet *qset = (const LineJbarQSet *)nlte->line_qset;
     const LineJbarESet *eset = (const LineJbarESet *)nlte->line_eset;
     if (!qset || qset->n_q == 0 || !qset->line_id || !qset->line_nu ||
@@ -6750,7 +6759,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                 opac->jbar_line_det_ndoppler);
         return -1;
     }
-    if (!opac->jbar_line_det_exact_converged ||
+    int field_unqualified = !opac->jbar_line_det_exact_converged ||
         opac->jbar_line_det_exact_iterations < 2 ||
         opac->jbar_line_det_exact_iterations >
             opac->jbar_line_det_exact_iteration_cap ||
@@ -6778,7 +6787,26 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
         opac->jbar_line_det_grid_n_bins < 2 ||
         !(opac->jbar_line_det_grid_nu_min > 0.0) ||
         !(opac->jbar_line_det_grid_nu_max >
-          opac->jbar_line_det_grid_nu_min)) {
+          opac->jbar_line_det_grid_nu_min);
+    if(time_field)field_unqualified=
+        !(opac->jbar_line_det_time_old>0)||
+        !(opac->jbar_line_det_time_new>opac->jbar_line_det_time_old)||
+        !(opac->jbar_line_det_time_equation_residual>=0)||
+        !(opac->jbar_line_det_time_equation_residual<=1e-10)||
+        !(opac->jbar_line_det_exact_tolerance>0&&opac->jbar_line_det_exact_tolerance<1)||
+        !(opac->jbar_line_det_time_closure_update>=0&&
+          opac->jbar_line_det_time_closure_update<opac->jbar_line_det_exact_tolerance)||
+        !(opac->jbar_line_det_exact_residual>=0&&
+          opac->jbar_line_det_exact_residual<opac->jbar_line_det_exact_tolerance)||
+        opac->jbar_line_det_exact_iterations<2||
+        opac->jbar_line_det_exact_iterations>opac->jbar_line_det_exact_iteration_cap||
+        !opac->jbar_line_det_error_upper||opac->jbar_line_det_grid_n_bins<2||
+        !(opac->jbar_line_det_grid_nu_min>0)||
+        !(opac->jbar_line_det_grid_nu_max>opac->jbar_line_det_grid_nu_min)||
+        !(opac->jbar_line_det_profile_error_min>=0)||
+        !isfinite(opac->jbar_line_det_profile_error_max)||
+        opac->jbar_line_det_profile_error_max<opac->jbar_line_det_profile_error_min;
+    if (field_unqualified) {
         fprintf(stderr,
                 "[R6][BLOCKED] reason=EXACT_SOLVER_QUALIFICATION "
                 "converged=%d iterations=%d cap=%d residual=%.17g "
@@ -6956,7 +6984,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     RadiationFieldCommitRequest request;
     memset(&request, 0, sizeof(request));
     request.provenance_kind = RADIATION_FIELD_PROVENANCE_CMFGEN_REPLAY;
-    request.producer = opac->jbar_line_det_operator ==
+    request.producer = time_field ? "CMF_TIME_MOMENT_CONSERVATIVE_REBIN" : opac->jbar_line_det_operator ==
         CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN
         ? "CMF_COMMON_GAUSSIAN_CONSERVATIVE_REBIN"
         : "PURE_CMFGEN_COMOVING_CONSERVATIVE_REBIN";
@@ -6984,6 +7012,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
     request.line_producer = line_producer;
     request.line_jbar = line_jbar;
     request.line_error_upper = line_error;
+    request.line_uncertainty_kind=time_field?LINE_JBAR_UNCERTAINTY_ITERATION_DELTA:LINE_JBAR_UNCERTAINTY_LEGACY;
     request.line_validity = line_validity;
     int rc = radiation_field_commit(&nlte->radiation_field, &request);
     free(edges); free(validity); free(line_id); free(rate_line_id);
@@ -8248,12 +8277,79 @@ int cmfgen_write_common_observer(const CMFGENState *cs, const char *csv_path,
     return failed?-1:0;
 }
 
+typedef struct {
+    const CMFGENState *fine;
+    const Geometry *geo;
+    const double *eta;
+    double temperature;
+    int devices;
+} CMFTimeFormalContext;
+
+static int cmf_time_formal_apply(void *arg,const double *J,CMFFormalMoments *out){
+    CMFTimeFormalContext *c=arg;const CMFGENState *f=c->fine;const Geometry *g=c->geo;
+    if(c->devices==0)return cmf_exact_formal_moments_emissivity(
+        f->n_shells,f->n_bins,f->d_log_nu,f->nu,g->r_inner,g->r_outer,g->time_explosion,
+        c->temperature,cmf_inner_bb_scale(),f->chi_tot,f->chi_es,c->eta,J,out)!=CMF_EXACT_OK;
+#ifdef LUMINA_HAS_CUDA_BF_GEMM
+    const CMFMultiGPUEpochSchedule schedule={128,64,32};CMFMultiGPUReport report;
+    return cmf_exact_multigpu_formal_moments_emissivity_epoch(
+        f->n_shells,f->n_bins,f->d_log_nu,f->nu,g->r_inner,g->r_outer,g->time_explosion,
+        c->temperature,cmf_inner_bb_scale(),f->chi_tot,f->chi_es,c->eta,J,out,
+        &schedule,c->devices,&report)!=CMF_MGPU_OK;
+#else
+    return -1;
+#endif
+}
+
+static int cmf_fine_time_solve(CMFGENState *fine,const Geometry *geo,const double *eta,
+    double temperature,int cap,double tol,CMFTimeRadiationTrial *trial,double *delta){
+    if(!trial||!trial->old||!trial->inner_H)return -1;
+    const CMFTimeRadiationHistory *old=trial->old;
+    int ns=fine->n_shells,nb=fine->n_bins;
+    if(old->n_shells!=ns||old->n_bins!=nb||!old->velocity_edges||!old->J||!old->H||
+       old->nu_min!=fine->nu_min||old->dlognu!=fine->d_log_nu||
+       !(old->epoch_s>0)||!(trial->epoch_s>old->epoch_s)||trial->epoch_s!=geo->time_explosion)return -1;
+    double *radius=malloc(((size_t)ns+1)*sizeof(double));
+    double *edges=malloc(((size_t)nb+1)*sizeof(double));
+    double *j=malloc((size_t)ns*nb*sizeof(double)),*h=malloc(((size_t)ns+1)*nb*sizeof(double));
+    int rc=-1;
+    if(!radius||!edges||!j||!h)goto done;
+    for(int s=0;s<=ns;s++){
+        radius[s]=s<ns?geo->r_inner[s]:geo->r_outer[ns-1];
+        if((s>0&&radius[s]!=geo->r_outer[s-1])||
+           fabs(radius[s]/trial->epoch_s-old->velocity_edges[s])>
+             1e-12*fmax(fabs(old->velocity_edges[s]),1))goto done;
+    }
+    for(int b=0;b<=nb;b++)edges[b]=fine->nu_min*exp(b*fine->d_log_nu);
+    CMFTimeMomentInput input={0};input.n_shells=ns;input.n_bins=nb;
+    input.time_old=old->epoch_s;input.time_new=trial->epoch_s;
+    input.radius_edges=radius;input.frequency_edges=edges;input.chi_total=fine->chi_tot;
+    input.chi_scattering=fine->chi_es;input.eta_fixed=eta;
+    input.old_J=old->J;input.old_H=old->H;input.inner_H=trial->inner_H;
+    CMFTimeFormalContext ctx={fine,geo,eta,temperature,0};
+    if(cmf_fine_multigpu_device_request(&ctx.devices))goto done;
+    CMFTimeFieldReport report;
+    CMFTimeMomentStatus status=cmf_time_field_solve(&input,old->J,
+        cmf_time_formal_apply,&ctx,cap,tol,j,h,delta,&report);
+    fprintf(stderr,"[CMF-TIME] status=%d old=%.17g new=%.17g iterations=%d "
+        "J_update=%.17g closure_update=%.17g equation_residual=%.17g "
+        "uncertainty=ITERATION_DELTA certified_bound=0\n",status,old->epoch_s,
+        trial->epoch_s,report.iterations,report.relative_update,report.closure_update,report.equation_residual);
+    if(status!=CMF_TIME_OK)goto done;
+    memcpy(fine->J,j,(size_t)ns*nb*sizeof(double));
+    free(trial->J);free(trial->H);trial->J=j;trial->H=h;trial->report=report;j=h=NULL;rc=0;
+done:
+    free(radius);free(edges);free(j);free(h);return rc;
+}
+
 int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                      OpacityState *opac, double T_inner, PlasmaState *plasma,
                      CMFFineLineOperator line_operator)
 {
     int NS = csb->n_shells, NL = opac->n_lines;
     csb->common_obs_ready=0;
+    opac->jbar_line_det_time_old=opac->jbar_line_det_time_new=0;
+    opac->jbar_line_det_time_equation_residual=opac->jbar_line_det_time_closure_update=INFINITY;
     opac->jbar_line_det_vdoppler_cms = 0.0;
     opac->jbar_line_det_ndoppler = 0.0;
     opac->jbar_line_det_operator = 0;
@@ -8298,6 +8394,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     const int common_field =
         line_operator == CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN;
+    const int time_field=csb->time_trial!=NULL;
+    if(time_field&&!common_field)return -1;
     const char *operator_name = common_field ? "COMMON_GAUSSIAN" :
         line_operator == CMF_FINE_LINE_OPERATOR_CMFGEN_NONOVERLAP_SOBOLEV
         ? "CMFGEN_NONOVERLAP_SOBOLEV" : "INIT_SHARED_GAUSSIAN";
@@ -9386,6 +9484,11 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     }
 #endif
+    if(time_field&&(ab_enabled||independent_capture)){
+        fprintf(stderr,"[CMF-TIME] stationary comparison requested for time field\n");
+        free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
+        free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);return -1;
+    }
     double *fine_error_upper =
         (double *)malloc(fine_cells * sizeof(*fine_error_upper));
     if (!fine_error_upper) {
@@ -9447,14 +9550,32 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         }
     }
     CMFFineOwnerResult owner_result;
+    CMFExactReport exact_report;
+    int owner_rc;
+    double owner_seconds=0;
+    memset(&owner_result,0,sizeof(owner_result));memset(&exact_report,0,sizeof(exact_report));
+    if(time_field){
+        owner_rc=cmf_fine_time_solve(&fs,geo,eta,T_inner,n_ali,solve_tol,
+            csb->time_trial,fine_error_upper);
+        const CMFTimeFieldReport *r=&csb->time_trial->report;
+        exact_report.iterations_used=r->iterations;exact_report.iteration_cap=n_ali;
+        exact_report.tolerance=solve_tol;exact_report.final_max_relative_change=r->relative_update;
+        exact_report.fixed_point_absolute_error_bound=INFINITY;
+        exact_report.scattering_operator_norm_upper=INFINITY;
+        exact_report.componentwise_error_upper_min=INFINITY;
+        if(!owner_rc)for(size_t i=0;i<fine_cells;i++){
+            exact_report.componentwise_error_upper_min=fmin(exact_report.componentwise_error_upper_min,fine_error_upper[i]);
+            exact_report.componentwise_error_upper_max=fmax(exact_report.componentwise_error_upper_max,fine_error_upper[i]);
+        }
+    }else{
     double owner_start = cmf_wall_seconds();
-    int owner_rc = cmf_fine_exact_owner_solve(
+    owner_rc = cmf_fine_exact_owner_solve(
         NS, NF, dlognu, fs.nu, geo->r_inner, geo->r_outer,
         geo->time_explosion, T_inner, cmf_inner_bb_scale(),
         fs.chi_tot, fs.chi_es, eta, fs.J, fine_error_upper,
         envelope_refinements, n_ali, solve_tol, &owner_result,1);
-    double owner_seconds = cmf_wall_seconds() - owner_start;
-    CMFExactReport exact_report = owner_result.exact;
+    owner_seconds = cmf_wall_seconds() - owner_start;
+    exact_report = owner_result.exact;
     if (owner_result.config_status ==
             CMF_FINE_OWNER_INVALID_DEVICE_REQUEST) {
         fprintf(stderr,
@@ -9584,6 +9705,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 exact_report.first_negative_recurrence,
                 LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256,
                 LUMINA_RADFIELD_EDGE_SHA256);
+    }
     }
     if (owner_rc != 0) {
         free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);
@@ -10509,7 +10631,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     free(fs.nu);free(fs.dnu);free(fs.chi_es);free(fs.chi_abs);free(fs.chi_line);
     free(fs.chi_tot);free(fs.S_fixed);free(fs.J);free(eta);
     free(fine_error_upper);
-    opac->jbar_line_det_exact_converged = 1;
+    opac->jbar_line_det_exact_converged = !time_field;
+    if(time_field){
+        opac->jbar_line_det_time_old=csb->time_trial->old->epoch_s;
+        opac->jbar_line_det_time_new=csb->time_trial->epoch_s;
+        opac->jbar_line_det_time_equation_residual=csb->time_trial->report.equation_residual;
+        opac->jbar_line_det_time_closure_update=csb->time_trial->report.closure_update;
+    }
     opac->jbar_line_det_exact_iterations = exact_report.iterations_used;
     opac->jbar_line_det_exact_iteration_cap = exact_report.iteration_cap;
     opac->jbar_line_det_exact_residual =

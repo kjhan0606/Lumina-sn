@@ -31,7 +31,8 @@ typedef struct {
 
 typedef enum {
     CMF_TIME_OK=0, CMF_TIME_INVALID=1, CMF_TIME_ALLOCATION=2,
-    CMF_TIME_NONFINITE=3, CMF_TIME_NEGATIVE=4, CMF_TIME_STEP_TOO_LARGE=5
+    CMF_TIME_NONFINITE=3, CMF_TIME_NEGATIVE=4, CMF_TIME_STEP_TOO_LARGE=5,
+    CMF_TIME_NOT_CONVERGED=6
 } CMFTimeMomentStatus;
 
 /* Backward Euler in r^3 J/r^3 H, finite-volume radial divergence and an upwind

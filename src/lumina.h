@@ -306,6 +306,9 @@ typedef struct {
     double  jbar_line_det_ndoppler;       /* symmetric support in Doppler widths */
     int     jbar_line_det_operator;       /* 1=init, 2=Sobolev, 3=공통 Gaussian */
     int     jbar_line_det_exact_converged;/* exact characteristic qualified */
+    /* 시간 모멘트는 정상 고정점 인증과 다르다. delta는 오차 상계가 아니다. */
+    double  jbar_line_det_time_old, jbar_line_det_time_new;
+    double  jbar_line_det_time_equation_residual, jbar_line_det_time_closure_update;
     int     jbar_line_det_exact_iterations;
     int     jbar_line_det_exact_iteration_cap;
     double  jbar_line_det_exact_residual;

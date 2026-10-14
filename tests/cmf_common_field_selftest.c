@@ -240,6 +240,48 @@ static int physical_profile_commit_test(void) {
     }
     printf("COMMON50_ACTUAL_PRODUCER_COMMIT_PASS fine_bins=%d profile_id=%llu hash=%s\n",
         o.n_fine,(unsigned long long)q.profile_id,q.profile_hash);
+    /* 같은 생산 조립/평균/발행 경로에 시간식을 연결한다. 과거 H=0인
+     * 인공 이력이며 실제 SN의 초기 이력 또는 수렴 스펙트럼은 아니다. */
+    size_t cells=(size_t)NS*o.n_fine,faces=(size_t)(NS+1)*o.n_fine;
+    double *oldj=malloc(cells*sizeof(double)),*oldh=calloc(faces,sizeof(double));
+    double *inner=calloc((size_t)o.n_fine,sizeof(double));
+    REQUIRE(oldj&&oldh&&inner);
+    memcpy(oldj,o.jnu_fine,cells*sizeof(double));
+    double vedge[NS+1]={3e8,4e8,5e8};
+    CMFTimeRadiationHistory history={NS,o.n_fine,1e6,o.nu_lo_fine,o.dlognu_fine,vedge,oldj,oldh};
+    CMFTimeRadiationTrial trial={0};trial.old=&history;trial.inner_H=inner;trial.epoch_s=1.001e6;
+    c.time_trial=&trial;g.time_explosion=trial.epoch_s;
+    for(int s=0;s<NS;s++){ri[s]=vi[s]*g.time_explosion;ro[s]=vo[s]*g.time_explosion;}
+    REQUIRE(cmfgen_fine_jbar(&c,&g,&o,12000,&p,CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)==0);
+    REQUIRE(trial.report.converged && trial.J && trial.H);
+    REQUIRE(!o.jbar_line_det_exact_converged && !o.jbar_line_det_error_envelope_verified);
+    REQUIRE(o.jbar_line_det_time_old==history.epoch_s && o.jbar_line_det_time_new==g.time_explosion);
+    REQUIRE(o.jbar_line_det_time_equation_residual<1e-10);
+    REQUIRE(memcmp(trial.J,o.jnu_fine,cells*sizeof(double))==0);
+    double timediff=0;for(size_t i=0;i<cells;i++)timediff=fmax(timediff,fabs(trial.J[i]-oldj[i]));
+    REQUIRE(timediff>0);
+    for(size_t i=0;i<faces;i++)REQUIRE(oldh[i]==0);
+    REQUIRE(cmfgen_commit_jnu(&c,&n,&g,&o,2)==0);
+    REQUIRE(n.line_view.uncertainty_kind==LINE_JBAR_UNCERTAINTY_ITERATION_DELTA);
+    REQUIRE(n.line_energy_view.uncertainty_kind==LINE_JBAR_UNCERTAINTY_ITERATION_DELTA);
+    for(int l=0;l<NL;l++)for(int s=0;s<NS;s++){
+        LineJbarValue rate,energy;
+        REQUIRE(line_jbar_lookup(&n.line_view,s,l,&rate)==0);
+        REQUIRE(line_jbar_lookup(&n.line_energy_view,s,l,&energy)==0);
+        REQUIRE(rate.jbar==jb[l*NS+s]&&energy.jbar==rate.jbar);
+        REQUIRE(rate.uncertainty_kind==LINE_JBAR_UNCERTAINTY_ITERATION_DELTA);
+        REQUIRE(energy.uncertainty_kind==rate.uncertainty_kind);
+    }
+    /* 입력 격자가 바뀐 실패는 이미 발행한 복사장을 덮지 않는다. */
+    vedge[0]*=1.01;
+    RadiationFieldGeneration published=n.radiation_field.field.generation;
+    double published_j=n.line_view.jbar[0];
+    REQUIRE(cmfgen_fine_jbar(&c,&g,&o,12000,&p,CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN)!=0);
+    REQUIRE(cmfgen_commit_jnu(&c,&n,&g,&o,3)!=0);
+    REQUIRE(memcmp(&n.radiation_field.field.generation,&published,sizeof published)==0 && n.line_view.jbar[0]==published_j);
+    printf("TIME_ACTUAL_PRODUCER_COMMIT_PASS iterations=%d equation_residual=%.17g field_change=%.17g certified_bound=0 invalid_grid_preserves_publication=1\n",
+        trial.report.iterations,trial.report.equation_residual,timediff);
+    c.time_trial=NULL;cmf_time_radiation_trial_free(&trial);free(oldj);free(oldh);free(inner);
     free(o.jnu_fine);free(o.nu_fine);free(o.jbar_line_det_error_upper);
     cmfgen_free(&c);radiation_field_owner_free(&n.radiation_field);
     line_jbar_qset_free(&q);line_jbar_qset_free(&e);
