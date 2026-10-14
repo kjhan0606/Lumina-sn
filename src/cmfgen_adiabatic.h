@@ -49,4 +49,31 @@ CmfgenAdiabaticStatus cmfgen_adiabatic_v3_homologous_evaluate(
 
 const char *cmfgen_adiabatic_status_name(CmfgenAdiabaticStatus status);
 
+/* 동일한 Lagrange 셸들의 실제 과거/현재 물질 상태. 같은시점 수렴반복의
+ * 직전 후보를 과거 상태로 넣으면 안 된다. internal_energy는 중성 바닥
+ * 기준의 들뜸+이온화 에너지이고 핵붕괴 에너지는 침적 항에서 별도 처리한다. */
+typedef struct {
+    size_t n_shells;
+    double epoch_s;
+    const double *density_g_cm3;
+    const double *temperature_K;
+    const double *n_atom_cm3;
+    const double *n_electron_cm3;
+    const double *internal_energy_atom_erg;
+} CmfgenMaterialEnergyState;
+
+typedef struct {
+    double thermal_time;   /* rho_new * delta(e_thermal)/dt */
+    double atomic_time;    /* rho_new * delta(e_excitation+ionization)/dt */
+    double expansion;      /* 3 P_new/t_new, not an extra spatial advection */
+    double signed_total, cooling, heating; /* erg s^-1 cm^-3 */
+} CmfgenMaterialTimeWork;
+
+/* Hillier/Dessart2012 Eq27-30, implicit material side. Requires homologous
+ * density evolution and identical mass-shell ordering. Output is transactional.
+ * This replaces (does not add to) steady advective work in a time evolution. */
+CmfgenAdiabaticStatus cmfgen_material_time_work(
+    const CmfgenMaterialEnergyState *current,
+    const CmfgenMaterialEnergyState *previous, CmfgenMaterialTimeWork *out);
+
 #endif

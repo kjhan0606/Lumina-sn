@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define CMFGEN_AD_K_BOLTZMANN 1.380649e-16
 #define CMFGEN_AD_HOMOLOGY_RTOL 1.0e-10
@@ -129,6 +130,65 @@ CmfgenAdiabaticStatus cmfgen_adiabatic_v3_homologous_evaluate(
     memcpy(out, candidate, input->n_shells * sizeof(*out));
     free(candidate);
     return CMFGEN_ADIABATIC_OK;
+}
+
+CmfgenAdiabaticStatus cmfgen_material_time_work(
+    const CmfgenMaterialEnergyState *current,
+    const CmfgenMaterialEnergyState *previous, CmfgenMaterialTimeWork *out)
+{
+    if(!current || !previous || !out || current->n_shells==0 ||
+       current->n_shells!=previous->n_shells ||
+       current->n_shells>SIZE_MAX/sizeof(*out) ||
+       !finite_positive(previous->epoch_s) || !isfinite(current->epoch_s) ||
+       !(current->epoch_s>previous->epoch_s))return CMFGEN_ADIABATIC_INVALID_ARGUMENT;
+    const CmfgenMaterialEnergyState *states[2]={current,previous};
+    for(int k=0;k<2;++k){
+        const CmfgenMaterialEnergyState *state=states[k];
+        if(!state->density_g_cm3 || !state->temperature_K || !state->n_atom_cm3 ||
+           !state->n_electron_cm3 || !state->internal_energy_atom_erg)
+            return CMFGEN_ADIABATIC_INVALID_ARGUMENT;
+        for(size_t s=0;s<state->n_shells;++s){
+            if(!finite_positive(state->density_g_cm3[s]) ||
+               !finite_positive(state->n_atom_cm3[s]) ||
+               !(state->n_electron_cm3[s]>=0) || !isfinite(state->n_electron_cm3[s]))
+                return CMFGEN_ADIABATIC_INVALID_DENSITY;
+            if(!finite_positive(state->temperature_K[s]))
+                return CMFGEN_ADIABATIC_INVALID_TEMPERATURE;
+            if(!(state->internal_energy_atom_erg[s]>=0) ||
+               !isfinite(state->internal_energy_atom_erg[s]))
+                return CMFGEN_ADIABATIC_INVALID_INTERNAL_ENERGY;
+        }
+    }
+    long double scale=(long double)previous->epoch_s/current->epoch_s;
+    scale=scale*scale*scale;
+    const long double dt=(long double)current->epoch_s-previous->epoch_s;
+    CmfgenMaterialTimeWork *trial=calloc(current->n_shells,sizeof(*trial));
+    if(!trial)return CMFGEN_ADIABATIC_ALLOCATION_FAILED;
+    CmfgenAdiabaticStatus status=CMFGEN_ADIABATIC_OK;
+    for(size_t s=0;s<current->n_shells;++s){
+        long double q=(long double)current->density_g_cm3[s]/previous->density_g_cm3[s];
+        if(fabsl(q/scale-1)>CMFGEN_AD_HOMOLOGY_RTOL){
+            status=CMFGEN_ADIABATIC_NON_HOMOLOGOUS;break;
+        }
+        long double nnew=(long double)current->n_atom_cm3[s]+current->n_electron_cm3[s];
+        long double nold=(long double)previous->n_atom_cm3[s]+previous->n_electron_cm3[s];
+        CmfgenMaterialTimeWork *cell=&trial[s];
+        cell->thermal_time=1.5L*CMFGEN_AD_K_BOLTZMANN*
+            (nnew*current->temperature_K[s]-q*nold*previous->temperature_K[s])/dt;
+        cell->atomic_time=((long double)current->n_atom_cm3[s]*current->internal_energy_atom_erg[s]
+            -q*previous->n_atom_cm3[s]*previous->internal_energy_atom_erg[s])/dt;
+        cell->expansion=3.0L*nnew*CMFGEN_AD_K_BOLTZMANN*
+            current->temperature_K[s]/current->epoch_s;
+        cell->signed_total=four_term_sum(cell->thermal_time,cell->atomic_time,cell->expansion,0);
+        if(!isfinite(cell->thermal_time) || !isfinite(cell->atomic_time) ||
+           !isfinite(cell->expansion) || !isfinite(cell->signed_total)){
+            status=CMFGEN_ADIABATIC_NONFINITE_RESULT;break;
+        }
+        cell->cooling=cell->signed_total>0?cell->signed_total:0;
+        cell->heating=cell->signed_total<0?-cell->signed_total:0;
+    }
+    if(status==CMFGEN_ADIABATIC_OK)memcpy(out,trial,current->n_shells*sizeof(*out));
+    free(trial);return status;
 }
 
 const char *cmfgen_adiabatic_status_name(CmfgenAdiabaticStatus status)
