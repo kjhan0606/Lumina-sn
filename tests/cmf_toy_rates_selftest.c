@@ -126,6 +126,16 @@ int main(int argc,char **argv){
         else{CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double)));
              CHECK(!memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));}
         if(cache_test){
+            if(gth_parallel){
+                memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+                memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+                n->bf_rate_cache=rate_cache;omp_set_num_threads(1);start=seconds();
+                CHECK(nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma)==POP_OK);
+                printf("TOY_GTH_WARM1 shell=%d Z=%d seconds=%.9g\n",s,Z,seconds()-start);
+                CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))&&
+                    !memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
+                omp_set_num_threads(2);
+            }
             memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
             memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
             n->bf_rate_cache=rate_cache;start=seconds();

@@ -38,7 +38,7 @@ module load gnu13/13.2.0
 if [[ "$toy_mode" == *nonthermal ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL
-if [[ "$toy_mode" == material-rates-gth ]]; then export CMF_TEST_GTH_PARALLEL=1 CMF_TEST_PROFILE_CACHED=1; fi
+if [[ "$toy_mode" == material-rates-gth ]]; then export CMF_TEST_GTH_PARALLEL=1 CMF_TEST_PROFILE_CACHED=1 CMF_TEST_RATE_CACHE=1; fi
 if [[ "$toy_mode" == material-rates-cache ]]; then export CMF_TEST_RATE_CACHE=1; fi
 toy_profile_flags=()
 if [[ "$toy_mode" == material-rates-profile ]]; then
