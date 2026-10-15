@@ -13,7 +13,7 @@ static int check_line_selection(const NLTEConfig *n,int count,int lo,int hi){
     return nlte_pair_line_next(&it)==-1?0:-1;
 }
 int main(int argc,char **argv){
-    if(argc!=4)return 2;
+    if(argc!=4&&argc!=6)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};int ns=atoi(argv[3]),rc=0;
     {
@@ -96,6 +96,16 @@ int main(int argc,char **argv){
     printf("TOY_MODEL_PREPARED shells=%d levels=%d super=%d ions=%d lines=%d coll_ions=%d mass_g=%.17g T_first=%.17g T_last=%.17g ne_first=%.17g ne_last=%.17g charge_error=%.17g ion_error=%.17g level_error=%.17g max_terminal_fraction=%.17g initial_NLTE_converged=0 spectrum_compared=0\n",
         ns,a->n_levels,n->n_super_total,a->n_ion_pops,a->n_lines,a->ncol_ions,total_mass,
         p->T_e[0],p->T_e[ns-1],p->n_electron[0],p->n_electron[ns-1],charge_error,ion_error,level_error,max_terminal);
+    if(argc==6){
+        int iteration=-1;char status[128];
+        CHECK(!cmf_toy_initial_iterate_read(&m,argv[4],argv[5],&iteration));
+        CHECK(iteration>=0&&!p->physical_history&&p->initial_steady_nlte);
+        CHECK(n->radfield_view_status==RADIATION_FIELD_VIEW_DISABLED);
+        CHECK(!n->radiation_field.field.generation.computed_generation);
+        snprintf(status,sizeof status,"UNCONVERGED_INITIAL_ITERATE; completed_iterations=%d; physical_history=0",iteration);
+        CHECK(!cmf_toy_model_write_material(&m,"iterate_material.csv",status));
+        printf("TOY_ITERATE_INSPECTED completed_iterations=%d initial_NLTE_converged=0 radiation_recomputed=0 source_immutable=1\n",iteration);
+    }
 done:
     cmf_toy_model_free(&m);return rc;
 }

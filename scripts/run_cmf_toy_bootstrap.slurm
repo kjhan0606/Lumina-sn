@@ -17,7 +17,7 @@ toy_shells=${1:-100}
 case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
- material) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material|material-iterate) toy_test=tests/cmf_toy_model_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate) toy_test=tests/cmf_toy_iterate_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth) toy_test=tests/cmf_toy_rates_selftest.c ;;
@@ -35,7 +35,7 @@ mkdir "$toy_out/source" "$toy_out/objects" "$toy_out/input"
 source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
-if [[ "$toy_mode" == *nonthermal ]]; then module load python/3.11.14; fi
+if [[ "$toy_mode" == *nonthermal || "$toy_mode" == material-iterate ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL
 if [[ "$toy_mode" == material-rates-gth ]]; then export CMF_TEST_GTH_PARALLEL=1 CMF_TEST_PROFILE_CACHED=1 CMF_TEST_RATE_CACHE=1; fi
@@ -69,6 +69,9 @@ fi
 cd "$toy_src"
 git rev-parse HEAD > "$toy_out/commit.txt"
 toy_files=(src/*.h scripts/run_cmf_toy_bootstrap.slurm "$toy_test")
+if [[ "$toy_mode" == material-iterate ]]; then
+ toy_files+=(scripts/compare_cmf_initial_iterate.py scripts/read_cmf_common_material.py)
+fi
 if [[ "$toy_mode" == *nonthermal ]]; then toy_files+=(scripts/map_cmf_nonthermal.py); fi
 for toy_unit in "${toy_units[@]}"; do toy_files+=("src/$toy_unit.c"); done
 cp --parents "${toy_files[@]}" "$toy_out/source/"
@@ -111,6 +114,14 @@ done
 gcc -O2 "${toy_profile_flags[@]}" -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
  "${toy_objects[@]}" -Wl,--gc-sections -lm -o "$toy_out/prepare" >> "$toy_out/build.log" 2>&1
 toy_arguments=(input/snia_toy06_2d.dat input "$toy_shells")
+if [[ "$toy_mode" == material-iterate ]]; then
+ toy_iterate_run=${5:?completed initial run directory required}
+ (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
+ for toy_file in "$toy_out"/input/*; do cmp "$toy_file" "$toy_iterate_run/input/${toy_file##*/}"; done
+ toy_iterate_id=$(sha256sum "$toy_iterate_run/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
+ toy_arguments+=("$toy_iterate_run/work/initial_iterate.bin" "$toy_iterate_id")
+ sha256sum "$toy_iterate_run/work/initial_iterate.bin" "$toy_iterate_run/iterate_identity.txt" > "$toy_out/iterate.sha256"
+fi
 if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
 if [[ "$toy_mode" == material-rates-components ]]; then
  # 동일 binary의 새 프로세스로 정적 env cache도 분리한다. 생산 처방이 아니다.
@@ -129,6 +140,12 @@ if [[ "$toy_mode" == material-rates-components ]]; then
  done
 else
  (cd "$toy_out"; ./prepare "${toy_arguments[@]}" > prepare.log 2> prepare.err)
+fi
+if [[ "$toy_mode" == material-iterate ]]; then
+ python3 scripts/compare_cmf_initial_iterate.py --run "$toy_out" \
+  --public /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/toy06 \
+  > "$toy_out/iterate-comparison.log"
+ sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
 fi
 if [[ "$toy_mode" == material-rates-profile ]]; then
  (cd "$toy_out"; gprof -b -p ./prepare gmon.out > profile.txt)
