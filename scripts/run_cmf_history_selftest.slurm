@@ -33,6 +33,12 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
 history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_mode=${1:-regression}
+history_iteration=${2:-plain}
+case "$history_iteration" in
+ plain) ;;
+ anderson) export LUMINA_CMF_ANDERSON1=1 ;;
+ *) exit 2 ;;
+esac
 case "$history_mode" in
  regression) ;;
  channels) history_tests=(bf_channels) ;;
