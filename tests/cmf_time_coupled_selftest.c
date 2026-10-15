@@ -1,6 +1,7 @@
 /* 실제 시간 수송/R6/R7/온도·전자·인구 공동 실행. 합성2셸·3준위 원자이며
  * SN 초기조건 또는 CMFGEN 분포 시험이 아니다. 생산 함수를 wrap하지 않는다. */
 #include "cmf_time_epoch.h"
+#include "cmf_toy_model.h"
 #include "line_jbar.h"
 #include "cmf_nonthermal_provider.h"
 #include <math.h>
@@ -12,10 +13,23 @@ static double Bnu(double nu,double T){return 2*H_PLANCK*nu*nu*nu/
     (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(H_PLANCK*nu/(K_BOLTZMANN*T));}
 static int nt_calls;
 static int saved_iterations;
+static CMFToyModel save_view;
+static Geometry *save_geo;
+static OpacityState *save_opac;
+static PlasmaState *save_plasma;
+static NLTEConfig *save_nlte;
+static AtomicData *save_atom;
+static const char *iterate_id="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 static int save_iteration(void *context,int iteration){
     CMFGENState *c=context;
     if(c->common_obs_ready||iteration!=saved_iterations)return -1;
-    saved_iterations++;return 0;
+    saved_iterations++;
+    if(iteration==3&&getenv("CMF_TEST_ITERATE")&&!getenv("CMF_TEST_ITERATE_INPUT")){
+        save_view.prepared=1;save_view.geometry=*save_geo;save_view.opacity=*save_opac;
+        save_view.plasma=*save_plasma;save_view.nlte=*save_nlte;save_view.atom=*save_atom;
+        return cmf_toy_initial_iterate_write(&save_view,"initial_iterate_test.bin",iterate_id,iteration);
+    }
+    return 0;
 }
 static double nt_max_rate;
 static int actual_nt(const void *context,const AtomicData *a,const NLTEConfig *n,
@@ -133,6 +147,14 @@ int main(void){
         CHECK(!initial.radiation_storage&&!initial.material.storage);
         CHECK(T[0]==1e4&&T[1]==1e4&&a.population_committed_generation==1);
         setenv("LUMINA_FIXED_TE_PROFILE","initial_T.csv",1);
+        save_geo=&g;save_opac=&o;save_plasma=&p;save_nlte=&n;save_atom=&a;
+        if(getenv("CMF_TEST_ITERATE_INPUT")){
+            int completed=-1;save_view.prepared=1;save_view.geometry=g;save_view.opacity=o;
+            save_view.plasma=p;save_view.nlte=n;save_view.atom=a;
+            CHECK(!cmf_toy_initial_iterate_read(&save_view,getenv("CMF_TEST_ITERATE_INPUT"),iterate_id,&completed));
+            CHECK(completed==3);
+            g=save_view.geometry;o=save_view.opacity;p=save_view.plasma;n=save_view.nlte;a=save_view.atom;
+        }
         CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report,
                                                                save_iteration,&c);
         fprintf(stderr,"INITIAL_COUPLED_RESULT status=%d iterations=%d ne=%.17g/%.17g T=%.17g/%.17g\n",

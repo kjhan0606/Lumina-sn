@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_BF_CACHE_ONLY
+unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -28,7 +28,7 @@ git rev-parse HEAD > "$history_out/commit.txt"
 history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
  line_jbar seed_capability jnu_seed population_contract atomic_internal_energy
  opacity_publication emissivity_publication radeq_publication line_net_rate
- cmfgen_adiabatic cmf_decay cmf_ejecta cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate cmf_nonthermal cmf_nonthermal_provider
+ cmfgen_adiabatic cmf_decay cmf_ejecta cmf_toy_model cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate cmf_nonthermal cmf_nonthermal_provider
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
 history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange cmf_recombination nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
@@ -48,6 +48,7 @@ case "$history_mode" in
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
+ initial-restart) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
  *) exit 2 ;;
 esac
@@ -97,6 +98,32 @@ for history_test in "${history_tests[@]}"; do
   (cd "$history_out"; mkdir cache; cd cache; CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels > ../cache.log 2> ../cache.err)
  fi
 done
+if [[ "$history_mode" == initial-restart ]]; then
+ mkdir "$history_out/restarted"
+ (cd "$history_out/restarted"; CMF_TEST_ITERATE_INPUT="$history_out/initial_iterate_test.bin" \
+  ../cmf_time_coupled > ../restarted.log 2> ../restarted.err)
+ # 초기/시간 관측 CSV의 절대값을 비교한다. 진폭 재조정은 없다.
+ module load python/3.11.14
+ python3 - "$history_out" > "$history_out/restart-comparison.log" <<'PY'
+import csv, math, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+for name in ('initial_spectrum.csv', 'initial_evolved_spectrum.csv'):
+    with (root / name).open() as f:
+        reference = list(csv.DictReader(f))
+    with (root / 'restarted' / name).open() as f:
+        resumed = list(csv.DictReader(f))
+    assert reference and len(reference) == len(resumed)
+    worst = 0.0
+    for a, b in zip(reference, resumed):
+        assert a['wavelength_angstrom'] == b['wavelength_angstrom']
+        x, y = float(a['flux']), float(b['flux'])
+        assert math.isfinite(x) and math.isfinite(y) and x >= 0 and y >= 0
+        error = abs(x-y)/max(x,y) if max(x,y) else 0
+        worst = max(worst, error)
+    assert worst < 1e-6, (name, worst)
+    print(f'INITIAL_RESTART_SPECTRUM_PASS file={name} max_relative={worst:.17g} amplitude_fit=0 synthetic_atom=1')
+PY
+fi
 if [[ "$history_mode" == initial || "$history_mode" == initial-nonthermal ]]; then
  # 실제 초기/시간해 연결은 그대로, 새 checkpoint 소유 코드와 호출부를 계측한다.
  history_checkpoint_rest=()
