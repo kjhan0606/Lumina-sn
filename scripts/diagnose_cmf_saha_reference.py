@@ -72,7 +72,10 @@ def diagnose(run, public, out, raw=None):
                 entry = atom.levels[i]
                 if number != i or name != str(entry['config']) or weight != float(entry['g']) or abs(energy-float(entry['E_cm'])*_CM2EV)>1e-7:
                     raise ValueError(('현행 원자/원자료 준위 대응 실패', key, i))
-            limited[key] = [(float(r['E_cm'])*_CM2EV, float(r['g'])) for r in atom.levels[:count]]
+            # 유지 준위의 반올림까지 그대로 둬서 수 차이만 개입한다.
+            limited[key] = list(levels[key][:count]) + [
+                (float(r['E_cm'])*_CM2EV, float(r['g']))
+                for r in atom.levels[len(levels[key]):count]]
             model_sizes.append(dict(Z=z, stage=q, current_levels=len(levels[key]),
                 local_raw_levels=atom.n_levels, table6_subset_levels=count, last_configuration=last))
 
