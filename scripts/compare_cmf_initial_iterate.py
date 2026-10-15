@@ -50,16 +50,25 @@ def fraction(row, mass):
     return value, nuclei * volume
 
 
+def validate_iterate(status, before, after):
+    """같은 고정 hydro 상태의 수치 반복인지 확인한다. 물리 수렴 판정은 아니다."""
+    match = re.fullmatch(r'# UNCONVERGED_INITIAL_ITERATE; completed_iterations=(\d+); physical_history=0', status)
+    if not match or before.keys() != after.keys():
+        raise ValueError('완료 반복 또는 두 물질표의 레이아웃 불일치')
+    identity_fields = ('r_inner_cm', 'r_outer_cm', 'rho_g_cm3', 'T_K', 'mass_fraction')
+    for key, row in after.items():
+        if any(row[k] != before[key][k] for k in identity_fields):
+            raise ValueError('동일 초기 모델/T가 아닌 두 물질표')
+    return int(match[1])
+
+
 def compare(run, public):
     _, before = material(run / 'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
     status, after = material(run / 'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
-    match = re.search(r'completed_iterations=(\d+); physical_history=0$', status)
-    if not match or before.keys() != after.keys():
-        raise ValueError('완료 반복 또는 두 물질표의 레이아웃 불일치')
+    iterations = validate_iterate(status, before, after)
     day = 2.0  # C 추출기는 toy06의 epoch=172800을 확인한다.
     ph, phys = public_block(public / 'phys_toy06_cmfgen.txt', day)
     details, metrics, missing, plasma = [], [], {}, {}
-    identity_fields = ('r_inner_cm', 'r_outer_cm', 'rho_g_cm3', 'T_K', 'mass_fraction')
     for z, name, mass in ((14, 'si', 28.0855), (16, 's', 32.065)):
         header, reference = public_block(public / f'ionfrac_{name}_toy06_cmfgen.txt', day)
         columns = {int(k[len(name):]): i for i, k in enumerate(header) if k.startswith(name)}
@@ -67,8 +76,6 @@ def compare(run, public):
             if element != z:
                 continue
             old = before[(s, z, q)]
-            if any(row[k] != old[k] for k in identity_fields):
-                raise ValueError('동일 초기 모델/T가 아닌 두 물질표')
             initial, weight = fraction(old, mass)
             current, _ = fraction(row, mass)
             velocity = (float(row['r_inner_cm']) + float(row['r_outer_cm'])) / 2 / (day * 86400) / 1e5
@@ -105,7 +112,7 @@ def compare(run, public):
     for path in paths:
         with path.open('rb') as handle:
             hashes[str(path)] = hashlib.file_digest(handle, 'sha256').hexdigest()
-    summary = dict(day=day, completed_iterations=int(match[1]), status='UNCONVERGED_INITIAL_ITERATE',
+    summary = dict(day=day, completed_iterations=iterations, status='UNCONVERGED_INITIAL_ITERATE',
         goal_verdict='NOT_JUDGED', physical_history=False, radiation_recomputed=False,
         spectrum_compared=False, velocity_interpolation='linear; no extrapolation',
         fraction_denominator='rho*mass_fraction/(mass_amu*AMU); no renormalization',
@@ -120,8 +127,13 @@ def compare(run, public):
 def grid_diagnostic(run, finer, public):
     """100셸의 온도 급변 구간을 같은 경계의 세분화 격자 및 공개 셀 평균과 비교."""
     _, coarse = material(run/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
-    _, updated = material(run/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
+    coarse_status, updated = material(run/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
+    coarse_iterations = validate_iterate(coarse_status, coarse, updated)
     _, fine = material(finer/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
+    fine_updated, fine_iterations = None, None
+    if (finer/'iterate_material.csv').exists():
+        fine_status, fine_updated = material(finer/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
+        fine_iterations = validate_iterate(fine_status, fine, fine_updated)
     ph, plasma = public_block(public/'phys_toy06_cmfgen.txt', 2.)
     with (run/'input/snia_toy06_2d.dat').open() as handle:
         source = [[float(x) for x in line.split()] for line in handle if line.strip() and not line.startswith('#')]
@@ -157,6 +169,10 @@ def grid_diagnostic(run, finer, public):
             if abs(math.fsum(w for f,w in components)/nuclei-1)>1e-10:
                 raise ValueError('두 격자의 핵수 불일치')
             avg = math.fsum(f*w for f,w in components)/nuclei
+            fine_iterate_average = None
+            if fine_updated is not None:
+                updated_components = [fraction(fine_updated[(int(r['shell']), z, q)], mass) for r in selected]
+                fine_iterate_average = math.fsum(f*w for f,w in updated_components)/nuclei
             volume = lambda r: float(r['r_outer_cm'])**3-float(r['r_inner_cm'])**3
             fine_T4 = math.fsum(volume(r)*float(r['T_K'])**4 for r in selected)/volume(cell)
             assert abs(fine_T4/float(cell['T_K'])**4-1)<1e-12
@@ -177,10 +193,14 @@ def grid_diagnostic(run, finer, public):
                 T_reference_volume_T4=temperature, T_reference_center=interpolate(plasma,(lo+hi)/2,ph.index('temp[K]')),
                 saha_100=base, saha_finer_nuclei_average=avg,
                 nlte_iterate_100=fraction(updated[(30,z,q)],mass)[0],
+                nlte_iterate_finer_nuclei_average=fine_iterate_average,
                 reference_center=fref((lo+hi)/2), reference_nuclei_average=reference,
                 fine_cells=[int(r['shell']) for r in selected]))
     return dict(status='INITIAL_GRID_DIAGNOSTIC', day=2., goal_verdict='NOT_JUDGED',
-        fine_NLTE_solved=False, reference_integration='piecewise-linear public rho and fraction; native hydro X per cell; rho*X*v^2',
+        coarse_completed_iterations=coarse_iterations, fine_completed_iterations=fine_iterations,
+        fine_NLTE_solved=fine_iterations is not None and fine_iterations > 0,
+        fine_NLTE_converged=False, physical_history=False,
+        reference_integration='piecewise-linear public rho and fraction; native hydro X per cell; rho*X*v^2',
         coarse_run=str(run), fine_run=str(finer), records=records)
 
 

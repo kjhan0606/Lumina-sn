@@ -52,6 +52,10 @@ elif [[ "${1:-selftest}" == initial-grid ]]; then
   "$2/input/snia_toy06_2d.dat" \
   "$compare_public/phys_toy06_cmfgen.txt" "$compare_public/ionfrac_si_toy06_cmfgen.txt" \
   "$compare_public/ionfrac_s_toy06_cmfgen.txt" > "$compare_out/grid_input.sha256"
+ if [[ -f "$3/iterate_material.csv" ]]; then
+  sha256sum -c "$3/iterate.sha256" >> "$compare_out/iterate_verify.log"
+  sha256sum "$3/iterate_material.csv" >> "$compare_out/grid_input.sha256"
+ fi
  python3 scripts/compare_cmf_initial_iterate.py --run "$2" --finer "$3" --public "$compare_public" \
   > "$compare_out/grid.json"
  sha256sum -c "$compare_out/grid_input.sha256" > "$compare_out/grid_input_verify.log"
