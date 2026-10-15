@@ -19002,6 +19002,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
                                 int pair_idx,
                                 double *preconstraint_A_cm,
                                 double *preconstraint_b) {
+    if (nlte->channel_owned_recombination && !atom->bf_channels) return -1;
     const int diagnostic_files_allowed = nlte_solve_effect_allowed(
         nlte, NLTE_SOLVE_EFFECT_DIAGNOSTIC_FILES);
     const int forensic_matrix_allowed = nlte_solve_effect_allowed(
@@ -20620,7 +20621,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
     int ion_lo_stage = nlte->nlte_ion[ion_idx_lo];   /* e.g. 1 for II */
     int ion_hi_stage = nlte->nlte_ion[ion_idx_hi];   /* e.g. 2 for III */
 
-    /* ---- Heavy.2 / Task #139: Dielectronic recombination ----
+    /* ---- Legacy Heavy.2 / Task #139: Dielectronic recombination ----
+     * CMF toy의 채널 소유 경로에는 적용하지 않는다. PHOT 공명은 이미
+     * 광전리와 Milne 역재결합을 함께 만들며, 아래 표에는 대응 역과정과
+     * 복사 에너지 채널이 없다. 일부 Fe 계수는 RR+DR 총계수이기도 하다.
+     * 아래 설명은 역사적 경로의 동기이며 현재 비교 모델의 물리 보증이 아니다.
+     *
      * α_DR(T_e) is added as a non-Milne recombination channel from
      * upper-ion ground (ground_hi) into lower-ion ground (lev=0). This
      * lifts R_rec where Milne-from-CMFGEN-σ_bf alone gives Saha-LTE-at-T_e
@@ -20634,7 +20640,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
      * T-dependence. Mazzotta LS-coupling misses low-T near-threshold
      * resonances; this lets us decouple "is more recomb needed" from
      * "is the T-shape right". Use ~1e-12 to 1e-10 cm³/s as test range. */
-    {
+    if (!nlte->channel_owned_recombination) {
         const DRCoefficient *coef = dr_lookup(Z_pair, ion_hi_stage);
         double alpha_dr = (coef && n_e > 0.0) ? dr_alpha_eval(coef, T_e) : 0.0;
 

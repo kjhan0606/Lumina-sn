@@ -661,6 +661,11 @@ typedef struct {
      * 표도 해당하지 않는다. 0은 역사적 일반 경로이며 정합 보증이 아니다. */
     int exclude_empirical_heavy_ce;
 
+    /* PHOT 공명과 같은 채널의 Milne 역과정이 재결합을 소유한다.
+     * 별도 단방향 DR/RR+DR 총계수와 경험적 floor를 더하지 않는다.
+     * 누락된 자동전리 상태/공명의 완전성을 보장하는 설정은 아니다. */
+    int channel_owned_recombination;
+
     /* Target ions: (Z, ion_stage) pairs */
     int    n_nlte_ions;                        /* 8 */
     int    nlte_Z[NLTE_MAX_IONS];              /* atomic numbers */

@@ -39,6 +39,7 @@ int main(int argc,char **argv){
     saved_global=n->nlte_line_global;saved_lines=n->nlte_ion_lines;
     CHECK(saved_global&&saved_lines&&a->bf_channels&&p->initial_steady_nlte&&!p->physical_history);
     CHECK(n->exclude_empirical_heavy_ce==1);
+    CHECK(n->channel_owned_recombination==1);
     n->solve_effect_policy_explicit=1;n->solve_effects_allowed=0;
     size_t np=(size_t)n->n_nlte_levels_total*ns,ni=(size_t)a->n_ion_pops*ns;
     size_t nb=(size_t)a->bf_channels->n_bins;
@@ -65,9 +66,9 @@ int main(int argc,char **argv){
     gamma_deposition_init(&gamma,ns);
     CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,
         m.geometry.time_explosion,NULL,NULL,NULL,heat));
-    printf("TOY_RATES_CONTRACT DR_multiplier=%s CE_partners_removed=%s exclude_empirical_heavy_ce=%d fixed_ne=1 transport=0\n",
+    printf("TOY_RATES_CONTRACT DR_multiplier=%s CE_partners_removed=%s exclude_empirical_heavy_ce=%d channel_owned_recombination=%d fixed_ne=1 transport=0\n",
         getenv("LUMINA_DR_BOOST")?getenv("LUMINA_DR_BOOST"):"1",
-        getenv("CMF_TEST_ISOLATE_CE")?getenv("CMF_TEST_ISOLATE_CE"):"0",n->exclude_empirical_heavy_ce);
+        getenv("CMF_TEST_ISOLATE_CE")?getenv("CMF_TEST_ISOLATE_CE"):"0",n->exclude_empirical_heavy_ce,n->channel_owned_recombination);
     const int samples[2]={0,ns/3};int tested=0;
     for(int sample=0;sample<2;sample++)for(int e=0;e<a->n_elements;e++){
         int s=samples[sample],Z=a->element_Z[e];

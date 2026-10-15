@@ -169,6 +169,8 @@ int main(void)
             &view, te, NS, 5, 4, partition, &atom.partition_stamp) != POP_OK)
         return fail("partition fixture build");
 
+    nlte.channel_owned_recombination=1;
+    nlte.exclude_empirical_heavy_ce=1;
     AtomicData atom_before = atom;
     NLTEConfig nlte_before = nlte;
     PlasmaState plasma_before = plasma;
@@ -182,6 +184,8 @@ int main(void)
             &candidate, &nlte, &atom, &plasma, te, NS, 4, 5) !=
         NLTE_CANDIDATE_OK)
         return fail("candidate begin");
+    if(!candidate.nlte.channel_owned_recombination||!candidate.nlte.exclude_empirical_heavy_ce)
+        return fail("candidate lost atomic process ownership");
     double radius[NS] = {1.0e14, 2.0e14};
     double velocity[NS] = {1.0e8, 2.0e8};
     if (nlte_population_candidate_prepare_adiabatic(

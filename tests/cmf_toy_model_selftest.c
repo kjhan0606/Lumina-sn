@@ -36,6 +36,7 @@ int main(int argc,char **argv){
     CHECK(!memcmp(p->T_e,m.ejecta.initial_temperature,(size_t)ns*sizeof(double)));
     CHECK(n->n_nlte_ions==a->n_ion_pops&&n->n_nlte_levels_total==a->n_levels&&n->super_mode);
     CHECK(n->exclude_empirical_heavy_ce==1);
+    CHECK(n->channel_owned_recombination==1);
     CHECK(!p->physical_history&&p->initial_steady_nlte==1&&n->radfield_view_status==RADIATION_FIELD_VIEW_DISABLED);
     CHECK(n->line_qset==&m.qset&&n->line_eset==&m.eset);
     CHECK(n->nlte_line_global&&n->nlte_line_global_count==a->n_lines);

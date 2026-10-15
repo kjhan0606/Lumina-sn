@@ -31,7 +31,7 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
  cmfgen_adiabatic cmf_decay cmf_ejecta cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
+history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange cmf_recombination nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_mode=${1:-regression}
 history_iteration=${2:-plain}
 case "$history_iteration" in
@@ -43,6 +43,7 @@ case "$history_mode" in
  regression) ;;
  channels) history_tests=(bf_channels) ;;
  ce-charge) history_tests=(cmf_charge_exchange) ;;
+ recombination) history_tests=(cmf_recombination) ;;
  energy) history_tests=(cmf_material_time nlte_candidate_adiabatic a2_10_radeq physics_comparison) ;;
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
@@ -88,6 +89,9 @@ for history_test in "${history_tests[@]}"; do
   "tests/${history_test}_selftest.c" "${history_objects[@]}" -Wl,--gc-sections -lm \
   -o "$history_out/$history_test" >> "$history_out/build.log" 2>&1
  (cd "$history_out"; "./$history_test" > "$history_test.log" 2> "$history_test.err")
+ if [[ "$history_test" == cmf_recombination ]]; then
+  (cd "$history_out"; LUMINA_NLTE_BF_JEQB=1 "./$history_test" > recombination-thermal.log 2> recombination-thermal.err)
+ fi
 done
 if [[ "$history_mode" == initial ]]; then
  # 실제 초기/시간해 연결은 그대로, 새 checkpoint 소유 코드와 호출부를 계측한다.
