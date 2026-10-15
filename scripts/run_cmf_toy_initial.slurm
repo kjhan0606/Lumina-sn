@@ -27,7 +27,8 @@ export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 grep -Fxq 'variant=cluster managed=0' "$initial_build/variant.txt"
 (cd "$initial_build/source"; sha256sum -c "$initial_build/source.sha256") > "$initial_out/build_source_verify.log"
 sha256sum -c "$initial_build/binary.sha256" > "$initial_out/binary_verify.log"
-(cd "$initial_src"; sha256sum -c "$initial_build/source.sha256") > "$initial_out/source_verify.log"
+# 실행되는 것은 위에서 검증한 봉인 binary/source다. 이후 작업 트리 편집이
+# 이전 실행의 재현을 막지 않도록 현재 작업 트리와의 동일성은 요구하지 않는다.
 (cd "$initial_input/input"; sha256sum -c "$initial_input/input.sha256") > "$initial_out/original_input_verify.log"
 # 복사 대상은 이전 sealed 입력 manifest의 단일 디렉터리 파일만이다.
 while read -r initial_hash initial_file; do
@@ -36,6 +37,7 @@ while read -r initial_hash initial_file; do
 done < "$initial_input/input.sha256"
 cp "$initial_input/input.sha256" "$initial_build/commit.txt" "$initial_build/binary.sha256" "$initial_out/"
 cp "$initial_src/scripts/run_cmf_toy_initial.slurm" "$initial_out/runner.slurm"
+sha256sum "$initial_out/runner.slurm" > "$initial_out/runner.sha256"
 (cd "$initial_out/input"; sha256sum -c "$initial_out/input.sha256") > "$initial_out/input_verify.log"
 while read -r initial_key; do unset "$initial_key"; done < <(compgen -v LUMINA_ || true)
 export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
@@ -48,7 +50,7 @@ export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$initial_out/env_lumina_effective.txt"
 printf 'mode=ALL_THERMAL_INITIAL_CONTROL\nsource=%s\nbuild=%s\ninput=%s\n' \
- "$initial_src" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
+ "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"
 # 2GiB/file 상한. 중간 raw dump는 생성하지 않고 수렴한 물리 이력만 저장한다.
 (ulimit -f 2097152; exec "$initial_build/lumina_cuda" --cmf-toy-initial \
