@@ -42,6 +42,7 @@ esac
 case "$history_mode" in
  regression) ;;
  channels) history_tests=(bf_channels) ;;
+ ce-charge) history_tests=(cmf_charge_exchange) ;;
  energy) history_tests=(cmf_material_time nlte_candidate_adiabatic a2_10_radeq physics_comparison) ;;
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
