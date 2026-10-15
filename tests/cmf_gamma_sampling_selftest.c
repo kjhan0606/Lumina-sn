@@ -20,14 +20,27 @@ static int compare(const CMFGammaResult *a,const CMFGammaResult *b,const char *n
     CHECK(a->n_shells==b->n_shells&&a->emitted_comoving_erg_s==b->emitted_comoving_erg_s);
     double sig=hypot(a->deposited_comoving_standard_error,b->deposited_comoving_standard_error);
     CHECK(fabs(a->deposited_comoving_erg_s-b->deposited_comoving_erg_s)<=6*sig+1e-12*a->emitted_comoving_erg_s);
-    double max_z=0;
+    double max_z=0;int compared=0,sparse=0;
     for(int s=0;s<a->n_shells;s++){
         double delta=fabs(a->deposition_erg_cm3_s[s]-b->deposition_erg_cm3_s[s]);
         double se=hypot(a->deposition_standard_error[s],b->deposition_standard_error[s]);
+        /* 가중 표본에서는 양의 사건 수만으로 CLT 근사를 정당화할 수 없다.
+         * n_eff=(sum x)^2/sum x². 특히0 tally의0 분산은 신뢰구간이 아니다. */
+        double va=a->deposition_erg_cm3_s[s],vb=b->deposition_erg_cm3_s[s];
+        double ea=va>0?1/(1./a->packets+(1-1./a->packets)*pow(a->deposition_standard_error[s]/va,2)):0;
+        double eb=vb>0?1/(1./b->packets+(1-1./b->packets)*pow(b->deposition_standard_error[s]/vb,2)):0;
+        if(ea<30||eb<30){
+            sparse++;
+            printf("GAMMA_SAMPLING_SPARSE name=%s shell=%d effective_a=%.17g effective_b=%.17g judged=0\n",name,s,ea,eb);
+            continue;
+        }
+        if(!(se>0?delta<=6*se:delta==0))fprintf(stderr,"GAMMA_SAMPLING_DISAGREEMENT name=%s shell=%d a=%.17g b=%.17g combined_SE=%.17g effective_a=%.17g effective_b=%.17g\n",name,s,va,vb,se,ea,eb);
         CHECK(se>0?delta<=6*se:delta==0);
+        compared++;
         if(se>0)max_z=fmax(max_z,delta/se);
     }
-    printf("GAMMA_SAMPLING_COMPARE name=%s max_cell_combined_SE=%.17g total_combined_SE=%.17g\n",name,max_z,
+    CHECK(compared>0);
+    printf("GAMMA_SAMPLING_COMPARE name=%s compared=%d sparse_unjudged=%d max_cell_combined_SE=%.17g total_combined_SE=%.17g\n",name,compared,sparse,max_z,
            sig>0?fabs(a->deposited_comoving_erg_s-b->deposited_comoving_erg_s)/sig:0);
     return 0;
 }
@@ -97,7 +110,6 @@ static int actual(const char *model,const char *nuclear,uint64_t packets){
         for(int mode=0;mode<3;mode++){
             double mixture=mode?.5:0;
             CHECK(!cmf_gamma_transport_shell_mixture(&source.input,packets,seeds[mode],mixture,&r[mode]));
-            if(mode)CHECK(!compare(&r[0],&r[mode],"actual_vs_original"));
             char name[128];snprintf(name,sizeof name,"gamma_sampling_%.2fd_%d.csv",days,mode);
             FILE *fp=fopen(name,"wx");CHECK(fp);
             fprintf(fp,"shell,vlo_cm_s,vhi_cm_s,gamma_emission,gamma_deposition,gamma_standard_error,positron_local,positive_packet_count\n");
@@ -109,6 +121,7 @@ static int actual(const char *model,const char *nuclear,uint64_t packets){
                    days,mode,mixture,(unsigned long long)seeds[mode],(unsigned long long)packets,r[mode].emitted_comoving_erg_s,
                    r[mode].deposited_comoving_erg_s,r[mode].deposited_comoving_standard_error,r[mode].lab_energy_relative_error);
             fflush(stdout);
+            if(mode)CHECK(!compare(&r[0],&r[mode],"actual_vs_original"));
         }
         CHECK(!compare(&r[1],&r[2],"actual_independent_mixture_seeds"));
         for(int k=0;k<3;k++)cmf_gamma_result_free(&r[k]);cmf_toy_gamma_source_free(&source);
