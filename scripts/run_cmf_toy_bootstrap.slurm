@@ -139,9 +139,12 @@ if [[ "$toy_mode" == material-iterate ]]; then
  toy_iterate_run=${5:?initial run directory required}
  (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
  for toy_file in "$toy_out"/input/*; do cmp "$toy_file" "$toy_iterate_run/input/${toy_file##*/}"; done
- toy_iterate_id=$(sha256sum "$toy_iterate_run/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
- toy_arguments+=("$toy_iterate_run/work/initial_iterate.bin" "$toy_iterate_id")
- sha256sum "$toy_iterate_run/work/initial_iterate.bin" "$toy_iterate_run/iterate_identity.txt" > "$toy_out/iterate.sha256"
+ # 생산의 latest 파일은 다음 반복에서 원자적으로 교체된다. 분석에는 불변 사본을 쓴다.
+ cp "$toy_iterate_run/work/initial_iterate.bin" "$toy_out/iterate_input.bin"
+ cp "$toy_iterate_run/iterate_identity.txt" "$toy_out/iterate_identity.txt"
+ toy_iterate_id=$(sha256sum "$toy_out/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
+ toy_arguments+=("$toy_out/iterate_input.bin" "$toy_iterate_id")
+ sha256sum "$toy_out/iterate_input.bin" "$toy_out/iterate_identity.txt" > "$toy_out/iterate.sha256"
 fi
 if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
 if [[ "$toy_mode" == material-rates-components ]]; then
