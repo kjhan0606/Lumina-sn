@@ -13,10 +13,16 @@
 #SBATCH --error=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-step-%j.err
 set -euo pipefail
 umask 027
-step_build=${1:?sealed cluster build required}
+step_build=${1:?sealed build required}
 step_previous=${2:?successful physical epoch run required}
 step_epoch=${3:?new epoch in seconds required}
 step_iteration=${4:-plain}
+step_backend=${5:-gpu}
+case "$step_backend" in
+ gpu) step_variant=cluster;step_binary=$step_build/lumina_cuda;step_devices=1 ;;
+ cpu) step_variant=cpu;step_binary=$step_build/lumina_cpu;step_devices=0 ;;
+ *) exit 2 ;;
+esac
 case "$step_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 [[ "$step_epoch" =~ ^[0-9]+([.][0-9]+)?$ ]]
 step_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
@@ -28,7 +34,7 @@ module purge
 module load gnu13/13.2.0 cuda/13.0.2
 export OMP_NUM_THREADS=16 OMP_PLACES=cores OMP_PROC_BIND=close
 export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-grep -Fxq 'variant=cluster managed=0' "$step_build/variant.txt"
+grep -Fxq "variant=$step_variant managed=0" "$step_build/variant.txt"
 (cd "$step_build/source"; sha256sum -c "$step_build/source.sha256") > "$step_out/build_source_verify.log"
 sha256sum -c "$step_build/binary.sha256" > "$step_out/binary_verify.log"
 (cd "$step_previous/input"; sha256sum -c "$step_previous/input.sha256") > "$step_out/previous_input_verify.log"
@@ -56,16 +62,16 @@ export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 export LUMINA_NLTE_NE_CLOSURE=1 LUMINA_CMF_FINE_VDOP=5000000 LUMINA_CMF_FINE_PPD=3
 export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION=1
-export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=1
+export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=$step_devices
 if [[ "$step_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 export LUMINA_BF_CHANNELS_FILE=$step_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$step_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$step_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$step_out/env_lumina_effective.txt"
-printf 'mode=ALL_THERMAL_TIME_CONTROL\nsource=%s\nbuild=%s\ninput=%s\nprevious=%s\nepoch_s=%s\n' \
- "$step_build/source" "$step_build" "$step_out/input" "$step_previous" "$step_epoch" > "$step_out/identity.txt"
+printf 'mode=ALL_THERMAL_TIME_CONTROL\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\nprevious=%s\nepoch_s=%s\n' \
+ "$step_backend" "$step_build/source" "$step_build" "$step_out/input" "$step_previous" "$step_epoch" > "$step_out/identity.txt"
 cd "$step_out/work"
-(ulimit -f 2097152; exec "$step_build/lumina_cuda" --cmf-toy-step \
+(ulimit -f 2097152; exec "$step_binary" --cmf-toy-step \
  "$step_out/input/snia_toy06_2d.dat" "$step_out/input" \
  "$step_out/input/NUC_DECAY_DATA_ni56_co56_fe56" "$step_out/previous_state.bin" \
  "$step_epoch" 100 200000 128) > "$step_out/step.log" 2> "$step_out/step.err"
