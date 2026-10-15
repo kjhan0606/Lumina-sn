@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"TOY_NT_ITERATE_FAIL line=%d %s\n",__LINE__,#x);goto done;}} while(0)
 
 static int read_gamma(const char *path,int ns,double *v){
@@ -119,8 +123,9 @@ int main(int argc,char **argv){
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     const double ev=1.602176634e-12;
     CMFToyModel m={0};CMFNonthermalAtomicData raw={0};CMFNonthermalExcitations exc={0};
-    CMFNonthermalResolvedModel bound={0};CMFNonthermalRates unit={0},actual={0};
+    CMFNonthermalResolvedModel bound={0};CMFNonthermalRates unit={0},actual={0},batch={0};
     double energy[256],*deposition=NULL,*pop=NULL;FILE *fp=NULL,*coverage=NULL;
+    double *batch_pop=NULL,*batch_ne=NULL,*batch_power=NULL;
     int *source=NULL,rc=-1,iteration=-1,rows=0;
     REQUIRE(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],atoi(argv[3]),masses));
     REQUIRE(!cmf_toy_initial_iterate_read(&m,argv[4],argv[5],&iteration));
@@ -143,15 +148,50 @@ int main(int argc,char **argv){
     double electron=0,power=ev;PlasmaState p={0};p.n_shells=1;p.n_electron=&electron;
     GammaDeposition g={0};g.n_shells=1;g.generation=1;g.epoch=m.geometry.time_explosion;
     g.provenance=GAMMA_PROVENANCE_NONLOCAL_MC;g.heating_rate=&power;
+    int selected[256],nselected=0;REQUIRE(ns<=256);
+    for(int s=0;s<ns;s++){
+        double velocity=(m.geometry.v_inner[s]+m.geometry.v_outer[s])/2e5;
+        if((velocity>=12100&&velocity<=12900)||(coverage&&(s==0||s==20||s==30)))selected[nselected++]=s;
+    }
+    if(coverage){
+        REQUIRE(nselected==9);
+        batch_pop=malloc((size_t)n.n_nlte_levels_total*nselected*sizeof(double));
+        batch_ne=malloc((size_t)nselected*sizeof(double));batch_power=malloc((size_t)nselected*sizeof(double));
+        REQUIRE(batch_pop&&batch_ne&&batch_power);
+        for(int b=0;b<nselected;b++){
+            int s=selected[b];batch_ne[b]=m.plasma.n_electron[s];batch_power[b]=ev;
+            for(int k=0;k<n.n_nlte_levels_total;k++)batch_pop[(size_t)k*nselected+b]=m.nlte.nlte_level_populations[(size_t)k*ns+s];
+        }
+        NLTEConfig bn=n;bn.nlte_level_populations=batch_pop;
+        PlasmaState bp=p;bp.n_shells=nselected;bp.n_electron=batch_ne;
+        GammaDeposition bg=g;bg.n_shells=nselected;bg.heating_rate=batch_power;
+        struct timespec start,finish;REQUIRE(!clock_gettime(CLOCK_MONOTONIC,&start));
+        REQUIRE(!cmf_nonthermal_bound_evaluate(&bound.view,a,&bn,&bp,&bg,&batch));
+        REQUIRE(!clock_gettime(CLOCK_MONOTONIC,&finish));
+        printf("TOY_NT_BATCH shells=%d channels=%d seconds=%.9g threads=%d\n",nselected,batch.n_transitions,
+            (double)(finish.tv_sec-start.tv_sec)+(finish.tv_nsec-start.tv_nsec)*1e-9,
+#ifdef _OPENMP
+            omp_get_max_threads()
+#else
+            1
+#endif
+        );
+        free(batch_pop);batch_pop=NULL;free(batch_ne);batch_ne=NULL;free(batch_power);batch_power=NULL;
+    }
     fp=fopen("iterate_nonthermal.csv","wx");REQUIRE(fp);
     REQUIRE(fprintf(fp,"iteration,shell,Z,charge,velocity_km_s,T_K,ne_cm3,gamma_erg_cm3_s,gamma_MCSE,positive_packets,positron_erg_cm3_s,total_erg_cm3_s,single_events_per_eV,auger_events_per_eV,single_events_cm3_s,auger_events_cm3_s,single_per_ion_s,single_MCSE_cm3_s,heat_fraction,ion_fraction,excitation_fraction\n")>0);
     double max_linear_error=0;
-    for(int s=0;s<ns;s++){
+    for(int b=0;b<nselected;b++){
+        int s=selected[b];
         double velocity=(m.geometry.v_inner[s]+m.geometry.v_outer[s])/2e5;
-        if((velocity<12100||velocity>12900)&&!(coverage&&(s==0||s==20||s==30)))continue;
         electron=m.plasma.n_electron[s];
         for(int k=0;k<n.n_nlte_levels_total;k++)pop[k]=m.nlte.nlte_level_populations[(size_t)k*ns+s];
         power=ev;REQUIRE(!cmf_nonthermal_bound_evaluate(&bound.view,a,&n,&p,&g,&unit));
+        if(coverage){
+            REQUIRE(batch.n_transitions==unit.n_transitions);
+            REQUIRE(!memcmp(batch.transitions,unit.transitions,(size_t)unit.n_transitions*sizeof(*unit.transitions)));
+            for(int k=0;k<unit.n_transitions;k++)REQUIRE(!memcmp(&unit.rate_per_particle[k],&batch.rate_per_particle[(size_t)k*nselected+b],sizeof(double)));
+        }
         if(coverage)REQUIRE(!missing_bounds(&m,s,iteration,&raw,&bound,exc.view.n_channels,source,&unit,coverage));
         power=deposition[4*ns+s];REQUIRE(!cmf_nonthermal_bound_evaluate(&bound.view,a,&n,&p,&g,&actual));
         REQUIRE(actual.n_transitions==unit.n_transitions);
@@ -189,11 +229,13 @@ int main(int argc,char **argv){
     }
     REQUIRE(rows>0&&!m.nlte.radiation_field.field.generation.computed_generation);
     printf("TOY_NT_ITERATE_DIAGNOSTIC iteration=%d rows=%d max_deposition_linearity_error=%.17g transport_solved=0 NLTE_solved=0 zero_sample_is_not_physical_zero=1\n",iteration,rows,max_linear_error);
+    if(coverage)printf("TOY_NT_BATCH_BYTE_EQUAL coefficients=%zu\n",(size_t)nselected*batch.n_transitions);
     rc=0;
 done:
     if(fp&&fclose(fp))rc=-1;
     if(coverage&&fclose(coverage))rc=-1;
-    cmf_nonthermal_rates_free(&unit);cmf_nonthermal_rates_free(&actual);
+    cmf_nonthermal_rates_free(&unit);cmf_nonthermal_rates_free(&actual);cmf_nonthermal_rates_free(&batch);
     cmf_nonthermal_binding_free(&bound);cmf_nonthermal_excitation_free(&exc);cmf_nonthermal_atomic_free(&raw);
-    cmf_toy_model_free(&m);free(deposition);free(pop);free(source);return rc?1:0;
+    cmf_toy_model_free(&m);free(deposition);free(pop);free(source);
+    free(batch_pop);free(batch_ne);free(batch_power);return rc?1:0;
 }

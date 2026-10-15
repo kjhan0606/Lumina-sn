@@ -1,6 +1,9 @@
 #include "cmf_nonthermal_provider.h"
 #include <assert.h>
 #include <stdio.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 int main(void){
     enum {NS=2,NL=4,NI=4,NE=128,NC=4};
@@ -33,7 +36,27 @@ int main(void){
         sigma[3*NE+i]=cmf_nonthermal_arnaud(E[i],45,abcd);
     }
     CMFNonthermalBoundModel m={NL,NI,NE,NC,E,tr,channel};CMFNonthermalRates rates={0};
+#ifdef _OPENMP
+    omp_set_dynamic(0);omp_set_num_threads(1);
+#endif
     assert(!cmf_nonthermal_bound_evaluate(&m,&a,&n,&p,&g,&rates));
+    double serial[NC*NS];memcpy(serial,rates.rate_per_particle,sizeof serial);
+#ifdef _OPENMP
+    omp_set_num_threads(2);
+#endif
+    assert(!cmf_nonthermal_bound_evaluate(&m,&a,&n,&p,&g,&rates));
+    assert(!memcmp(serial,rates.rate_per_particle,sizeof serial));
+    CMFNonthermalRates before_failure=rates;double old_ne=ne[1];ne[1]=NAN;
+    assert(cmf_nonthermal_bound_evaluate(&m,&a,&n,&p,&g,&rates));
+    assert(!memcmp(&before_failure,&rates,sizeof rates));
+    assert(!memcmp(serial,rates.rate_per_particle,sizeof serial));ne[1]=old_ne;
+    printf("NT_PROVIDER_PARALLEL openmp=%d byte_equal=1 invalid_shell_preserves_output=1\n",
+#ifdef _OPENMP
+           omp_get_max_threads()
+#else
+           0
+#endif
+    );
     const double absenergy[5]={0,2,16,46,91};
     for(int s=0;s<NS;s++){
         double A[25]={0},outflow[5]={0},stored=0;

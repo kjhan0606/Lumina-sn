@@ -33,6 +33,33 @@ int cmf_nonthermal_transition_energy(const AtomicData *a,const CMFNonthermalTran
     *change=energy;*electrons=qf-qi;return 0;
 }
 
+/* 입력은 공통 read-only, 출력은 한 셸만 소유한다. 셸 내부 합산 순서는 불변이다. */
+static int evaluate_shell(const CMFNonthermalBoundModel *m,const NLTEConfig *n,
+    const PlasmaState *p,const GammaDeposition *g,size_t s,double *loss,
+    CMFNonthermalRoute *channels,CMFNonthermalRates *r){
+    size_t ns=p->n_shells,nc=m->n_channels,ne=m->n_energy;
+    double deposition=g->heating_rate[s]/1.602176634e-12;
+    if(!(deposition>=0)||!isfinite(deposition)||!(p->n_electron[s]>0)||!isfinite(p->n_electron[s]))return -1;
+    for(size_t k=0;k<nc;k++){
+        int lower=n->global_to_nlte_level[m->transitions[k].lower_global];
+        if(lower<0||lower>=n->n_nlte_levels_total)return -1;
+        channels[k]=m->channels[k];
+        channels[k].lower_population_cm3=n->nlte_level_populations[(size_t)lower*ns+s];
+        if(!(channels[k].lower_population_cm3>=0)||!isfinite(channels[k].lower_population_cm3))return -1;
+    }
+    if(deposition==0)return 0;
+    for(size_t i=0;i<ne;i++)loss[i]=cmf_nonthermal_coulomb(m->energy_eV[i],p->n_electron[s]);
+    CMFNonthermalInput input={m->n_energy,m->n_channels,m->energy_eV,loss,channels};
+    CMFNonthermalResult solved={0};
+    if(cmf_nonthermal_solve(&input,&solved))return -1;
+    for(size_t k=0;k<nc;k++){
+        double rate=deposition*solved.coefficient_cm3_per_eV[k];
+        if(!(rate>=0)||!isfinite(rate)){cmf_nonthermal_free(&solved);return -1;}
+        r->rate_per_particle[k*ns+s]=rate;
+    }
+    cmf_nonthermal_free(&solved);return 0;
+}
+
 int cmf_nonthermal_bound_evaluate(const void *context,const AtomicData *a,const NLTEConfig *n,
     const PlasmaState *p,const GammaDeposition *g,CMFNonthermalRates *out){
     const CMFNonthermalBoundModel *m=context;
@@ -50,9 +77,7 @@ int cmf_nonthermal_bound_evaluate(const void *context,const AtomicData *a,const 
         .n_transitions=m->n_channels,.epoch_s=g->epoch,.deposition_generation=g->generation};
     r.transitions=malloc((nc?nc:1)*sizeof(*r.transitions));
     r.rate_per_particle=calloc(nc?nc*ns:1,sizeof(double));
-    double *loss=malloc(ne*sizeof(double));
-    CMFNonthermalRoute *channels=malloc((nc?nc:1)*sizeof(*channels));
-    if(!r.transitions||!r.rate_per_particle||!loss||!channels)goto fail;
+    if(!r.transitions||!r.rate_per_particle)goto fail;
     if(nc)memcpy(r.transitions,m->transitions,nc*sizeof(*r.transitions));
     for(size_t k=0;k<nc;k++){
         double delta;int electrons;
@@ -67,29 +92,27 @@ int cmf_nonthermal_bound_evaluate(const void *context,const AtomicData *a,const 
             (m->energy_eV[i]<q->threshold_eV&&q->cross_section_cm2[i]!=0)||
             (q->kind==CMF_NT_IONIZATION&&m->energy_eV[i]==q->threshold_eV&&q->cross_section_cm2[i]!=0))goto fail;
     }
-    for(size_t s=0;s<ns;s++){
-        double deposition=g->heating_rate[s]/1.602176634e-12;
-        if(!(deposition>=0)||!isfinite(deposition)||!(p->n_electron[s]>0)||!isfinite(p->n_electron[s]))goto fail;
-        for(size_t k=0;k<nc;k++){
-            int lower=n->global_to_nlte_level[m->transitions[k].lower_global];
-            if(lower<0||lower>=n->n_nlte_levels_total)goto fail;
-            channels[k]=m->channels[k];
-            channels[k].lower_population_cm3=n->nlte_level_populations[(size_t)lower*ns+s];
-            if(!(channels[k].lower_population_cm3>=0)||!isfinite(channels[k].lower_population_cm3))goto fail;
+    {
+        int failed=0;
+        /* 각 스레드가 작은 임시 작업공간을 재사용한다. 외부 결과는 실패 시 불변이다. */
+#ifdef _OPENMP
+#pragma omp parallel reduction(|:failed) if(ns>1)
+#endif
+        {
+            double *loss=malloc(ne*sizeof(double));
+            CMFNonthermalRoute *channels=malloc((nc?nc:1)*sizeof(*channels));
+            if(!loss||!channels)failed=1;
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic)
+#endif
+            for(size_t s=0;s<ns;s++){
+                if(!failed&&evaluate_shell(m,n,p,g,s,loss,channels,&r))failed=1;
+            }
+            free(loss);free(channels);
         }
-        if(deposition==0)continue;
-        for(size_t i=0;i<ne;i++)loss[i]=cmf_nonthermal_coulomb(m->energy_eV[i],p->n_electron[s]);
-        CMFNonthermalInput input={m->n_energy,m->n_channels,m->energy_eV,loss,channels};
-        CMFNonthermalResult solved={0};
-        if(cmf_nonthermal_solve(&input,&solved))goto fail;
-        for(size_t k=0;k<nc;k++){
-            double rate=deposition*solved.coefficient_cm3_per_eV[k];
-            if(!(rate>=0)||!isfinite(rate)){cmf_nonthermal_free(&solved);goto fail;}
-            r.rate_per_particle[k*ns+s]=rate;
-        }
-        cmf_nonthermal_free(&solved);
+        if(failed)goto fail;
     }
-    free(loss);free(channels);cmf_nonthermal_rates_free(out);*out=r;return 0;
+    cmf_nonthermal_rates_free(out);*out=r;return 0;
 fail:
-    free(loss);free(channels);cmf_nonthermal_rates_free(&r);return -1;
+    cmf_nonthermal_rates_free(&r);return -1;
 }
