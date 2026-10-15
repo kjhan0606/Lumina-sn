@@ -34,6 +34,12 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
 history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange cmf_recombination nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_mode=${1:-regression}
 history_iteration=${2:-plain}
+history_warm_ne=${3:-plain}
+case "$history_warm_ne" in
+ plain) ;;
+ anderson) [[ "$history_mode" == initial-ne-warm ]] || exit 2; export LUMINA_NLTE_NE_ANDERSON1=1 ;;
+ *) exit 2 ;;
+esac
 case "$history_iteration" in
  plain) ;;
  anderson) export LUMINA_CMF_ANDERSON1=1 ;;
@@ -114,9 +120,17 @@ if [[ "$history_mode" == initial-ne-warm ]]; then
   cmp "$history_file" "$history_reference/source/$history_file"
  done
  mkdir "$history_out/reference" "$history_out/sanitized"
- for history_file in initial_spectrum.csv initial_material.csv initial_evolved_spectrum.csv initial_evolved_material.csv cmf_time_coupled.log; do
-  cp "$history_reference/$history_file" "$history_out/reference/$history_file"
- done
+ if [[ "$history_warm_ne" == plain ]]; then
+  for history_file in initial_spectrum.csv initial_material.csv initial_evolved_spectrum.csv initial_evolved_material.csv cmf_time_coupled.log; do
+   cp "$history_reference/$history_file" "$history_out/reference/$history_file"
+  done
+ else
+  cp "$history_reference/cmf_time_coupled" "$history_out/reference-binary"
+  printf 'eedcb06139078c4d989c37f5da391151c164cc9a905cb120e2b8fd98083486cb  %s\n' "$history_out/reference-binary" > "$history_out/reference_binary.sha256"
+  sha256sum -c "$history_out/reference_binary.sha256" > "$history_out/reference_binary_verify.log"
+  (cd "$history_out/reference"; ../reference-binary > cmf_time_coupled.log 2> cmf_time_coupled.err)
+  (cd "$history_out/reference"; sha256sum initial_spectrum.csv initial_material.csv initial_evolved_spectrum.csv initial_evolved_material.csv) > "$history_out/reference_output.sha256"
+ fi
  cp "$history_reference/source.sha256" "$history_out/reference_source.sha256"
  history_warm_rest=()
  for history_unit in "${history_units[@]}"; do
@@ -128,7 +142,7 @@ if [[ "$history_mode" == initial-ne-warm ]]; then
   -Wl,--gc-sections -lm -o "$history_out/warm-sanitized" > "$history_out/warm-san-build.log" 2>&1
  (cd "$history_out/sanitized"; ASAN_OPTIONS=detect_leaks=1 ../warm-sanitized > ../sanitized.log 2> ../sanitized.err)
  module load python/3.11.14
- python3 - "$history_out" > "$history_out/warm-comparison.log" <<'PY'
+ python3 - "$history_out" "$history_warm_ne" > "$history_out/warm-comparison.log" <<'PY'
 import csv, hashlib, math, pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 sealed = {
@@ -139,7 +153,8 @@ sealed = {
 }
 for name, digest in sealed.items():
     ref = root / 'reference' / name
-    assert hashlib.sha256(ref.read_bytes()).hexdigest() == digest
+    if sys.argv[2] == 'plain':
+        assert hashlib.sha256(ref.read_bytes()).hexdigest() == digest
     with ref.open() as f:
         reference = list(csv.DictReader(f))
     field = 'flux' if 'spectrum' in name else 'value'
@@ -165,6 +180,10 @@ reference = calls(root/'reference'/'cmf_time_coupled.log')
 native, sanitized = calls(root/'cmf_time_coupled.log'), calls(root/'sanitized.log')
 assert native == sanitized and native < reference, (reference, native, sanitized)
 print(f'INITIAL_WARM_CALLS reference={reference} native={native} sanitized={sanitized} synthetic_atom=1')
+if sys.argv[2] == 'anderson':
+    for log in (root/'cmf_time_coupled.err', root/'reference'/'cmf_time_coupled.err', root/'sanitized.err'):
+        assert '[A2-07][NE-ANDERSON]' in log.read_text(), log
+    print('INITIAL_WARM_NE_ANDERSON actual_acceleration_in_all_three_variants=1')
 PY
 fi
 if [[ "$history_mode" == initial-matrix-cache ]]; then
