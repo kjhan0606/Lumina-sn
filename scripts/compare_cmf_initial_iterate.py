@@ -123,6 +123,11 @@ def grid_diagnostic(run, finer, public):
     _, updated = material(run/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
     _, fine = material(finer/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
     ph, plasma = public_block(public/'phys_toy06_cmfgen.txt', 2.)
+    with (run/'input/snia_toy06_2d.dat').open() as handle:
+        source = [[float(x) for x in line.split()] for line in handle if line.strip() and not line.startswith('#')]
+    dv = source[1][1]-source[0][1]
+    if not dv>0 or any(len(r)!=21 or abs(r[1]-(i+.5)*dv)>1e-6 for i,r in enumerate(source)):
+        raise ValueError('원본 조성 격자 오류')
     nodes = (0., -.5384693101056831, .5384693101056831, -.906179845938664, .906179845938664)
     weights = (.5688888888888889, .4786286704993665, .4786286704993665, .2369268850561891, .2369268850561891)
 
@@ -147,9 +152,6 @@ def grid_diagnostic(run, finer, public):
                 raise ValueError('같은 경계를 채우는200셸 하위 셀 두 개가 필요함')
             if selected[0]['r_outer_cm']!=selected[1]['r_inner_cm']:
                 raise ValueError('하위 셀 간 공백')
-            # 이 국소 진단은 조성이 일정한 영역에만 적용한다. 그러면 rho 가중치가 핵수 가중치와 같다.
-            if any(abs(float(r['mass_fraction'])/float(cell['mass_fraction'])-1)>1e-12 for r in selected):
-                raise ValueError('국소 조성 일정 가정 위반')
             base, nuclei = fraction(cell, mass)
             components = [fraction(r, mass) for r in selected]
             if abs(math.fsum(w for f,w in components)/nuclei-1)>1e-10:
@@ -160,11 +162,14 @@ def grid_diagnostic(run, finer, public):
             assert abs(fine_T4/float(cell['T_K'])**4-1)<1e-12
             if lo<max(plasma[0][0], ions[0][0]) or hi>min(plasma[-1][0], ions[-1][0]):
                 raise ValueError('공개 자료 외삽 금지')
-            edges = sorted({lo, hi, *[r[0] for r in plasma+ions if lo<r[0]<hi]})
+            edges = sorted({lo, hi, *[r[0] for r in plasma+ions if lo<r[0]<hi],
+                *[i*dv for i in range(len(source)+1) if lo<i*dv<hi]})
             rho = lambda v: interpolate(plasma, v, ph.index('rho[gcc]'))
+            # 원본 hydro 조성은 native 셀별 상수다. 모든 경계를 적분 구간에 포함한다.
+            abundance = lambda v: source[int(v/dv)][18 if z==14 else 17]
             fref = lambda v: interpolate(ions, v, ih.index(name+str(q)))
-            norm = integrate(lambda v: rho(v)*v*v, edges)
-            reference = integrate(lambda v: rho(v)*fref(v)*v*v, edges)/norm
+            norm = integrate(lambda v: rho(v)*abundance(v)*v*v, edges)
+            reference = integrate(lambda v: rho(v)*abundance(v)*fref(v)*v*v, edges)/norm
             temperature = (integrate(lambda v: interpolate(plasma, v, ph.index('temp[K]'))**4*v*v, edges)
                            /integrate(lambda v: v*v, edges))**.25
             records.append(dict(Z=z, stage=q, velocity_edges_km_s=[lo,hi],
@@ -175,7 +180,7 @@ def grid_diagnostic(run, finer, public):
                 reference_center=fref((lo+hi)/2), reference_nuclei_average=reference,
                 fine_cells=[int(r['shell']) for r in selected]))
     return dict(status='INITIAL_GRID_DIAGNOSTIC', day=2., goal_verdict='NOT_JUDGED',
-        fine_NLTE_solved=False, reference_integration='piecewise-linear rho and fraction; rho*v^2; constant composition verified',
+        fine_NLTE_solved=False, reference_integration='piecewise-linear public rho and fraction; native hydro X per cell; rho*X*v^2',
         coarse_run=str(run), fine_run=str(finer), records=records)
 
 

@@ -36,7 +36,9 @@ if [[ "${1:-selftest}" == initial-grid ]]; then
   (cd "$compare_root/input"; sha256sum -c "$compare_root/input.sha256") >> "$compare_out/original_input_verify.log"
  done
  sha256sum -c "$2/iterate.sha256" > "$compare_out/iterate_verify.log"
+ cmp "$2/input/snia_toy06_2d.dat" "$3/input/snia_toy06_2d.dat"
  sha256sum "$2/toy_initial_material.csv" "$2/iterate_material.csv" "$3/toy_initial_material.csv" \
+  "$2/input/snia_toy06_2d.dat" \
   "$compare_public/phys_toy06_cmfgen.txt" "$compare_public/ionfrac_si_toy06_cmfgen.txt" \
   "$compare_public/ionfrac_s_toy06_cmfgen.txt" > "$compare_out/grid_input.sha256"
  python3 scripts/compare_cmf_initial_iterate.py --run "$2" --finer "$3" --public "$compare_public" \
