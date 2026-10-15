@@ -133,6 +133,126 @@ int cmf_toy_model_write_seed(const CMFToyModel *m,const char *path){
     return cmf_toy_model_write_material(m,path,"BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished");
 }
 
+static int iterate_identity(const char *s){
+    if(!s||strlen(s)!=64)return -1;
+    for(int i=0;i<64;i++)if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return -1;
+    return 0;
+}
+
+int cmf_toy_initial_iterate_write(const CMFToyModel *m,const char *path,const char *id,int iteration){
+    if(!m||!m->prepared||!path||iterate_identity(id)||iteration<0||
+       !m->plasma.initial_steady_nlte||m->plasma.physical_history||
+       m->opacity.n_fine<2||!m->opacity.jnu_fine)return -1;
+    const AtomicData *a=&m->atom;const NLTEConfig *n=&m->nlte;
+    const PlasmaState *p=&m->plasma;const OpacityState *o=&m->opacity;
+    uint64_t ns=p->n_shells,ni=a->n_ion_pops,nl=n->n_nlte_levels_total,ne=a->n_elements,nb=o->n_fine;
+    uint64_t h[]={ns,ni,nl,ne,nb,a->population_committed_generation,(uint64_t)iteration};
+    double par[]={m->geometry.time_explosion,o->nu_lo_fine,o->dlognu_fine};
+    uint32_t endian=1;
+    if(sizeof(int)!=4||sizeof(double)!=8||*(unsigned char*)&endian!=1||!ns||ns>256||
+       !ni||!nl||!ne||!h[5]||h[5]==UINT64_MAX||
+       (5+ne+ni+nl+nb)*ns>UINT64_C(250000000))return -1;
+    FILE *fp=fopen(path,"wbx");if(!fp)return -1;int rc=-1;
+#define ITERATE_PUT(x,z,c) do{if(fwrite((x),(z),(c),fp)!=(c))goto iterate_write_done;}while(0)
+    ITERATE_PUT("CMFITER1",1,8);ITERATE_PUT(id,1,64);ITERATE_PUT(h,8,7);ITERATE_PUT(par,8,3);
+    ITERATE_PUT(n->nlte_to_global_level,4,nl);ITERATE_PUT(a->ion_pop_Z,4,ni);ITERATE_PUT(a->ion_pop_stage,4,ni);
+    ITERATE_PUT(m->geometry.r_inner,8,ns);ITERATE_PUT(m->geometry.r_outer,8,ns);
+    ITERATE_PUT(p->rho,8,ns);ITERATE_PUT(p->T_e,8,ns);ITERATE_PUT(a->abundances,8,ne*ns);
+    ITERATE_PUT(p->n_electron,8,ns);ITERATE_PUT(a->ion_number_density,8,ni*ns);
+    ITERATE_PUT(n->nlte_level_populations,8,nl*ns);ITERATE_PUT(o->jnu_fine,8,nb*ns);
+    ITERATE_PUT("ITEREND1",1,8);rc=0;
+#undef ITERATE_PUT
+iterate_write_done:
+    if(fclose(fp))rc=-1;
+    return rc;
+}
+
+int cmf_toy_initial_iterate_read(CMFToyModel *m,const char *path,const char *id,int *iteration){
+    if(!m||!m->prepared||!path||!iteration||iterate_identity(id)||
+       !m->plasma.initial_steady_nlte||m->plasma.physical_history||m->opacity.jnu_fine||
+       m->nlte.radiation_field.field.generation.computed_generation)return -1;
+    AtomicData *a=&m->atom;NLTEConfig *n=&m->nlte;PlasmaState *p=&m->plasma;OpacityState *o=&m->opacity;
+    uint32_t endian=1;uint64_t h[7],ns=p->n_shells,ni=a->n_ion_pops,nl=n->n_nlte_levels_total,ne=a->n_elements;
+    uint64_t values=0,bytes=0,nb=0;double par[3],*data=NULL,*frequency=NULL,*j=NULL,*mutable_data=NULL;
+    int *maps=NULL,rc=-1;char marker[8],stored_id[64];long length;
+    if(sizeof(int)!=4||sizeof(double)!=8||*(unsigned char*)&endian!=1)return -1;
+    FILE *fp=fopen(path,"rb");if(!fp)return -1;
+#define ITERATE_GET(x,z,c) do{if(fread((x),(z),(c),fp)!=(c))goto iterate_read_done;}while(0)
+    ITERATE_GET(marker,1,8);if(memcmp(marker,"CMFITER1",8))goto iterate_read_done;
+    ITERATE_GET(stored_id,1,64);if(memcmp(stored_id,id,64))goto iterate_read_done;
+    ITERATE_GET(h,8,7);ITERATE_GET(par,8,3);
+    if(h[0]!=ns||h[1]!=ni||h[2]!=nl||h[3]!=ne||!ns||ns>256||
+       h[4]<2||h[4]>INT32_MAX||!h[5]||h[5]>=UINT64_MAX-1||h[6]>INT32_MAX||
+       par[0]!=m->geometry.time_explosion||!(par[1]>0)||!isfinite(par[1])||
+       !(par[2]>0)||!isfinite(par[2]))goto iterate_read_done;
+    nb=h[4];values=(5+ne+ni+nl+nb)*ns;
+    if(values>UINT64_C(250000000))goto iterate_read_done;
+    bytes=160+4*(nl+2*ni)+8*values;
+    if(fseek(fp,0,SEEK_END)||(length=ftell(fp))<0||(uint64_t)length!=bytes||
+       fseek(fp,152,SEEK_SET))goto iterate_read_done;
+    maps=malloc((nl+2*ni)*sizeof(int));data=malloc(values*sizeof(double));
+    frequency=malloc(nb*sizeof(double));j=malloc(ns*nb*sizeof(double));
+    if(!maps||!data||!frequency||!j)goto iterate_read_done;
+    ITERATE_GET(maps,4,nl+2*ni);ITERATE_GET(data,8,values);ITERATE_GET(marker,1,8);
+    if(memcmp(marker,"ITEREND1",8)||fgetc(fp)!=EOF||
+       memcmp(maps,n->nlte_to_global_level,nl*4)||memcmp(maps+nl,a->ion_pop_Z,ni*4)||
+       memcmp(maps+nl+ni,a->ion_pop_stage,ni*4)||
+       memcmp(data,m->geometry.r_inner,ns*8)||memcmp(data+ns,m->geometry.r_outer,ns*8)||
+       memcmp(data+2*ns,p->rho,ns*8)||memcmp(data+3*ns,p->T_e,ns*8)||
+       memcmp(data+4*ns,a->abundances,ne*ns*8))goto iterate_read_done;
+    for(uint64_t k=0;k<values;k++)if(!(data[k]>=0)||!isfinite(data[k]))goto iterate_read_done;
+    mutable_data=data+(4+ne)*ns;
+    for(uint64_t s=0;s<ns;s++){
+        double charge=0;
+        for(uint64_t ip=0;ip<ni;ip++){
+            double sum=0,ion=mutable_data[(1+ip)*ns+s];
+            charge+=a->ion_pop_stage[ip]*ion;
+            for(int gl=a->level_offset[ip];gl<a->level_offset[ip+1];gl++){
+                int mapped=n->global_to_nlte_level[gl];if(mapped<0||(uint64_t)mapped>=nl)goto iterate_read_done;
+                sum+=mutable_data[(1+ni+(uint64_t)mapped)*ns+s];
+            }
+            if(a->level_offset[ip]<a->level_offset[ip+1]&&
+               (ion==0?sum!=0:fabs(sum/ion-1)>1e-10))goto iterate_read_done;
+        }
+        if(!(charge>0)||!isfinite(charge)||fabs(mutable_data[s]/charge-1)>1e-8)goto iterate_read_done;
+        for(uint64_t e=0;e<ne;e++){
+            double total=0,original=0;
+            for(int ip=a->elem_ion_offset[e];ip<a->elem_ion_offset[e+1];ip++){
+                total+=mutable_data[(1+ip)*ns+s];original+=a->ion_number_density[ip*ns+s];
+            }
+            if(original==0?total!=0:fabs(total/original-1)>1e-10)goto iterate_read_done;
+        }
+    }
+    for(uint64_t b=0;b<nb;b++){
+        frequency[b]=par[1]*exp(((double)b+.5)*par[2]);
+        if(!(frequency[b]>0)||!isfinite(frequency[b])||(b&&frequency[b]<=frequency[b-1]))goto iterate_read_done;
+    }
+    memcpy(j,mutable_data+(1+ni+nl)*ns,ns*nb*8);
+    /* 여기부터 실패하면 소유자를 폐기한다. 수렴/물리 과거는 게시하지 않는다. */
+    m->prepared=0;
+    memcpy(p->n_electron,mutable_data,ns*8);memcpy(a->ion_number_density,mutable_data+ns,ni*ns*8);
+    memcpy(n->nlte_level_populations,mutable_data+(1+ni)*ns,nl*ns*8);
+    a->population_committed_generation=h[5]+1;
+    n->population_required_generation=n->population_committed_generation=a->population_committed_generation;
+    {
+        PopulationAtomicView view={0};view.n_ions=ni;view.n_levels=a->n_levels;
+        view.level_offset=a->level_offset;view.energy_eV=a->level_energy_eV;view.g=a->level_g;
+        view.level_Z=a->level_Z;view.level_ion=a->level_ion;view.topion_n=a->topion_n;
+        view.topion_ion_index=a->topion_ion_index;view.topion_E_cm=a->topion_E_cm;view.topion_g=a->topion_g;
+        if(population_partition_build(&view,p->T_e,ns,a->population_committed_generation,p->T_e_generation,
+           a->partition_functions,&a->partition_stamp)!=POP_OK||nlte_precompute_within_sl_frac(n,a,p,(int)ns))goto iterate_read_done;
+    }
+    nlte_update_tau_sobolev(n,a,o,m->geometry.time_explosion,(int)ns);
+    if(tau_sobolev_assert_fresh(o,"initial numerical restart"))goto iterate_read_done;
+    o->n_fine=(int)nb;o->nu_lo_fine=par[1];o->dlognu_fine=par[2];
+    free(o->nu_fine);o->nu_fine=frequency;frequency=NULL;o->jnu_fine=j;j=NULL;
+    *iteration=(int)h[6];m->prepared=1;rc=0;
+    fprintf(stderr,"[TOY-ITERATE] resumed=%s completed_iterations=%d physical_history=0 converged=0 J_predictor_only=1\n",path,*iteration);
+#undef ITERATE_GET
+iterate_read_done:
+    fclose(fp);free(maps);free(data);free(frequency);free(j);return rc;
+}
+
 int cmf_toy_model_begin_epoch(CMFToyModel *m,const CMFPhysicalTimeState *past,
     const CMFEjectaEpoch *epoch,NLTEPhysicalHistory *projected){
     if(!m||!m->prepared||!past||!epoch||!projected||projected==&past->material||

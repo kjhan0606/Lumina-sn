@@ -59,6 +59,13 @@ typedef struct {
     int iterations,radiation_calls,converged;
     double tolerance,electron_update,population_update,radiation_update;
 } CMFInitialNLTEReport;
+/* 완결된 반복의 보존만 수행하는 선택 callback. 0은 첫 장, 양수는 완료한
+ * 물질/장 반복 수다. 물리 수렴 판정 또는 시간 이력 생성 권한은 없다. */
+typedef int (*CMFInitialIterationSave)(void *context,int iteration);
+CMFTimeEpochStatus cmfgen_solve_initial_nlte_saved(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
+    PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
+    int iteration_cap,double tolerance,CMFPhysicalTimeState*,CMFInitialNLTEReport*,
+    CMFInitialIterationSave,void *context);
 CMFTimeEpochStatus cmfgen_solve_initial_nlte(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
     PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
     int iteration_cap,double tolerance,CMFPhysicalTimeState *initial,CMFInitialNLTEReport*);

@@ -3,6 +3,18 @@
 #include "cmf_gamma_source.h"
 #include "cmf_nonthermal_binding.h"
 #include <errno.h>
+#include <unistd.h>
+
+typedef struct {CMFToyModel *model;const char *identity;int offset;} ToyInitialSave;
+static int toy_initial_save(void *context,int iteration){
+    ToyInitialSave *s=context;
+    if(iteration>INT32_MAX-s->offset||
+       cmf_toy_initial_iterate_write(s->model,"initial_iterate.next",s->identity,s->offset+iteration)||
+       rename("initial_iterate.next","initial_iterate.bin"))return -1;
+    fprintf(stderr,"[TOY-ITERATE] saved=initial_iterate.bin completed_iterations=%d physical_history=0 converged=0\n",
+            s->offset+iteration);
+    return 0;
+}
 
 /* 운전 전체에서 불변 채널을 소유한다. 후보별 인구/ne는 provider가 다시 읽는다.
  * 부분 모형을 완전한 CMFGEN 비열 처리로 표시하지 않는다. */
@@ -53,10 +65,18 @@ int cmf_toy_initial_main(int argc,char **argv){
     CMFToyModel m={0};CMFGammaNuclearData nuclear={0};CMFToyGammaSource source={0};
     CMFGammaResult deposition={0};GammaDeposition gamma={0};CMFGENState cs={0};
     ToyNonthermal nt={0};
+    ToyInitialSave save={&m,getenv("LUMINA_INITIAL_ITERATE_ID"),0};
+    const char *resume=getenv("LUMINA_INITIAL_ITERATE_INPUT");
     CMFPhysicalTimeState initial={0};CMFInitialNLTEReport report={0};
     int rc=1;const char *phase="material";FILE *fp=NULL;
     if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass))goto done;
-    if(cmf_toy_model_write_seed(&m,"initial_predictor.csv"))goto done;
+    phase="initial numerical restart";
+    if(save.identity&&(access("initial_iterate.bin",F_OK)==0||access("initial_iterate.next",F_OK)==0))goto done;
+    if(resume&&(!save.identity||cmf_toy_initial_iterate_read(&m,resume,save.identity,&save.offset)))goto done;
+    if(resume){if(save.offset>=cap)goto done;cap-=save.offset;}
+    if(cmf_toy_model_write_material(&m,"initial_predictor.csv",resume?
+       "NUMERICAL_RESTART; not converged NLTE; J predictor only":
+       "BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished"))goto done;
     phase="nonthermal model";
     if(toy_nonthermal_prepare(&nt,&m.atom,argc==10?argv[8]:NULL,argc==10?argv[9]:NULL))goto done;
     phase="gamma";
@@ -93,8 +113,9 @@ int cmf_toy_initial_main(int argc,char **argv){
     cs.common_obs_n=3000;cs.common_obs_nu=malloc((size_t)cs.common_obs_n*sizeof(double));
     if(!cs.common_obs_nu)goto done;
     for(int b=0;b<cs.common_obs_n;b++)cs.common_obs_nu[b]=C_SPEED_OF_LIGHT/(25500e-8)*exp(log(25500./2500)*b/(cs.common_obs_n-1));
-    CMFTimeEpochStatus status=cmfgen_solve_initial_nlte(&cs,&m.geometry,&m.opacity,&m.bf,&m.plasma,
-        &m.nlte,&m.atom,&gamma,m.plasma.T_e[0],cap,1e-5,&initial,&report);
+    CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&cs,&m.geometry,&m.opacity,&m.bf,&m.plasma,
+        &m.nlte,&m.atom,&gamma,m.plasma.T_e[0],cap,1e-5,&initial,&report,
+        save.identity?toy_initial_save:NULL,&save);
     fprintf(stderr,"[TOY-INITIAL] status=%d iterations=%d calls=%d ne_change=%.17g population_change=%.17g J_change=%.17g converged=%d\n",
         status,report.iterations,report.radiation_calls,report.electron_update,report.population_update,report.radiation_update,report.converged);
     if(status!=CMF_EPOCH_OK||!report.converged)goto done;

@@ -14,11 +14,12 @@
 set -euo pipefail
 umask 027
 toy_shells=${1:-100}
-case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum ]] || exit 2 ;; *) exit 2 ;; esac
+case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
+ iterate) toy_test=tests/cmf_toy_iterate_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch|material-epoch-nonthermal) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
@@ -153,6 +154,20 @@ if [[ "$toy_mode" == continuum ]]; then
  cmp "$toy_out/continuum.bin" "$toy_out/reference-run/continuum.bin"
  (cd "$toy_out"; sha256sum continuum.bin reference-run/continuum.bin > continuum.sha256)
  echo 'CONTINUUM_REFERENCE_PASS all_chi_eta_event_bins_byte_identical=1 physical_SN=0' > "$toy_out/comparison.log"
+fi
+if [[ "$toy_mode" == iterate ]]; then
+ toy_iterate_rest=()
+ for toy_unit in "${toy_units[@]}"; do
+  if [[ "$toy_unit" != cmf_toy_model ]]; then toy_iterate_rest+=("$toy_out/objects/$toy_unit.o"); fi
+ done
+ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fopenmp -fsanitize=address,undefined \
+  -fno-omit-frame-pointer -ffunction-sections -fdata-sections -Isrc \
+  "$toy_test" src/cmf_toy_model.c "${toy_iterate_rest[@]}" -Wl,--gc-sections -lm \
+  -o "$toy_out/iterate_san" > "$toy_out/iterate-san-build.log" 2>&1
+ mkdir "$toy_out/iterate-san"
+ (cd "$toy_out/iterate-san"; ASAN_OPTIONS=detect_leaks=1 ../iterate_san \
+  "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" "$toy_shells" \
+  > ../iterate-san.log 2> ../iterate-san.err)
 fi
 if [[ "$toy_mode" == material-epoch* ]]; then
  # 프로세스당 초기화는1회다. 별도 실제 CLI 프로세스에서 fixture 복원과

@@ -18,6 +18,7 @@ initial_input=${2:?verified initial-prepare input directory required}
 initial_iteration=${3:-plain}
 initial_backend=${4:-gpu}
 initial_nt=${5:-}
+initial_resume=${6:-}
 case "$initial_backend" in
  gpu) initial_variant=cluster;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
  cpu) initial_variant=cpu;initial_binary=$initial_build/lumina_cpu;initial_devices=0 ;;
@@ -75,10 +76,27 @@ export LUMINA_BF_CHANNELS_FILE=$initial_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$initial_out/env_lumina_effective.txt"
+# 경로 대신 봉인 내용과 수치 설정을 식별한다. CPU/GPU binary 변경도 거부한다.
+{
+ cut -d' ' -f1 "$initial_build/binary.sha256"
+ LC_ALL=C sort "$initial_out/input.sha256"
+ printf 'iteration=%s\nmode=%s\nshells=100\npackets=200000\nouter_cap=128\nouter_tol=1e-5\n' "$initial_iteration" "$initial_nt_mode"
+ sed -E '/^LUMINA_(BF_CHANNELS_FILE|TOPION_LEVELS_FILE|IONIZATION_REFERENCE_FILE)=/d' "$initial_out/env_lumina_effective.txt"
+} > "$initial_out/iterate_identity.txt"
+initial_id=$(sha256sum "$initial_out/iterate_identity.txt");initial_id=${initial_id%% *}
+export LUMINA_INITIAL_ITERATE_ID=$initial_id
+if [[ -n "$initial_resume" ]]; then
+ test -f "$initial_resume/work/initial_iterate.bin"
+ cmp "$initial_resume/iterate_identity.txt" "$initial_out/iterate_identity.txt"
+ cp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
+ sha256sum "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin" > "$initial_out/restart_input.sha256"
+ cmp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
+ export LUMINA_INITIAL_ITERATE_INPUT=$initial_out/restart_input.bin
+fi
 printf 'mode=%s\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
  "$initial_nt_mode" "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"
-# 2GiB/file 상한. 중간 raw dump는 생성하지 않고 수렴한 물리 이력만 저장한다.
+# 2GiB/file 상한. 최신 수치 반복 하나와 수렴 성공시의 물리 이력을 구분한다.
 (ulimit -f 2097152; exec "$initial_binary" --cmf-toy-initial \
  "$initial_out/input/snia_toy06_2d.dat" "$initial_out/input" \
  "$initial_out/input/NUC_DECAY_DATA_ni56_co56_fe56" 100 200000 128 "${initial_nt_arguments[@]}") \

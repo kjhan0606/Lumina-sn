@@ -11,6 +11,12 @@
 static double Bnu(double nu,double T){return 2*H_PLANCK*nu*nu*nu/
     (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(H_PLANCK*nu/(K_BOLTZMANN*T));}
 static int nt_calls;
+static int saved_iterations;
+static int save_iteration(void *context,int iteration){
+    CMFGENState *c=context;
+    if(c->common_obs_ready||iteration!=saved_iterations)return -1;
+    saved_iterations++;return 0;
+}
 static double nt_max_rate;
 static int actual_nt(const void *context,const AtomicData *a,const NLTEConfig *n,
                      const PlasmaState *p,const GammaDeposition *g,CMFNonthermalRates *r){
@@ -127,10 +133,13 @@ int main(void){
         CHECK(!initial.radiation_storage&&!initial.material.storage);
         CHECK(T[0]==1e4&&T[1]==1e4&&a.population_committed_generation==1);
         setenv("LUMINA_FIXED_TE_PROFILE","initial_T.csv",1);
-        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report);
+        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report,
+                                                               save_iteration,&c);
         fprintf(stderr,"INITIAL_COUPLED_RESULT status=%d iterations=%d ne=%.17g/%.17g T=%.17g/%.17g\n",
                 status,report.iterations,ne[0],ne[1],T[0],T[1]);
         CHECK(status==CMF_EPOCH_OK&&report.converged&&c.common_obs_ready&&report.iterations>1);
+        CHECK(saved_iterations==report.iterations+1);
+        printf("INITIAL_SAVE_CALLBACK_PASS calls=%d physical_history_created_by_callback=0\n",saved_iterations);
         CHECK(T[0]==1e4&&T[1]==1e4&&!p.physical_history&&!c.time_trial);
         CHECK(initial.material.energy.epoch_s==newtime&&initial.radiation.epoch_s==newtime);
         CHECK(initial.radiation.J!=o.jnu_fine&&initial.radiation.H!=c.initial_face_H);

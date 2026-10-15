@@ -27,6 +27,10 @@ int cmf_toy_model_prepare(CMFToyModel*,const char *ejecta_path,const char *atomi
                           int n_shells,const double mass_amu[CMF_TOY_ELEMENTS]);
 void cmf_toy_model_free(CMFToyModel*);
 int cmf_toy_model_write_seed(const CMFToyModel*,const char *csv_path);
+/* 초기 반복 전용: 물리 이력/H/수렴 표지가 없다. identity는 runner가 동일
+ * binary/input/설정에서 만든 SHA256이다. read는 새 prepare 소유자만 받는다. */
+int cmf_toy_initial_iterate_write(const CMFToyModel*,const char *path,const char *identity,int iteration);
+int cmf_toy_initial_iterate_read(CMFToyModel*,const char *path,const char *identity,int *iteration);
 int cmf_toy_model_write_material(const CMFToyModel*,const char *csv_path,const char *status);
 /* 새로 prepare한 소유자에 실제 과거를 연결한다. 현재 반복 초기값일 뿐
  * 수렴한 새 시점은 아니다. projected는 모델보다 오래 살아야 한다.
