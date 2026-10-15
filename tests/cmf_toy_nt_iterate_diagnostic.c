@@ -59,7 +59,10 @@ static int missing_bounds(const CMFToyModel *m,int s,int iteration,const CMFNont
         if(a->level_num[ground]!=0||a->level_energy_eV[ground]!=0)return -1;
         double population=a->ion_number_density[(size_t)ip*ns+s],total=0;
         for(int j=0;j<a->n_ion_pops;j++)if(a->ion_pop_Z[j]==z)total+=a->ion_number_density[(size_t)j*ns+s];
-        if(!(population>=0)||!(total>0)||!isfinite(population+total))return -1;
+        if(!(population>=0)||!(total>=0)||!isfinite(population+total))return -1;
+        /* 내부 셸에는 Si/S 자체가 없을 수 있다. 0/0 이온 분율은 빈 칸이다. */
+        char fraction[32]="";
+        if(total>0)snprintf(fraction,sizeof fraction,"%.17g",population/total);
         int found=0,base=-1;
         for(int r=0;r<raw->n_routes;r++)if(raw->routes[r].Z==z&&raw->routes[r].charge==q){
             found++;
@@ -71,8 +74,8 @@ static int missing_bounds(const CMFToyModel *m,int s,int iteration,const CMFNont
         }
         if(!found){
             absent++;
-            if(fprintf(fp,"%d,%d,%d,%d,0,%.17g,%.17g,,,,,,NO_ATOMIC_CROSS_SECTION\n",
-                       iteration,s,z,q,population,population/total)<0)return -1;
+            if(fprintf(fp,"%d,%d,%d,%d,0,%.17g,%s,,,,,,NO_ATOMIC_CROSS_SECTION\n",
+                       iteration,s,z,q,population,fraction)<0)return -1;
         }
         for(int r=0;r<raw->n_routes;r++)if(raw->routes[r].Z==z&&raw->routes[r].charge==q&&!represented[r]){
             missing++;
@@ -99,11 +102,11 @@ static int missing_bounds(const CMFToyModel *m,int s,int iteration,const CMFNont
             if(bounded){
                 long double events=ratio*coefficient*population;
                 if(!isfinite(ratio)||!isfinite((double)events)||events<0)return -1;
-                if(fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%.17g,%.17g,%d,%.17g,%.17Lg,%.17Lg,%s\n",
-                    iteration,s,z,q,route->source_line,population,population/total,route->threshold_eV,
+                if(fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%s,%.17g,%d,%.17g,%.17Lg,%.17Lg,%s\n",
+                    iteration,s,z,q,route->source_line,population,fraction,route->threshold_eV,
                     raw->routes[base].source_line,ratio,events,events*route->threshold_eV,status)<0)return -1;
-            }else if(fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%.17g,%.17g,,,,,%s\n",
-                            iteration,s,z,q,route->source_line,population,population/total,route->threshold_eV,status)<0)return -1;
+            }else if(fprintf(fp,"%d,%d,%d,%d,%d,%.17g,%s,%.17g,,,,,%s\n",
+                            iteration,s,z,q,route->source_line,population,fraction,route->threshold_eV,status)<0)return -1;
         }
     }
     if(missing!=bound->n_unresolved_routes||absent!=bound->n_missing_ions)return -1;
@@ -173,8 +176,9 @@ int main(int argc,char **argv){
             int z=slot<2?14:16,q=slot%2+1,ip=-1;
             for(int k=0;k<a->n_ion_pops;k++)if(a->ion_pop_Z[k]==z&&a->ion_pop_stage[k]==q)ip=k;
             REQUIRE(ip>=0);
-            double population=a->ion_number_density[(size_t)ip*ns+s];REQUIRE(population>0);
+            double population=a->ion_number_density[(size_t)ip*ns+s];REQUIRE(population>=0);
             long double event=single[slot]*(power/ev);
+            if(population==0){REQUIRE(single[slot]==0&&auger[slot]==0);continue;}
             REQUIRE(fprintf(fp,"%d,%d,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.0f,%.17g,%.17g,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg\n",
                 iteration,s,z,q,velocity,m.plasma.T_e[s],electron,deposition[s],deposition[ns+s],deposition[2*ns+s],deposition[3*ns+s],power,
                 single[slot],auger[slot],event,auger[slot]*(power/ev),event/population,
