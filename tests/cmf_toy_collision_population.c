@@ -68,7 +68,7 @@ int main(int argc,char **argv){
     fine=previous_field(&m,argv[5],argv[4],&field_iteration);CHECK(fine&&field_iteration+1==iteration);
     size_t np=(size_t)n->n_nlte_levels_total*ns,ni=(size_t)a->n_ion_pops*ns,nq=0;
     for(size_t q=0;q<m.qset.n_q;q++){
-        int z=a->line_atomic_number[m.qset.line_id[q]];if(z==14||z==16||z==27)nq++;
+        int z=a->line_atomic_number[m.qset.line_id[q]];if(z==14||z==16||z==20||z==27)nq++;
     }
     ids=malloc(nq*sizeof(*ids));jbar=calloc(nq*ns,sizeof(*jbar));se=calloc(nq*ns,sizeof(*se));
     count=calloc(nq*ns,sizeof(*count));line_valid=calloc(nq*ns,sizeof(*line_valid));
@@ -81,7 +81,7 @@ int main(int argc,char **argv){
     for(int b=0;b<nf;b++){nu[b]=m.opacity.nu_lo_fine*exp((b+.5)*m.opacity.dlognu_fine);dnu[b]=nu[b]*m.opacity.dlognu_fine;}
     size_t q=0;
     for(size_t k=0;k<m.qset.n_q;k++){
-        int line=m.qset.line_id[k],z=a->line_atomic_number[line];if(z!=14&&z!=16&&z!=27)continue;
+        int line=m.qset.line_id[k],z=a->line_atomic_number[line];if(z!=14&&z!=16&&z!=20&&z!=27)continue;
         double v,error;LineJbarProfileReport report;
         CHECK(line_jbar_gaussian_discrete_shells(1,nf,nu,dnu,fine+(size_t)s*nf,zero,
               m.qset.line_nu[k],5e6,4,&v,&error,&report)==LINE_JBAR_PROFILE_OK);
@@ -127,7 +127,7 @@ int main(int argc,char **argv){
     CHECK(fprintf(ions,"iteration,field_iteration,shell,Z,charge,T_K,ne_cm3,before_cm3,after_cm3,nuclei_cm3\n")>0);
     CHECK(fprintf(levels,"iteration,shell,Z,charge,global_level,local_level,energy_eV,before_cm3,after_cm3,nuclei_cm3\n")>0);
     for(int e=0;e<a->n_elements;e++){
-        int z=a->element_Z[e];if(z!=14&&z!=16&&z!=27)continue;
+        int z=a->element_Z[e];if(z!=14&&z!=16&&z!=20&&z!=27)continue;
         memcpy(n->nlte_level_populations,saved_pop,np*sizeof(double));memcpy(a->ion_number_density,saved_ion,ni*sizeof(double));
         double total=a->abundances[(size_t)e*ns+s]*p->rho[s]/(a->element_mass_amu[e]*AMU);
         printf("COLLISION_POP_BEGIN iteration=%d field=%d shell=%d Z=%d fixed_NT=1\n",iteration,field_iteration,s,z);
