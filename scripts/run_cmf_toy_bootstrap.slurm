@@ -18,7 +18,7 @@ case "$toy_shells" in 100|200) ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
- material-rates|material-rates-components) toy_test=tests/cmf_toy_rates_selftest.c ;;
+ material-rates|material-rates-components|material-rates-profile) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
  initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
@@ -35,11 +35,15 @@ module purge
 module load gnu13/13.2.0
 if [[ "$toy_mode" == nonthermal ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_ISOLATE_CE
+unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED
+toy_profile_flags=()
+if [[ "$toy_mode" == material-rates-profile ]]; then
+ toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1
+fi
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
 export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
-if [[ "$toy_mode" == material-rates || "$toy_mode" == material-rates-components ]]; then
+if [[ "$toy_mode" == material-rates* ]]; then
  export LUMINA_NLTE_JEQB=1 LUMINA_NLTE_BF_JEQB=1
 fi
 export LUMINA_BF_CHANNELS_FILE=$toy_out/input/bf_channels.bin
@@ -96,11 +100,11 @@ cd "$toy_out/source"
 sha256sum "${toy_files[@]}" > "$toy_out/source.sha256"
 toy_objects=()
 for toy_unit in "${toy_units[@]}"; do
- gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ gcc -O2 "${toy_profile_flags[@]}" -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
   -c "src/$toy_unit.c" -o "$toy_out/objects/$toy_unit.o" >> "$toy_out/build.log" 2>&1
  toy_objects+=("$toy_out/objects/$toy_unit.o")
 done
-gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
+gcc -O2 "${toy_profile_flags[@]}" -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
  "${toy_objects[@]}" -Wl,--gc-sections -lm -o "$toy_out/prepare" >> "$toy_out/build.log" 2>&1
 toy_arguments=(input/snia_toy06_2d.dat input "$toy_shells")
 if [[ "$toy_mode" == nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
@@ -121,6 +125,9 @@ if [[ "$toy_mode" == material-rates-components ]]; then
  done
 else
  (cd "$toy_out"; ./prepare "${toy_arguments[@]}" > prepare.log 2> prepare.err)
+fi
+if [[ "$toy_mode" == material-rates-profile ]]; then
+ (cd "$toy_out"; gprof -b -p ./prepare gmon.out > profile.txt)
 fi
 if [[ "$toy_mode" == material-epoch ]]; then
  # 프로세스당 초기화는1회다. 별도 실제 CLI 프로세스에서 fixture 복원과

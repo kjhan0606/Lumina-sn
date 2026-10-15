@@ -40,6 +40,8 @@ int main(int argc,char **argv){
     CHECK(saved_global&&saved_lines&&a->bf_channels&&p->initial_steady_nlte&&!p->physical_history);
     CHECK(n->exclude_empirical_heavy_ce==1);
     CHECK(n->channel_owned_recombination==1);
+    const int profile_cached=getenv("CMF_TEST_PROFILE_CACHED")&&atoi(getenv("CMF_TEST_PROFILE_CACHED"));
+    if(profile_cached)puts("TOY_RATES_PROFILE current_cached_path_repeated=1 old_search_path_tested=0");
     n->solve_effect_policy_explicit=1;n->solve_effects_allowed=0;
     size_t np=(size_t)n->n_nlte_levels_total*ns,ni=(size_t)a->n_ion_pops*ns;
     size_t nb=(size_t)a->bf_channels->n_bins;
@@ -88,7 +90,7 @@ int main(int argc,char **argv){
         memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
         memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
         remove_partners(&m,Z,s);
-        n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;
+        if(!profile_cached){n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;}
         start=seconds();
         PopulationStatus searched=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
         double searched_s=seconds()-start;
