@@ -652,6 +652,7 @@ enum {
     NLTE_SOLVE_EFFECT_ALL = (1u << 4) - 1u
 };
 
+struct NLTEBFRateCache;
 typedef struct {
     int    enabled;
     int    n_freq_bins;
@@ -665,6 +666,10 @@ typedef struct {
      * 별도 단방향 DR/RR+DR 총계수와 경험적 floor를 더하지 않는다.
      * 누락된 자동전리 상태/공명의 완전성을 보장하는 설정은 아니다. */
     int channel_owned_recombination;
+
+    /* 한 물질 요청만 소유하는 불변장 BF 계수 cache의 차용 포인터.
+     * candidate/nlte_free가 해제하지 않으며 요청 종료 전에 분리한다. */
+    struct NLTEBFRateCache *bf_rate_cache;
 
     /* Target ions: (Z, ion_stage) pairs */
     int    n_nlte_ions;                        /* 8 */
@@ -1156,6 +1161,8 @@ int load_bf_channels(AtomicData *atom,const char *path);
 void free_bf_channels(BfChannels *channels);
 int nlte_bf_channel_rates(NLTEConfig*,const AtomicData*,int,int,int,double,double,
                          double*,double*,double*,double*);
+struct NLTEBFRateCache *nlte_bf_rate_cache_create(const AtomicData*,size_t);
+void nlte_bf_rate_cache_free(struct NLTEBFRateCache*);
 int load_feiii_coldata(AtomicData *atom, const char *path);
 /* ARTIS-parity (A3): generic per-ion close-coupling Omega loader. Appends one
  * ion's table to atom->col_ion_* (returns 0 on success, -1 fail-closed). */

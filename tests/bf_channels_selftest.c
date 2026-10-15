@@ -39,6 +39,37 @@ static int write_channel_file(const char *path,const BfChannels *c,int bad){
     return fclose(fp)||!ok?-1:0;
 }
 
+static int cache_check(NLTEConfig *n,AtomicData *a,double *J,RadiationFieldValidityState *valid){
+    struct NLTEBFRateCache *cache=nlte_bf_rate_cache_create(a,1);
+    CHECK(cache,"rate cache allocation");
+    const double density[]={0,1e-100,1,1e8,1e13,1e50};
+    const double temperature[]={1e4,8000,2e4};
+    double worst=0;
+    for(int field=0;field<2;field++){
+      if(field){for(size_t b=0;b<n->radfield_view.n_bins;b++)J[b]*=3;n->radfield_view.generation++;}
+      for(int t=0;t<3;t++)for(int e=0;e<6;e++)for(int r=0;r<2;r++){
+        double direct[4],cached[4];n->bf_rate_cache=NULL;
+        CHECK(!nlte_bf_channel_rates(n,a,0,r,0,temperature[t],density[e],direct,direct+1,direct+2,direct+3),"uncached rates");
+        n->bf_rate_cache=cache;
+        CHECK(!nlte_bf_channel_rates(n,a,0,r,0,temperature[t],density[e],cached,cached+1,cached+2,cached+3),"cached rates");
+        for(int k=0;k<4;k++){
+            CHECK(near(direct[k],cached[k],1e-12),"density/T/field cache parity");
+            if(direct[k]||cached[k])worst=fmax(worst,fabs(direct[k]-cached[k])/fmax(fabs(direct[k]),fabs(cached[k])));
+        }
+        if(r==1&&density[e]>0)CHECK(cached[2]>0&&cached[3]>0,"collisional and three body terms exercised");
+      }
+    }
+    double out[4]={-1,-2,-3,-4},saved[4];memcpy(saved,out,sizeof out);
+    n->radfield_view_status=RADIATION_FIELD_VIEW_DISABLED;
+    CHECK(nlte_bf_channel_rates(n,a,0,1,0,1e4,1e8,out,out+1,out+2,out+3)&&!memcmp(saved,out,sizeof out),"disabled view rejected with cache");
+    n->radfield_view_status=RADIATION_FIELD_VIEW_OK;
+    valid[n->radfield_view.n_bins-1]=RADIATION_FIELD_UNSAMPLED;n->radfield_view.generation++;
+    CHECK(nlte_bf_channel_rates(n,a,0,1,0,1e4,1e8,out,out+1,out+2,out+3)&&!memcmp(saved,out,sizeof out),"new invalid field not hidden by cache");
+    n->bf_rate_cache=NULL;nlte_bf_rate_cache_free(cache);
+    printf("[BF-CACHE] PASS max_relative=%.17g density_cases=6 temperatures=3 changed_field=1 collisions=1 three_body=1 SN_comparison=0\n",worst);
+    return 0;
+}
+
 static int integration_check(void){
     enum{NB=NLTE_N_FREQ_BINS};
     NLTEConfig n={0};AtomicData a={0};PlasmaState p={0};OpacityState op={0};
@@ -79,6 +110,9 @@ static int integration_check(void){
     p.n_shells=1;p.rho=rho;p.T_e=T;p.n_electron=ne;p.T_e_generation=1;
     CHECK(!write_channel_file("channels.bin",&c,0)&&!load_bf_channels(&a,"channels.bin"),"channel loader");
     BfChannels *loaded=a.bf_channels;
+    if(getenv("CMF_TEST_BF_CACHE_ONLY")){
+        int status=cache_check(&n,&a,J,valid);free_bf_channels(loaded);return status;
+    }
     CHECK(!write_channel_file("channels-invalid.bin",&c,1)&&load_bf_channels(&a,"channels-invalid.bin")&&
           a.bf_channels==loaded,"loader rejects wrong threshold without replacing prior data");
     double up,down,cu,cd;
@@ -303,6 +337,9 @@ static int terminal_check(void){
     p.initial_steady_nlte=1;abund[0]=0;
     CHECK(nlte_element_initial_steady_solve(&n,&a,&p,&op,0,0,2,&gd)==POP_OK&&
           ions[0]==0&&ions[1]==0&&ions[2]==0&&pops[0]==0&&pops[1]==0,"exact zero abundance");
+    /* 반복된 정확한 영해는 행렬 조립 없이 유지한다. 시간해는 별도 경로다. */
+    CHECK(nlte_element_initial_steady_solve(&n,&a,&p,&op,0,0,2,&gd)==POP_OK&&
+          ions[0]==0&&ions[1]==0&&ions[2]==0&&pops[0]==0&&pops[1]==0,"already zero steady element");
     CHECK(T[0]==1e4,"initial prescribed T preserved");
     printf("[BF-CHANNELS] INITIAL_STEADY_PASS n0=%.17g n1=%.17g terminal=%.17g actual_core=1 history=NONE\n",keep[0],keep[1],keep[2]);
     printf("[BF-CHANNELS] TERMINAL_PASS n0=%.17g n1=%.17g terminal=%.17g history=PASS core=PASS continuum_bins=%d\n",savedion[0],savedion[1],savedion[2],checked);
@@ -330,6 +367,7 @@ static int terminal_check(void){
 
 int main(void){
     setenv("LUMINA_PURE_CMFGEN","1",1);setenv("LUMINA_CMF_BF_MILNE","2",1);
+    if(getenv("CMF_TEST_BF_CACHE_ONLY")){setenv("LUMINA_NLTE_COLL_ION","1",1);return integration_check();}
     if(kernel_check()||integration_check()||terminal_check())return 1;
     puts("[BF-CHANNELS] PASS synthetic_physics_only=1 actual_CMFGEN_distribution=NOT_TESTED");return 0;
 }

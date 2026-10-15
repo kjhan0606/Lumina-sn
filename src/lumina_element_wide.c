@@ -2159,6 +2159,15 @@ static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom
     double mass=atom->element_mass_amu[element];
     double total=atom->abundances[(size_t)element*ns+shell]*plasma->rho[shell]/(mass*AMU);
     if(!(mass>0)||!isfinite(mass)||!isfinite(total)||total<0)return POP_NONFINITE;
+    if(steady&&total==0){
+        int already_zero=1;
+        for(int fl=fl0;fl<fl0+nf;fl++)
+            if(nlte->nlte_level_populations[(size_t)fl*ns+shell]!=0)already_zero=0;
+        for(int ip=ip0;ip<ip1;ip++)
+            if(atom->ion_number_density[(size_t)ip*ns+shell]!=0)already_zero=0;
+        /* 정확한 영핵수와 영인구만 해당한다. 과거/붕괴 원천은 생략하지 않는다. */
+        if(already_zero)return POP_OK;
+    }
     double *A=calloc((size_t)N*N,sizeof(*A)),*outflow=calloc((size_t)N,sizeof(*outflow));
     double *x=malloc((size_t)N*sizeof(*x)),*full=malloc((size_t)nf*sizeof(*full));
     double *ions=calloc((size_t)count,sizeof(*ions));

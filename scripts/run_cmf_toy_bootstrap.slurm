@@ -18,7 +18,7 @@ case "$toy_shells" in 100|200) ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
- material-rates|material-rates-components|material-rates-profile) toy_test=tests/cmf_toy_rates_selftest.c ;;
+ material-rates|material-rates-components|material-rates-profile|material-rates-cache) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
  initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
@@ -35,7 +35,8 @@ module purge
 module load gnu13/13.2.0
 if [[ "$toy_mode" == nonthermal ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED
+unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE
+if [[ "$toy_mode" == material-rates-cache ]]; then export CMF_TEST_RATE_CACHE=1; fi
 toy_profile_flags=()
 if [[ "$toy_mode" == material-rates-profile ]]; then
  toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1

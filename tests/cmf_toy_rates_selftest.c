@@ -10,6 +10,14 @@
 static double seconds(void){
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+1e-9*t.tv_nsec;
 }
+static double relative_difference(const double *a,const double *b,size_t count){
+    double worst=0;
+    for(size_t i=0;i<count;i++){
+        if(!isfinite(a[i])||!isfinite(b[i])||a[i]<0||b[i]<0)return INFINITY;
+        double den=fmax(a[i],b[i]);if(den)worst=fmax(worst,fabs(a[i]-b[i])/den);
+    }
+    return worst;
+}
 static void remove_partners(CMFToyModel *m,int Z,int shell){
     if(!getenv("CMF_TEST_ISOLATE_CE")||!atoi(getenv("CMF_TEST_ISOLATE_CE")))return;
     /* 시험 대상 밖 원소만 영 인구로 둔다. 고정 ne인 성분 분리 반사실이며
@@ -32,6 +40,7 @@ int main(int argc,char **argv){
     double *cached_pop=NULL,*cached_ion=NULL;
     RadiationFieldValidityState *valid=NULL;
     int *saved_global=NULL,*saved_lines=NULL;
+    struct NLTEBFRateCache *rate_cache=NULL;
     CHECK(getenv("LUMINA_NLTE_JEQB")&&atoi(getenv("LUMINA_NLTE_JEQB"))==1);
     CHECK(getenv("LUMINA_NLTE_BF_JEQB")&&atoi(getenv("LUMINA_NLTE_BF_JEQB"))==1);
     CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
@@ -42,6 +51,8 @@ int main(int argc,char **argv){
     CHECK(n->channel_owned_recombination==1);
     const int profile_cached=getenv("CMF_TEST_PROFILE_CACHED")&&atoi(getenv("CMF_TEST_PROFILE_CACHED"));
     if(profile_cached)puts("TOY_RATES_PROFILE current_cached_path_repeated=1 old_search_path_tested=0");
+    const int cache_test=getenv("CMF_TEST_RATE_CACHE")&&atoi(getenv("CMF_TEST_RATE_CACHE"));
+    if(cache_test){rate_cache=nlte_bf_rate_cache_create(a,(size_t)ns);CHECK(rate_cache);}
     n->solve_effect_policy_explicit=1;n->solve_effects_allowed=0;
     size_t np=(size_t)n->n_nlte_levels_total*ns,ni=(size_t)a->n_ion_pops*ns;
     size_t nb=(size_t)a->bf_channels->n_bins;
@@ -71,13 +82,19 @@ int main(int argc,char **argv){
     printf("TOY_RATES_CONTRACT DR_multiplier=%s CE_partners_removed=%s exclude_empirical_heavy_ce=%d channel_owned_recombination=%d fixed_ne=1 transport=0\n",
         getenv("LUMINA_DR_BOOST")?getenv("LUMINA_DR_BOOST"):"1",
         getenv("CMF_TEST_ISOLATE_CE")?getenv("CMF_TEST_ISOLATE_CE"):"0",n->exclude_empirical_heavy_ce,n->channel_owned_recombination);
-    const int samples[2]={0,ns/3};int tested=0;
+    const int samples[2]={0,ns/3};int tested=0,empty=0;
     for(int sample=0;sample<2;sample++)for(int e=0;e<a->n_elements;e++){
         int s=samples[sample],Z=a->element_Z[e];
         double total=a->abundances[(size_t)e*ns+s]*p->rho[s]/(a->element_mass_amu[e]*AMU);
-        if(total==0)continue;
         memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
         memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+        n->bf_rate_cache=rate_cache;
+        if(total==0){
+            CHECK(nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma)==POP_OK);
+            CHECK(!memcmp(seed_pop,n->nlte_level_populations,np*sizeof(double))&&
+                !memcmp(seed_ion,a->ion_number_density,ni*sizeof(double)));
+            empty++;continue;
+        }
         remove_partners(&m,Z,s);
         printf("TOY_RATES_BEGIN shell=%d Z=%d T=%.17g ne=%.17g nuclei=%.17g\n",s,Z,p->T_e[s],p->n_electron[s],total);
         double start=seconds();
@@ -90,15 +107,29 @@ int main(int argc,char **argv){
         memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
         memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
         remove_partners(&m,Z,s);
-        if(!profile_cached){n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;}
+        n->bf_rate_cache=NULL;
+        if(!profile_cached&&!cache_test){n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;}
         start=seconds();
         PopulationStatus searched=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
         double searched_s=seconds()-start;
         n->nlte_line_global=saved_global;n->nlte_ion_lines=saved_lines;
         printf("TOY_RATES_SEARCHED shell=%d Z=%d status=%d wall_s=%.9g\n",s,Z,searched,searched_s);
         CHECK(searched==POP_OK);
-        CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double)));
-        CHECK(!memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
+        double difference=fmax(relative_difference(cached_pop,n->nlte_level_populations,np),
+            relative_difference(cached_ion,a->ion_number_density,ni));
+        if(cache_test){CHECK(difference<1e-10);}
+        else{CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double)));
+             CHECK(!memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));}
+        if(cache_test){
+            memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+            memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+            n->bf_rate_cache=rate_cache;start=seconds();
+            CHECK(nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma)==POP_OK);
+            double warm_s=seconds()-start;
+            CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))&&
+                !memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
+            printf("TOY_RATE_CACHE shell=%d Z=%d max_relative=%.17g uncached_wall_s=%.9g warm_wall_s=%.9g warm_repeat_exact=1\n",s,Z,difference,searched_s,warm_s);
+        }
         double sum=0,ion_l1=0,level_l1=0;
         for(int ip=a->elem_ion_offset[e];ip<a->elem_ion_offset[e+1];ip++){
             size_t cell=(size_t)ip*ns+s;double value=cached_ion[cell];
@@ -113,16 +144,18 @@ int main(int argc,char **argv){
             }
         }
         CHECK(fabs(sum/total-1)<1e-10);
-        printf("TOY_RATES_PARITY shell=%d Z=%d exact_all_populations=1 cached_wall_s=%.9g searched_wall_s=%.9g ion_L1_per_nucleus=%.17g level_L1_per_nucleus=%.17g\n",
-            s,Z,cached_s,searched_s,ion_l1/total,level_l1/total);
+        printf("TOY_RATES_PARITY shell=%d Z=%d exact_all_populations=%d cached_wall_s=%.9g searched_wall_s=%.9g ion_L1_per_nucleus=%.17g level_L1_per_nucleus=%.17g\n",
+            s,Z,!cache_test,cached_s,searched_s,ion_l1/total,level_l1/total);
         tested++;
     }
     CHECK(tested==6);
+    CHECK(empty==6);puts("TOY_EMPTY_ELEMENT_PASS cases=6 exact_population_preserved=1 steady_only=1");
     puts("TOY_RATES_PARITY_PASS elements=6 synthetic_radiation=PLANCK_FALSIFIER actual_atom=1 SN_initial=0 SN_comparison=0");
 done:
     /* 실패 경로에서도 소유자가 cache를 해제할 수 있도록 원래 포인터를 복원한다. */
     if(saved_global)m.nlte.nlte_line_global=saved_global;
     if(saved_lines)m.nlte.nlte_ion_lines=saved_lines;
+    m.nlte.bf_rate_cache=NULL;nlte_bf_rate_cache_free(rate_cache);
     memset(&m.nlte.radfield_view,0,sizeof(m.nlte.radfield_view));
     m.nlte.radfield_view_status=RADIATION_FIELD_VIEW_DISABLED;
     gamma_deposition_free(&gamma);cmf_toy_model_free(&m);

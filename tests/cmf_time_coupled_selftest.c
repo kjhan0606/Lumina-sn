@@ -130,6 +130,7 @@ int main(void){
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
         fprintf(stderr,"INITIAL_HISTORY epoch=%.17g face_J_residual=%.17g bins=%d center_H=0\n",
             initial.radiation.epoch_s,c.initial_face_J_residual,initial.radiation.n_bins);
+        CHECK(n.bf_rate_cache==NULL); /* 요청 수명의 차용 cache를 public에 남기지 않는다. */
         /* 실제 수렴해를 파일에서 복원한 뒤 다음 시간해가 그 J/H를 소비한다. */
         CMFPhysicalTimeState restored={0};
         CHECK(!cmf_physical_time_state_write(&initial,"initial_state.bin"));

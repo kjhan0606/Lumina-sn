@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER CMF_TEST_INITIAL
+unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_BF_CACHE_ONLY
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -92,6 +92,9 @@ for history_test in "${history_tests[@]}"; do
  if [[ "$history_test" == cmf_recombination ]]; then
   (cd "$history_out"; LUMINA_NLTE_BF_JEQB=1 "./$history_test" > recombination-thermal.log 2> recombination-thermal.err)
  fi
+ if [[ "$history_test" == bf_channels ]]; then
+  (cd "$history_out"; mkdir cache; cd cache; CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels > ../cache.log 2> ../cache.err)
+ fi
 done
 if [[ "$history_mode" == initial ]]; then
  # 실제 초기/시간해 연결은 그대로, 새 checkpoint 소유 코드와 호출부를 계측한다.
@@ -160,5 +163,6 @@ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp \
  src/nlte_population_candidate.c src/population_contract.c "${history_element_rest[@]}" \
  -Wl,--gc-sections -lm -o "$history_out/bf_channels_san" > "$history_out/channels-san-build.log" 2>&1
 (cd "$history_out"; mkdir channels-san; cd channels-san; ASAN_OPTIONS=detect_leaks=1 ../bf_channels_san > ../channels-san.log 2> ../channels-san.err)
+(cd "$history_out"; mkdir cache-san; cd cache-san; ASAN_OPTIONS=detect_leaks=1 CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels_san > ../cache-san.log 2> ../cache-san.err)
 sha256sum -c "$history_out/source.sha256" > "$history_out/source_verify.log"
 (cd "$history_out"; sha256sum -c input.sha256 > input_verify.log)

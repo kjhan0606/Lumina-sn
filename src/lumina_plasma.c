@@ -9082,7 +9082,7 @@ static void bf_event_measure_report(BFOpacity *bf, int emit_diagnostics) {
            (unsigned long long)bf->event_measure_hash, n);
 }
 
-int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int shell,
+static int nlte_bf_channel_rates_uncached(NLTEConfig *n,const AtomicData *a,int lower,int r,int shell,
                          double T,double ne,double *up,double *down,double *cu,double *cd){
     if(!n||!a||!a->bf_channels||!up||!down||!cu||!cd)return -1;
     const BfChannels *p=a->bf_channels;
@@ -9140,6 +9140,68 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
     }
     if(!isfinite(ru)||!isfinite(rd)||!isfinite(coll_up)||!isfinite(coll_down))return -1;
     *up=ru;*down=rd;*cu=coll_up;*cd=coll_down;return 0;
+}
+
+typedef struct { double T,coefficient[4]; } NLTEBFRateEntry;
+struct NLTEBFRateCache {
+    const BfChannels *channels;
+    const int *g,*ion;
+    size_t n_shells;
+    RadiationFieldView field;
+    int bound;
+    NLTEBFRateEntry *entry;
+};
+
+struct NLTEBFRateCache *nlte_bf_rate_cache_create(const AtomicData *a,size_t ns){
+    if(!a||!a->bf_channels||!a->level_g||!a->level_ion||!ns||
+       a->bf_channels->n_channels<=0||
+       ns>SIZE_MAX/(size_t)a->bf_channels->n_channels/sizeof(NLTEBFRateEntry))return NULL;
+    struct NLTEBFRateCache *c=calloc(1,sizeof(*c));if(!c)return NULL;
+    c->entry=calloc(ns*(size_t)a->bf_channels->n_channels,sizeof(*c->entry));
+    if(!c->entry){free(c);return NULL;}
+    c->channels=a->bf_channels;c->g=a->level_g;c->ion=a->level_ion;c->n_shells=ns;
+    return c;
+}
+void nlte_bf_rate_cache_free(struct NLTEBFRateCache *c){
+    if(c){free(c->entry);free(c);}
+}
+
+int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int shell,
+    double T,double ne,double *up,double *down,double *cu,double *cd){
+    struct NLTEBFRateCache *c=n?n->bf_rate_cache:NULL;
+    if(!c)return nlte_bf_channel_rates_uncached(n,a,lower,r,shell,T,ne,up,down,cu,cd);
+    if(!a||!a->bf_channels||!up||!down||!cu||!cd||!(T>0)||!isfinite(T)||
+       !(ne>=0)||!isfinite(ne)||n->radfield_view_status!=RADIATION_FIELD_VIEW_OK)return -1;
+    const BfChannels *p=a->bf_channels;const RadiationFieldView *v=&n->radfield_view;
+    if(lower<0||lower>=p->n_levels||r<0||r>=p->n_channels||
+       r<p->offset[lower]||r>=p->offset[lower+1]||n->n_freq_bins!=p->n_bins||
+       shell<0||(size_t)shell>=v->n_shells||!v->n_bins||!v->J_nu||
+       !v->frequency_bin_edges||!v->validity)return -1;
+    if(c->channels!=p||c->g!=a->level_g||c->ion!=a->level_ion||
+       c->n_shells!=v->n_shells||!v->generation)
+        return nlte_bf_channel_rates_uncached(n,a,lower,r,shell,T,ne,up,down,cu,cd);
+    if(!c->bound){c->field=*v;c->bound=1;}
+    const RadiationFieldView *old=&c->field;
+    /* 같은 세대의 게시 배열은 요청 중 불변이다. 새 게시/격자는 재사용하지 않는다. */
+    if(old->generation!=v->generation||old->n_bins!=v->n_bins||old->J_nu!=v->J_nu||
+       old->frequency_bin_edges!=v->frequency_bin_edges||old->validity!=v->validity)
+        return nlte_bf_channel_rates_uncached(n,a,lower,r,shell,T,ne,up,down,cu,cd);
+    NLTEBFRateEntry *e=&c->entry[(size_t)shell*p->n_channels+r];
+    if(e->T!=T){
+        double q[4];
+        if(nlte_bf_channel_rates_uncached(n,a,lower,r,shell,T,1,q,q+1,q+2,q+3))return -1;
+        memcpy(e->coefficient,q,sizeof(q));e->T=T;
+    }
+    const double *q=e->coefficient;
+    /* 작은 물리율을 없애지 않는다. 단위밀도에서 underflow했을 가능성이
+     * 있거나 스케일 결과가 비유한/underflow이면 원래밀도로 다시 적분한다. */
+    int unsafe=q[1]<DBL_MIN;
+    for(int i=0;i<4;i++)if(q[i]!=0&&fabs(q[i])<DBL_MIN)unsafe=1;
+    double value[4]={q[0],q[1]*ne,q[2]*ne,(q[3]*ne)*ne};
+    for(int i=0;i<4;i++)if(!isfinite(value[i])||
+        (ne>0&&q[i]>0&&value[i]<DBL_MIN))unsafe=1;
+    if(unsafe)return nlte_bf_channel_rates_uncached(n,a,lower,r,shell,T,ne,up,down,cu,cd);
+    *up=value[0];*down=value[1];*cu=value[2];*cd=value[3];return 0;
 }
 
 /* 채널 단위 Milne 계수는 낮은 준위 인구가 정확히 0이어도 계산한다.
@@ -23588,7 +23650,7 @@ nlte_population_candidate_prepare_through_core(
         candidate, request->time_explosion, request->gamma_dep);
 }
 
-static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body_ex(
+static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body_uncached_owner(
         NLTEPopulationCandidate *candidate,
         const NLTEPopulationBundleRequest *request,
         const double *prescribed_ne) {
@@ -23726,6 +23788,24 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;
     return NLTE_CANDIDATE_OK;
+}
+
+static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body_ex(
+        NLTEPopulationCandidate *candidate,
+        const NLTEPopulationBundleRequest *request,const double *prescribed_ne){
+    if(!candidate||!request||!request->public_nlte||!request->public_atom||
+       !request->public_plasma||!nlte_whole_element_mode(request->public_plasma)||
+       !request->public_atom->bf_channels)
+        return nlte_population_candidate_build_bundle_body_uncached_owner(candidate,request,prescribed_ne);
+    struct NLTEBFRateCache *cache=nlte_bf_rate_cache_create(request->public_atom,request->n_shells);
+    NLTEConfig private_config=*request->public_nlte;
+    private_config.bf_rate_cache=cache;
+    NLTEPopulationBundleRequest scoped=*request;scoped.public_nlte=&private_config;
+    NLTEPopulationCandidateStatus status=
+        nlte_population_candidate_build_bundle_body_uncached_owner(candidate,&scoped,prescribed_ne);
+    candidate->nlte.bf_rate_cache=NULL;
+    nlte_bf_rate_cache_free(cache);
+    return status;
 }
 
 static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body(
