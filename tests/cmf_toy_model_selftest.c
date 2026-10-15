@@ -55,6 +55,7 @@ int main(int argc,char **argv){
     }
     printf("TOY_ION_LINE_INDEX PASS ions=%d lines=%d exact_selection_and_order=1\n",n->n_nlte_ions,a->n_lines);
     clock_t lookup_start=clock();size_t matched=0;
+    size_t collision_tiers[4]={0};int collision_probe=0;
     for(int line=0;line<a->n_lines;line++){
         int ip=-1,lo=-1,up=-1;
         for(int i=0;i<a->n_ion_pops;i++)if(a->ion_pop_Z[i]==a->line_atomic_number[line]&&
@@ -66,6 +67,24 @@ int main(int argc,char **argv){
         }
         CHECK(n->nlte_line_global[2*(size_t)line]==lo&&n->nlte_line_global[2*(size_t)line+1]==up);
         if(lo>=0&&up>=0)matched++;
+        if(omega_cmfgen_enabled()){
+            int tier=0;double ups=omega_cmfgen_line(a,line,5000,&tier);
+            CHECK(tier>=1&&tier<=3&&isfinite(ups)&&ups>0);collision_tiers[tier]++;
+            if(a->line_atomic_number[line]==14&&a->line_ion_number[line]==2&&
+               a->line_level_lower[line]==19&&a->line_level_upper[line]==26){
+                CHECK(lo>=0&&up>=0&&tier==2);
+                double dE=fabs(a->level_energy_eV[up]-a->level_energy_eV[lo])*EV_TO_ERG;
+                /* 봉인 toy 원자의 이 전이는5000K에서 다른-n gbar분기0.2다.
+                 * SAME_N은별도미구현사항이며이번초기화회귀시험과혼합하지않는다. */
+                double expected=47.972*0.2*a->line_f_lu[line]*a->level_g[lo]/(dE/(H_PLANCK*1e15));
+                CHECK(expected>0.1&&fabs(ups/expected-1)<1e-12);collision_probe++;
+            }
+        }
+    }
+    if(omega_cmfgen_enabled()){
+        CHECK(collision_tiers[1]>0&&collision_tiers[2]>0&&collision_tiers[3]>0&&collision_probe==1);
+        printf("TOY_COLLISION_DISPATCH PASS tabulated=%zu strong=%zu weak=%zu probe_SiIII_19_26=1\n",
+               collision_tiers[1],collision_tiers[2],collision_tiers[3]);
     }
     double old_lookup_seconds=(double)(clock()-lookup_start)/CLOCKS_PER_SEC;
     volatile size_t checksum=0;lookup_start=clock();

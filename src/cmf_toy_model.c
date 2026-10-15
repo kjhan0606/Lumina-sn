@@ -48,6 +48,9 @@ int cmf_toy_model_prepare_refined(CMFToyModel *m,const char *path,const char *at
     phase="atomic structure";
     if(load_atomic_structure(&m->atom,atomic_dir,ns))goto fail;
     if(load_ion_coldata_manifest(&m->atom,atomic_dir)<=0)goto fail;
+    /* toy CLI는 기존 main의 원자 초기화보다 먼저 분기한다. 표를 읽기만 하면
+     * 전이별 dE/g/실표 맵이 비어 모든 선이 OMEGA_SET으로 잘못 분류된다. */
+    omega_cmfgen_arm(&m->atom);
     AtomicData *a=&m->atom;Geometry *g=&m->geometry;PlasmaState *p=&m->plasma;
     OpacityState *o=&m->opacity;NLTEConfig *n=&m->nlte;
     if(!a->bf_channels||a->bf_channels->version!=2||a->n_lines<1||a->n_levels<1||
