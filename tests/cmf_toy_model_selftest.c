@@ -36,7 +36,8 @@ int main(int argc,char **argv){
         printf("TOY_GRID_REFINED base_shells=%d effective_shells=%d T_ratio=%.17g reference_input=0\n",
                ns,m.ejecta.n_shells,ratio);
         ns=m.ejecta.n_shells;
-    }else CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
+    }else CHECK(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],ns,masses));
+    ns=m.geometry.n_shells;
     const AtomicData *a=&m.atom;const NLTEConfig *n=&m.nlte;const PlasmaState *p=&m.plasma;
     CHECK(m.prepared&&m.ejecta.n_source_shells==807&&m.geometry.time_explosion==172800);
     CHECK(m.geometry.r_inner[0]==0&&m.geometry.v_outer[ns-1]==40350e5);

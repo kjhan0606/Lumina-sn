@@ -46,6 +46,15 @@ if [[ "$toy_mode" == material-rates-profile ]]; then
  toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1
 fi
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
+if [[ "$toy_mode" == material-iterate ]]; then
+ toy_iterate_run=${5:?initial run directory required}
+ toy_iterate_grid=$(sed -n 's/^LUMINA_TOY_GRID_T_RATIO=//p' "$toy_iterate_run/env_lumina_effective.txt")
+ case "$toy_iterate_grid" in
+  '') ;;
+  1.10|1.05) export LUMINA_TOY_GRID_T_RATIO="$toy_iterate_grid" ;;
+  *) echo '기존 초기 반복의 격자 선택 오류' >&2; exit 2 ;;
+ esac
+fi
 if [[ "$toy_mode" == *-refined && "$toy_mode" != material-refined ]]; then
  toy_grid_ratio=${5:?temperature ratio required}
  case "$toy_grid_ratio" in 1.10|1.05) ;; *) exit 2 ;; esac
@@ -127,7 +136,7 @@ if [[ "$toy_mode" == material-refined ]]; then
  printf 'base_shells=%s\ntemperature_ratio=%s\n' "$toy_shells" "$toy_grid_ratio" > "$toy_out/grid_choice.txt"
 fi
 if [[ "$toy_mode" == material-iterate ]]; then
- toy_iterate_run=${5:?completed initial run directory required}
+ toy_iterate_run=${5:?initial run directory required}
  (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
  for toy_file in "$toy_out"/input/*; do cmp "$toy_file" "$toy_iterate_run/input/${toy_file##*/}"; done
  toy_iterate_id=$(sha256sum "$toy_iterate_run/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
