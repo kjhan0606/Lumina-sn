@@ -12,6 +12,94 @@
 #endif
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"TOY_NT_ITERATE_FAIL line=%d %s\n",__LINE__,#x);goto done;}} while(0)
 
+/* 같은 실제 인구에서 격자 세분화와 경계 확장을 분리한다. NLTE를 다시 풀지 않는다. */
+static int grid_comparison(const CMFToyModel *m,const CMFNonthermalAtomicData *raw,
+                           const char *binding,int iteration){
+    enum {NS=4,CASES=5};const int selected[NS]={30,39,41,43};
+    const int points[CASES]={256,511,1021,320,280};
+    const char *names[CASES]={"base256","refine511","refine1021","lower0p1","upper4000"};
+    const AtomicData *a=&m->atom;int ns=m->plasma.n_shells,rc=-1,rows=0;
+    double *pop=NULL,*energy=NULL,electron[NS],power[NS];
+    long double baseline[NS][4][2]={0},fine[NS][4][2]={0};
+    CMFNonthermalExcitations exc={0};CMFNonthermalResolvedModel bound={0};CMFNonthermalRates rates={0};
+    NLTEConfig n=m->nlte;PlasmaState p={0};GammaDeposition g={0};FILE *fp=NULL;
+    REQUIRE(ns==113);
+    pop=malloc((size_t)n.n_nlte_levels_total*NS*sizeof(double));REQUIRE(pop);
+    for(int b=0;b<NS;b++){
+        int s=selected[b];electron[b]=m->plasma.n_electron[s];power[b]=1.602176634e-12;
+        for(int k=0;k<n.n_nlte_levels_total;k++)pop[(size_t)k*NS+b]=m->nlte.nlte_level_populations[(size_t)k*ns+s];
+    }
+    n.nlte_level_populations=pop;p.n_shells=NS;p.n_electron=electron;
+    g.n_shells=NS;g.heating_rate=power;g.generation=1;g.epoch=m->geometry.time_explosion;
+    g.provenance=GAMMA_PROVENANCE_NONLOCAL_MC;
+    fp=fopen("iterate_nonthermal_grid.csv","wx");REQUIRE(fp);
+    REQUIRE(fprintf(fp,"case,iteration,shell,Z,charge,n_energy,Emin_eV,Emax_eV,single_events_per_eV,auger_events_per_eV,single_relative_to_base,auger_relative_to_base,single_per_ion_per_unit_eV,heat_fraction,ion_fraction,excitation_fraction\n")>0);
+    for(int c=0;c<CASES;c++){
+        int ne=points[c];energy=malloc((size_t)ne*sizeof(double));REQUIRE(energy);
+        if(c<3)for(int e=0;e<ne;e++)energy[e]=exp((double)e/(ne-1)*log(2000));
+        else if(c==3){
+            for(int e=0;e<64;e++)energy[e]=exp(log(.1)+(double)e/64*log(10));
+            for(int e=0;e<256;e++)energy[64+e]=exp((double)e/255*log(2000));
+        }else{
+            for(int e=0;e<256;e++)energy[e]=exp((double)e/255*log(2000));
+            for(int e=1;e<=24;e++)energy[255+e]=2000*exp((double)e/24*log(2));
+        }
+        struct timespec start,finish;REQUIRE(!clock_gettime(CLOCK_MONOTONIC,&start));
+        REQUIRE(!cmf_nonthermal_excitation_build(a,energy,ne,20,&exc));
+        REQUIRE(!cmf_nonthermal_binding_build_policy(a,raw,&exc,binding,CMF_NT_SIGMA_SOURCE_KINETIC,&bound));
+        REQUIRE(bound.n_resolved_routes==41&&bound.n_unresolved_routes==10&&bound.n_missing_ions==2);
+        REQUIRE(!cmf_nonthermal_bound_evaluate(&bound.view,a,&n,&p,&g,&rates));
+        REQUIRE(!clock_gettime(CLOCK_MONOTONIC,&finish));
+        long double max_base=0,max_refinement=0;
+        for(int b=0;b<NS;b++){
+            long double event[4][2]={0},ion=0,excitation=0;
+            for(int k=0;k<rates.n_transitions;k++){
+                const CMFNonthermalTransition *t=&rates.transitions[k];int lo=t->lower_global,electrons;double delta;
+                REQUIRE(!cmf_nonthermal_transition_energy(a,t,&delta,&electrons));
+                int lower=n.global_to_nlte_level[lo];REQUIRE(lower>=0&&lower<n.n_nlte_levels_total);
+                long double count=(long double)rates.rate_per_particle[(size_t)k*NS+b]*pop[(size_t)lower*NS+b];
+                REQUIRE(count>=0&&isfinite((double)count));
+                if(electrons)ion+=count*delta;else excitation+=count*delta;
+                int z=a->level_Z[lo],q=a->level_ion[lo];
+                if(electrons&&(z==14||z==16)&&(q==1||q==2))event[(z==16?2:0)+q-1][electrons-1]+=count;
+            }
+            REQUIRE(ion>=0&&excitation>=0&&ion+excitation<=1+1e-10L);
+            for(int j=0;j<4;j++){
+                int z=j<2?14:16,q=j%2+1,ip=-1;
+                for(int k=0;k<a->n_ion_pops;k++)if(a->ion_pop_Z[k]==z&&a->ion_pop_stage[k]==q)ip=k;
+                REQUIRE(ip>=0);double population=a->ion_number_density[(size_t)ip*ns+selected[b]];REQUIRE(population>0);
+                long double difference[2];
+                for(int k=0;k<2;k++){
+                    if(c==0)baseline[b][j][k]=event[j][k];
+                    if(c==1)fine[b][j][k]=event[j][k];
+                    /* 사건이 전혀 없는 채널은 두 값이 모두0일 때만 차이0이다. */
+                    REQUIRE(baseline[b][j][k]>0||event[j][k]==0);
+                    difference[k]=baseline[b][j][k]>0?event[j][k]/baseline[b][j][k]-1:0;
+                    max_base=fmaxl(max_base,fabsl(difference[k]));
+                    if(c==2){
+                        REQUIRE(fine[b][j][k]>0||event[j][k]==0);
+                        long double d=fine[b][j][k]>0?event[j][k]/fine[b][j][k]-1:0;
+                        max_refinement=fmaxl(max_refinement,fabsl(d));
+                    }
+                }
+                REQUIRE(fprintf(fp,"%s,%d,%d,%d,%d,%d,%.17g,%.17g,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg\n",
+                    names[c],iteration,selected[b],z,q,ne,energy[0],energy[ne-1],event[j][0],event[j][1],
+                    difference[0],difference[1],event[j][0]/population,1-ion-excitation,ion,excitation)>0);rows++;
+            }
+        }
+        printf("TOY_NT_GRID case=%s points=%d shells=%d seconds=%.9g max_rate_relative_to_base=%.9Lg max_rate_1021_vs_511=%.9Lg physical_equivalence=NOT_JUDGED\n",
+            names[c],ne,NS,(double)(finish.tv_sec-start.tv_sec)+(finish.tv_nsec-start.tv_nsec)*1e-9,max_base,max_refinement);fflush(stdout);
+        cmf_nonthermal_rates_free(&rates);cmf_nonthermal_binding_free(&bound);cmf_nonthermal_excitation_free(&exc);
+        free(energy);energy=NULL;
+    }
+    REQUIRE(rows==CASES*NS*4);
+    puts("TOY_NT_GRID_COMPLETE fixed_population=1 transport_solved=0 NLTE_solved=0 physical_gamma_used=0");rc=0;
+done:
+    if(fp&&fclose(fp))rc=-1;
+    cmf_nonthermal_rates_free(&rates);cmf_nonthermal_binding_free(&bound);cmf_nonthermal_excitation_free(&exc);
+    free(pop);free(energy);return rc;
+}
+
 static int read_gamma(const char *path,int ns,double *v){
     FILE *fp=fopen(path,"r");if(!fp)return -1;
     char line[512];int rc=-1;
@@ -134,6 +222,7 @@ int main(int argc,char **argv){
     pop=malloc((size_t)m.nlte.n_nlte_levels_total*sizeof(*pop));REQUIRE(deposition&&pop);
     REQUIRE(!read_gamma(argv[8],ns,deposition));
     REQUIRE(!cmf_nonthermal_atomic_read(&raw,argv[6]));
+    if(getenv("CMF_TEST_NT_GRID")){rc=grid_comparison(&m,&raw,argv[7],iteration);goto done;}
     for(int k=0;k<256;k++)energy[k]=exp((double)k/255*log(2000));
     REQUIRE(!cmf_nonthermal_excitation_build(a,energy,256,20,&exc));
     REQUIRE(!cmf_nonthermal_binding_build_policy(a,&raw,&exc,argv[7],CMF_NT_SIGMA_SOURCE_KINETIC,&bound));
