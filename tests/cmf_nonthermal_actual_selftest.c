@@ -5,6 +5,36 @@
 #include <time.h>
 /* 실제 2일 Saha predictor/원자 자료의 여기 연결·경계 민감도 시험.
  * 전리 경로를 포함하되 실제 침적·공동 NLTE 해는 사용하지 않으므로 SN 결과가 아니다. */
+static void ground_destination_comparison(const AtomicData *a,const NLTEConfig *n,
+    const CMFNonthermalRates *r,double deposition,int shell){
+    const int Z[4]={14,14,16,16},charge[4]={1,2,1,2};
+    double events[4]={0},base_energy[4]={0},ground_energy[4]={0};
+    double v3_events[4]={0},v3_energy[4]={0};int channels[4]={0};
+    for(int k=0;k<r->n_transitions;k++){
+        const CMFNonthermalTransition *t=&r->transitions[k];
+        int lo=t->lower_global,slot=-1,electrons;double delta;
+        for(int j=0;j<4;j++)if(a->level_Z[lo]==Z[j]&&a->level_ion[lo]==charge[j])slot=j;
+        if(slot<0)continue;
+        assert(!cmf_nonthermal_transition_energy(a,t,&delta,&electrons));
+        if(electrons!=1)continue; /* Auger 처방/열화함수 변화까지 재현한다고 하지 않는다. */
+        CMFNonthermalTransition ground=*t;double factor=1;
+        if(t->upper_global>=0){
+            int ip=-1;
+            for(int i=0;i<a->n_ion_pops;i++)if(a->ion_pop_Z[i]==Z[slot]&&a->ion_pop_stage[i]==charge[slot]+1)ip=i;
+            assert(ip>=0);ground.upper_global=a->level_offset[ip];
+            assert(ground.upper_global<a->level_offset[ip+1]&&a->level_num[ground.upper_global]==0);
+            factor=(double)a->level_g[ground.upper_global]/a->level_g[t->upper_global];
+        }
+        double energy;int count;
+        assert(!cmf_nonthermal_transition_energy(a,&ground,&energy,&count)&&count==1&&energy<=delta*(1+1e-12));
+        double events_per_eV=r->rate_per_particle[k]*n->nlte_level_populations[n->global_to_nlte_level[lo]]*1.602176634e-12/deposition;
+        channels[slot]++;events[slot]+=events_per_eV;base_energy[slot]+=events_per_eV*delta;
+        ground_energy[slot]+=events_per_eV*energy;
+        v3_events[slot]+=events_per_eV*factor;v3_energy[slot]+=events_per_eV*factor*energy;
+    }
+    for(int j=0;j<4;j++)printf("NT_SINGLE_ION_DESTINATION shell=%d Z=%d charge=%d channels=%d same_degradation=1 resolved_events_per_eV=%.17g resolved_energy_fraction=%.17g ground_energy_fraction=%.17g ground_heat_increment=%.17g v3_ground_weight_events_per_eV=%.17g v3_ground_weight_energy_fraction=%.17g public_version_identified=0 SN_comparison=0\n",
+        shell,Z[j],charge[j],channels[j],events[j],base_energy[j],ground_energy[j],base_energy[j]-ground_energy[j],v3_events[j],v3_energy[j]);
+}
 int main(int argc,char **argv){
     if(argc!=5)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
@@ -71,6 +101,7 @@ int main(int argc,char **argv){
                    c>1?Si-baselines[j][1]:0,c>1?S-baselines[j][2]:0);fflush(stdout);
             if(c>=4)printf("NT_RESOLVED_SPLIT case=%d shell=%d heat=%.17g ion=%.17g excitation=%.17g SiII_events_per_eV=%.17g SiIII_events_per_eV=%.17g SII_events_per_eV=%.17g SIII_events_per_eV=%.17g\n",
                            c,s,1-fraction,ion,fraction-ion,Si2,Si3,S2,S3);
+            if(c==5)ground_destination_comparison(a,&n,&r,deposition,s);
             cmf_nonthermal_rates_free(&r);
         }
         printf("NT_ACTUAL_EXCITATION_CPU case=%d seconds=%.6g\n",c,(double)(clock()-started)/CLOCKS_PER_SEC);

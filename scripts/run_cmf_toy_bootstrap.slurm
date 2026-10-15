@@ -75,6 +75,13 @@ fi
 if [[ "$toy_mode" == nonthermal ]]; then
  cp /gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15 "$toy_out/input/"
  (cd "$toy_out"; python3 source/scripts/map_cmf_nonthermal.py > mapping.log 2> mapping.err)
+ # 목표준위 처방 비교의 출처다. 실행/링크하지 않는 원본 읽기 자료다.
+ mkdir "$toy_out/reference-source"
+ cp /gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/se_ba_non_therm_v2.f90 \
+  /gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/se_ba_non_therm_v3.f90 \
+  /gpfs/kjhan/cmfgen_src/cur_cmf/new_main/subs/non_therm/read_arnaud_ion_data.f90 \
+  "$toy_out/reference-source/"
+ (cd "$toy_out/reference-source"; sha256sum -- * > "$toy_out/reference-source.sha256")
 fi
 # 기존50셸 조성은 의도적으로 복사하지 않는다.
 test ! -e "$toy_out/input/abundances.csv"
