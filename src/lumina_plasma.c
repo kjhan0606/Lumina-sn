@@ -8379,54 +8379,10 @@ int compute_plasma_state(AtomicData *atom, PlasmaState *plasma,
     if (ion_status != POP_OK)
         A2_07_PLASMA_ABORT(ion_status);
 
-    /* ★T0(2026-08-07) 최상단 reservoir 근사의 **유효 영역 검사**.
-     *
-     * 로더는 전리에너지 n 개에 대해 population n+1 개를 만들므로 원소마다 최상단
-     * population 에 속박준위가 없다(실측 15/74, 전부 최상단, 덱 3종 동일).
-     * 기준 배선 ARTIS 는 그 이온에 준위 1 개(바닥)를 주어 Z=g_ground 를 쓰는데
-     * (SINGLE_LEVEL_TOP_ION), 우리 덱에는 그 g 가 없어 지금은 Z=1 을 대입한다.
-     *
-     * Z=1 은 g=1 에서만 정확하다.  그러므로 **미지의 g 를 가정하지 않고 상한으로 감싼다**:
-     * 참 분율은 Z=1 로 얻은 분율의 최대 G_BOUND 배다(Saha 비가 Z_top 에 선형).
-     * 그 상한이 MAX_TRUE 를 넘으면 근사가 유효하지 않다 ⟹ **값을 누르지 않고 거부**한다.
-     * 누르면 그것이 클램프다. */
-#define A2_07_RESERVOIR_G_BOUND    30.0   /* 이 단계들 바닥 g 의 보수적 상한(가정, 기재) */
-#define A2_07_RESERVOIR_MAX_TRUE   1.0e-2 /* 참 분율 상한이 원소의 1% 를 넘으면 거부 */
-    {
-        double worst = 0.0;
-        int worst_ip = -1, worst_s = -1;
-        for (int e = 0; e < atom->n_elements; e++) {
-            int b = atom->elem_ion_offset[e], t = atom->elem_ion_offset[e + 1];
-            for (int s = 0; s < n_shells; s++) {
-                double tot = 0.0;
-                for (int ip = b; ip < t; ip++)
-                    tot += atom->ion_number_density[(size_t)ip * n_shells + s];
-                if (!(tot > 0.0)) continue;
-                for (int ip = b; ip < t; ip++) {
-                    if (atom->level_offset[ip + 1] > atom->level_offset[ip]) continue;
-                    double f = atom->ion_number_density[(size_t)ip * n_shells + s] / tot;
-                    if (f > worst) { worst = f; worst_ip = ip; worst_s = s; }
-                }
-            }
-        }
-        printf("  [A2-07] level-less reservoir: max fraction=%.3e "
-               "(x%.0f bound = %.3e, limit %.0e)\n",
-               worst, A2_07_RESERVOIR_G_BOUND,
-               worst * A2_07_RESERVOIR_G_BOUND, A2_07_RESERVOIR_MAX_TRUE);
-        if (worst * A2_07_RESERVOIR_G_BOUND > A2_07_RESERVOIR_MAX_TRUE) {
-            fprintf(stderr,
-                    "[A2-07][FATAL] level-less top stage is populated: ion_pop %d "
-                    "(Z=%d stage=%d) shell %d fraction=%.3e -> bounded true %.3e > %.0e.\n"
-                    "  Z=1 대입이 유효하지 않다. 그 이온의 바닥 g 를 도입해 준위 1 개를 주어야 한다\n"
-                    "  (ARTIS SINGLE_LEVEL_TOP_ION 과 같은 배선).\n",
-                    worst_ip,
-                    atom->ion_pop_Z ? atom->ion_pop_Z[worst_ip] : -1,
-                    atom->ion_pop_stage ? atom->ion_pop_stage[worst_ip] : -1,
-                    worst_s, worst, worst * A2_07_RESERVOIR_G_BOUND,
-                    A2_07_RESERVOIR_MAX_TRUE);
-            A2_07_PLASMA_ABORT(POP_INVALID_PARTITION);
-        }
-    }
+    /* 분배함수 생산자는 위에서 실제 준위/top-ion catalog를 검증했다.
+     * 자료가 없으면 그 단계에서 실패하며 Z=1 대입은 하지 않는다.
+     * 알려진 g에도 미지 g=1의 임시30배 상한을 적용하던 T0 검사는 제거했다.
+     * 이는 원자 모형의 단계 절단 오차까지 검증했다는 뜻은 아니다. */
 
     /* Task #7: frozen-in recombination freeze-out (gated LUMINA_FROZENIN).
      * Overrides outer-shell ion populations + n_e with the time-dependent
@@ -17505,11 +17461,10 @@ static int a210_coupled_production_residual(
            l->cooling_status[A210_ADIABATIC]==A210_INCOMPLETE||
            !isfinite(l->residual)||!isfinite(l->sum_heating)||
            !isfinite(l->sum_cooling))goto done;
-        /* ln(H/C): same root as H-C, nearly linear in ln T far from it. */
-        if(l->sum_heating==0.0&&l->sum_cooling==0.0)f_te[s]=0.0;
-        else if(l->sum_heating>0.0&&l->sum_cooling>0.0)
-            f_te[s]=log1p(l->residual/l->sum_cooling);
-        else goto done;
+        /* 정상식은 ln(H/C), 시간식은 차감 전 에너지 행의 backward error.
+         * 같은 H-C=0을 풀며 시간항 상쇄 후의 작은 H/C로 정규화하지 않는다. */
+        f_te[s]=a210_temperature_residual(l);
+        if(!isfinite(f_te[s]))goto done;
         f_ne[s]=log(q[s]/ne[s]);
     }
     rc=0;

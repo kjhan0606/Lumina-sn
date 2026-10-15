@@ -182,9 +182,15 @@ CmfgenAdiabaticStatus cmfgen_material_time_work(
             (current->internal_energy_atom_erg[s]-previous->internal_energy_atom_erg[s])/dt;
         cell->expansion=3.0L*nnew*CMFGEN_AD_K_BOLTZMANN*
             current->temperature_K[s]*log1pl(dt/previous->epoch_s)/dt;
+        cell->equation_norm=(1.5L*CMFGEN_AD_K_BOLTZMANN*
+            (nnew*current->temperature_K[s]+atom_scale*nold*previous->temperature_K[s])+
+            (long double)current->n_atom_cm3[s]*
+            ((long double)current->internal_energy_atom_erg[s]+previous->internal_energy_atom_erg[s]))/dt+
+            cell->expansion;
         cell->signed_total=four_term_sum(cell->thermal_time,cell->atomic_time,cell->expansion,0);
         if(!isfinite(cell->thermal_time) || !isfinite(cell->atomic_time) ||
-           !isfinite(cell->expansion) || !isfinite(cell->signed_total)){
+            !isfinite(cell->expansion) || !isfinite(cell->signed_total) ||
+            !finite_positive(cell->equation_norm)){
             status=CMFGEN_ADIABATIC_NONFINITE_RESULT;break;
         }
         cell->cooling=cell->signed_total>0?cell->signed_total:0;

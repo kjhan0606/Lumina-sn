@@ -67,6 +67,7 @@ typedef struct {
     double atomic_time;    /* n_atom_new delta(E_excitation+ionization per atom)/dt */
     double expansion;      /* P_new log(V_new/V_old)/dt; 동형팽창 V비=(t_new/t_old)^3 */
     double signed_total, cooling, heating; /* erg s^-1 cm^-3 */
+    double equation_norm; /* 차감 전 현재/과거 저장항 절댓값 합 + 팽창일 */
 } CmfgenMaterialTimeWork;
 
 /* CMFGEN EVAL_TEMP_DDT_V2의 이산식(Hillier/Dessart2012 Eq27-30의 물질 쪽).

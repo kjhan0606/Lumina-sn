@@ -266,6 +266,8 @@ static PhysicsComparisonStatus comparison_validate(
             !a210_adiabatic_model_complete(ledger->adiabatic_model) ||
             !isfinite(ledger->material_thermal_time) ||
             !isfinite(ledger->material_atomic_time) ||
+            !isfinite(ledger->material_time_norm) ||
+            (ledger->adiabatic_model==A210_MATERIAL_TIME_HISTORY && !(ledger->material_time_norm>0)) ||
             !isfinite(ledger->adiabatic_temperature_gradient) ||
             !isfinite(ledger->adiabatic_velocity_divergence) ||
             !isfinite(ledger->adiabatic_electron_fraction_gradient) ||
@@ -571,14 +573,15 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
         "q_ad_signed_total,q_ad_heating,q_ad_cooling,photo_heat,line_abs_heat,"
         "ff_abs_heat,compton_heat,gamma_heat,nonthermal_heat,recomb_cool,"
         "line_emit_cool,coll_line_cool,ff_emit_cool,compton_cool,sum_heating,"
-        "sum_cooling,residual,material_work_model,q_material_thermal_time,q_material_atomic_time\n");
+        "sum_cooling,residual,material_work_model,q_material_thermal_time,q_material_atomic_time,"
+        "material_time_norm,energy_equation_relative_residual,net_heat_balance\n");
     for (size_t s = 0; s < in->n_shells; ++s) {
         const A210TermLedger *l = &in->temperature_publication->ledger[s];
         fprintf(shell,
             "%zu,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,"
             "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,"
             "%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,"
-            "%.17g,%.17g,%.17g,%s,%.17g,%.17g\n",
+            "%.17g,%.17g,%.17g,%s,%.17g,%.17g,%.17g,%.17g,%.17g\n",
             s,in->r_inner_cm[s],in->r_outer_cm[s],in->v_inner_cm_s[s],
             in->v_outer_cm_s[s],in->temperature_K[s],
             in->electron_density_cm3[s],in->atom_density_cm3[s],
@@ -593,7 +596,8 @@ PhysicsComparisonStatus physics_comparison_snapshot_write(
             l->cooling[A210_RECOMB],l->cooling[A210_LINE_EMIT],
             l->cooling[A210_COLL_LINE],l->cooling[A210_FF_EMIT],
             l->cooling[A210_COMPTON_C],l->sum_heating,l->sum_cooling,l->residual,
-            a210_adiabatic_model_name(l->adiabatic_model),l->material_thermal_time,l->material_atomic_time);
+            a210_adiabatic_model_name(l->adiabatic_model),l->material_thermal_time,l->material_atomic_time,
+            l->material_time_norm,a210_energy_balance(l),l->e_balance);
     }
     fprintf(spectral,
         "shell_id,bin_id,nu_lo_Hz,nu_hi_Hz,J_nu,chi_es_cm1,chi_bb_cm1,"

@@ -240,6 +240,63 @@ static void test_actual_formal_closure(double extinction)
     destroy(&a);
 }
 
+/* 실제 초기해에서 드러난 문턱 아래의 급한 공간 변화 분리 조사.
+ * 원자 반복 없이 동일한 양의 연속 방출률을 각 공간 격자에서 형식해로
+ * 적분한다. dt100의 성공 자체가 공간 수렴 또는 실제 SN 검증은 아니다. */
+static void initial_edge_diagnostic(int ns)
+{
+    const int nb=512;Fixture a;init(&a,ns,nb);
+    double dl=log(3.2e15/2.6e15)/nb;
+    double *m=calloc((size_t)(6*ns+4)*nb,sizeof(double));CHECK(m);if(!m)return;
+    double *nu=m,*ri=nu+nb,*ro=ri+ns,*j=ro+ns,*h=j+ns*nb,*k=h+ns*nb;
+    double *oj=k+ns*nb,*oh=oj+nb,*ok=oh+nb;
+    CMFFormalMoments formal={j,h,k,oj,oh,ok,a.ho};
+    for(int b=0;b<=nb;b++)a.nu[b]=2.6e15*exp(b*dl);
+    for(int b=0;b<nb;b++)nu[b]=sqrt(a.nu[b]*a.nu[b+1]);
+    for(int s=0;s<=ns;s++)a.r[s]=s<=ns/2?4e14*s/(ns/2):4e14+1e14*(s-ns/2)/(ns/2);
+    for(int s=0;s<ns;s++){
+        ri[s]=a.r[s];ro[s]=a.r[s+1];
+        for(int b=0;b<nb;b++){
+            size_t i=(size_t)s*nb+b;
+            a.ct[i]=2.3e-19;a.eta[i]=1e-35+(nu[b]>2.804e15?1e-30:0);
+            a.jo[i]=0;
+        }
+    }
+    a.p.time_old=1e6;a.p.time_new=1e6+100;
+    CMFExactStatus status=cmf_exact_formal_moments_emissivity(ns,nb,dl,nu,ri,ro,1e6,
+        10000,0,a.ct,a.cs,a.eta,a.jo,&formal);
+    CHECK(status==CMF_EXACT_OK);if(status!=CMF_EXACT_OK){free(m);destroy(&a);return;}
+    memcpy(a.jo,j,(size_t)ns*nb*sizeof(double));
+    for(int s=0;s<=ns;s++)a.r[s]*=a.p.time_new/a.p.time_old;
+    for(int s=0;s<ns;s++){ri[s]=a.r[s];ro[s]=a.r[s+1];}
+    formal.face_H=NULL;
+    status=cmf_exact_formal_moments_emissivity(ns,nb,dl,nu,ri,ro,a.p.time_new,
+        10000,0,a.ct,a.cs,a.eta,a.jo,&formal);
+    CHECK(status==CMF_EXACT_OK);if(status!=CMF_EXACT_OK){free(m);destroy(&a);return;}
+    for(int i=0;i<ns*nb;i++){CHECK(j[i]>0);a.f[i]=k[i]/j[i];}
+    for(int b=0;b<nb;b++){a.h[b]=oh[b]/oj[b];a.fb[b]=ok[b]/oj[b];}
+    CMFTimeMomentStatus result=cmf_time_moment_step(&a.p,a.jn,a.hn);
+    double drain=0,ratio=0;int worst=-1;
+    for(int b=0;b<nb;b++)if(nu[b]<2.804e15){
+        double d=3*C_LIGHT*100*a.ho[nb+b]/(a.r[1]*a.jo[b]);
+        if(d>drain){drain=d;worst=b;ratio=a.ho[nb+b]/a.jo[b];}
+    }
+    printf("INITIAL_EDGE_DIAGNOSTIC shells=%d bins=%d dt=100 status=%d center_J_face_H_ratio=%.17g explicit_drain_fraction=%.17g worst_bin=%d\n",
+        ns,nb,result,ratio,drain,worst);
+    if(result==CMF_TIME_OK){
+        balance(&a);
+        long double stored=0,previous=0,escape=0;
+        for(int s=0;s<ns;s++)for(int b=0;b<nb;b++){
+            long double w=(powl(a.r[s+1],3)-powl(a.r[s],3))/3*(a.nu[b+1]-a.nu[b]);
+            stored+=w*a.jn[s*nb+b];previous+=w*a.jo[s*nb+b];
+        }
+        for(int b=0;b<nb;b++)escape+=(long double)a.hn[ns*nb+b]*(a.nu[b+1]-a.nu[b]);
+        printf("INITIAL_EDGE_RESOLUTION shells=%d energy_ratio=%.17Lg surface_H_integrated=%.17Lg\n",
+            ns,stored/(previous*powl(a.p.time_old/a.p.time_new,3)),escape);
+    }
+    free(m);destroy(&a);
+}
+
 int main(void)
 {
     double shape,e10=evolve(128,10,&shape),e20=evolve(128,20,&shape),e40=evolve(128,40,&shape);
@@ -254,6 +311,8 @@ int main(void)
     double s20=manufactured_spatial(20),s40=manufactured_spatial(40),s80=manufactured_spatial(80);
     CHECK(s40<.55*s20&&s80<.55*s40);
     test_actual_formal_closure(1e-10);test_actual_formal_closure(1e-13);
+    initial_edge_diagnostic(2);initial_edge_diagnostic(8);initial_edge_diagnostic(32);
+    initial_edge_diagnostic(64);initial_edge_diagnostic(128);
     printf("CMF_TIME_MOMENT_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
     return failures?1:0;
 }

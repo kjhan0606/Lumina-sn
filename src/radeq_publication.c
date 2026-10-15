@@ -54,7 +54,7 @@ RadeqStatus a210_apply_cmfgen_adiabatic(
   return l->status=RADEQ_SIGN_MISMATCH;
  }
  l->adiabatic_model=A210_ADIABATIC_CMFGEN_COMPLETE;
- l->material_thermal_time=l->material_atomic_time=0;
+ l->material_thermal_time=l->material_atomic_time=l->material_time_norm=0;
  l->adiabatic_temperature_gradient=c->temperature_gradient;
  l->adiabatic_velocity_divergence=c->velocity_divergence;
  l->adiabatic_electron_fraction_gradient=c->electron_fraction_gradient;
@@ -76,12 +76,15 @@ RadeqStatus a210_apply_material_time_work(
  double total=sum(parts,3),scale=fmax(fabs(parts[0])+fabs(parts[1])+fabs(parts[2]),DBL_MIN);
  if(!isfinite(parts[0])||!isfinite(parts[1])||!isfinite(parts[2])||
     !isfinite(c->signed_total)||!isfinite(c->cooling)||!isfinite(c->heating)||
+    !(c->equation_norm>0)||!isfinite(c->equation_norm)||
+    c->equation_norm<fabs(c->signed_total)*(1-1e-12)||
     c->expansion<0||c->cooling<0||c->heating<0||
     fabs(total-c->signed_total)>1e-12*scale||
     fabs(c->cooling-c->heating-c->signed_total)>1e-12*scale||
     (c->cooling>0&&c->heating>0))return l->status=RADEQ_SIGN_MISMATCH;
  l->adiabatic_model=A210_MATERIAL_TIME_HISTORY;
  l->material_thermal_time=c->thermal_time;l->material_atomic_time=c->atomic_time;
+ l->material_time_norm=c->equation_norm;
  l->adiabatic_temperature_gradient=l->adiabatic_electron_fraction_gradient=0;
  l->adiabatic_internal_energy_gradient=0;l->adiabatic_velocity_divergence=c->expansion;
  l->adiabatic_signed_total=c->signed_total;
@@ -598,10 +601,10 @@ static int a210_solve_vector_impl(
  }
  for(size_t s=0;s<n;s++){
   c.n_e[s]=ne[s];c.shell_status[s]=RADEQ_OK;
-  c.residual_status[s]=c.ledger[s].e_balance<=1e-3?
+  c.residual_status[s]=a210_energy_balance(&c.ledger[s])<=1e-3?
       RADEQ_OK:RADEQ_HEAT_RESIDUAL;
   if(c.residual_status[s]!=RADEQ_OK){
-   g.max_heat_residual=fmax(g.max_heat_residual,c.ledger[s].e_balance);
+   g.max_heat_residual=fmax(g.max_heat_residual,a210_energy_balance(&c.ledger[s]));
    free(lo);free(hi);free(mid);free(flo);free(fhi);
    free(llo);free(lhi);free(lmid);a210_publication_free(&c);return 4;
   }
@@ -668,10 +671,10 @@ int a210_publication_candidate_from_root(
    g.nonfinite_failures++;a210_publication_free(&c);return 5;
   }
   c.n_e[s]=ne[s];c.shell_status[s]=RADEQ_OK;
-  c.residual_status[s]=c.ledger[s].e_balance<=1e-3?
+  c.residual_status[s]=a210_energy_balance(&c.ledger[s])<=1e-3?
       RADEQ_OK:RADEQ_HEAT_RESIDUAL;
   if(c.residual_status[s]!=RADEQ_OK){
-   g.max_heat_residual=fmax(g.max_heat_residual,c.ledger[s].e_balance);
+   g.max_heat_residual=fmax(g.max_heat_residual,a210_energy_balance(&c.ledger[s]));
    a210_publication_free(&c);return 4;
   }
  }

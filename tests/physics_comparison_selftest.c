@@ -257,7 +257,7 @@ int main(void)
     em.te_generation=5;input.lane="TIME";
     A210TermLedger saved_ledger[NS];memcpy(saved_ledger,ledger,sizeof(ledger));
     for(size_t s=0;s<NS;++s){
-        CmfgenMaterialTimeWork work={0.1,0.3,0.2,0.6,0.6,0};
+        CmfgenMaterialTimeWork work={0.1,0.3,0.2,0.6,0.6,0,1};
         CHECK(a210_apply_material_time_work(&ledger[s],&work)==RADEQ_OK,"time-work-apply");
     }
     CHECK(physics_comparison_snapshot_write(directory,&input)==PHYSICS_COMPARISON_OK,"time-work-write");

@@ -51,6 +51,7 @@ typedef struct {
  double adiabatic_electron_fraction_gradient,adiabatic_internal_energy_gradient;
  double adiabatic_signed_total;
  double material_thermal_time,material_atomic_time;
+ double material_time_norm; /* 원래 시간 에너지 행: 저장항을 차감하기 전의 합 */
  int m_line,radiative_line_included,collisional_or_escape_included;
  int line_owner_overlap;
  double line_owner_closure,normalized_line_owner_closure;
@@ -58,6 +59,27 @@ typedef struct {
  RadeqStatus status;
  LineJbarUncertaintyKind line_uncertainty_kind; /* 시간장의 delta는 엄밀 상계가 아님 */
 } A210TermLedger;
+
+/* 정상 H/C 잔차와 시간 에너지 행의 수치적 backward error를 구분한다.
+ * e_balance는 기존 순가열/순냉각 상대 잔차로 그대로 남긴다. */
+static inline double a210_energy_balance(const A210TermLedger *l){
+ if(!l)return INFINITY;
+ if(l->adiabatic_model!=A210_MATERIAL_TIME_HISTORY)return l->e_balance;
+ long double norm=l->material_time_norm;
+ if(!(norm>0)||!isfinite(norm))return INFINITY;
+ for(int i=0;i<A210_NHEAT;i++)if(i!=A210_ADIABATIC_H)norm+=l->heating[i];
+ for(int i=0;i<A210_NCOOL;i++)if(i!=A210_ADIABATIC)norm+=l->cooling[i];
+ return (double)(fabsl(l->residual)/norm);
+}
+
+static inline double a210_temperature_residual(const A210TermLedger *l){
+ if(!l)return NAN;
+ if(l->adiabatic_model==A210_MATERIAL_TIME_HISTORY)
+  return copysign(a210_energy_balance(l),l->residual);
+ if(l->sum_heating==0&&l->sum_cooling==0)return 0;
+ return l->sum_heating>0&&l->sum_cooling>0?
+  log1p(l->residual/l->sum_cooling):NAN;
+}
 
 typedef struct {
  double signed_rate;

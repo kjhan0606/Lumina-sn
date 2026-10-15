@@ -306,7 +306,25 @@ static int terminal_check(void){
     CHECK(T[0]==1e4,"initial prescribed T preserved");
     printf("[BF-CHANNELS] INITIAL_STEADY_PASS n0=%.17g n1=%.17g terminal=%.17g actual_core=1 history=NONE\n",keep[0],keep[1],keep[2]);
     printf("[BF-CHANNELS] TERMINAL_PASS n0=%.17g n1=%.17g terminal=%.17g history=PASS core=PASS continuum_bins=%d\n",savedion[0],savedion[1],savedion[2],checked);
-    bf_set_nlte_pops(NULL);bf_opacity_free(&bf);gamma_deposition_free(&gd);free_bf_channels(a.bf_channels);
+    bf_set_nlte_pops(NULL);
+    /* 실제 catalog g=6을 가진 고온 terminal은 미지 g=1 reservoir가 아니다.
+     * 첫 물질 predictor의 Saha 경로를 실제로 호출한다. */
+    T[0]=1e5;rho[0]=28*AMU*1e8;ne[0]=3e8;abund[0]=1;p.initial_steady_nlte=0;
+    double bootstrap_tau=0;
+    op.n_shells=1;op.electron_density=ne;op.t_electrons=T;op.tau_sobolev=&bootstrap_tau;
+    CHECK(!lumina_bootstrap_window_open("terminal catalog bootstrap selftest"),"bootstrap window");
+    int bootstrap=compute_plasma_state(&a,&p,&op,2);
+    lumina_bootstrap_window_close();
+    fprintf(stderr,"TERMINAL_BOOTSTRAP result=%d status=%s terminal=%.17g ne=%.17g partition=%.17g\n",
+        bootstrap,population_status_name(p.population_last_error),ions[2],ne[0],partition[2]);
+    CHECK(!bootstrap&&ions[2]/1e8>.99&&partition[2]==6,"known terminal catalog allowed at high ion fraction");
+    memcpy(savedion,ions,sizeof savedion);double savedne=ne[0];
+    a.topion_n=0;
+    CHECK(compute_plasma_state(&a,&p,&op,2)!=0&&p.population_last_error==POP_ATOMIC_MISSING&&
+        !memcmp(savedion,ions,sizeof savedion)&&ne[0]==savedne,"unknown terminal still rejected without mutation");
+    a.topion_n=1;
+    puts("[BF-CHANNELS] TERMINAL_BOOTSTRAP_PASS known_g=6 unknown=REJECTED");
+    bf_opacity_free(&bf);gamma_deposition_free(&gd);free_bf_channels(a.bf_channels);
     return 0;
 }
 

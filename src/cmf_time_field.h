@@ -11,6 +11,7 @@ typedef int (*CMFTimeFormalApply)(void *context,const double *J,CMFFormalMoments
 typedef struct {
     int iterations,iteration_cap,converged;
     double tolerance,relative_update,closure_update,equation_residual;
+    CMFTimeMomentStatus status; /* 호출자가 dt 부적합과 입력/물질 오류를 구분한다. */
 } CMFTimeFieldReport;
 
 /* p.eddington/outer_h/outer_f는 이 함수가 실제 형식해로 대체한다.

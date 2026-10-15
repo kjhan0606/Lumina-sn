@@ -1,6 +1,7 @@
 #include "cmf_time_moment.h"
 #include <math.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -121,7 +122,15 @@ CMFTimeMomentStatus cmf_time_moment_step(const CMFTimeMomentInput *p,
             size_t s=(size_t)is, i=s*nb+k;
             jout[i]=(rhs[s]-(s+1<ns ? upper[s]*jout[i+nb] : 0))/diagonal[s];
             if (!isfinite(jout[i])) {status=CMF_TIME_NONFINITE;goto cleanup;}
-            if (jout[i]<0) {status=CMF_TIME_NEGATIVE;goto cleanup;}
+            if (jout[i]<0) {
+                fprintf(stderr,"[CMF-TIME][NEGATIVE] shell=%zu bin=%zu dt=%.17g nu_lo=%.17g "
+                    "J_old=%.17g J_new=%.17g H_old_left=%.17g H_old_right=%.17g "
+                    "eta=%.17g chi=%.17g f=%.17g rhs=%.17g diagonal=%.17g upper=%.17g neighbor_J=%.17g\n",
+                    s,k,p->time_new-p->time_old,nu[k],p->old_J[i],jout[i],p->old_H[i],p->old_H[i+nb],
+                    p->eta_fixed[i],p->chi_total[i],p->eddington[i],rhs[s],diagonal[s],upper[s],
+                    s+1<ns?jout[i+nb]:0);
+                status=CMF_TIME_NEGATIVE;goto cleanup;
+            }
         }
         hout[k]=constant[0];
         for (size_t face=1;face<=ns;face++) {

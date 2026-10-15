@@ -6,7 +6,8 @@
  *
  * Unknowns are x = (ln T_s, ln n_e,s) for every shell.  One callback
  * evaluation solves the populations at the prescribed (T, n_e) and returns
- *   f_te[s] = ln(H / C)                thermal balance (|f| ~ 2 e_balance)
+ *   f_te[s] = ln(H / C)                steady thermal balance
+ *           = (H-C)/unsubtracted row norm for physical time evolution
  *   f_ne[s] = ln(q_closed / n_e)       charge closure
  * The Jacobian is a forward difference in x with two shell colours, built on
  * the assumption that row s depends on shells s and s-1 only (shell 0 on 0

@@ -60,6 +60,7 @@ CMFTimeMomentStatus cmf_time_field_solve(const CMFTimeMomentInput *p,
     const double *initial_J,CMFTimeFormalApply formal,void *context,
     int cap,double tol,double *new_J,double *new_H,double *delta,CMFTimeFieldReport *report){
     CMFTimeFieldReport rep={0};rep.iteration_cap=cap;rep.tolerance=tol;
+    rep.status=CMF_TIME_INVALID;
     rep.relative_update=rep.closure_update=rep.equation_residual=INFINITY;
     if(report)*report=rep;
     if(!p||!initial_J||!formal||!new_J||!new_H||!delta||!report||cap<2||
@@ -73,7 +74,7 @@ CMFTimeMomentStatus cmf_time_field_solve(const CMFTimeMomentInput *p,
     size_t cells=ns*nb,faces=(ns+1)*nb;
     for(size_t i=0;i<cells;i++)if(!(initial_J[i]>=0)||!isfinite(initial_J[i]))return CMF_TIME_INVALID;
     double *mem=calloc(8*cells+faces+5*nb,sizeof(double));
-    if(!mem)return CMF_TIME_ALLOCATION;
+    if(!mem){report->status=CMF_TIME_ALLOCATION;return CMF_TIME_ALLOCATION;}
     double *iter=mem,*next=iter+cells,*h=next+cells,*mj=h+faces,*mh=mj+cells,*mk=mh+cells;
     double *f=mk+cells,*priorf=f+cells,*change=priorf+cells;
     double *oj=change+cells,*oh=oj+nb,*ok=oh+nb,*ho=ok+nb,*fo=ho+nb;
@@ -115,5 +116,5 @@ CMFTimeMomentStatus cmf_time_field_solve(const CMFTimeMomentInput *p,
         status=CMF_TIME_NOT_CONVERGED;
     }
 done:
-    *report=rep;free(mem);return status;
+    rep.status=status;*report=rep;free(mem);return status;
 }

@@ -125,22 +125,37 @@ int main(void){
         memcpy(old_radiation,initial.radiation.J,(size_t)NS*o.n_fine*sizeof(double));
         memcpy(old_radiation+(size_t)NS*o.n_fine,initial.radiation.H,(size_t)(NS+1)*o.n_fine*sizeof(double));
         double initial_material[(5+NI+NL)*NS];memcpy(initial_material,initial.material.storage,sizeof initial_material);
-        double evolved_time=newtime+100,dilution=pow(newtime/evolved_time,3);
-        cmfgen_free(&c);g.time_explosion=evolved_time;
-        for(int s=0;s<NS;s++){ri[s]=ve[s]*evolved_time;ro[s]=ve[s+1]*evolved_time;rho[s]*=dilution;ne[s]*=dilution;}
-        for(int i=0;i<NI*NS;i++)ions[i]*=dilution;
-        for(int i=0;i<NL*NS;i++)pops[i]*=dilution;
+        double evolved_time=0,dilution=0,step=100;
         p.initial_steady_nlte=0;p.physical_history=&initial.material;
         unsetenv("LUMINA_FIXED_TE_PROFILE");setenv("LUMINA_NLTE_NE_CLOSURE","1",1);
-        CHECK(!cmfgen_init(&c,&g));
-        nlte_update_tau_sobolev(&n,&a,&o,evolved_time,NS);
-        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,evolved_time,NULL,NULL,NULL,heating));
         double *inner=calloc((size_t)o.n_fine,sizeof(double));CHECK(inner);
-        CMFTimeRadiationTrial trial={0};trial.old=&initial.radiation;trial.epoch_s=evolved_time;trial.inner_H=inner;c.time_trial=&trial;
-        c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
-        for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
+        CMFTimeRadiationTrial trial={0};
         CMFTimeEpochReport time_report;
-        status=cmfgen_solve_time_epoch(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,32,1e-7,&evolved,&time_report);
+        /* 복사 첫 시도에서만 dt 축소를 검사한다. 물질이 게시된 뒤의 실패를
+         * 불완전한 rollback으로 재시도하지 않는다. 모든 시도는 같은 과거다. */
+        for(int attempt=0;attempt<5;attempt++,step*=.1){
+            evolved_time=newtime+step;dilution=pow(newtime/evolved_time,3);
+            cmfgen_free(&c);cmf_time_radiation_trial_free(&trial);g.time_explosion=evolved_time;
+            for(int s=0;s<NS;s++){
+                ri[s]=ve[s]*evolved_time;ro[s]=ve[s+1]*evolved_time;
+                rho[s]=initial.material.energy.density_g_cm3[s]*dilution;
+                ne[s]=initial.material.energy.n_electron_cm3[s]*dilution;
+            }
+            for(int i=0;i<NI*NS;i++)ions[i]=initial.material.ion_density[i]*dilution;
+            for(int i=0;i<NL*NS;i++)pops[i]=initial.material.level_density[i]*dilution;
+            CHECK(!cmfgen_init(&c,&g));nlte_update_tau_sobolev(&n,&a,&o,evolved_time,NS);
+            CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,evolved_time,NULL,NULL,NULL,heating));
+            trial.old=&initial.radiation;trial.epoch_s=evolved_time;trial.inner_H=inner;c.time_trial=&trial;
+            c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
+            for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
+            status=cmfgen_solve_time_epoch(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,32,1e-7,&evolved,&time_report);
+            fprintf(stderr,"INITIAL_TIME_ATTEMPT dt=%.17g status=%d field_status=%d iterations=%d\n",
+                step,status,trial.report.status,time_report.iterations);
+            if(status==CMF_EPOCH_OK)break;
+            CHECK(status==CMF_EPOCH_RADIATION&&time_report.iterations==0&&
+                (trial.report.status==CMF_TIME_NEGATIVE||trial.report.status==CMF_TIME_STEP_TOO_LARGE));
+            CHECK(T[0]==10000&&T[1]==10000&&a.population_committed_generation==initial.material.population_generation);
+        }
         fprintf(stderr,"INITIAL_TIME_BRIDGE_RESULT status=%d iterations=%d T=%.17g/%.17g ne=%.17g/%.17g\n",
             status,time_report.iterations,T[0],T[1],ne[0],ne[1]);
         CHECK(status==CMF_EPOCH_OK&&time_report.converged&&evolved.radiation.epoch_s==evolved_time);
@@ -152,7 +167,10 @@ int main(void){
             CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
             CHECK(fabs((ions[s]+ions[NS+s])/(1e8*dilution)-1)<1e-12);
             CHECK(p.te_publication.ledger[s].adiabatic_model==A210_MATERIAL_TIME_HISTORY);
-            CHECK(fabs(p.te_publication.ledger[s].e_balance)<1e-12);
+            const A210TermLedger *ledger=&p.te_publication.ledger[s];
+            CHECK(a210_energy_balance(ledger)<1e-12);
+            fprintf(stderr,"INITIAL_TIME_ENERGY shell=%d residual=%.17g time_backward_error=%.17g net_heat_balance=%.17g time_norm=%.17g\n",
+                s,ledger->residual,a210_energy_balance(ledger),ledger->e_balance,ledger->material_time_norm);
         }
         CHECK(!cmfgen_write_common_observer(&c,"initial_evolved_spectrum.csv","initial_evolved_spectrum.json",
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
@@ -205,9 +223,9 @@ int main(void){
         CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
         CHECK(fabs((pops[s]+pops[NS+s])/ions[s]-1)<1e-12);
         CHECK(pops[2*NS+s]==ions[NS+s]);
-        CHECK(fabs(ledger->e_balance)<1e-12);
-        fprintf(stderr,"TIME_COUPLED_CLOSURE shell=%d material_energy_balance=%.17g charge_relative=%.17g neutral_fraction=%.17g\n",
-            s,ledger->e_balance,ne[s]/ions[NS+s]-1,ions[s]/(ions[s]+ions[NS+s]));
+        CHECK(a210_energy_balance(ledger)<1e-12);
+        fprintf(stderr,"TIME_COUPLED_CLOSURE shell=%d time_backward_error=%.17g net_heat_balance=%.17g residual=%.17g charge_relative=%.17g neutral_fraction=%.17g\n",
+            s,a210_energy_balance(ledger),ledger->e_balance,ledger->residual,ne[s]/ions[NS+s]-1,ions[s]/(ions[s]+ions[NS+s]));
     }
     CHECK(!cmfgen_write_common_observer(&c,"coupled_spectrum.csv","coupled_spectrum.json",
         n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));

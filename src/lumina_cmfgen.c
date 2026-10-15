@@ -8385,6 +8385,7 @@ static int cmf_fine_time_solve(CMFGENState *fine,const Geometry *geo,const doubl
         "J_update=%.17g closure_update=%.17g equation_residual=%.17g "
         "uncertainty=ITERATION_DELTA certified_bound=0\n",status,old->epoch_s,
         trial->epoch_s,report.iterations,report.relative_update,report.closure_update,report.equation_residual);
+    trial->report=report;
     if(status!=CMF_TIME_OK)goto done;
     memcpy(fine->J,j,(size_t)ns*nb*sizeof(double));
     free(trial->J);free(trial->H);trial->J=j;trial->H=h;trial->report=report;j=h=NULL;rc=0;

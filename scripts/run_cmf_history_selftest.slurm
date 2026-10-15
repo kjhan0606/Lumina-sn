@@ -35,6 +35,8 @@ history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line
 history_mode=${1:-regression}
 case "$history_mode" in
  regression) ;;
+ channels) history_tests=(bf_channels) ;;
+ energy) history_tests=(cmf_material_time nlte_candidate_adiabatic a2_10_radeq physics_comparison) ;;
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
@@ -75,7 +77,7 @@ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -I
  -Wl,--gc-sections -lm -o "$history_out/time_epoch" >> "$history_out/build.log" 2>&1
 (cd "$history_out"; ./time_epoch > time-epoch.log 2> time-epoch.err)
 for history_test in "${history_tests[@]}"; do
- gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -DCMF_MATERIAL_ROOT_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
   "tests/${history_test}_selftest.c" "${history_objects[@]}" -Wl,--gc-sections -lm \
   -o "$history_out/$history_test" >> "$history_out/build.log" 2>&1
  (cd "$history_out"; "./$history_test" > "$history_test.log" 2> "$history_test.err")
