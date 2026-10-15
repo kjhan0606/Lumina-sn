@@ -18290,6 +18290,12 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
     nlte->nlte_to_global_level = (int *)malloc(nlevels * sizeof(int));
     nlte->global_to_nlte_level = (int *)malloc(nglobal * sizeof(int));
     nlte->nlte_line_map = (int *)malloc(nlines * sizeof(int));
+    nlte->nlte_line_global=NULL;
+    nlte->nlte_line_global_count=0;
+    const int cache_line_global=atom->n_lines>0 && atom->n_ion_pops>0 &&
+        atom->line_level_lower && atom->line_level_upper && atom->level_num &&
+        atom->level_offset && atom->ion_pop_Z && atom->ion_pop_stage;
+    if(cache_line_global)nlte->nlte_line_global=(int *)malloc(2*nlines*sizeof(int));
     nlte->fl_to_super = (int *)malloc(nlevels * sizeof(int));
     nlte->super_anchor_global = (int *)malloc(nsuper * sizeof(int));
     nlte->within_sl_frac = (double *)malloc(
@@ -18300,7 +18306,8 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
     if (!nlte->nlte_to_global_level || !nlte->global_to_nlte_level ||
         !nlte->nlte_line_map || !nlte->fl_to_super ||
         !nlte->super_anchor_global || !nlte->within_sl_frac ||
-        !nlte->nlte_level_populations || !cursor)
+        !nlte->nlte_level_populations || !cursor ||
+        (cache_line_global && !nlte->nlte_line_global))
         goto cleanup;
 
     for (int l = 0; l < atom->n_levels; l++)
@@ -18332,7 +18339,19 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
             if (n_lines_mapped) (*n_lines_mapped)++;
             break;
         }
+        if(cache_line_global){
+            int lo=-1,up=-1;
+            int ip=find_ion_pop_idx(atom,atom->line_atomic_number[line],atom->line_ion_number[line]);
+            if(ip>=0)for(int l=atom->level_offset[ip];l<atom->level_offset[ip+1];l++){
+                if(atom->level_num[l]==atom->line_level_lower[line])lo=l;
+                if(atom->level_num[l]==atom->line_level_upper[line])up=l;
+                if(lo>=0&&up>=0)break;
+            }
+            nlte->nlte_line_global[2*(size_t)line]=lo;
+            nlte->nlte_line_global[2*(size_t)line+1]=up;
+        }
     }
+    if(cache_line_global)nlte->nlte_line_global_count=atom->n_lines;
     for (size_t k = 0; k < nlevels * (size_t)n_shells; k++)
         nlte->within_sl_frac[k] = 1.0;
     rc = 0;
@@ -18343,6 +18362,7 @@ cleanup:
         free(nlte->nlte_to_global_level);
         free(nlte->global_to_nlte_level);
         free(nlte->nlte_line_map);
+        free(nlte->nlte_line_global);
         free(nlte->fl_to_super);
         free(nlte->super_anchor_global);
         free(nlte->within_sl_frac);
@@ -18350,6 +18370,8 @@ cleanup:
         nlte->nlte_to_global_level = NULL;
         nlte->global_to_nlte_level = NULL;
         nlte->nlte_line_map = NULL;
+        nlte->nlte_line_global=NULL;
+        nlte->nlte_line_global_count=0;
         nlte->fl_to_super = NULL;
         nlte->super_anchor_global = NULL;
         nlte->within_sl_frac = NULL;
@@ -18545,6 +18567,7 @@ void nlte_free(NLTEConfig *nlte) {
     free(nlte->nlte_to_global_level);
     free(nlte->global_to_nlte_level);
     free(nlte->nlte_line_map);
+    free(nlte->nlte_line_global);
     free(nlte->drainless_metastable);
     free(nlte->nlte_level_populations);
     free(nlte->j_nu_estimator);
@@ -19190,17 +19213,18 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         int map = nlte->nlte_line_map[line];
         if (map < ion_idx_lo || map > ion_idx_hi) continue;
 
-        int ion_s = atom->line_ion_number[line];
-        int ip = find_ion_pop_idx(atom, atom->line_atomic_number[line], ion_s);
-        if (ip < 0) continue;
-        int lev_base = atom->level_offset[ip];
-        int lev_top  = atom->level_offset[ip + 1];
-
         int lower_global = -1, upper_global = -1;
-        for (int l = lev_base; l < lev_top; l++) {
-            if (atom->level_num[l] == atom->line_level_lower[line]) lower_global = l;
-            if (atom->level_num[l] == atom->line_level_upper[line]) upper_global = l;
-            if (lower_global >= 0 && upper_global >= 0) break;
+        if(nlte->nlte_line_global && nlte->nlte_line_global_count==atom->n_lines){
+            lower_global=nlte->nlte_line_global[2*(size_t)line];
+            upper_global=nlte->nlte_line_global[2*(size_t)line+1];
+        }else{
+            int ip=find_ion_pop_idx(atom,atom->line_atomic_number[line],atom->line_ion_number[line]);
+            if(ip<0)continue;
+            for(int l=atom->level_offset[ip];l<atom->level_offset[ip+1];l++){
+                if(atom->level_num[l]==atom->line_level_lower[line])lower_global=l;
+                if(atom->level_num[l]==atom->line_level_upper[line])upper_global=l;
+                if(lower_global>=0&&upper_global>=0)break;
+            }
         }
         if (lower_global < 0 || upper_global < 0) continue;
 

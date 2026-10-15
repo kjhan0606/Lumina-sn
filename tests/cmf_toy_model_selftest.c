@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TOY_MODEL_FAIL line=%d %s\n",__LINE__,#x);rc=1;goto done;}}while(0)
 int main(int argc,char **argv){
     if(argc!=4)return 2;
@@ -16,6 +17,26 @@ int main(int argc,char **argv){
     CHECK(n->n_nlte_ions==a->n_ion_pops&&n->n_nlte_levels_total==a->n_levels&&n->super_mode);
     CHECK(!p->physical_history&&p->initial_steady_nlte==1&&n->radfield_view_status==RADIATION_FIELD_VIEW_DISABLED);
     CHECK(n->line_qset==&m.qset&&n->line_eset==&m.eset);
+    CHECK(n->nlte_line_global&&n->nlte_line_global_count==a->n_lines);
+    clock_t lookup_start=clock();size_t matched=0;
+    for(int line=0;line<a->n_lines;line++){
+        int ip=-1,lo=-1,up=-1;
+        for(int i=0;i<a->n_ion_pops;i++)if(a->ion_pop_Z[i]==a->line_atomic_number[line]&&
+            a->ion_pop_stage[i]==a->line_ion_number[line]){ip=i;break;}
+        if(ip>=0)for(int l=a->level_offset[ip];l<a->level_offset[ip+1];l++){
+            if(a->level_num[l]==a->line_level_lower[line])lo=l;
+            if(a->level_num[l]==a->line_level_upper[line])up=l;
+            if(lo>=0&&up>=0)break;
+        }
+        CHECK(n->nlte_line_global[2*(size_t)line]==lo&&n->nlte_line_global[2*(size_t)line+1]==up);
+        if(lo>=0&&up>=0)matched++;
+    }
+    double old_lookup_seconds=(double)(clock()-lookup_start)/CLOCKS_PER_SEC;
+    volatile size_t checksum=0;lookup_start=clock();
+    for(int repeat=0;repeat<100;repeat++)for(int line=0;line<a->n_lines;line++)
+        checksum+=(size_t)(n->nlte_line_global[2*(size_t)line]+n->nlte_line_global[2*(size_t)line+1]+2);
+    printf("TOY_LINE_GLOBAL_CACHE PASS lines=%d matched=%zu old_search_one_pass_cpu_s=%.9g cached_100_passes_cpu_s=%.9g checksum=%zu\n",
+        a->n_lines,matched,old_lookup_seconds,(double)(clock()-lookup_start)/CLOCKS_PER_SEC,(size_t)checksum);
     double charge_error=0,ion_error=0,level_error=0,max_terminal=0,total_mass=0;
     for(int s=0;s<ns;s++){
         total_mass+=m.ejecta.mass_g[s];double charge=0;

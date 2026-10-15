@@ -49,6 +49,7 @@ int main(void){
     for(int i=0;i<=NI;i++)n.nlte_ion_level_offset[i]=n.nlte_ion_super_offset[i]=off[i];
     n.nlte_to_global_level=n.global_to_nlte_level=n.fl_to_super=n.super_anchor_global=map;
     n.nlte_level_populations=pops;n.within_sl_frac=within;n.nlte_line_map=&linemap;n.population_committed_generation=1;
+    int line_global[2]={0,1};n.nlte_line_global=line_global;n.nlte_line_global_count=1;
     n.n_freq_bins=NB;n.nu_min=NLTE_NU_MIN;n.nu_max=NLTE_NU_MAX;n.d_log_nu=dlog;
     n.J_nu=calloc((size_t)NS*NB,sizeof(double));CHECK(n.J_nu);
     PlasmaState p={0};p.n_shells=NS;p.T_e=T;p.rho=rho;p.n_electron=ne;p.T_e_generation=1;
@@ -110,6 +111,14 @@ int main(void){
         for(int b=0;b<o.n_fine;b++)CHECK(initial.radiation.H[b]==0);
         double up,down,ci,three;
         CHECK(!nlte_bf_channel_rates(&n,&a,0,0,0,T[0],ne[0],&up,&down,&ci,&three)&&ci>0&&three>0);
+        /* 동일한 실제 게시 J/물질에서 cache 유무의 행렬/RHS는 byte-identical이다. */
+        double cached_A[9]={0},cached_b[3]={0},searched_A[9]={0},searched_b[3]={0};
+        CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,newtime,cached_A,cached_b,3,&gamma,NULL,-1));
+        n.nlte_line_global=NULL;
+        CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,newtime,searched_A,searched_b,3,&gamma,NULL,-1));
+        n.nlte_line_global=line_global;
+        CHECK(!memcmp(cached_A,searched_A,sizeof cached_A)&&!memcmp(cached_b,searched_b,sizeof cached_b));
+        puts("LINE_GLOBAL_CACHE_MATRIX_PARITY_PASS exact_matrix_and_rhs=1");
         for(int s=0;s<NS;s++){
             CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
             CHECK(fabs((ions[s]+ions[NS+s])/1e8-1)<1e-12);

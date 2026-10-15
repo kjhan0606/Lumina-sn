@@ -668,6 +668,8 @@ typedef struct {
     int   *nlte_to_global_level;               /* [n_nlte_levels_total] -> global level idx */
     int   *global_to_nlte_level;               /* [n_levels] -> NLTE level idx or -1 */
     int   *nlte_line_map;                      /* [n_lines] -> NLTE ion idx or -1 */
+    int   *nlte_line_global;                   /* [2*n_lines] 불변 lower/upper global ID. projection 소유 */
+    int    nlte_line_global_count;
     int   *drainless_metastable;               /* [n_levels] 1 iff metastable=1 AND zero downward
                                                 * radiative lines (no line has it as UPPER). Such a
                                                 * level can neither radiatively nor (baseline)
