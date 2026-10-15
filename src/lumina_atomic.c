@@ -1321,10 +1321,12 @@ void free_spectrum(Spectrum *spec) { /* Phase 2 - Step 11 */
 /* Task #072: Load atomic data for plasma solver                 */
 /* ============================================================ */
 
-int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
+static int load_atomic_data_impl(AtomicData *atom, const char *ref_dir, int n_shells,
+                                 int read_composition) {
     char path[512];
     int n;
 
+    if(!atom||!ref_dir||n_shells<=0)return -1;
     memset(atom, 0, sizeof(AtomicData));
     printf("\nLoading atomic data for plasma solver...\n");
 
@@ -1578,8 +1580,18 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     /* --- Atom masses --- */
     snprintf(path, sizeof(path), "%s/atom_masses.csv", ref_dir);
     atom->element_Z        = read_csv_column_int(path, "atomic_number", &n);
+    const int n_mass_Z=n;
     atom->element_mass_amu = read_csv_column(path, "mass_amu", &n);
     atom->n_elements = n;
+    /* 기존 조성 경로는 아래의 D 진단을 그대로 사용한다. */
+    if(!read_composition){
+        if(!atom->element_Z||!atom->element_mass_amu||n<=0||n!=n_mass_Z)return -1;
+        for(int i=0;i<n;i++){
+            if(atom->element_Z[i]<=0||atom->element_Z[i]>118||
+               !(atom->element_mass_amu[i]>0)||!isfinite(atom->element_mass_amu[i]))return -1;
+            for(int j=0;j<i;j++)if(atom->element_Z[j]==atom->element_Z[i])return -1;
+        }
+    }
     printf("  Elements: %d (", n);
     for (int i = 0; i < n; i++) printf("%s%d", i ? "," : "", atom->element_Z[i]);
     printf(")\n");
@@ -1588,7 +1600,7 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     snprintf(path, sizeof(path), "%s/abundances.csv", ref_dir);
     atom->abundances = (double *)calloc((size_t)atom->n_elements * n_shells,
                                         sizeof(double));
-    {
+    if(read_composition){
         /* Composition CSV contract (ORDER_CD_COMPOSITION_IDENTITY.md, order D).
          * Read physical lines byte-by-byte so an embedded NUL cannot masquerade
          * as end-of-string and an overlong line cannot be accepted in chunks. */
@@ -2292,6 +2304,13 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     printf("Atomic data loading complete.\n");
     LOAD_STAGE("atomic_data_return");
     return 0;
+}
+
+int load_atomic_data(AtomicData *atom,const char *ref_dir,int n_shells){
+    return load_atomic_data_impl(atom,ref_dir,n_shells,1);
+}
+int load_atomic_structure(AtomicData *atom,const char *ref_dir,int n_shells){
+    return load_atomic_data_impl(atom,ref_dir,n_shells,0);
 }
 
 /* Load pre-baked CMFGEN sigma_bf grid (cmfgen_sigma_bf.bin).
@@ -3074,6 +3093,9 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->level_offset);
     free(atom->ion_number_density);
     free(atom->partition_functions);
+    free(atom->topion_ion_index);
+    free(atom->topion_E_cm);
+    free(atom->topion_g);
     free(atom->cmfgen_has_sigma);
     free(atom->cmfgen_sigma_bf);
     free(atom->ma_rr_target);
@@ -3081,6 +3103,11 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->ma_rr_targets);
     free(atom->ma_rr_probability);
     free_bf_channels(atom->bf_channels);
+    free(atom->feiii_col_tgrid);free(atom->feiii_col_lo);free(atom->feiii_col_hi);free(atom->feiii_col_omega);
+    for(int c=0;c<atom->ncol_ions&&c<LUMINA_MAX_COL_IONS;c++){
+        free(atom->col_ion_tgrid[c]);free(atom->col_ion_lo[c]);
+        free(atom->col_ion_hi[c]);free(atom->col_ion_omega[c]);
+    }
 }
 
 /* ============================================================ */

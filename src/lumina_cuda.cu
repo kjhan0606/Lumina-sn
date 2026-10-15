@@ -15,6 +15,7 @@
 /* Phase 6 - Step 1: Include shared header for struct definitions */
 extern "C" {             /* Phase 6 - Step 1 */
 #include "lumina.h"      /* Phase 6 - Step 1 */
+#include "cmf_toy_model.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "line_jbar.h"   /* transactional DET frozen Q_g */
 #include "lumina_cmfgen.h"  /* pure-CMFGEN parallel radiation path */
@@ -6826,6 +6827,7 @@ static void banner_gate_off(const char *tag, const char *var, const char *effect
 
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL); /* Phase 6 - Step 8: unbuffered output */
+    if(argc>1&&!strcmp(argv[1],"--cmf-toy-bootstrap"))return cmf_toy_bootstrap_main(argc,argv);
     if (getenv("LUMINA_CMF_NLTE_SELFTEST")) {  /* confirmation-ladder N — CPU-only, pre-model, instant */
         cmf_nlte_selftest(getenv("LUMINA_CMF_NLTE_SELFTEST")); return 0;
     }

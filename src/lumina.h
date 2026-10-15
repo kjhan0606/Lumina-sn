@@ -1128,6 +1128,9 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy);
 
 /* Task #072: Atomic data loading and plasma solver */
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
+/* 원자구조만 읽고 새 셸 수의 물질 배열을0으로 할당한다. 기존 abundances.csv,
+ * rho/T/이온인구/tau를 읽지 않는다. 호출자가 새 조성을 채운 뒤 bootstrap해야 한다. */
+int load_atomic_structure(AtomicData *atom, const char *ref_dir, int n_shells);
 int load_cmfgen_sigma_bf(AtomicData *atom, const char *path);
 int load_ma_radrecomb_target(AtomicData *atom, const char *path);
 int load_bf_channels(AtomicData *atom,const char *path);

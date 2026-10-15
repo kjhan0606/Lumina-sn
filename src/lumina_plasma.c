@@ -4252,6 +4252,11 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
     } while (0)
     double ne_charge_residual_max = 0.0;
     int    ne_charge_residual_shell = -1;
+    /* 전체 초기 NLTE의 Saha predictor도 전하중성을 만족시켜야 한다.
+     * 기존 경로의5% 기준은 보존하되, 새 초기 bootstrap은 실제 고정점까지
+     * 반복한다. T/원자율을 고치거나 전자밀도를 사후에 덮어쓰지 않는다. */
+    const double ne_tolerance = plasma->initial_steady_nlte && lumina_bootstrap_active()
+                              ? 1e-12 : 0.05;
     for (int s = 0; s < n_shells; s++) {
         double n_e = plasma->n_electron[s];
         if (!isfinite(n_e) || n_e <= 0.0)
@@ -4288,16 +4293,16 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
             n_e = 0.5 * (n_e_new + n_e_old);
             plasma->n_electron[s] = n_e;
 
-            /* TARDIS convergence: 5% relative threshold */
-            if (n_e_old > 0.0 && fabs(n_e_new - n_e_old) / n_e_old < 0.05) {
+            if (n_e_old > 0.0 && fabs(n_e_new - n_e_old) / n_e_old < ne_tolerance) {
                 shell_converged = 1;
                 break;
             }
         }
         if (!shell_converged)
             NE_FAIL("no convergence in 100 iters: last n_e_new=%.6e n_e_old=%.6e "
-                    "rel=%.3e (threshold 0.05)", last_new, last_old,
-                    last_old > 0.0 ? fabs(last_new - last_old) / last_old : -1.0);
+                    "rel=%.3e (threshold %.3e)", last_new, last_old,
+                    last_old > 0.0 ? fabs(last_new - last_old) / last_old : -1.0,
+                    ne_tolerance);
 
         /* ★O8(사전등록): **전하보존 잔차를 장부에 남긴다.**
          * 수렴 판정은 반복 스텝의 상대변화(|new-old|/old < 0.05)를 보는데, 그것은
@@ -4313,9 +4318,9 @@ static int compute_electron_density(AtomicData *atom, PlasmaState *plasma,
     }
     if (emit_diagnostics)
         printf("  [A2-07][n_e] charge-conservation residual: max=%.3e at shell %d "
-               "(%s; 기록만 — 수렴기준 미변경)\n",
+               "(%s; iteration tolerance=%.3e)\n",
                ne_charge_residual_max, ne_charge_residual_shell,
-               lumina_bootstrap_active() ? "bootstrap" : "steady");
+               lumina_bootstrap_active() ? "bootstrap" : "steady", ne_tolerance);
     return 0;
 #undef NE_FAIL
 }
