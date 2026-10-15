@@ -9375,6 +9375,11 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     w5_cont_selftest_capture_pre_assembly(&fs, eta, NS, NF);
 #endif
     size_t first_assembly_invalid = SIZE_MAX;
+    /* 같은 격자에서 직전 성공한 장은 반복의 초기 추정치로만 재사용한다.
+     * 새 물질의 수송식/허용오차/오차 상계는 그대로 다시 풀고 검사한다.
+     * 시간장의 실제 과거 J/H는 별도 소유자이며 여기서 바꾸지 않는다. */
+    const int previous_fine_start=common_field&&!time_field&&opac->jnu_fine&&
+        opac->n_fine==NF&&opac->nu_lo_fine==nu_lo&&opac->dlognu_fine==dlognu;
     #pragma omp parallel for schedule(static) reduction(min:first_assembly_invalid) \
         reduction(+:w5_cont_source_cells)
     for (int s = 0; s < NS; ++s) {
@@ -9411,7 +9416,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 if (idx < first_assembly_invalid)
                     first_assembly_invalid = idx;
             }
-            fs.J[idx] = Bnu;                              /* warm ALI start */
+            fs.J[idx] = previous_fine_start ? opac->jnu_fine[idx] : Bnu;
         }
     }
     if (first_assembly_invalid != SIZE_MAX) {
@@ -9442,6 +9447,9 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
 
     fs.fixed_emissivity=eta;
+    if(common_field&&!time_field)
+        fprintf(stderr,"[cmf_fine][ITERATION-START] predictor=%s published_as_solution=0\n",
+            previous_fine_start?"PREVIOUS_CONVERGED_FINE_J":"PLANCK_INITIAL_GUESS");
     if (diag && sobolev_operator) {
         fprintf(stderr,
                 "[cmf_fine][LINE-OPERATOR] mode=CMFGEN_NONOVERLAP_SOBOLEV "
