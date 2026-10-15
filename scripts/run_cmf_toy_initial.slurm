@@ -16,6 +16,12 @@ umask 027
 initial_build=${1:?cluster build directory required}
 initial_input=${2:?verified initial-prepare input directory required}
 initial_iteration=${3:-plain}
+initial_backend=${4:-gpu}
+case "$initial_backend" in
+ gpu) initial_variant=cluster;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
+ cpu) initial_variant=cpu;initial_binary=$initial_build/lumina_cpu;initial_devices=0 ;;
+ *) exit 2 ;;
+esac
 case "$initial_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 initial_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 initial_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-initial-${SLURM_JOB_ID}
@@ -26,7 +32,7 @@ module purge
 module load gnu13/13.2.0 cuda/13.0.2
 export OMP_NUM_THREADS=16 OMP_PLACES=cores OMP_PROC_BIND=close
 export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-grep -Fxq 'variant=cluster managed=0' "$initial_build/variant.txt"
+grep -Fxq "variant=$initial_variant managed=0" "$initial_build/variant.txt"
 (cd "$initial_build/source"; sha256sum -c "$initial_build/source.sha256") > "$initial_out/build_source_verify.log"
 sha256sum -c "$initial_build/binary.sha256" > "$initial_out/binary_verify.log"
 # 실행되는 것은 위에서 검증한 봉인 binary/source다. 이후 작업 트리 편집이
@@ -46,17 +52,17 @@ export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 export LUMINA_NLTE_NE_CLOSURE=1 LUMINA_CMF_FINE_VDOP=5000000 LUMINA_CMF_FINE_PPD=3
 export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION=1
-export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=1
+export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=$initial_devices
 if [[ "$initial_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 export LUMINA_BF_CHANNELS_FILE=$initial_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$initial_out/env_lumina_effective.txt"
-printf 'mode=ALL_THERMAL_INITIAL_CONTROL\nsource=%s\nbuild=%s\ninput=%s\n' \
- "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
+printf 'mode=ALL_THERMAL_INITIAL_CONTROL\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
+ "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"
 # 2GiB/file 상한. 중간 raw dump는 생성하지 않고 수렴한 물리 이력만 저장한다.
-(ulimit -f 2097152; exec "$initial_build/lumina_cuda" --cmf-toy-initial \
+(ulimit -f 2097152; exec "$initial_binary" --cmf-toy-initial \
  "$initial_out/input/snia_toy06_2d.dat" "$initial_out/input" \
  "$initial_out/input/NUC_DECAY_DATA_ni56_co56_fe56" 100 200000 128) \
  > "$initial_out/initial.log" 2> "$initial_out/initial.err"

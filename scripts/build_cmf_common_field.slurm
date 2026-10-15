@@ -26,6 +26,7 @@ case "$build_variant" in
  cluster) build_arch=(-gencode arch=compute_80,code=sm_80
      -gencode arch=compute_86,code=sm_86 -gencode arch=compute_89,code=sm_89
      -gencode arch=compute_90,code=sm_90); build_managed=0 ;;
+ cpu) build_managed=0 ;;
  *) exit 2 ;;
 esac
 printf 'variant=%s managed=%s\n' "$build_variant" "$build_managed" > "$build_out/variant.txt"
@@ -54,10 +55,22 @@ build_units=(
  src/cmf_error_envelope.c src/cmf_time_moment.c src/cmf_time_field.c src/cmf_time_epoch.c src/seed_capability.c src/lumina_element_wide.c
  src/lumina_cmfgen.c src/cmfgen_final_writer.c src/a210_coupled_newton.c
 )
-nvcc -O2 "${build_arch[@]}" -std=c++14 -Xcompiler -fopenmp \
+if [[ "$build_variant" == cpu ]]; then
+ build_cpu_units=(src/cmf_toy_cpu.c src/lumina_transport.c src/a2_02c_segment_capture.c)
+ for build_unit in "${build_units[@]}"; do
+  if [[ "$build_unit" == *.c ]]; then build_cpu_units+=("$build_unit"); fi
+ done
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+  "${build_cpu_units[@]}" -Wl,--gc-sections -lm -o "$build_out/lumina_cpu" \
+  > "$build_out/build.log" 2> "$build_out/build.stderr"
+ build_binary=$build_out/lumina_cpu
+else
+ nvcc -O2 "${build_arch[@]}" -std=c++14 -Xcompiler -fopenmp \
  -DLUMINA_HAS_CUDA_BF_GEMM -DLUMINA_CMF_EXACT_MANAGED_MEMORY="$build_managed" \
  -o "$build_out/lumina_cuda" "${build_units[@]}" -lm -lcublas -Xcompiler -fopenmp \
  > "$build_out/build.log" 2> "$build_out/build.stderr"
+ build_binary=$build_out/lumina_cuda
+fi
 sha256sum -c "$build_out/source.sha256" > "$build_out/verify.log"
-sha256sum "$build_out/lumina_cuda" > "$build_out/binary.sha256"
+sha256sum "$build_binary" > "$build_out/binary.sha256"
 echo "build=$build_out; compilation only, GPU execution=0"
