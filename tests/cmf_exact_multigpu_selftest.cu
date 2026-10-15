@@ -220,7 +220,7 @@ int main(void)
                   "bounds-upper", epoch_bound_upper, gpu_bound_upper, cells),
           "epoch-bounds-bitwise-serial");
     const CMFMultiGPUEpochSchedule schedule_matrix[] = {
-        {32, 1, 1}, {128, 7, 4}, {256, 1000, 64}
+        {32, 1, 1}, {128, 7, 4}, {256, 1000, 64}, {128, 4096, 32}
     };
     for (const CMFMultiGPUEpochSchedule &schedule : schedule_matrix) {
         CMFMultiGPUReport schedule_report;
