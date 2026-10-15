@@ -22885,6 +22885,16 @@ static int nlte_solve_all_impl(
         last_worst_shell = worst_shell;
         last_ce_iteration = ce_iter + 1;
 
+        /* 긴 실제 초기해에서 이미 계산한 잔차만 드물게 남긴다. 후보의
+         * 일반 dump/manifest 정책이나 수렴 판정은 바꾸지 않는다. */
+        if(whole_element&&plasma->initial_steady_nlte&&
+           gamma_dep->provenance==GAMMA_PROVENANCE_NONLOCAL_MC&&
+           (ce_iter==0||(ce_iter+1)%8==0||max_rel_change<ce_threshold)){
+            int z=worst_ion_slot>=0?nlte->nlte_Z[worst_ion_slot]:-1;
+            int q=worst_ion_slot>=0?nlte->nlte_ion[worst_ion_slot]:-1;
+            fprintf(stderr,"[NLTE-INITIAL][MATERIAL-ITERATION] iteration=%d max_relative=%.17g tolerance=%.17g worst_Z=%d worst_charge=%d worst_shell=%d converged=%d\n",
+                ce_iter+1,max_rel_change,ce_threshold,z,q,worst_shell,max_rel_change<ce_threshold);
+        }
         if (nlte_solve_effect_allowed(nlte, NLTE_SOLVE_EFFECT_PROGRESS))
             printf("    CE iter %d: max_ion_rel_change = %.2e\n",
                    ce_iter + 1, max_rel_change);
