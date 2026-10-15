@@ -25,12 +25,24 @@ mkdir "$compare_out/source"
 cd "$compare_src"
 compare_files=(scripts/compare_cmf_toy_epoch.py scripts/read_cmf_common_material.py
  scripts/run_cmf_toy_compare.slurm tests/cmf_toy_comparison_selftest.py
- scripts/compare_cmf_initial_iterate.py scripts/diagnose_cmf_saha_reference.py)
+ scripts/compare_cmf_initial_iterate.py scripts/diagnose_cmf_saha_reference.py scripts/compare_cmf_initial_guess.py)
 cp --parents "${compare_files[@]}" "$compare_out/source/"
 cd "$compare_out/source"
 sha256sum "${compare_files[@]}" > "$compare_out/source.sha256"
-python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
-if [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model ]]; then
+if [[ "${1:-selftest}" != initial-guess ]]; then
+ python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
+fi
+if [[ "${1:-selftest}" == initial-guess ]]; then
+ for compare_root in "$2" "$3"; do
+  (cd "$compare_root/source"; sha256sum -c "$compare_root/source.sha256") >> "$compare_out/original_source_verify.log"
+  (cd "$compare_root/input"; sha256sum -c "$compare_root/input.sha256") >> "$compare_out/original_input_verify.log"
+  sha256sum -c "$compare_root/iterate.sha256" >> "$compare_out/iterate_verify.log"
+ done
+ unset PYTHONHOME PYTHONPATH
+ /home/kjhan/miniconda3/bin/python3 scripts/compare_cmf_initial_guess.py "$2" "$3" "$4" \
+  "$compare_out/field-change" > "$compare_out/comparison.log"
+ sha256sum "$compare_out/field-change/comparison.json" > "$compare_out/output.sha256"
+elif [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model ]]; then
  compare_saha_args=()
  compare_python=python3
  if [[ "$1" == initial-saha-model ]]; then
