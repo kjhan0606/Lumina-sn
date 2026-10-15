@@ -96,13 +96,20 @@ def main():
             # '&' 뒤는 다음다음 이온 후보다. 일반 후보와 혼합하지 않는다.
             single_label = " ".join(part.split("&")[0] for part in re.split(r"[/\\]", label))
             upper = [x for x in ions.get(next_key, []) if matches(single_label, x["term"])]
+            # '/'가 항상 철자 alias는 아니다. 다른 configuration/term을
+            # ground 대체 이름으로 적은 행을 실제 들뜬 상태 연결로 오인하지 않는다.
+            primary = re.split(r"[/\\]", label)[0].split("&")[0].strip()
+            canonical = primary.replace("_", "")
+            primary_upper = [x for x in upper if x["term"].replace("_", "") == canonical]
             target_key = next_key
             if not lower:
                 r["status"] = "LOWER_TERM_NOT_PRESENT"
             elif next_key in terminal:
                 r["status"] = "TERMINAL_REQUIRES_CATALOG_BINDING"
             elif upper:
-                r["status"] = "SINGLE_IONIZATION_MAPPED"
+                r["status"] = "SINGLE_IONIZATION_MAPPED" if primary_upper else "NONIDENTICAL_ALTERNATIVE_TARGET"
+                if primary_upper:
+                    upper = primary_upper
             elif "&" in label:
                 target_key = (key[0], key[1]+2)
                 auger_label = " ".join(label.split("&")[1:])

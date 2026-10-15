@@ -27,6 +27,7 @@ int cmf_toy_model_prepare(CMFToyModel*,const char *ejecta_path,const char *atomi
 void cmf_toy_model_free(CMFToyModel*);
 int cmf_toy_model_write_seed(const CMFToyModel*,const char *csv_path);
 int cmf_toy_bootstrap_main(int argc,char **argv);
+int cmf_toy_initial_main(int argc,char **argv);
 #ifdef __cplusplus
 }
 #endif

@@ -10,11 +10,16 @@ void cmf_nonthermal_binding_free(CMFNonthermalResolvedModel *m){
 }
 int cmf_nonthermal_binding_build(const AtomicData *a,const CMFNonthermalAtomicData *raw,
     const CMFNonthermalExcitations *exc,const char *csv,CMFNonthermalResolvedModel *out){
+    return cmf_nonthermal_binding_build_policy(a,raw,exc,csv,CMF_NT_SIGMA_SAME_EXCESS,out);
+}
+int cmf_nonthermal_binding_build_policy(const AtomicData *a,const CMFNonthermalAtomicData *raw,
+    const CMFNonthermalExcitations *exc,const char *csv,int policy,CMFNonthermalResolvedModel *out){
     if(!a||!raw||!exc||!csv||!out||raw->n_routes<1||raw->n_routes>CMF_NT_MAX_ROUTES||!raw->routes||
        exc->view.n_levels!=a->n_levels||exc->view.n_ions!=a->n_ion_pops||
-       exc->view.n_energy<2||exc->view.n_channels<0||!exc->energy||!exc->channels||!exc->transitions)return -1;
+       exc->view.n_energy<2||exc->view.n_channels<0||!exc->energy||!exc->channels||!exc->transitions||
+       (policy!=CMF_NT_SIGMA_SAME_EXCESS&&policy!=CMF_NT_SIGMA_SOURCE_KINETIC))return -1;
     FILE *fp=fopen(csv,"r");if(!fp)return -1;
-    CMFNonthermalResolvedModel m={0};Binding *b=NULL;size_t count=0,capacity=0;
+    CMFNonthermalResolvedModel m={0};m.cross_section_policy=policy;Binding *b=NULL;size_t count=0,capacity=0;
     char line[512];int seen[CMF_NT_MAX_ROUTES]={0},routes=0;
     if(!fgets(line,sizeof line,fp)||sscanf(line,"# resolved_routes=%d unresolved_routes=%d missing_ions=%d",
        &m.n_resolved_routes,&m.n_unresolved_routes,&m.n_missing_ions)!=3||m.n_resolved_routes<1||
@@ -71,7 +76,8 @@ int cmf_nonthermal_binding_build(const AtomicData *a,const CMFNonthermalAtomicDa
         double shift=raw->routes[x->raw].threshold_eV-x->threshold;
         m.max_threshold_shift_eV=fmax(m.max_threshold_shift_eV,fabs(shift));
         for(size_t i=0;i<ne;i++){
-            double s=exc->energy[i]<=x->threshold?0:cmf_nonthermal_atomic_sigma(&raw->routes[x->raw],exc->energy[i]+shift)*x->weight;
+            double argument=exc->energy[i]+(policy==CMF_NT_SIGMA_SAME_EXCESS?shift:0);
+            double s=exc->energy[i]<=x->threshold?0:cmf_nonthermal_atomic_sigma(&raw->routes[x->raw],argument)*x->weight;
             if(!(s>=0)||!isfinite(s))goto fail;
             m.ion_sigma[k*ne+i]=s;
         }

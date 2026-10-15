@@ -15,8 +15,8 @@ int main(int argc,char **argv){
     double deposition=1e-10;GammaDeposition g={0};g.n_shells=1;g.generation=1;
     g.provenance=GAMMA_PROVENANCE_NONLOCAL_MC;g.epoch=m.geometry.time_explosion;g.heating_rate=&deposition;
     CMFNonthermalAtomicData raw={0};assert(!cmf_nonthermal_atomic_read(&raw,"input/arnaud_rothenflug_23jun15"));
-    double baselines[4][3]={{0}};int points[]={128,256,320,256,256},limits[]={20,20,20,40,20};
-    for(int c=0;c<5;c++){
+    double baselines[4][3]={{0}};int points[]={128,256,320,256,256,256},limits[]={20,20,20,40,20,20};
+    for(int c=0;c<6;c++){
         int ne=points[c],extra=c==2?64:0;double *E=malloc((size_t)ne*sizeof(double));assert(E);
         for(int i=0;i<extra;i++)E[i]=exp(log(.1)+(double)i/extra*log(10));
         for(int i=extra;i<ne;i++)E[i]=exp((double)(i-extra)/(ne-extra-1)*log(2000));
@@ -27,11 +27,11 @@ int main(int argc,char **argv){
                c,limits[c],ne,E[0],x.view.n_channels,x.n_bethe,x.n_omega,x.n_subthermal,
                x.minimum_threshold_eV,(size_t)ne*x.view.n_channels*sizeof(double));fflush(stdout);
         CMFNonthermalResolvedModel bound={0};const CMFNonthermalBoundModel *view=&x.view;
-        if(c==4){
-            assert(!cmf_nonthermal_binding_build(a,&raw,&x,argv[4],&bound));view=&bound.view;
-            printf("NT_RESOLVED_MODEL ion_channels=%d resolved_routes=%d unresolved_routes=%d missing_ions=%d max_threshold_shift_eV=%.17g complete_atomic_model=0\n",
-                   bound.n_ion_channels,bound.n_resolved_routes,bound.n_unresolved_routes,bound.n_missing_ions,bound.max_threshold_shift_eV);
-            assert(bound.n_resolved_routes==52&&bound.n_unresolved_routes==12&&bound.n_missing_ions==3);
+        if(c>=4){
+            assert(!cmf_nonthermal_binding_build_policy(a,&raw,&x,argv[4],c==4?CMF_NT_SIGMA_SAME_EXCESS:CMF_NT_SIGMA_SOURCE_KINETIC,&bound));view=&bound.view;
+            printf("NT_RESOLVED_MODEL policy=%d ion_channels=%d resolved_routes=%d unresolved_routes=%d missing_ions=%d max_threshold_mismatch_eV=%.17g complete_atomic_model=0\n",
+                   bound.cross_section_policy,bound.n_ion_channels,bound.n_resolved_routes,bound.n_unresolved_routes,bound.n_missing_ions,bound.max_threshold_shift_eV);
+            assert(bound.n_resolved_routes==51&&bound.n_unresolved_routes==13&&bound.n_missing_ions==3);
         }
         int shells[]={0,ns/3,2*ns/3,ns-1};
         for(int j=0;j<4;j++){
@@ -62,8 +62,8 @@ int main(int argc,char **argv){
             printf("NT_ACTUAL_SAMPLE case=%d shell=%d T=%.17g ne=%.17g internal_fraction=%.17g Si_fraction=%.17g S_fraction=%.17g difference_from_excitation256=%.17g Si_difference=%.17g S_difference=%.17g initial_NLTE_converged=0 physical_gamma=0\n",
                    c,s,m.plasma.T_e[s],electron,fraction,Si,S,c>1?fraction-baselines[j][0]:0,
                    c>1?Si-baselines[j][1]:0,c>1?S-baselines[j][2]:0);fflush(stdout);
-            if(c==4)printf("NT_RESOLVED_SPLIT shell=%d heat=%.17g ion=%.17g excitation=%.17g SiII_events_per_eV=%.17g SiIII_events_per_eV=%.17g SII_events_per_eV=%.17g SIII_events_per_eV=%.17g\n",
-                           s,1-fraction,ion,fraction-ion,Si2,Si3,S2,S3);
+            if(c>=4)printf("NT_RESOLVED_SPLIT case=%d shell=%d heat=%.17g ion=%.17g excitation=%.17g SiII_events_per_eV=%.17g SiIII_events_per_eV=%.17g SII_events_per_eV=%.17g SIII_events_per_eV=%.17g\n",
+                           c,s,1-fraction,ion,fraction-ion,Si2,Si3,S2,S3);
             cmf_nonthermal_rates_free(&r);
         }
         printf("NT_ACTUAL_EXCITATION_CPU case=%d seconds=%.6g\n",c,(double)(clock()-started)/CLOCKS_PER_SEC);

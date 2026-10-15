@@ -19,6 +19,7 @@ toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
+ initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
  *) exit 2 ;;
 esac
 toy_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
@@ -48,6 +49,9 @@ toy_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
 if [[ "$toy_mode" == nonthermal ]]; then
  toy_units+=(cmf_nonthermal cmf_nonthermal_atomic cmf_nonthermal_provider cmf_nonthermal_excitation cmf_nonthermal_binding)
 fi
+if [[ "$toy_mode" == initial-prepare ]]; then
+ toy_units+=(cmf_nonthermal cmf_nonthermal_provider cmf_gamma_source cmf_gamma_transport cmf_toy_run)
+fi
 cd "$toy_src"
 git rev-parse HEAD > "$toy_out/commit.txt"
 toy_files=(src/*.h scripts/run_cmf_toy_bootstrap.slurm "$toy_test")
@@ -64,6 +68,9 @@ for toy_input in "${toy_inputs[@]}"; do cp "$toy_original/$toy_input" "$toy_out/
 cp "$toy_channels/bf_channels.bin" "$toy_channels/bf_channels.terminal.csv" "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/input_models/snia_toy06_2d.dat "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/ionization_reference.csv "$toy_out/input/"
+if [[ "$toy_mode" == initial-prepare ]]; then
+ cp /gpfs/kjhan/cmfgen_21jun23/atomic/rad_decay_data/NUC_DECAY_DATA_ni56_co56_fe56 "$toy_out/input/"
+fi
 if [[ "$toy_mode" == nonthermal ]]; then
  cp /gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15 "$toy_out/input/"
  (cd "$toy_out"; python3 source/scripts/map_cmf_nonthermal.py > mapping.log 2> mapping.err)

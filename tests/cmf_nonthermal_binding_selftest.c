@@ -24,6 +24,14 @@ int main(int argc,char **argv){
     assert(!memcmp(&saved,&m,sizeof m));gaps[1]=7;
     rows[1].threshold_eV=NAN;assert(cmf_nonthermal_binding_build(&a,&raw,&ex,argv[1],&m)!=0);
     assert(!memcmp(&saved,&m,sizeof m));rows[1].threshold_eV=20;
+    rows[0].threshold_eV=6;
+    assert(!cmf_nonthermal_binding_build_policy(&a,&raw,&ex,argv[1],CMF_NT_SIGMA_SAME_EXCESS,&m));
+    assert(m.ion_sigma[1]==cmf_nonthermal_atomic_sigma(&rows[0],11));
+    double moved=m.ion_sigma[1];
+    assert(!cmf_nonthermal_binding_build_policy(&a,&raw,&ex,argv[1],CMF_NT_SIGMA_SOURCE_KINETIC,&m));
+    assert(m.ion_sigma[1]==cmf_nonthermal_atomic_sigma(&rows[0],10)&&m.ion_sigma[1]!=moved);
+    saved=m;assert(cmf_nonthermal_binding_build_policy(&a,&raw,&ex,argv[1],-1,&m)!=0);
+    assert(!memcmp(&saved,&m,sizeof m));
     cmf_nonthermal_binding_free(&m);
     puts("CMF_NONTHERMAL_BINDING_SELFTEST_OK single=1 Auger_terminal=1 partial_model_explicit=1 rollback=1");return 0;
 }
