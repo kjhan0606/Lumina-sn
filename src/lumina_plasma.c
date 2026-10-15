@@ -8,6 +8,7 @@
 #include "cmf_time_epoch.h"
 #include "cmf_anderson.h"
 #include "cmf_nonthermal_rates.h"
+#include "cmf_collision_complement.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "line_jbar.h" /* amended A2-02C BB rate graph */
@@ -19069,6 +19070,85 @@ static int bb_nrb_arm(const NLTEConfig *nlte, const OpacityState *opacity,
     return armed;
 }
 
+typedef struct {double *matrix;int dimension;} NLTEMissingCollisionMatrix;
+static int nlte_missing_collision_accumulate(void *context,int target,int source,double rate){
+    NLTEMissingCollisionMatrix *m=context;
+    size_t cell=(size_t)source*m->dimension+target;
+    m->matrix[cell]+=rate;
+    return isfinite(m->matrix[cell])?0:-1;
+}
+static void nlte_collision_mark_pair(unsigned char *owned,const CMFCollisionLevel *levels,
+                                     int n,int lo_label,int hi_label){
+    int lo=cmf_collision_label(levels,n,lo_label),hi=cmf_collision_label(levels,n,hi_label);
+    if(lo<0||hi<0||lo==hi)return;
+    if(lo>hi){int swap=lo;lo=hi;hi=swap;}
+    owned[(size_t)lo*n+hi]=1;
+}
+
+/* 순수 충돌은 복사선 목록의 존재와 무관하다. 기존 선/실표가 소유한 쌍은
+ * 제외하고 나머지만 현행 CMFGEN 모드의 OMEGA_SET으로 채운다.
+ * 현재 toy06의 모든 지원 이온은 원자료 OMEGA_SET=0.1이다. 기존 모드의
+ * 사용자 지정값은 유지하며 다른 원자 모형의 이온별 처방을 추정하지 않는다. */
+static int nlte_cmf_missing_collisions(NLTEConfig *n,const AtomicData *a,int ion,
+    int shell,int ns,int super_start,int dimension,double T,double ne,
+    double *matrix,int capture,uint64_t *pair_count){
+    int begin=n->nlte_ion_level_offset[ion],end=n->nlte_ion_level_offset[ion+1],count=end-begin;
+    if(pair_count)*pair_count=0;
+    if(count<0||ns<1||shell<0||shell>=ns||dimension<1||!matrix)return -1;
+    if(count<2)return 0;
+    if((size_t)count>SIZE_MAX/(size_t)count||
+       (size_t)dimension>SIZE_MAX/(size_t)dimension/sizeof(double))return -1;
+    CMFCollisionLevel *levels=malloc((size_t)count*sizeof(*levels));
+    unsigned char *owned=calloc((size_t)count*count,1);
+    double *delta=calloc((size_t)dimension*dimension,sizeof(*delta));
+    int rc=-1,z=n->nlte_Z[ion],charge=n->nlte_ion[ion];
+    if(!levels||!owned||!delta)goto missing_done;
+    for(int k=0;k<count;k++){
+        int fl=begin+k,gl=n->nlte_to_global_level[fl];
+        if(gl<0||gl>=a->n_levels||a->level_Z[gl]!=z||a->level_ion[gl]!=charge)goto missing_done;
+        levels[k]=(CMFCollisionLevel){a->level_num[gl],n->fl_to_super[fl]-super_start,
+            a->level_energy_eV[gl],a->level_g[gl],n->within_sl_frac[(size_t)fl*ns+shell]};
+        if(k&&levels[k].label<=levels[k-1].label)goto missing_done;
+    }
+    NLTEPairLineIterator lines=nlte_pair_line_iterator(n,ion,ion,a->n_lines);
+    for(int line;(line=nlte_pair_line_next(&lines))>=0;){
+        if(a->line_atomic_number[line]!=z||a->line_ion_number[line]!=charge)goto missing_done;
+        nlte_collision_mark_pair(owned,levels,count,a->line_level_lower[line],a->line_level_upper[line]);
+    }
+    if(a->feiii_col_loaded&&z==a->feiii_col_Z&&charge==a->feiii_col_ion){
+        if(a->feiii_col_n_trans<0||(a->feiii_col_n_trans&&(!a->feiii_col_lo||!a->feiii_col_hi)))goto missing_done;
+        for(int t=0;t<a->feiii_col_n_trans;t++)
+            nlte_collision_mark_pair(owned,levels,count,a->feiii_col_lo[t],a->feiii_col_hi[t]);
+    }
+    for(int c=0;c<a->ncol_ions;c++)if(a->col_ion_Z[c]==z&&a->col_ion_stage[c]==charge){
+        int nt=a->col_ion_n_trans[c];
+        if(nt<0||(nt&&(!a->col_ion_lo[c]||!a->col_ion_hi[c])))goto missing_done;
+        for(int t=0;t<nt;t++)nlte_collision_mark_pair(owned,levels,count,a->col_ion_lo[c][t],a->col_ion_hi[c][t]);
+    }
+    NLTEMissingCollisionMatrix target={delta,dimension};uint64_t pairs=0;
+    if(cmf_collision_complement(count,levels,owned,dimension,T,ne,omcm_oset(),
+                               nlte_missing_collision_accumulate,&target,&pairs))goto missing_done;
+    /* full-level별 capture lock을 반복하지 않는다. 양의 SL 전이율을 먼저
+     * 합한 뒤 원래 행렬/보존 유출 소유자에게 한 번씩 전달한다. */
+    for(int from=0;from<dimension;from++)for(int to=0;to<dimension;to++){
+        double rate=delta[(size_t)from*dimension+to];
+        if(rate==0||from==to)continue;
+        matrix[(size_t)from*dimension+to]+=rate;
+        matrix[(size_t)from*dimension+from]-=rate;
+        if(capture)nlte_ew_capture_transition(NLTE_EW_COLL_BB,to,from,rate);
+    }
+    if(pair_count)*pair_count=pairs;
+    rc=0;
+missing_done:
+    free(levels);free(owned);free(delta);return rc;
+}
+#ifdef LUMINA_TIME_PAIR_SELFTEST
+int nlte_cmf_missing_collisions_selftest(NLTEConfig *n,const AtomicData *a,int ion,
+    int shell,int ns,int start,int dimension,double T,double ne,double *matrix,uint64_t *pairs){
+    return nlte_cmf_missing_collisions(n,a,ion,shell,ns,start,dimension,T,ne,matrix,0,pairs);
+}
+#endif
+
 static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,
@@ -20104,6 +20184,14 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             }
             free(ln_i); free(ln_f); free(ln_g); free(ln_E);
         }
+    }
+
+    if(ew_capture&&omcm_on&&!nlte_assemble_skip_bb()){
+        for(int ion=ion_idx_lo;ion<=ion_idx_hi;ion++)
+            if(nlte_cmf_missing_collisions(nlte,atom,ion,shell,n_shells,super_start,N,
+                                          T_e,n_e,A_cm,1,NULL)){
+                free(bb_connected);return -1;
+            }
     }
 
     /* ---- Photoionization / Recombination ---- */
