@@ -21,7 +21,7 @@ while read -r bf_key; do unset "$bf_key"; done < <(compgen -v LUMINA_ || true)
 while read -r bf_key; do unset "$bf_key"; done < <(compgen -v CMFGEN_ || true)
 bf_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 bf_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-${SLURM_JOB_ID}
-bf_deck=/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model
+bf_deck=${1:-/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model}
 mkdir "$bf_out" "$bf_out/source" "$bf_out/reference" "$bf_out/hyd"
 cd "$bf_src"
 bf_files=(scripts/build_bf_channels.py scripts/cmfgen_photo_routes.py scripts/cmfgen_parser.py

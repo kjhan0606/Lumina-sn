@@ -23,8 +23,8 @@ case "$toy_mode" in
  *) exit 2 ;;
 esac
 toy_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
-toy_original=/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model
-toy_channels=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-423197
+toy_original=${3:-/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model}
+toy_channels=${4:-/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-423197}
 toy_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-material-${SLURM_JOB_ID}
 mkdir "$toy_out"
 mkdir "$toy_out/source" "$toy_out/objects" "$toy_out/input"
