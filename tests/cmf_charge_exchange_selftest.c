@@ -1,6 +1,6 @@
 /* 한 CE 반응의 두 원소 전하 변화는 상쇄돼야 한다.
  * 실제 행렬 조립을 사용하고 외부 전리/재결합은 영으로 둔다. */
-#include "lumina.h"
+#include "nlte_population_candidate.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
