@@ -1,0 +1,37 @@
+#!/bin/bash
+#SBATCH --job-name=CMF_TOY_COMPARE
+#SBATCH --partition=a10
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --gres=gpu:0
+#SBATCH --time=00:05:00
+#SBATCH --no-requeue
+#SBATCH --exclude=syn102,syn03
+#SBATCH --output=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-compare-%j.log
+#SBATCH --error=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-compare-%j.err
+set -euo pipefail
+umask 027
+source /opt/ohpc/admin/lmod/lmod/init/bash
+module purge
+module load python/3.11.14
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1
+compare_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
+compare_public=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/toy06
+compare_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-compare-${SLURM_JOB_ID}
+mkdir "$compare_out"
+mkdir "$compare_out/source"
+cd "$compare_src"
+compare_files=(scripts/compare_cmf_toy_epoch.py scripts/read_cmf_common_material.py
+ scripts/run_cmf_toy_compare.slurm tests/cmf_toy_comparison_selftest.py)
+cp --parents "${compare_files[@]}" "$compare_out/source/"
+cd "$compare_out/source"
+sha256sum "${compare_files[@]}" > "$compare_out/source.sha256"
+python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
+if [[ "${1:-selftest}" != selftest ]]; then
+ (cd "$1/work"; sha256sum -c "$1/output.sha256") > "$compare_out/output_verify.log"
+ python3 scripts/compare_cmf_toy_epoch.py --run "$1" --public "$compare_public" \
+  --out "$compare_out/comparison" > "$compare_out/comparison.log"
+fi
+sha256sum -c "$compare_out/source.sha256" > "$compare_out/source_verify.log"
