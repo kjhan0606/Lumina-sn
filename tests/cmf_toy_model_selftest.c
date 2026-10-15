@@ -1,14 +1,34 @@
 #include "cmf_toy_model.h"
+#include "nlte_line_index.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TOY_MODEL_FAIL line=%d %s\n",__LINE__,#x);rc=1;goto done;}}while(0)
+static int check_line_selection(const NLTEConfig *n,int count,int lo,int hi){
+    NLTEPairLineIterator it=nlte_pair_line_iterator(n,lo,hi,count);
+    for(int line=0;line<count;line++)if(n->nlte_line_map[line]>=lo&&n->nlte_line_map[line]<=hi)
+        if(nlte_pair_line_next(&it)!=line)return -1;
+    return nlte_pair_line_next(&it)==-1?0:-1;
+}
 int main(int argc,char **argv){
     if(argc!=4)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};int ns=atoi(argv[3]),rc=0;
+    {
+        int map[9]={1,-1,0,2,1,0,3,1,2},offset[6]={0,2,5,7,8,8};
+        int lines[8]={2,5,0,4,7,3,8,6};
+        NLTEConfig sample={0};sample.n_nlte_ions=5;sample.nlte_line_map=map;
+        sample.nlte_ion_line_offsets=offset;sample.nlte_ion_lines=lines;sample.nlte_line_index_count=9;
+        for(int lo=0;lo<5;lo++)for(int hi=lo;hi<5;hi++)
+            CHECK(!check_line_selection(&sample,9,lo,hi));
+        /* 빈 terminal, 교차 순서, 미매핑 선, 넓은 범위 및 오래된 index fallback. */
+        sample.nlte_line_index_count=10;
+        CHECK(!check_line_selection(&sample,9,0,1));
+        sample.nlte_line_index_count=9;sample.nlte_ion_lines=NULL;
+        CHECK(!check_line_selection(&sample,9,0,1));
+    }
     CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
     const AtomicData *a=&m.atom;const NLTEConfig *n=&m.nlte;const PlasmaState *p=&m.plasma;
     CHECK(m.prepared&&m.ejecta.n_source_shells==807&&m.geometry.time_explosion==172800);
@@ -18,6 +38,12 @@ int main(int argc,char **argv){
     CHECK(!p->physical_history&&p->initial_steady_nlte==1&&n->radfield_view_status==RADIATION_FIELD_VIEW_DISABLED);
     CHECK(n->line_qset==&m.qset&&n->line_eset==&m.eset);
     CHECK(n->nlte_line_global&&n->nlte_line_global_count==a->n_lines);
+    CHECK(n->nlte_ion_line_offsets&&n->nlte_ion_lines&&n->nlte_line_index_count==a->n_lines);
+    for(int lo=0;lo<n->n_nlte_ions;lo++){
+        CHECK(!check_line_selection(n,a->n_lines,lo,lo));
+        if(lo+1<n->n_nlte_ions)CHECK(!check_line_selection(n,a->n_lines,lo,lo+1));
+    }
+    printf("TOY_ION_LINE_INDEX PASS ions=%d lines=%d exact_selection_and_order=1\n",n->n_nlte_ions,a->n_lines);
     clock_t lookup_start=clock();size_t matched=0;
     for(int line=0;line<a->n_lines;line++){
         int ip=-1,lo=-1,up=-1;

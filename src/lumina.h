@@ -670,6 +670,9 @@ typedef struct {
     int   *nlte_line_map;                      /* [n_lines] -> NLTE ion idx or -1 */
     int   *nlte_line_global;                   /* [2*n_lines] 불변 lower/upper global ID. projection 소유 */
     int    nlte_line_global_count;
+    int   *nlte_ion_line_offsets;             /* [n_nlte_ions+1] 불변 선 소유권 CSR */
+    int   *nlte_ion_lines;                    /* [mapped lines] 이온별 전역 ID 오름차순 */
+    int    nlte_line_index_count;             /* projection 당시 전체 line 수 */
     int   *drainless_metastable;               /* [n_levels] 1 iff metastable=1 AND zero downward
                                                 * radiative lines (no line has it as UPPER). Such a
                                                 * level can neither radiatively nor (baseline)

@@ -908,6 +908,8 @@ static void ew_private_view_free(EWPrivateView *v) {
     free(v->cfg.nlte_to_global_level);
     free(v->cfg.global_to_nlte_level);
     free(v->cfg.nlte_line_map);
+    free(v->cfg.nlte_ion_line_offsets);
+    free(v->cfg.nlte_ion_lines);
     free(v->cfg.nlte_line_global);
     free(v->cfg.nlte_level_populations);
     free(v->cfg.fl_to_super);
@@ -925,6 +927,9 @@ static int ew_private_view_init(EWPrivateView *v, const NLTEConfig *src,
     n->nlte_to_global_level = NULL;
     n->global_to_nlte_level = NULL;
     n->nlte_line_map = NULL;
+    n->nlte_ion_line_offsets=NULL;
+    n->nlte_ion_lines=NULL;
+    n->nlte_line_index_count=0;
     n->nlte_line_global=NULL;
     n->nlte_line_global_count=0;
     n->nlte_level_populations = NULL;

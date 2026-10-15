@@ -4,6 +4,7 @@
 
 #include "lumina.h" /* Phase 4 - Step 1 */
 #include "nlte_population_candidate.h" /* private all-shell A2-07 trial view */
+#include "nlte_line_index.h"
 #include "cmf_time_epoch.h"
 #include "cmf_nonthermal_rates.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
@@ -18290,6 +18291,9 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
     nlte->nlte_to_global_level = (int *)malloc(nlevels * sizeof(int));
     nlte->global_to_nlte_level = (int *)malloc(nglobal * sizeof(int));
     nlte->nlte_line_map = (int *)malloc(nlines * sizeof(int));
+    nlte->nlte_ion_line_offsets=calloc((size_t)n_targets+1,sizeof(int));
+    nlte->nlte_ion_lines=malloc(nlines*sizeof(int));
+    nlte->nlte_line_index_count=0;
     nlte->nlte_line_global=NULL;
     nlte->nlte_line_global_count=0;
     const int cache_line_global=atom->n_lines>0 && atom->n_ion_pops>0 &&
@@ -18304,7 +18308,8 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
         nlevels * (size_t)n_shells, sizeof(double));
     cursor = (int *)calloc((size_t)NLTE_MAX_IONS, sizeof(int));
     if (!nlte->nlte_to_global_level || !nlte->global_to_nlte_level ||
-        !nlte->nlte_line_map || !nlte->fl_to_super ||
+        !nlte->nlte_line_map || !nlte->nlte_ion_line_offsets ||
+        !nlte->nlte_ion_lines || !nlte->fl_to_super ||
         !nlte->super_anchor_global || !nlte->within_sl_frac ||
         !nlte->nlte_level_populations || !cursor ||
         (cache_line_global && !nlte->nlte_line_global))
@@ -18336,6 +18341,7 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
             if (atom->line_atomic_number[line] != target_Z[i] ||
                 atom->line_ion_number[line] != target_ion[i]) continue;
             nlte->nlte_line_map[line] = i;
+            nlte->nlte_ion_line_offsets[i+1]++;
             if (n_lines_mapped) (*n_lines_mapped)++;
             break;
         }
@@ -18352,6 +18358,15 @@ int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
         }
     }
     if(cache_line_global)nlte->nlte_line_global_count=atom->n_lines;
+    for(int i=0;i<n_targets;i++){
+        nlte->nlte_ion_line_offsets[i+1]+=nlte->nlte_ion_line_offsets[i];
+        cursor[i]=nlte->nlte_ion_line_offsets[i];
+    }
+    for(int line=0;line<atom->n_lines;line++){
+        int slot=nlte->nlte_line_map[line];
+        if(slot>=0)nlte->nlte_ion_lines[cursor[slot]++]=line;
+    }
+    nlte->nlte_line_index_count=atom->n_lines;
     for (size_t k = 0; k < nlevels * (size_t)n_shells; k++)
         nlte->within_sl_frac[k] = 1.0;
     rc = 0;
@@ -18362,6 +18377,8 @@ cleanup:
         free(nlte->nlte_to_global_level);
         free(nlte->global_to_nlte_level);
         free(nlte->nlte_line_map);
+        free(nlte->nlte_ion_line_offsets);
+        free(nlte->nlte_ion_lines);
         free(nlte->nlte_line_global);
         free(nlte->fl_to_super);
         free(nlte->super_anchor_global);
@@ -18370,6 +18387,9 @@ cleanup:
         nlte->nlte_to_global_level = NULL;
         nlte->global_to_nlte_level = NULL;
         nlte->nlte_line_map = NULL;
+        nlte->nlte_ion_line_offsets=NULL;
+        nlte->nlte_ion_lines=NULL;
+        nlte->nlte_line_index_count=0;
         nlte->nlte_line_global=NULL;
         nlte->nlte_line_global_count=0;
         nlte->fl_to_super = NULL;
@@ -18567,6 +18587,8 @@ void nlte_free(NLTEConfig *nlte) {
     free(nlte->nlte_to_global_level);
     free(nlte->global_to_nlte_level);
     free(nlte->nlte_line_map);
+    free(nlte->nlte_ion_line_offsets);
+    free(nlte->nlte_ion_lines);
     free(nlte->nlte_line_global);
     free(nlte->drainless_metastable);
     free(nlte->nlte_level_populations);
@@ -19208,8 +19230,10 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
 
     /* ---- Radiative bound-bound rates from line data ---- */
     int n_lines = opacity->n_lines;
+    NLTEPairLineIterator line_iterator=nlte_pair_line_iterator(
+        nlte,ion_idx_lo,ion_idx_hi,n_lines);
     if (!nlte_assemble_skip_bb())
-    for (int line = 0; line < n_lines; line++) {
+    for (int line; (line=nlte_pair_line_next(&line_iterator))>=0;) {
         int map = nlte->nlte_line_map[line];
         if (map < ion_idx_lo || map > ion_idx_hi) continue;
 
