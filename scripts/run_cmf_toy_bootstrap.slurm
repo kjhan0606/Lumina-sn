@@ -18,6 +18,7 @@ case "$toy_shells" in 100|200) ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material-rates) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
  initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
@@ -37,6 +38,9 @@ export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
 export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
+if [[ "$toy_mode" == material-rates ]]; then
+ export LUMINA_NLTE_JEQB=1 LUMINA_NLTE_BF_JEQB=1
+fi
 export LUMINA_BF_CHANNELS_FILE=$toy_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$toy_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$toy_out/input/ionization_reference.csv
