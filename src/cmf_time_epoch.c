@@ -5,6 +5,111 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* native little-endian, fixed-width header. 총2GiB 이내의 정상 이력만 읽는다. */
+static int checkpoint_counts(uint64_t ns,uint64_t nb,uint64_t ni,uint64_t nl,
+    uint64_t *material,uint64_t *radiation,uint64_t *bytes){
+    uint32_t endian=1;
+    if(sizeof(int)!=4||sizeof(double)!=8||*(unsigned char*)&endian!=1||
+       !ns||ns>256||!nb||nb>INT32_MAX||!ni||ni>INT32_MAX||!nl||nl>INT32_MAX)return -1;
+    *material=(5+ni+nl)*ns;*radiation=ns+1+(2*ns+1)*nb;
+    *bytes=8+7*8+4*8+4*(nl+2*ni)+8*(*material+*radiation)+8;
+    return *bytes<=UINT64_C(2147483648)?0:-1;
+}
+
+int cmf_physical_time_state_write(const CMFPhysicalTimeState *s,const char *path){
+    if(!s||!path||!s->material.storage||!s->radiation_storage||
+       !s->material.level_global||!s->material.ion_Z||!s->material.ion_stage||
+       s->material.decay_epoch_s!=0||s->radiation.epoch_s!=s->material.energy.epoch_s||
+       s->radiation.n_shells!=(int)s->material.energy.n_shells)return -1;
+    uint64_t ns=s->radiation.n_shells,nb=s->radiation.n_bins,ni=s->material.n_ions,nl=s->material.n_levels;
+    uint64_t material,radiation,bytes;
+    if(checkpoint_counts(ns,nb,ni,nl,&material,&radiation,&bytes))return -1;
+    uint64_t head[]={1,ns,nb,ni,nl,s->material.population_generation,s->material.temperature_generation};
+    double parameters[]={s->radiation.epoch_s,s->radiation.nu_min,s->radiation.dlognu,s->material.decay_epoch_s};
+    FILE *fp=fopen(path,"wbx");if(!fp)return -1;
+    int rc=-1;
+#define CHECKPOINT_PUT(ptr,size,count) do{if(fwrite((ptr),(size),(count),fp)!=(count))goto write_done;}while(0)
+    CHECKPOINT_PUT("CMFINIT1",1,8);CHECKPOINT_PUT(head,8,7);CHECKPOINT_PUT(parameters,8,4);
+    CHECKPOINT_PUT(s->material.level_global,4,nl);CHECKPOINT_PUT(s->material.ion_Z,4,ni);CHECKPOINT_PUT(s->material.ion_stage,4,ni);
+    CHECKPOINT_PUT(s->material.storage,8,material);CHECKPOINT_PUT(s->radiation_storage,8,radiation);
+    CHECKPOINT_PUT("CMFDONE1",1,8);rc=0;
+#undef CHECKPOINT_PUT
+write_done:
+    if(fclose(fp))rc=-1;
+    if(!rc)fprintf(stderr,"[CMF-HISTORY] wrote=%s bytes=%llu epoch=%.17g\n",path,
+                   (unsigned long long)bytes,parameters[0]);
+    return rc;
+}
+
+int cmf_physical_time_state_read(CMFPhysicalTimeState *out,const char *path,
+    const NLTEConfig *n,const AtomicData *a,const Geometry *g){
+    if(!out||!path||!n||!a||!g||g->n_shells<1||!g->v_inner||!g->v_outer||
+       a->n_ion_pops<1||n->n_nlte_levels_total<1||!n->nlte_to_global_level||
+       !a->ion_pop_Z||!a->ion_pop_stage)return -1;
+    FILE *fp=fopen(path,"rb");if(!fp)return -1;
+    CMFPhysicalTimeState raw={0},verified={0};int rc=-1;
+    uint64_t h[7],material,radiation,bytes;double par[4],*partition=NULL;
+    char marker[8];long length;
+#define CHECKPOINT_GET(ptr,size,count) do{if(fread((ptr),(size),(count),fp)!=(count))goto read_done;}while(0)
+    CHECKPOINT_GET(marker,1,8);if(memcmp(marker,"CMFINIT1",8))goto read_done;
+    CHECKPOINT_GET(h,8,7);CHECKPOINT_GET(par,8,4);
+    if(h[0]!=1||h[1]!=(uint64_t)g->n_shells||h[3]!=(uint64_t)a->n_ion_pops||
+       h[4]!=(uint64_t)n->n_nlte_levels_total||!h[5]||!h[6]||par[3]!=0||
+       checkpoint_counts(h[1],h[2],h[3],h[4],&material,&radiation,&bytes)||
+       !(par[0]>0)||!isfinite(par[0])||!(par[1]>0)||!isfinite(par[1])||
+       !(par[2]>0)||!isfinite(par[2]))goto read_done;
+    if(fseek(fp,0,SEEK_END)||(length=ftell(fp))<0||(uint64_t)length!=bytes||fseek(fp,96,SEEK_SET))goto read_done;
+    raw.material.level_global=malloc(h[4]*4);raw.material.ion_Z=malloc(h[3]*4);raw.material.ion_stage=malloc(h[3]*4);
+    raw.material.storage=malloc(material*8);raw.radiation_storage=malloc(radiation*8);
+    partition=malloc(h[3]*h[1]*8);
+    if(!raw.material.level_global||!raw.material.ion_Z||!raw.material.ion_stage||
+       !raw.material.storage||!raw.radiation_storage||!partition)goto read_done;
+    CHECKPOINT_GET(raw.material.level_global,4,h[4]);CHECKPOINT_GET(raw.material.ion_Z,4,h[3]);
+    CHECKPOINT_GET(raw.material.ion_stage,4,h[3]);CHECKPOINT_GET(raw.material.storage,8,material);
+    CHECKPOINT_GET(raw.radiation_storage,8,radiation);CHECKPOINT_GET(marker,1,8);
+    if(memcmp(marker,"CMFDONE1",8)||fgetc(fp)!=EOF||
+       memcmp(raw.material.level_global,n->nlte_to_global_level,h[4]*4)||
+       memcmp(raw.material.ion_Z,a->ion_pop_Z,h[3]*4)||
+       memcmp(raw.material.ion_stage,a->ion_pop_stage,h[3]*4))goto read_done;
+    for(uint64_t i=0;i<material;i++)if(!isfinite(raw.material.storage[i])||raw.material.storage[i]<0)goto read_done;
+    {
+        size_t ns=h[1],ni=h[3],nl=h[4],nb=h[2];double *v=raw.radiation_storage,*m=raw.material.storage;
+        for(size_t s=0;s<=ns;s++){
+            double expect=s<ns?g->v_inner[s]:g->v_outer[ns-1];
+            if(!isfinite(v[s])||!isfinite(expect)||v[s]<0||expect<0||
+               (expect==0?v[s]!=0:fabs(v[s]/expect-1)>1e-12))goto read_done;
+        }
+        raw.radiation=(CMFTimeRadiationHistory){(int)ns,(int)nb,par[0],par[1],par[2],v,v+ns+1,v+ns+1+ns*nb};
+        AtomicData av=*a;NLTEConfig nv=*n;PlasmaState pv={0};PopulationAtomicView view={0};
+        av.ion_number_density=m+5*ns;av.partition_functions=partition;av.population_committed_generation=h[5];
+        nv.nlte_level_populations=m+(5+ni)*ns;nv.population_committed_generation=h[5];
+        pv.n_shells=(int)ns;pv.rho=m;pv.T_e=m+ns;pv.n_electron=m+3*ns;pv.T_e_generation=h[6];
+        view.n_ions=ni;view.n_levels=a->n_levels;view.level_offset=a->level_offset;
+        view.energy_eV=a->level_energy_eV;view.g=a->level_g;view.level_Z=a->level_Z;view.level_ion=a->level_ion;
+        view.topion_n=a->topion_n;view.topion_ion_index=a->topion_ion_index;
+        view.topion_E_cm=a->topion_E_cm;view.topion_g=a->topion_g;
+        if(population_partition_build(&view,pv.T_e,ns,h[5],h[6],partition,&av.partition_stamp)!=POP_OK||
+           cmf_physical_time_state_capture(&verified,&nv,&av,&pv,&raw.radiation))goto read_done;
+        for(size_t s=0;s<ns;s++){
+            double charge=0;
+            for(size_t i=0;i<ni;i++)charge+=a->ion_pop_stage[i]*av.ion_number_density[i*ns+s];
+            if(!isfinite(charge)||(charge==0?pv.n_electron[s]!=0:fabs(pv.n_electron[s]/charge-1)>1e-8))goto read_done;
+            for(size_t k=2;k<=4;k+=2){
+                double saved=m[k*ns+s],actual=verified.material.storage[k*ns+s];
+                if(actual==0?saved!=0:fabs(saved/actual-1)>1e-10)goto read_done;
+            }
+        }
+        /* 재계산은 검증용이다. 저장된 과거 값을 반올림조차 바꾸지 않는다. */
+        memcpy(verified.material.storage,m,material*8);
+        (void)nl;
+    }
+    cmf_physical_time_state_free(out);*out=verified;memset(&verified,0,sizeof(verified));rc=0;
+#undef CHECKPOINT_GET
+read_done:
+    fclose(fp);free(partition);cmf_physical_time_state_free(&raw);cmf_physical_time_state_free(&verified);
+    return rc;
+}
+
 void cmf_physical_time_state_free(CMFPhysicalTimeState *s){
     if(s){nlte_physical_history_free(&s->material);free(s->radiation_storage);memset(s,0,sizeof(*s));}
 }

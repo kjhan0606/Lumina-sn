@@ -119,6 +119,28 @@ int main(void){
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
         fprintf(stderr,"INITIAL_HISTORY epoch=%.17g face_J_residual=%.17g bins=%d center_H=0\n",
             initial.radiation.epoch_s,c.initial_face_J_residual,initial.radiation.n_bins);
+        /* 실제 수렴해를 파일에서 복원한 뒤 다음 시간해가 그 J/H를 소비한다. */
+        CMFPhysicalTimeState restored={0};
+        CHECK(!cmf_physical_time_state_write(&initial,"initial_state.bin"));
+        CHECK(cmf_physical_time_state_write(&initial,"initial_state.bin")!=0);
+        CHECK(!cmf_physical_time_state_read(&restored,"initial_state.bin",&n,&a,&g));
+        CHECK(!memcmp(initial.material.storage,restored.material.storage,(size_t)(5+NI+NL)*NS*sizeof(double)));
+        CHECK(!memcmp(initial.radiation_storage,restored.radiation_storage,
+            ((size_t)NS+1+(size_t)(2*NS+1)*initial.radiation.n_bins)*sizeof(double)));
+        double *preserved=restored.material.storage;
+        st[0]=1;CHECK(cmf_physical_time_state_read(&restored,"initial_state.bin",&n,&a,&g)!=0);st[0]=0;
+        CHECK(restored.material.storage==preserved);
+        FILE *bad=fopen("bad_history.bin","wbx");CHECK(bad);
+        CHECK(fwrite("CMFINIT1",1,8,bad)==8&&!fclose(bad));
+        CHECK(cmf_physical_time_state_read(&restored,"bad_history.bin",&n,&a,&g)!=0&&restored.material.storage==preserved);
+        CHECK(!cmf_physical_time_state_write(&initial,"bad_energy.bin"));
+        bad=fopen("bad_energy.bin","r+b");CHECK(bad);
+        double wrong_energy=2*initial.material.energy.internal_energy_atom_erg[0];
+        CHECK(!fseek(bad,96+4*(NL+2*NI)+8*4*NS,SEEK_SET));
+        CHECK(fwrite(&wrong_energy,8,1,bad)==1&&!fclose(bad));
+        CHECK(cmf_physical_time_state_read(&restored,"bad_energy.bin",&n,&a,&g)!=0&&restored.material.storage==preserved);
+        cmf_physical_time_state_free(&initial);initial=restored;memset(&restored,0,sizeof(restored));
+        fprintf(stderr,"INITIAL_CHECKPOINT_ROUNDTRIP exact_material=1 exact_J_H=1 overwrite_rejected=1 invalid_history_preserved=1\n");
         /* 방금 구한 실제 초기해에서 다음 물리 시점으로 진행한다. 임의 J=B나
          * 면 H=0으로 과거를 교체하지 않고, cs를 해제해 깊은복사도 확인한다. */
         double *old_radiation=malloc((size_t)(2*NS+1)*o.n_fine*sizeof(double));CHECK(old_radiation);

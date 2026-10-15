@@ -17,6 +17,12 @@ void cmf_physical_time_state_free(CMFPhysicalTimeState *state);
 /* 초기 이력 또는 수렴한 시점의 깊은복사. 자체로 수렴을 인증하지 않는다. */
 int cmf_physical_time_state_capture(CMFPhysicalTimeState *state,
     const NLTEConfig*,const AtomicData*,const PlasmaState*,const CMFTimeRadiationHistory*);
+/* CMFINIT1 물질/J/H checkpoint. 성공한 실제 시점만 write에 전달한다.
+ * read는 원자/격자 정체성과 저장 내부에너지를 재검증한다. 입력/source hash
+ * 동등성은 runner 책임. 실패시 out 보존, 기존 파일 덮어쓰기 금지. */
+int cmf_physical_time_state_write(const CMFPhysicalTimeState*,const char *path);
+int cmf_physical_time_state_read(CMFPhysicalTimeState*,const char *path,
+    const NLTEConfig*,const AtomicData*,const Geometry*);
 
 typedef enum {
     CMF_EPOCH_OK=0,CMF_EPOCH_INVALID=1,CMF_EPOCH_ALLOCATION=2,

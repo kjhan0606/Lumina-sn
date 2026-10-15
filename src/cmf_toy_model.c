@@ -109,18 +109,22 @@ fail:
     cmf_toy_model_free(m);return -1;
 }
 
-int cmf_toy_model_write_seed(const CMFToyModel *m,const char *path){
-    if(!m||!m->prepared||!path)return -1;
+int cmf_toy_model_write_material(const CMFToyModel *m,const char *path,const char *status){
+    if(!m||!m->prepared||!path||!status||strchr(status,'\n')||strchr(status,'\r'))return -1;
     FILE *fp=fopen(path,"wx");if(!fp)return -1;
     const AtomicData *a=&m->atom;const PlasmaState *p=&m->plasma;int ns=p->n_shells;
-    int rc=fprintf(fp,"# BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished\n"
-        "shell,r_inner_cm,r_outer_cm,rho_g_cm3,T_K,n_e_cm3,Z,stage,n_ion_cm3,mass_fraction\n")<0;
+    int rc=fprintf(fp,"# %s\n"
+        "shell,r_inner_cm,r_outer_cm,rho_g_cm3,T_K,n_e_cm3,Z,stage,n_ion_cm3,mass_fraction\n",status)<0;
     for(int s=0;s<ns;s++)for(int e=0;e<a->n_elements;e++)
       for(int ip=a->elem_ion_offset[e];ip<a->elem_ion_offset[e+1];ip++)
         if(fprintf(fp,"%d,%.17g,%.17g,%.17g,%.17g,%.17g,%d,%d,%.17g,%.17g\n",s,
             m->geometry.r_inner[s],m->geometry.r_outer[s],p->rho[s],p->T_e[s],p->n_electron[s],
             a->ion_pop_Z[ip],a->ion_pop_stage[ip],a->ion_number_density[ip*ns+s],a->abundances[e*ns+s])<0)rc=1;
     if(fclose(fp))rc=1;return rc?-1:0;
+}
+
+int cmf_toy_model_write_seed(const CMFToyModel *m,const char *path){
+    return cmf_toy_model_write_material(m,path,"BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished");
 }
 
 int cmf_toy_bootstrap_main(int argc,char **argv){

@@ -82,6 +82,21 @@ for history_test in "${history_tests[@]}"; do
   -o "$history_out/$history_test" >> "$history_out/build.log" 2>&1
  (cd "$history_out"; "./$history_test" > "$history_test.log" 2> "$history_test.err")
 done
+if [[ "$history_mode" == initial ]]; then
+ # 실제 초기/시간해 연결은 그대로, 새 checkpoint 소유 코드와 호출부를 계측한다.
+ history_checkpoint_rest=()
+ for history_unit in "${history_units[@]}"; do
+  if [[ "$history_unit" != cmf_time_epoch ]]; then
+   history_checkpoint_rest+=("$history_out/objects/$history_unit.o")
+  fi
+ done
+ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fopenmp -fsanitize=address,undefined \
+  -fno-omit-frame-pointer -ffunction-sections -fdata-sections -Isrc \
+  tests/cmf_time_coupled_selftest.c src/cmf_time_epoch.c "${history_checkpoint_rest[@]}" \
+  -Wl,--gc-sections -lm -o "$history_out/checkpoint_san" > "$history_out/checkpoint-san-build.log" 2>&1
+ (cd "$history_out"; mkdir checkpoint-san; cd checkpoint-san
+  ASAN_OPTIONS=detect_leaks=1 ../checkpoint_san > ../checkpoint-san.log 2> ../checkpoint-san.err)
+fi
 if [[ "$history_mode" != regression ]]; then
  sha256sum -c "$history_out/source.sha256" > "$history_out/source_verify.log"
  exit 0

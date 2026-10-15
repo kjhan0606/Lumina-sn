@@ -4,30 +4,6 @@
 #include "cmf_nonthermal_provider.h"
 #include <errno.h>
 
-/* 성공한 초기 물리 이력만 저장한다. 고정 너비 header 뒤에는 int32 IDs,
- * double 배열이 순서대로 온다. footer가 없으면 완결된 이력이 아니다.
- * native little-endian binary, 이 실행의 source/input hash는 runner가 보존. */
-static int write_initial_state(const CMFPhysicalTimeState *s){
-    if(!s||!s->material.storage||!s->radiation_storage||sizeof(int)!=4||sizeof(double)!=8)return -1;
-    uint64_t ns=s->radiation.n_shells,nb=s->radiation.n_bins,ni=s->material.n_ions,nl=s->material.n_levels;
-    uint64_t head[]={1,ns,nb,ni,nl,s->material.population_generation,s->material.temperature_generation};
-    double parameters[]={s->radiation.epoch_s,s->radiation.nu_min,s->radiation.dlognu,s->material.decay_epoch_s};
-    uint64_t material=(5+ni+nl)*ns,radiation=ns+1+(2*ns+1)*nb;
-    uint64_t bytes=8+sizeof(head)+sizeof(parameters)+4*(nl+2*ni)+8*(material+radiation)+8;
-    if(bytes>UINT64_C(2147483648))return -1;
-    FILE *fp=fopen("initial_state.bin","wbx");if(!fp)return -1;
-    int rc=0;
-#define PUT(ptr,size,count) do{if(fwrite((ptr),(size),(count),fp)!=(count))rc=-1;}while(0)
-    PUT("CMFINIT1",1,8);PUT(head,sizeof(uint64_t),7);PUT(parameters,sizeof(double),4);
-    PUT(s->material.level_global,4,nl);PUT(s->material.ion_Z,4,ni);PUT(s->material.ion_stage,4,ni);
-    PUT(s->material.storage,8,material);PUT(s->radiation_storage,8,radiation);PUT("CMFDONE1",1,8);
-#undef PUT
-    if(fclose(fp))rc=-1;
-    if(!rc)fprintf(stderr,"[TOY-INITIAL] saved_state_bytes=%llu epoch=%.17g bins=%llu\n",
-                   (unsigned long long)bytes,parameters[0],(unsigned long long)nb);
-    return rc;
-}
-
 int cmf_toy_initial_main(int argc,char **argv){
     if(argc!=8){fprintf(stderr,"usage: %s --cmf-toy-initial ejecta atomic_dir nuclear_data shells packets iterations\n",argv[0]);return 2;}
     long input[3];
@@ -85,7 +61,8 @@ int cmf_toy_initial_main(int argc,char **argv){
         status,report.iterations,report.radiation_calls,report.electron_update,report.population_update,report.radiation_update,report.converged);
     if(status!=CMF_EPOCH_OK||!report.converged)goto done;
     phase="initial history output";
-    if(write_initial_state(&initial)||cmf_toy_model_write_seed(&m,"initial_converged_material.csv")||
+    if(cmf_physical_time_state_write(&initial,"initial_state.bin")||
+       cmf_toy_model_write_material(&m,"initial_converged_material.csv","CONVERGED_INITIAL_NLTE; fixed hydro T; ALL_THERMAL_CONTROL")||
        cmfgen_write_common_observer(&cs,"initial_spectrum.csv","initial_spectrum.json",m.nlte.radfield_view.generation,
           m.atom.population_committed_generation,m.plasma.T_e_generation,m.opacity.tau_computed_generation))goto done;
     printf("TOY_INITIAL_CONVERGED epoch=%.17g nonthermal=ALL_THERMAL_CONTROL final_epoch_19_48d=0 spectrum_compared=0\n",m.geometry.time_explosion);
