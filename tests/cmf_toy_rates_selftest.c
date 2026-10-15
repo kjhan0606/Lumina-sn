@@ -10,6 +10,19 @@
 static double seconds(void){
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+1e-9*t.tv_nsec;
 }
+static void remove_partners(CMFToyModel *m,int Z,int shell){
+    if(!getenv("CMF_TEST_ISOLATE_CE")||!atoi(getenv("CMF_TEST_ISOLATE_CE")))return;
+    /* 시험 대상 밖 원소만 영 인구로 둔다. 고정 ne인 성분 분리 반사실이며
+     * 생산 조성/전하 폐합/시간 상태가 아니다. 생산 CE 코드는 바꾸지 않는다. */
+    int ns=m->plasma.n_shells;
+    for(int ip=0;ip<m->atom.n_ion_pops;ip++)if(m->atom.ion_pop_Z[ip]!=Z){
+        m->atom.ion_number_density[(size_t)ip*ns+shell]=0;
+        for(int gl=m->atom.level_offset[ip];gl<m->atom.level_offset[ip+1];gl++){
+            int fl=m->nlte.global_to_nlte_level[gl];
+            m->nlte.nlte_level_populations[(size_t)fl*ns+shell]=0;
+        }
+    }
+}
 int main(int argc,char **argv){
     if(argc!=4)return 2;
     setvbuf(stdout,NULL,_IOLBF,0);
@@ -51,6 +64,9 @@ int main(int argc,char **argv){
     gamma_deposition_init(&gamma,ns);
     CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,
         m.geometry.time_explosion,NULL,NULL,NULL,heat));
+    printf("TOY_RATES_CONTRACT DR_multiplier=%s CE_partners_removed=%s fixed_ne=1 transport=0\n",
+        getenv("LUMINA_DR_BOOST")?getenv("LUMINA_DR_BOOST"):"1",
+        getenv("CMF_TEST_ISOLATE_CE")?getenv("CMF_TEST_ISOLATE_CE"):"0");
     const int samples[2]={0,ns/3};int tested=0;
     for(int sample=0;sample<2;sample++)for(int e=0;e<a->n_elements;e++){
         int s=samples[sample],Z=a->element_Z[e];
@@ -58,6 +74,7 @@ int main(int argc,char **argv){
         if(total==0)continue;
         memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
         memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+        remove_partners(&m,Z,s);
         printf("TOY_RATES_BEGIN shell=%d Z=%d T=%.17g ne=%.17g nuclei=%.17g\n",s,Z,p->T_e[s],p->n_electron[s],total);
         double start=seconds();
         PopulationStatus cached=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
@@ -68,6 +85,7 @@ int main(int argc,char **argv){
         memcpy(cached_ion,a->ion_number_density,ni*sizeof(double));
         memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
         memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+        remove_partners(&m,Z,s);
         n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;
         start=seconds();
         PopulationStatus searched=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
