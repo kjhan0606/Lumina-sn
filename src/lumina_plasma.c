@@ -22219,6 +22219,22 @@ int nlte_ne_closure_candidate(NLTEPopulationCandidate *candidate,
     return 0;
 }
 
+static void nlte_population_damp_values(double *current,const double *previous,
+                                        size_t count,double damping) {
+    /* 무감쇠는 항등 연산이다. old+(new-old)는 작은 양의 new를 소실시킬 수 있다. */
+    if (damping == 1.0) return;
+    for (size_t i=0;i<count;i++) {
+        double n_new=current[i],n_old=previous[i];
+        current[i]=n_old+damping*(n_new-n_old);
+    }
+}
+#ifdef LUMINA_TIME_PAIR_SELFTEST
+void nlte_population_damp_values_selftest(double *current,const double *previous,
+                                         size_t count,double damping) {
+    nlte_population_damp_values(current,previous,count,damping);
+}
+#endif
+
 static int nlte_solve_all_impl(
                      NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
                      OpacityState *opacity, double time_explosion,
@@ -22792,13 +22808,9 @@ static int nlte_solve_all_impl(
         /* Apply damping for iter >= 1 */
         if (ce_iter > 0) {
             if (!ew_on) {
-                for (size_t i = 0; i < pop_size; i++) {
-                    double n_new = nlte->nlte_level_populations[i];
-                    double n_old = old_pops[i];
-                    nlte->nlte_level_populations[i] = n_old +
-                        ce_damping * (n_new - n_old);
-                }
-            } else {
+                nlte_population_damp_values(nlte->nlte_level_populations,
+                                            old_pops,pop_size,ce_damping);
+            } else if (ce_damping != 1.0) {
                 for (int g = 0; g < nlte->n_nlte_levels_total; g++) {
                     int gl = nlte->nlte_to_global_level[g], Zg = atom->level_Z[gl];
                     int zi = (Zg == 16) ? 0 : (Zg == 26 ? 1 : -1);
