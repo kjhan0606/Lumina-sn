@@ -31,6 +31,38 @@ done:
     fclose(fp);return j;
 }
 
+/* 조건부 율 분해 전용. 이온 총량과 실제 소유자 인구는 보존하고 Si/S II/III의
+ * 이온 내 준위 분포만 private 배열에서 LTE로 바꾼다. 새 SE 해가 아니다. */
+static double *lte_levels(const CMFToyModel *m){
+    const AtomicData *a=&m->atom;const NLTEConfig *n=&m->nlte;
+    int ns=m->plasma.n_shells;
+    size_t count=(size_t)n->n_nlte_levels_total*ns;
+    double *pop=malloc(count*sizeof(*pop));if(!pop)return NULL;
+    memcpy(pop,n->nlte_level_populations,count*sizeof(*pop));
+    PopulationAtomicView av={0};av.n_ions=a->n_ion_pops;av.n_levels=a->n_levels;
+    av.level_offset=a->level_offset;av.energy_eV=a->level_energy_eV;av.g=a->level_g;
+    av.level_Z=a->level_Z;av.level_ion=a->level_ion;
+    for(int ip=0;ip<a->n_ion_pops;ip++){
+        int z=a->ion_pop_Z[ip],q=a->ion_pop_stage[ip];
+        if((z!=14&&z!=16)||(q!=1&&q!=2))continue;
+        for(int s=0;s<ns;s++){
+            long double sum=0;
+            for(int gl=a->level_offset[ip];gl<a->level_offset[ip+1];gl++){
+                int fl=n->global_to_nlte_level[gl];double f=0;
+                if(fl<0||fl>=n->n_nlte_levels_total)goto fail;
+                PopulationStatus status=population_lte_level_fraction(&av,ip,gl,m->plasma.T_e[s],
+                    a->partition_functions[(size_t)ip*ns+s],&f);
+                if(status!=POP_OK&&status!=POP_EXACT_ZERO)goto fail;
+                sum+=f;pop[(size_t)fl*ns+s]=a->ion_number_density[(size_t)ip*ns+s]*f;
+            }
+            if(fabsl(sum-1)>1e-10L)goto fail;
+        }
+    }
+    return pop;
+fail:
+    free(pop);return NULL;
+}
+
 static int evaluate(CMFToyModel *m,double *fine_J,const double *pop,const double *ions,
     const double *ne,const double *temperature,int field_iteration,int population_iteration,FILE *fp){
     int rc=-1,ns=m->plasma.n_shells,nb=NLTE_N_FREQ_BINS;
@@ -93,6 +125,20 @@ static int evaluate(CMFToyModel *m,double *fine_J,const double *pop,const double
             }
             long double forward=photo+coll,reverse=recomb+three;
             REQUIRE(used>0&&forward>0&&reverse>0&&isfinite((double)(forward+reverse)));
+            if(getenv("CMF_TEST_BF_LTE_LEVELS")&&getenv("LUMINA_NLTE_BF_JEQB")){
+                double chi=NAN;
+                for(int k=0;k<a->n_ionization;k++)
+                    if(a->ioniz_Z[k]==z&&a->ioniz_ion[k]==1)chi=a->ioniz_energy_eV[k];
+                REQUIRE(isfinite(chi)&&chi>0&&ne[s]>0);
+                double saha=2*pow(2*M_PI_VAL*M_ELECTRON*K_BOLTZMANN*temperature[s]/
+                    (H_PLANCK*H_PLANCK),1.5)/ne[s]*
+                    a->partition_functions[(size_t)high*ns+s]/a->partition_functions[(size_t)low*ns+s]*
+                    exp(-chi*EV_TO_ERG/(K_BOLTZMANN*temperature[s]));
+                long double equilibrium=(forward/nlow)/(reverse/nhigh);
+                REQUIRE(saha>0&&isfinite(saha));
+                printf("TOY_BF_LTE_BALANCE field=%d shell=%d Z=%d thermal_III_II=%.17Lg saha_III_II=%.17g relative=%.17Lg\n",
+                    field_iteration,s,z,equilibrium,saha,fabsl(equilibrium/saha-1));
+            }
             REQUIRE(fprintf(fp,"%d,%d,%d,%d,%.17g,%.17g,%.17g,%.17g,%d,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg\n",
                 field_iteration,population_iteration,s,z,velocity,temperature[s],ne[s],nhigh/nlow,used,
                 photo/nlow,recomb/nhigh,coll/nlow,three/nhigh,forward,reverse,
@@ -111,13 +157,16 @@ done:
 int main(int argc,char **argv){
     if(argc!=7)return 2;
     const double mass[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
-    CMFToyModel m={0};double *old_J=NULL;FILE *fp=NULL;int rc=-1,new_iteration=-1,old_iteration=-1;
+    CMFToyModel m={0};double *old_J=NULL,*private_pop=NULL;FILE *fp=NULL;int rc=-1,new_iteration=-1,old_iteration=-1;
     REQUIRE(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],atoi(argv[3]),mass));
     REQUIRE(!cmf_toy_initial_iterate_read(&m,argv[4],argv[5],&new_iteration));
     const double *pop=m.nlte.nlte_level_populations,*ions=m.atom.ion_number_density;
     const double *ne=m.plasma.n_electron,*temperature=m.plasma.T_e;
     old_J=previous_field(&m,argv[6],argv[5],&old_iteration);REQUIRE(old_J);
     REQUIRE(old_iteration+1==new_iteration);
+    if(getenv("CMF_TEST_BF_LTE_LEVELS")){
+        private_pop=lte_levels(&m);REQUIRE(private_pop);pop=private_pop;
+    }
     fp=fopen("iterate_bf_balance.csv","wx");REQUIRE(fp);
     REQUIRE(fprintf(fp,"field_iteration,population_iteration,shell,Z,velocity_km_s,T_K,ne_cm3,III_II,channels,photo_per_II_s,recomb_per_III_s,collision_per_II_s,threebody_per_III_s,forward_cm3_s,reverse_cm3_s,signed_imbalance\n")>0);
     REQUIRE(!evaluate(&m,m.opacity.jnu_fine,pop,ions,ne,temperature,new_iteration,new_iteration,fp));
@@ -125,5 +174,5 @@ int main(int argc,char **argv){
     rc=0;
 done:
     if(fp&&fclose(fp))rc=-1;
-    cmf_toy_model_free(&m);free(old_J);return rc?1:0;
+    cmf_toy_model_free(&m);free(old_J);free(private_pop);return rc?1:0;
 }
