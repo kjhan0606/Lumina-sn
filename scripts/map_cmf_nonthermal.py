@@ -1,7 +1,8 @@
 """실제 NT 자료와 원자 준위의 연결표. 없는 경로를 바닥상태로 대체하지 않는다.
 
-아직 NLTE 소비자가 아니다. source line/global level ID/명시적 미연결 상태를
-보존하여 실제 전이율 공급자의 입력으로 사용할 연결을 정한다.
+source line/global level ID/명시적 미연결 상태를 보존한다. 에너지가 허용하고
+실제 준위가 있는 경로만 별도 CSV로 내보낸다. 이 CSV는 불완전한 원자 모델의
+명시적인 대조 입력이며 누락 경로가 물리적으로0이라는 뜻이 아니다.
 """
 import csv
 import hashlib
@@ -66,8 +67,14 @@ def main():
     with paths[2].open() as fp:
         ip = {(int(r["atomic_number"]), int(r["ion_number"])): float(r["ionization_energy_eV"])
               for r in csv.DictReader(fp)}
-    # terminal 파일은 정체성만 보존한다. 포맷을 추측해 인공 준위를 만들지 않는다.
+    # 실제 catalog를 읽되 full level을 만들지 않는다. terminal은 원자 모델의
+    # 마지막 이온 인구이며 fine-level 여기나 추가 전리 채널을 뜻하지 않는다.
+    with paths[3].open() as fp:
+        catalog = {(int(r["Z"]), int(r["ion_stage_0based"])): r for r in csv.DictReader(fp)}
     terminal = {(z, max(q for zz, q in ions if z == zz) + 1) for z, _ in ions}
+    assert terminal == set(catalog)
+    for c in catalog.values():
+        assert int(c["level_index"]) == 0 and float(c["E_cm-1"]) == 0 and float(c["g"]) > 0
     output, missing_ions = [], []
     for key, lev in sorted(ions.items()):
         ground = [x for x in lev if x["level_number"] == 0]
@@ -107,24 +114,75 @@ def main():
             r["upper_levels"] = [x["global_level"] for x in upper]
             weight = sum(x["g"] for x in upper)
             r["upper_weights"] = [x["g"]/weight for x in upper]
-            if lower and upper and target_key == next_key:
+            if target_key in terminal:
+                r["terminal_catalog"] = catalog[target_key]
+            if lower and (upper or target_key in terminal):
                 # 원자료 threshold와 실제 준위 간 내부에너지 차이를 별도 기록한다.
-                delta = [ip[key] + u["energy_eV"] - lo["energy_eV"] for lo in lower for u in upper]
+                binding = sum(ip[(key[0], q)] for q in range(key[1], target_key[1]))
+                ends = [u["energy_eV"] for u in upper] if upper else [0.0]
+                delta = [binding + end - lo["energy_eV"] for lo in lower for end in ends]
                 r["level_energy_change_eV_range"] = [min(delta), max(delta)]
                 r["threshold_minus_level_change_eV_range"] = [raw["threshold_eV"]-max(delta), raw["threshold_eV"]-min(delta)]
+                if target_key[1] == key[1]+2:
+                    r["auger_energy_feasible_all_branches"] = raw["threshold_eV"] > max(delta)
             output.append(r)
+    bindings, unresolved, selected_lines = [], [], set()
+    for r in output:
+        key = (r["Z"], r["charge"])
+        target = (r["Z"], r["target_charge"])
+        if r.get("auger_energy_feasible_all_branches") is False:
+            unresolved.append(dict(source_line=r["source_line"], reason="NO_ENERGY_FOR_ASSIGNED_AUGER"))
+            continue
+        if target in terminal and r["target_charge"] == r["charge"]+1:
+            single_label = " ".join(part.split("&")[0] for part in re.split(r"[/\\]", r["terms"]))
+            if not any(matches(single_label, alias) for alias in catalog[target]["label"].split("/")):
+                unresolved.append(dict(source_line=r["source_line"], reason="TERMINAL_EXCITED_STATE_NOT_REPRESENTED"))
+                continue
+        if r["status"] not in ("SINGLE_IONIZATION_MAPPED", "AUGER_REQUIRES_ENERGY_KERNEL", "TERMINAL_REQUIRES_CATALOG_BINDING"):
+            unresolved.append(dict(source_line=r["source_line"], reason=r["status"]))
+            continue
+        assert r["lower_levels"] and (r["upper_levels"] or target in terminal)
+        lowers = [levels[i] for i in r["lower_levels"]]
+        reference = min(lo["energy_eV"] for lo in lowers)
+        for lo in lowers:
+            for upper, weight in zip(r["upper_levels"] or [-1], r["upper_weights"] or [1.0]):
+                change = sum(ip[(key[0], q)] for q in range(key[1], target[1])) - lo["energy_eV"]
+                if upper >= 0:
+                    change += levels[upper]["energy_eV"]
+                if target[1] == key[1]+2:
+                    threshold = r["threshold_eV"] - (lo["energy_eV"]-reference)
+                    auger = threshold-change
+                    assert auger > 0
+                else:
+                    threshold, auger = change, 0.0
+                assert threshold > 0
+                bindings.append([r["source_line"], lo["global_level"], upper, target[0], target[1],
+                                 threshold, auger, weight])
+                selected_lines.add(r["source_line"])
+    assert len(selected_lines)+len(unresolved) == len(output)
+    with Path("nonthermal_resolved_bindings.csv").open("x") as fp:
+        fp.write(f"# resolved_routes={len(selected_lines)} unresolved_routes={len(unresolved)} missing_ions={len(missing_ions)}\n")
+        writer = csv.writer(fp)
+        writer.writerow(["source_line", "lower_global", "upper_global", "target_Z", "target_charge",
+                         "threshold_eV", "auger_eV", "branch_weight"])
+        writer.writerows(bindings)
     summary = {}
     for r in output:
         summary[r["status"]] = summary.get(r["status"], 0) + 1
     result = dict(source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
                   actual_levels=len(levels), actual_explicit_ions=len(ions),
                   status_counts=summary, ions_without_ionization_data=missing_ions,
+                  resolved_routes=len(selected_lines), resolved_channels=len(bindings),
+                  unresolved_routes=unresolved,
+                  binding_policy="explicit_resolved_subset; sigma_at_same_excess_energy; not_full_atomic_model",
                   routes=output, NLTE_connected=False, spectrum_compared=False)
     with Path("nonthermal_atom_map.json").open("x") as fp:
         json.dump(result, fp, indent=2)
         fp.write("\n")
     print(json.dumps({k:v for k,v in result.items() if k not in ("routes", "source_sha256")}))
     for r in output:
+        if r.get("auger_energy_feasible_all_branches") is False:
+            print("NT_ENERGETICALLY_INVALID_AUGER", json.dumps(r))
         if r["Z"] in (14,16) and r["charge"] in (1,2):
             print("NT_TARGET_ROUTE", json.dumps(r))
     for z in (14,16):

@@ -2,8 +2,9 @@
 
 /* 공급자가 사용하는 원자 내부에너지 차이. 원형 단면적 문턱을 실제 준위의
  * 차이와 몰래 동일시하지 않는다. 둘이 맞지 않는 미완성 연결은 거부한다. */
-static int transition_energy(const AtomicData *a,const CMFNonthermalTransition *t,
+int cmf_nonthermal_transition_energy(const AtomicData *a,const CMFNonthermalTransition *t,
                              double *change,int *electrons){
+    if(!a||!t||!change||!electrons)return -1;
     int lo=t->lower_global,up=t->upper_global,qi,Z;
     if(lo<0||lo>=a->n_levels||!a->level_energy_eV||!a->level_Z||!a->level_ion)return -1;
     Z=a->level_Z[lo];qi=a->level_ion[lo];double end;
@@ -55,9 +56,9 @@ int cmf_nonthermal_bound_evaluate(const void *context,const AtomicData *a,const 
     if(nc)memcpy(r.transitions,m->transitions,nc*sizeof(*r.transitions));
     for(size_t k=0;k<nc;k++){
         double delta;int electrons;
-        if(transition_energy(a,&m->transitions[k],&delta,&electrons))goto fail;
+        if(cmf_nonthermal_transition_energy(a,&m->transitions[k],&delta,&electrons))goto fail;
         const CMFNonthermalRoute *q=&m->channels[k];
-        if(!q->cross_section_cm2||!(q->threshold_eV>=m->energy_eV[0])||!isfinite(q->threshold_eV)||
+        if(!q->cross_section_cm2||!(q->threshold_eV>0)||!isfinite(q->threshold_eV)||
            !(q->auger_electron_eV>=0&&q->auger_electron_eV<q->threshold_eV)||!isfinite(q->auger_electron_eV)||
            (electrons==0&&(q->kind!=CMF_NT_EXCITATION||q->auger_electron_eV!=0))||
            (electrons>0&&(q->kind!=CMF_NT_IONIZATION||electrons!=1+(q->auger_electron_eV>0)))||

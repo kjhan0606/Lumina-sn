@@ -16,7 +16,8 @@ typedef struct {
 } CMFNonthermalRoute;
 typedef struct {
     int n_energy,n_routes;
-    const double *energy_eV; /* 양의 증가 노드, 마지막에1eV 에너지 주입 */
+    const double *energy_eV; /* 양의 증가 노드, 마지막에1eV 에너지 주입.
+                            * 최저 노드 아래는 열전자 집단; 하한 수렴을 별도로 확인. */
     const double *coulomb_loss_eV_cm; /* n_energy;0은 해석시험에서 허용 */
     const CMFNonthermalRoute *routes;
 } CMFNonthermalInput;

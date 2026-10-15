@@ -22,8 +22,10 @@ nt_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/nonthermal-${SLURM
 mkdir "$nt_out"
 mkdir "$nt_out/source" "$nt_out/source/src" "$nt_out/source/tests" "$nt_out/source/scripts" "$nt_out/input"
 cd "$nt_src"
-nt_files=(src/*.h src/cmf_nonthermal.c src/cmf_nonthermal_atomic.c src/cmf_nonthermal_provider.c
+nt_files=(src/*.h src/cmf_nonthermal.c src/cmf_nonthermal_atomic.c src/cmf_nonthermal_provider.c src/cmf_nonthermal_excitation.c src/cmf_nonthermal_binding.c
  tests/cmf_nonthermal_selftest.c tests/cmf_nonthermal_provider_selftest.c
+ tests/cmf_nonthermal_excitation_selftest.c
+ tests/cmf_nonthermal_binding_selftest.c tests/cmf_nonthermal_binding_fixture.csv
  scripts/run_cmf_nonthermal_selftest.slurm scripts/map_cmf_nonthermal.py)
 for nt_file in "${nt_files[@]}"; do cp "$nt_src/$nt_file" "$nt_out/source/$nt_file"; done
 cp /gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15 "$nt_out/input/arnaud_rothenflug_23jun15"
@@ -47,5 +49,19 @@ gcc -O1 -g -std=gnu11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc
  tests/cmf_nonthermal_provider_selftest.c src/cmf_nonthermal.c src/cmf_nonthermal_provider.c \
  -lm -o "$nt_out/provider_san" > "$nt_out/provider-san-build.log" 2>&1
 (cd "$nt_out"; ASAN_OPTIONS=detect_leaks=1 ./provider_san > provider-san.log 2> provider-san.err)
+gcc -O2 -std=gnu11 -Wall -Wextra -Isrc tests/cmf_nonthermal_excitation_selftest.c \
+ src/cmf_nonthermal.c src/cmf_nonthermal_excitation.c -lm -o "$nt_out/excitation_test" > "$nt_out/excitation-build.log" 2>&1
+(cd "$nt_out"; ./excitation_test > excitation.log 2> excitation.err)
+gcc -O1 -g -std=gnu11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
+ tests/cmf_nonthermal_excitation_selftest.c src/cmf_nonthermal.c src/cmf_nonthermal_excitation.c \
+ -lm -o "$nt_out/excitation_san" > "$nt_out/excitation-san-build.log" 2>&1
+(cd "$nt_out"; ASAN_OPTIONS=detect_leaks=1 ./excitation_san > excitation-san.log 2> excitation-san.err)
+nt_binding=(tests/cmf_nonthermal_binding_selftest.c src/cmf_nonthermal.c src/cmf_nonthermal_atomic.c
+ src/cmf_nonthermal_provider.c src/cmf_nonthermal_binding.c)
+gcc -O2 -std=gnu11 -Wall -Wextra -Isrc "${nt_binding[@]}" -lm -o "$nt_out/binding_test" > "$nt_out/binding-build.log" 2>&1
+(cd "$nt_out"; ./binding_test source/tests/cmf_nonthermal_binding_fixture.csv > binding.log 2> binding.err)
+gcc -O1 -g -std=gnu11 -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc \
+ "${nt_binding[@]}" -lm -o "$nt_out/binding_san" > "$nt_out/binding-san-build.log" 2>&1
+(cd "$nt_out"; ASAN_OPTIONS=detect_leaks=1 ./binding_san source/tests/cmf_nonthermal_binding_fixture.csv > binding-san.log 2> binding-san.err)
 sha256sum -c "$nt_out/source.sha256" > "$nt_out/source_verify.log"
 (cd "$nt_out/input"; sha256sum -c "$nt_out/input.sha256" > "$nt_out/input_verify.log")

@@ -1,0 +1,4 @@
+# resolved_routes=2 unresolved_routes=1 missing_ions=1
+source_line,lower_global,upper_global,target_Z,target_charge,threshold_eV,auger_eV,branch_weight
+1,0,1,14,2,5,0,1
+2,0,-1,14,3,20,8,1

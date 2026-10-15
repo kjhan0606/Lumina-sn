@@ -65,7 +65,8 @@ static int ion_products(const double *g,int n,long double E,long double I,
     if(!(total>0)||!(norm>0))return -1;
     for(int primary=0;primary<2;primary++){
         long double offset=primary?total:0;
-        /* k=-1: 최저 노드보다 작은 전자는 모든 전이 문턱 아래다. */
+        /* k=-1: 격자 하한 아래는 열전자 집단으로 넘긴다. 하한 수렴은
+         * 실제 전이율로 확인해야 하며 모든 미세구조 문턱 아래라고 가정하지 않는다. */
         for(int k=-1;k<n-1;k++){
             long double elo=k<0?0:g[k],ehi=g[k+1];
             long double a=primary?offset-ehi:elo,b=primary?offset-elo:ehi;
@@ -100,7 +101,7 @@ int cmf_nonthermal_solve(const CMFNonthermalInput *in,CMFNonthermalResult *out){
     for(int r=0;r<nr;r++){
         const CMFNonthermalRoute *q=&in->routes[r];
         if((q->kind!=CMF_NT_EXCITATION&&q->kind!=CMF_NT_IONIZATION)||!q->cross_section_cm2||
-           !(q->threshold_eV>=in->energy_eV[0])||!isfinite(q->threshold_eV)||
+           !(q->threshold_eV>0)||!isfinite(q->threshold_eV)||
            !(q->lower_population_cm3>=0)||!isfinite(q->lower_population_cm3)||
            !(q->auger_electron_eV>=0&&q->auger_electron_eV<q->threshold_eV)||
            !isfinite(q->auger_electron_eV)||(q->kind==CMF_NT_EXCITATION&&q->auger_electron_eV!=0))return -1;
@@ -127,10 +128,18 @@ int cmf_nonthermal_solve(const CMFNonthermalInput *in,CMFNonthermalResult *out){
             long double rate=(long double)q->lower_population_cm3*q->cross_section_cm2[i];
             if(rate==0)continue;
             long double h=0,t=0;
+            if(q->kind==CMF_NT_EXCITATION){
+                /* 여기는 두 개 노드만 갱신한다. 수십만 실제 선마다 i개를
+                 * 지우고 복사하는 O(N_energy^2 N_line) 비용을 피한다. */
+                dest[i]=0;
+                if(point(in->energy_eV,i+1,(long double)E-q->threshold_eV,rate,dest,&h,&t)||
+                   dest[i]>=rate)goto fail;
+                denom+=rate-dest[i];dest[i]=0;
+                heat_coefficient+=h;thermal_coefficient+=t;
+                continue;
+            }
             memset(one,0,(size_t)(i+1)*sizeof(*one));
-            int rc=q->kind==CMF_NT_IONIZATION?
-                ion_products(in->energy_eV,i+1,E,q->threshold_eV,one,&h,&t):
-                point(in->energy_eV,i+1,(long double)E-q->threshold_eV,1,one,&h,&t);
+            int rc=ion_products(in->energy_eV,i+1,E,q->threshold_eV,one,&h,&t);
             if(!rc&&q->auger_electron_eV>0)
                 rc=point(in->energy_eV,i+1,q->auger_electron_eV,1,one,&h,&t);
             if(rc||one[i]>=1)goto fail;

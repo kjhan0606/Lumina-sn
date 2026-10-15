@@ -66,11 +66,21 @@ static void simple(void){
     ion.auger_electron_eV=5;CMFNonthermalResult auger_saved=r;
     assert(cmf_nonthermal_solve(&in,&r)!=0&&!memcmp(&auger_saved,&r,sizeof r));
     ion.auger_electron_eV=0;
-    CMFNonthermalResult saved=r;ion.threshold_eV=.5;
+    CMFNonthermalResult saved=r;ion.threshold_eV=0;
     assert(cmf_nonthermal_solve(&in,&r)!=0);assert(!memcmp(&saved,&r,sizeof r));
     ion.threshold_eV=5;s[0]=-1;
     assert(cmf_nonthermal_solve(&in,&r)!=0);assert(!memcmp(&saved,&r,sizeof r));s[0]=0;
     E[1]=E[0];assert(cmf_nonthermal_solve(&in,&r)!=0);E[1]=2;
+    cmf_nonthermal_free(&r);
+    /* 열화 경계보다 낮은 실제 fine-structure 여기를 누락하지 않는다.
+     * E=1에서 .1eV 여기 후 잔여 .9eV는 열 집단으로 넘어간다. */
+    double Ef[]={1,2},Lf[]={0,0},sf[]={1,1};
+    CMFNonthermalRoute fine={CMF_NT_EXCITATION,.1,1,sf,0};
+    CMFNonthermalInput low={2,1,Ef,Lf,&fine};
+    assert(!cmf_nonthermal_solve(&low,&r));check(&r);
+    close_to(r.events_per_eV[0],5.5,2e-14);
+    close_to(r.excitation_fraction,.55,2e-15);
+    close_to(r.heating_fraction,.45,2e-15);
     cmf_nonthermal_free(&r);
     double a=excitation(999),b=excitation(3999);assert(b<a&&b<.001);
     puts("NT_ANALYTIC_AND_TRANSACTION_OK");

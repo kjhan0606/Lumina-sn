@@ -16,6 +16,7 @@ typedef struct {
 } CMFNonthermalBoundModel;
 int cmf_nonthermal_bound_evaluate(const void*,const AtomicData*,const NLTEConfig*,
                                 const PlasmaState*,const GammaDeposition*,CMFNonthermalRates*);
+int cmf_nonthermal_transition_energy(const AtomicData*,const CMFNonthermalTransition*,double*,int*);
 #ifdef __cplusplus
 }
 #endif
