@@ -14,10 +14,11 @@
 
 /* 같은 실제 인구에서 격자 세분화와 경계 확장을 분리한다. NLTE를 다시 풀지 않는다. */
 static int grid_comparison(const CMFToyModel *m,const CMFNonthermalAtomicData *raw,
-                           const char *binding,int iteration){
+                           const char *binding,int iteration,int source_mode){
     enum {NS=4,CASES=5};const int selected[NS]={30,39,41,43};
     const int points[CASES]={256,511,1021,320,280};
     const char *names[CASES]={"base256","refine511","refine1021","lower0p1","upper4000"};
+    const char *source_names[CASES]={"base256","upper4000","upper8000","upper16000","upper1000"};
     const AtomicData *a=&m->atom;int ns=m->plasma.n_shells,rc=-1,rows=0;
     double *pop=NULL,*energy=NULL,electron[NS],power[NS];
     long double baseline[NS][4][2]={0},fine[NS][4][2]={0};
@@ -35,8 +36,21 @@ static int grid_comparison(const CMFToyModel *m,const CMFNonthermalAtomicData *r
     fp=fopen("iterate_nonthermal_grid.csv","wx");REQUIRE(fp);
     REQUIRE(fprintf(fp,"case,iteration,shell,Z,charge,n_energy,Emin_eV,Emax_eV,single_events_per_eV,auger_events_per_eV,single_relative_to_base,auger_relative_to_base,single_per_ion_per_unit_eV,heat_fraction,ion_fraction,excitation_fraction\n")>0);
     for(int c=0;c<CASES;c++){
-        int ne=points[c];energy=malloc((size_t)ne*sizeof(double));REQUIRE(energy);
-        if(c<3)for(int e=0;e<ne;e++)energy[e]=exp((double)e/(ne-1)*log(2000));
+        int ne=points[c];
+        if(source_mode){
+            ne=256+24*c;
+            if(c==4){ne=0;while(exp((double)ne/255*log(2000))<1000)ne++;ne++;}
+        }
+        energy=malloc((size_t)ne*sizeof(double));REQUIRE(energy);
+        if(source_mode){
+            if(c==4){
+                for(int e=0;e<ne-1;e++)energy[e]=exp((double)e/255*log(2000));
+                energy[ne-1]=1000;
+            }else{
+                for(int e=0;e<256;e++)energy[e]=exp((double)e/255*log(2000));
+                for(int e=1;e<=24*c;e++)energy[255+e]=2000*exp((double)e/24*log(2));
+            }
+        }else if(c<3)for(int e=0;e<ne;e++)energy[e]=exp((double)e/(ne-1)*log(2000));
         else if(c==3){
             for(int e=0;e<64;e++)energy[e]=exp(log(.1)+(double)e/64*log(10));
             for(int e=0;e<256;e++)energy[64+e]=exp((double)e/255*log(2000));
@@ -71,24 +85,24 @@ static int grid_comparison(const CMFToyModel *m,const CMFNonthermalAtomicData *r
                 long double difference[2];
                 for(int k=0;k<2;k++){
                     if(c==0)baseline[b][j][k]=event[j][k];
-                    if(c==1)fine[b][j][k]=event[j][k];
+                    if(c==1&&!source_mode)fine[b][j][k]=event[j][k];
                     /* 사건이 전혀 없는 채널은 두 값이 모두0일 때만 차이0이다. */
                     REQUIRE(baseline[b][j][k]>0||event[j][k]==0);
                     difference[k]=baseline[b][j][k]>0?event[j][k]/baseline[b][j][k]-1:0;
                     max_base=fmaxl(max_base,fabsl(difference[k]));
-                    if(c==2){
+                    if(c==2&&!source_mode){
                         REQUIRE(fine[b][j][k]>0||event[j][k]==0);
                         long double d=fine[b][j][k]>0?event[j][k]/fine[b][j][k]-1:0;
                         max_refinement=fmaxl(max_refinement,fabsl(d));
                     }
                 }
                 REQUIRE(fprintf(fp,"%s,%d,%d,%d,%d,%d,%.17g,%.17g,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg,%.17Lg\n",
-                    names[c],iteration,selected[b],z,q,ne,energy[0],energy[ne-1],event[j][0],event[j][1],
+                    source_mode?source_names[c]:names[c],iteration,selected[b],z,q,ne,energy[0],energy[ne-1],event[j][0],event[j][1],
                     difference[0],difference[1],event[j][0]/population,1-ion-excitation,ion,excitation)>0);rows++;
             }
         }
         printf("TOY_NT_GRID case=%s points=%d shells=%d seconds=%.9g max_rate_relative_to_base=%.9Lg max_rate_1021_vs_511=%.9Lg physical_equivalence=NOT_JUDGED\n",
-            names[c],ne,NS,(double)(finish.tv_sec-start.tv_sec)+(finish.tv_nsec-start.tv_nsec)*1e-9,max_base,max_refinement);fflush(stdout);
+            source_mode?source_names[c]:names[c],ne,NS,(double)(finish.tv_sec-start.tv_sec)+(finish.tv_nsec-start.tv_nsec)*1e-9,max_base,max_refinement);fflush(stdout);
         cmf_nonthermal_rates_free(&rates);cmf_nonthermal_binding_free(&bound);cmf_nonthermal_excitation_free(&exc);
         free(energy);energy=NULL;
     }
@@ -222,7 +236,9 @@ int main(int argc,char **argv){
     pop=malloc((size_t)m.nlte.n_nlte_levels_total*sizeof(*pop));REQUIRE(deposition&&pop);
     REQUIRE(!read_gamma(argv[8],ns,deposition));
     REQUIRE(!cmf_nonthermal_atomic_read(&raw,argv[6]));
-    if(getenv("CMF_TEST_NT_GRID")){rc=grid_comparison(&m,&raw,argv[7],iteration);goto done;}
+    if(getenv("CMF_TEST_NT_GRID")||getenv("CMF_TEST_NT_SOURCE")){
+        rc=grid_comparison(&m,&raw,argv[7],iteration,getenv("CMF_TEST_NT_SOURCE")!=NULL);goto done;
+    }
     for(int k=0;k<256;k++)energy[k]=exp((double)k/255*log(2000));
     REQUIRE(!cmf_nonthermal_excitation_build(a,energy,256,20,&exc));
     REQUIRE(!cmf_nonthermal_binding_build_policy(a,&raw,&exc,argv[7],CMF_NT_SIGMA_SOURCE_KINETIC,&bound));
