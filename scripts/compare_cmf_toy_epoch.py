@@ -95,8 +95,9 @@ def compare(run, public, out):
     if version!=1 or decay!=0 or not epoch>0 or not math.isfinite(epoch):
         raise ValueError("시점 정체성 오류")
     marker=f"TOY_{kind.upper()}_CONVERGED "
-    if not any(line.startswith(marker) for line in (run/f"{kind}.log").read_text().splitlines()):
-        raise ValueError("수렴 성공 기록 없음")
+    with (run/f"{kind}.log").open() as handle:
+        if not any(line.startswith(marker) for line in handle):
+            raise ValueError("수렴 성공 기록 없음")
     obs=json.loads((work/f"{kind}_spectrum.json").read_text())
     if obs["units"]!="erg/s/angstrom" or obs["material_generation"]!=pg:
         raise ValueError("스펙트럼 단위/물질 세대 불일치")

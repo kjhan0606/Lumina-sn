@@ -18,6 +18,8 @@ module purge
 module load gnu13/13.2.0 python/3.11.14
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 nt_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
+nt_atomic=${1:-/gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model}
+nt_terminal=${2:-/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-423197/bf_channels.terminal.csv}
 nt_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/nonthermal-${SLURM_JOB_ID}
 mkdir "$nt_out"
 mkdir "$nt_out/source" "$nt_out/source/src" "$nt_out/source/tests" "$nt_out/source/scripts" "$nt_out/input"
@@ -29,8 +31,8 @@ nt_files=(src/*.h src/cmf_nonthermal.c src/cmf_nonthermal_atomic.c src/cmf_nonth
  scripts/run_cmf_nonthermal_selftest.slurm scripts/map_cmf_nonthermal.py)
 for nt_file in "${nt_files[@]}"; do cp "$nt_src/$nt_file" "$nt_out/source/$nt_file"; done
 cp /gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15 "$nt_out/input/arnaud_rothenflug_23jun15"
-cp /gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model/levels.csv /gpfs/kjhan/lumina/cmfgen_map/coll_presc_20261009/OMEGA/run1/input/model/ionization_energies.csv "$nt_out/input/"
-cp /gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/bf-input-423197/bf_channels.terminal.csv "$nt_out/input/"
+cp "$nt_atomic/levels.csv" "$nt_atomic/ionization_energies.csv" "$nt_out/input/"
+cp "$nt_terminal" "$nt_out/input/bf_channels.terminal.csv"
 git -C "$nt_src" rev-parse HEAD > "$nt_out/commit.txt"
 (cd "$nt_out/input"; sha256sum -- * > "$nt_out/input.sha256")
 cd "$nt_out/source"

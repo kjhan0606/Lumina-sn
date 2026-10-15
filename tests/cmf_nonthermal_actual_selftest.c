@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <time.h>
 /* 실제 2일 Saha predictor/원자 자료의 여기 연결·경계 민감도 시험.
- * 실제 침적·전리 채널·공동 NLTE 해는 사용하지 않으므로 SN 결과가 아니다. */
+ * 전리 경로를 포함하되 실제 침적·공동 NLTE 해는 사용하지 않으므로 SN 결과가 아니다. */
 int main(int argc,char **argv){
     if(argc!=5)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
@@ -31,7 +31,14 @@ int main(int argc,char **argv){
             assert(!cmf_nonthermal_binding_build_policy(a,&raw,&x,argv[4],c==4?CMF_NT_SIGMA_SAME_EXCESS:CMF_NT_SIGMA_SOURCE_KINETIC,&bound));view=&bound.view;
             printf("NT_RESOLVED_MODEL policy=%d ion_channels=%d resolved_routes=%d unresolved_routes=%d missing_ions=%d max_threshold_mismatch_eV=%.17g complete_atomic_model=0\n",
                    bound.cross_section_policy,bound.n_ion_channels,bound.n_resolved_routes,bound.n_unresolved_routes,bound.n_missing_ions,bound.max_threshold_shift_eV);
-            assert(bound.n_resolved_routes==51&&bound.n_unresolved_routes==13&&bound.n_missing_ions==3);
+            /* 봉인한 두 실제 원자 덱의 연결표. 상단 이온을 바꾼 덱에 이전
+             * full-level ID/경로 수를 재사용하지 않는다. 다른 덱은 별도 조사한다. */
+            if(a->n_levels==19627&&a->n_ion_pops==27)
+                assert(bound.n_resolved_routes==41&&bound.n_unresolved_routes==10&&bound.n_missing_ions==2);
+            else{
+                assert(a->n_levels==24542&&a->n_ion_pops==33);
+                assert(bound.n_resolved_routes==51&&bound.n_unresolved_routes==13&&bound.n_missing_ions==3);
+            }
         }
         int shells[]={0,ns/3,2*ns/3,ns-1};
         for(int j=0;j<4;j++){
