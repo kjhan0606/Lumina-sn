@@ -145,11 +145,9 @@ int main(int argc,char **argv){
         .frequency_bin_edges=edges,.J_nu=J,.validity=valid,.generation=1};
     n->radfield_view_status=RADIATION_FIELD_VIEW_OK;
     gamma_deposition_init(&gamma,ns);
-    CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,
+    CHECK(!gamma_deposition_publish(&gamma,matrix_test?GAMMA_PROVENANCE_NONLOCAL_MC:GAMMA_PROVENANCE_EXTERNAL_FILE,
         m.geometry.time_explosion,NULL,NULL,NULL,heat));
     if(matrix_test){
-        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_NONLOCAL_MC,
-            m.geometry.time_explosion,NULL,NULL,NULL,heat));
         empty_rates=(CMFNonthermalRates){.n_shells=ns,.n_levels=a->n_levels,.n_ions=a->n_ion_pops,
             .epoch_s=gamma.epoch,.deposition_generation=gamma.generation};
         gamma.nonthermal_rates=&empty_rates;
