@@ -22527,7 +22527,7 @@ static int nlte_solve_all_impl(
     int last_ce_iteration = -1;
     /* 한 고정 T/ne/J 후보의 내부 반복만 소유한다. 다음 ne 후보/시간 단계에는
      * 넘기지 않으며 비열 계수는 아래 provider가 매회 새 인구로 계산한다. */
-    if(private_population_core)
+    if(private_population_core&&nlte->solve_effects_allowed==0)
         initial_base_cache=nlte_element_base_cache_create(
             nlte,atom,plasma,opacity,time_explosion,gamma_dep);
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
