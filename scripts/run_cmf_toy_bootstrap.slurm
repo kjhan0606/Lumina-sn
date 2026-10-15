@@ -14,10 +14,11 @@
 set -euo pipefail
 umask 027
 toy_shells=${1:-100}
-case "$toy_shells" in 100|200) ;; *) exit 2 ;; esac
+case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
+ continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch|material-epoch-nonthermal) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
@@ -129,6 +130,29 @@ else
 fi
 if [[ "$toy_mode" == material-rates-profile ]]; then
  (cd "$toy_out"; gprof -b -p ./prepare gmon.out > profile.txt)
+fi
+if [[ "$toy_mode" == continuum ]]; then
+ # 같은 시험/나머지 소스에 봉인 기준의 플라스마 구현만 바꾸어 비교한다.
+ toy_reference=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/common-build-423552
+ (cd "$toy_reference/source"; sha256sum -c "$toy_reference/source.sha256") > "$toy_out/reference_verify.log"
+ cp "$toy_reference/source/src/lumina_plasma.c" "$toy_out/reference_plasma.c"
+ cp "$toy_reference/commit.txt" "$toy_out/reference_commit.txt"
+ sha256sum "$toy_out/reference_plasma.c" > "$toy_out/reference_source.sha256"
+ for toy_header in src/*.h; do cmp "$toy_header" "$toy_reference/source/$toy_header"; done
+ toy_reference_objects=()
+ for toy_unit in "${toy_units[@]}"; do
+  if [[ "$toy_unit" != lumina_plasma ]]; then toy_reference_objects+=("$toy_out/objects/$toy_unit.o"); fi
+ done
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+  -c "$toy_out/reference_plasma.c" -o "$toy_out/reference_plasma.o" >> "$toy_out/reference_build.log" 2>&1
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" "$toy_out/reference_plasma.o" \
+  "${toy_reference_objects[@]}" -Wl,--gc-sections -lm -o "$toy_out/reference" >> "$toy_out/reference_build.log" 2>&1
+ mkdir "$toy_out/reference-run"
+ (cd "$toy_out/reference-run"; ../reference "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" "$toy_shells" \
+  > "$toy_out/reference.log" 2> "$toy_out/reference.err")
+ cmp "$toy_out/continuum.bin" "$toy_out/reference-run/continuum.bin"
+ (cd "$toy_out"; sha256sum continuum.bin reference-run/continuum.bin > continuum.sha256)
+ echo 'CONTINUUM_REFERENCE_PASS all_chi_eta_event_bins_byte_identical=1 physical_SN=0' > "$toy_out/comparison.log"
 fi
 if [[ "$toy_mode" == material-epoch* ]]; then
  # 프로세스당 초기화는1회다. 별도 실제 CLI 프로세스에서 fixture 복원과

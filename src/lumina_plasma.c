@@ -9206,65 +9206,79 @@ int nlte_bf_channel_rates(NLTEConfig *n,const AtomicData *a,int lower,int r,int 
 
 /* 채널 단위 Milne 계수는 낮은 준위 인구가 정확히 0이어도 계산한다.
  * 원자 입력은 공유하고, 인구는 해당 private candidate만 소비한다. */
-static int bf_channel_continuum_add(BFOpacity *bf,const AtomicData *a,
-        const PlasmaState *p,const NLTEConfig *n,int ns)
+static int bf_channel_continuum_shell(BFOpacity *bf,const AtomicData *a,
+        const PlasmaState *p,const NLTEConfig *n,int ns,int s,int solved,
+        double *pop,const double *edges)
 {
     const BfChannels *c=a->bf_channels;
-    if(!c)return 0;
-    if(c->n_levels!=a->n_levels||c->n_bins!=bf->n_freq_bins||
-       c->nu_min!=bf->nu_min||c->nu_max!=bf->nu_max||
-       !bf->event_chi_bf||!bf->event_chi_bf_comparison||
-       !p->T_e||!p->n_electron||!a->ion_number_density||!a->partition_functions)
-        return -1;
-    const int solved=n&&n->population_committed_generation>0&&
-                     n->nlte_level_populations&&n->global_to_nlte_level;
-    if(solved&&n->population_committed_generation!=a->population_committed_generation)
-        return -1;
-    double *pop=calloc((size_t)a->n_levels,sizeof(double));
-    if(!pop)return -1;
     PopulationAtomicView av=population_atomic_view(a);
-    int rc=-1;
-    for(int s=0;s<ns;s++){
         for(int ip=0;ip<a->n_ion_pops;ip++){
             for(int l=a->level_offset[ip];l<a->level_offset[ip+1];l++){
                 int ni=solved?n->global_to_nlte_level[l]:-1;
                 if(ni>=0){
-                    if(ni>=n->n_nlte_levels_total)goto done;
+                    if(ni>=n->n_nlte_levels_total)return -1;
                     pop[l]=n->nlte_level_populations[(size_t)ni*ns+s];
                 }else{
                     double f=0;
                     PopulationStatus st=population_lte_level_fraction(&av,ip,l,p->T_e[s],
                         a->partition_functions[(size_t)ip*ns+s],&f);
-                    if(st!=POP_OK&&st!=POP_EXACT_ZERO)goto done;
+                    if(st!=POP_OK&&st!=POP_EXACT_ZERO)return -1;
                     pop[l]=f*a->ion_number_density[(size_t)ip*ns+s];
                 }
-                if(!isfinite(pop[l])||pop[l]<0)goto done;
+                if(!isfinite(pop[l])||pop[l]<0)return -1;
             }
         }
         for(int l=0;l<c->n_levels;l++)for(int r=c->offset[l];r<c->offset[l+1];r++){
             int u=c->upper[r];
             int ip=c->upper_ion?c->upper_ion[r]:-1;
-            if(u<0&&(ip<0||ip>=a->n_ion_pops||!c->upper_g))goto done;
+            if(u<0&&(ip<0||ip>=a->n_ion_pops||!c->upper_g))return -1;
             double gu=u>=0?a->level_g[u]:c->upper_g[r];
             double nu=u>=0?pop[u]:a->ion_number_density[(size_t)ip*ns+s];
             for(int b=0;b<c->n_bins;b++){
                 double sigma=c->sigma[(size_t)r*c->n_bins+b];
                 if(sigma==0)continue;
-                double lo=c->nu_min*exp(b*bf->d_log_nu);
-                double hi=c->nu_min*exp((b+1)*bf->d_log_nu);
+                double lo=edges[b],hi=edges[b+1];
                 BfChannelBin v;
                 if(bf_channel_bin(lo,hi,c->threshold[r],sigma,p->T_e[s],p->n_electron[s],
-                    a->level_g[l],gu,pop[l],nu,0,0,&v))goto done;
+                    a->level_g[l],gu,pop[l],nu,0,0,&v))return -1;
                 size_t i=(size_t)s*c->n_bins+b;
                 bf->chi_bf[i]+=v.chi_net;bf->eta_bf[i]+=v.eta;
                 bf->event_chi_bf[i]+=v.chi_absorption;
                 bf->event_chi_bf_comparison[i]+=v.chi_net;
             }
         }
+    return 0;
+}
+
+static int bf_channel_continuum_add(BFOpacity *bf,const AtomicData *a,
+        const PlasmaState *p,const NLTEConfig *n,int ns)
+{
+    const BfChannels *c=a->bf_channels;
+    if(!c)return 0;
+    if(ns<1||c->n_levels<1||c->n_bins<1||c->n_levels!=a->n_levels||c->n_bins!=bf->n_freq_bins||
+       c->nu_min!=bf->nu_min||c->nu_max!=bf->nu_max||
+       !bf->event_chi_bf||!bf->event_chi_bf_comparison||
+       !p->T_e||!p->n_electron||!a->ion_number_density||!a->partition_functions||
+       (size_t)ns>SIZE_MAX/(size_t)c->n_levels/sizeof(double)||
+       (size_t)c->n_bins+1>SIZE_MAX/sizeof(double))return -1;
+    const int solved=n&&n->population_committed_generation>0&&
+                     n->nlte_level_populations&&n->global_to_nlte_level;
+    if(solved&&n->population_committed_generation!=a->population_committed_generation)
+        return -1;
+    double *pop=calloc((size_t)ns*c->n_levels,sizeof(double));
+    double *edges=malloc(((size_t)c->n_bins+1)*sizeof(double));
+    if(!pop||!edges){free(pop);free(edges);return -1;}
+    /* 채널마다 쓰던 같은 식이다. 구적/채널 합산 순서를 바꾸지 않는다. */
+    for(size_t b=0;b<(size_t)c->n_bins+1;b++)edges[b]=c->nu_min*exp((double)b*bf->d_log_nu);
+    int failed=0;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) reduction(|:failed)
+#endif
+    for(int s=0;s<ns;s++){
+        if(bf_channel_continuum_shell(bf,a,p,n,ns,s,solved,
+                                     pop+(size_t)s*c->n_levels,edges))failed=1;
     }
-    rc=0;
-done:
-    free(pop);return rc;
+    free(pop);free(edges);return failed?-1:0;
 }
 
 static int compute_bf_opacity_impl(
