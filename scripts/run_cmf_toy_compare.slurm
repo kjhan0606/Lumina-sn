@@ -30,14 +30,28 @@ cp --parents "${compare_files[@]}" "$compare_out/source/"
 cd "$compare_out/source"
 sha256sum "${compare_files[@]}" > "$compare_out/source.sha256"
 python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
-if [[ "${1:-selftest}" == initial-saha ]]; then
+if [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model ]]; then
+ compare_saha_args=()
+ if [[ "$1" == initial-saha-model ]]; then
+  cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/scripts/cmfgen_parser.py scripts/
+  sha256sum scripts/cmfgen_parser.py >> "$compare_out/source.sha256"
+  mkdir "$compare_out/raw"
+  compare_raw=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/cmfgen
+  compare_raw_files=(SIL/II/19apr23/osc_data SIL/III/19apr23/osc_data SUL/II/19apr23/osc_data SUL/III/19apr23/osc_data)
+  (cd "$compare_raw"; cp --parents "${compare_raw_files[@]}" "$compare_out/raw/")
+  (cd "$compare_out/raw"; sha256sum "${compare_raw_files[@]}") > "$compare_out/raw.sha256"
+  compare_saha_args=(--raw "$compare_out/raw")
+ fi
  (cd "$2/source"; sha256sum -c "$2/source.sha256") > "$compare_out/original_source_verify.log"
  (cd "$2/input"; sha256sum -c "$2/input.sha256") > "$compare_out/original_input_verify.log"
  sha256sum "$2/toy_initial_material.csv" "$2/input/levels.csv" "$2/input/ionization_energies.csv" \
   "$compare_public/phys_toy06_cmfgen.txt" "$compare_public/ionfrac_si_toy06_cmfgen.txt" \
   "$compare_public/ionfrac_s_toy06_cmfgen.txt" > "$compare_out/saha_input.sha256"
  python3 scripts/diagnose_cmf_saha_reference.py --run "$2" --public "$compare_public" \
-  --out "$compare_out/saha" > "$compare_out/saha.json"
+  --out "$compare_out/saha" "${compare_saha_args[@]}" > "$compare_out/saha.json"
+ if [[ "$1" == initial-saha-model ]]; then
+  (cd "$compare_out/raw"; sha256sum -c "$compare_out/raw.sha256") > "$compare_out/raw_verify.log"
+ fi
  sha256sum -c "$compare_out/saha_input.sha256" > "$compare_out/saha_input_verify.log"
 elif [[ "${1:-selftest}" == initial-grid ]]; then
  for compare_root in "$2" "$3"; do

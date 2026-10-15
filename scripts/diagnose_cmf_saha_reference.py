@@ -18,8 +18,9 @@ ME = 9.1093837015e-28
 EV = 1.602176634e-12
 
 
-def diagnose(run, public, out):
+def diagnose(run, public, out, raw=None):
     levels = {}
+    identities = {}
     with (run/'input/levels.csv').open() as handle:
         for row in csv.DictReader(handle):
             key = (int(row['atomic_number']), int(row['ion_number']))
@@ -29,12 +30,13 @@ def diagnose(run, public, out):
             if not math.isfinite(energy) or not weight>0 or not math.isfinite(weight):
                 raise ValueError('준위 에너지/통계중량 오류')
             levels.setdefault(key, []).append((energy, weight))
+            identities.setdefault(key, []).append((int(row['level_number']), row['configuration']))
     with (run/'input/ionization_energies.csv').open() as handle:
         thresholds = {(int(r['atomic_number']), int(r['ion_number'])):
                       float(r['ionization_energy_eV']) for r in csv.DictReader(handle)}
 
-    def partition(key, temperature):
-        entries = levels[key]
+    def partition(key, temperature, model=levels):
+        entries = model[key]
         base = min(e for e, g in entries)
         return math.fsum(g*math.exp(-(e-base)*EV/(K*temperature)) for e,g in entries)
 
@@ -50,6 +52,29 @@ def diagnose(run, public, out):
         if not value>0 or not math.isfinite(value):
             raise ValueError('유한 양의 인접 이온비가 필요함')
         return value, lower, upper
+
+    # 논문의 준위 수/마지막 항에 대응하는 로컬 자료 민감도다. 공개 원자 판본의
+    # 동일성이나 비LTE 전이율 재현으로 해석하지 않는다.
+    limited, model_sizes = {}, []
+    if raw is not None:
+        from cmfgen_parser import parse_osc, _CM2EV
+        specifications = (
+            (14, 1, 'SIL', 'II', 62, '3s2_7g_2Ge[7/2]'),
+            (14, 2, 'SIL', 'III', 61, '3s5g3Ge[5]'),
+            (16, 1, 'SUL', 'II', 324, '3s_3p3(5So)4p_6Pe'),
+            (16, 2, 'SUL', 'III', 98, '3s_3p2(2De)3d_3Pe'))
+        for z, q, element, ion, count, last in specifications:
+            key = (z, q)
+            atom = parse_osc(raw/element/ion/'19apr23/osc_data')
+            if atom.n_levels < max(count, len(levels[key])) or str(atom.levels[count-1]['config']) != last:
+                raise ValueError(('표6 마지막 항/원자료 크기 불일치', key))
+            for i, ((energy, weight), (number, name)) in enumerate(zip(levels[key], identities[key])):
+                entry = atom.levels[i]
+                if number != i or name != str(entry['config']) or weight != float(entry['g']) or abs(energy-float(entry['E_cm'])*_CM2EV)>1e-7:
+                    raise ValueError(('현행 원자/원자료 준위 대응 실패', key, i))
+            limited[key] = [(float(r['E_cm'])*_CM2EV, float(r['g'])) for r in atom.levels[:count]]
+            model_sizes.append(dict(Z=z, stage=q, current_levels=len(levels[key]),
+                local_raw_levels=atom.n_levels, table6_subset_levels=count, last_configuration=last))
 
     # 다른 언어로 평가한 식을 이미 저장된 실제 C Saha 결과와 먼저 대조한다.
     _, native = material(run/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
@@ -79,17 +104,28 @@ def diagnose(run, public, out):
             if not 0<=f1<=1 or not 0<=f2<=1:
                 raise ValueError('공개 분율 범위 오류')
             observed = f2/f1 if f1>0 else None
-            records.append(dict(Z=z,velocity_km_s=p[0],T_K=temperature,ne_cm3=electron,
+            entry = dict(Z=z,velocity_km_s=p[0],T_K=temperature,ne_cm3=electron,
                 U_II=lower,U_III=upper,chi_eV=thresholds[(z,1)],
                 saha_III_II_same_T_ne=predicted,reference_III_II=observed,
                 reference_over_saha=observed/predicted if observed is not None else None,
-                reference_II_fraction=f1,reference_III_fraction=f2))
+                reference_II_fraction=f1,reference_III_fraction=f2)
+            if limited:
+                limited_low = partition((z,1), temperature, limited)
+                limited_high = partition((z,2), temperature, limited)
+                change = (limited_high/limited_low)/(upper/lower)
+                entry.update(table6_subset_U_II=limited_low, table6_subset_U_III=limited_high,
+                    table6_subset_over_current_saha=change,
+                    table6_subset_saha_III_II=predicted*change,
+                    reference_over_table6_subset=observed/(predicted*change) if observed is not None else None)
+            records.append(entry)
     out.mkdir(exist_ok=False)
     write_csv(out/'same_state.csv',records)
     write_csv(out/'native_saha_validation.csv',validation)
     summary = dict(status='SAME_T_NE_SAHA_DIAGNOSTIC',day=2.,goal_verdict='NOT_JUDGED',
         public_T_ne_used_only_in_this_diagnostic=True,production_input_changed=False,
         NLTE_solved=False,radiation_solved=False,velocity_interpolation=False,
+        table6_size_sensitivity=bool(limited), published_atomic_deck_reproduced=False,
+        threshold_changed=False, model_sizes=model_sizes,
         native_validation_count=len(validation),
         native_validation_max_relative=max(r['relative_error'] for r in validation),
         compared_points=len(records),
@@ -104,5 +140,6 @@ if __name__=='__main__':
     parser.add_argument('--run',type=Path,required=True)
     parser.add_argument('--public',type=Path,required=True)
     parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--raw',type=Path)
     args=parser.parse_args()
-    print(json.dumps(diagnose(args.run,args.public,args.out),indent=2,allow_nan=False))
+    print(json.dumps(diagnose(args.run,args.public,args.out,args.raw),indent=2,allow_nan=False))
