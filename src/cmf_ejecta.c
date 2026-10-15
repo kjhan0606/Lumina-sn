@@ -20,10 +20,15 @@ void cmf_toy_ejecta_free(CMFToyEjecta *m){if(m){free(m->storage);memset(m,0,size
 void cmf_ejecta_epoch_free(CMFEjectaEpoch *e){if(e){free(e->storage);memset(e,0,sizeof(*e));}}
 
 int cmf_toy_ejecta_read(CMFToyEjecta *out,const char *path,int requested,const double masses[6]){
-    if(!out||!path||!masses||requested<0)return -1;
+    return cmf_toy_ejecta_read_refined(out,path,requested,masses,0,8192);
+}
+int cmf_toy_ejecta_read_refined(CMFToyEjecta *out,const char *path,int requested,
+                              const double masses[6],double ratio,int max_shells){
+    if(!out||!path||!masses||requested<0||!isfinite(ratio)||
+       (ratio!=0&&ratio<=1)||max_shells<1||max_shells>8192)return -1;
     for(int i=0;i<6;i++)if(!(masses[i]>0)||!isfinite(masses[i]))return -1;
     FILE *fp=fopen(path,"r");if(!fp)return -1;
-    CMFToyEjecta m={0};double (*rows)[21]=NULL;
+    CMFToyEjecta m={0};double (*rows)[21]=NULL;int *edges=NULL;
     double msun=NAN,dv=NAN,declared=NAN,tday=NAN;char line[4096];int n=0,rc=-1;
     m.model_halflife_s[0]=m.model_halflife_s[1]=NAN;
     m.model_decay_energy_MeV[0]=m.model_decay_energy_MeV[1]=NAN;
@@ -79,12 +84,29 @@ int cmf_toy_ejecta_read(CMFToyEjecta *out,const char *path,int requested,const d
         m.initial_ni56_mass_g+=r[2]*msun*r[5];
     }
     {
+        /* 입력의 급변만 분해한다. 기존 셀을 합치거나 입력 온도를 바꾸지 않는다. */
+        int base=m.n_shells,count=0;
+        edges=malloc((size_t)(n+1)*sizeof(*edges));if(!edges)goto done;
+        edges[0]=0;
+        for(int s=0;s<base;s++){
+            int lo=(int)((long long)s*n/base),hi=(int)((long long)(s+1)*n/base);
+            double tmin=rows[lo][11],tmax=tmin;
+            for(int i=lo+1;ratio>0&&i<hi;i++){
+                double next_min=fmin(tmin,rows[i][11]),next_max=fmax(tmax,rows[i][11]);
+                if(next_max/next_min>ratio){
+                    edges[++count]=i;tmin=tmax=rows[i][11];
+                }else {tmin=next_min;tmax=next_max;}
+            }
+            edges[++count]=hi;
+        }
+        if(count>max_shells)goto done;
+        m.n_shells=count;
         size_t ns=m.n_shells;
         m.storage=calloc(9*ns+1,sizeof(double));if(!m.storage)goto done;
         m.velocity_edges=m.storage;m.mass_g=m.storage+ns+1;
         m.initial_temperature=m.mass_g+ns;m.number_per_g=m.initial_temperature+ns;
         for(int s=0;s<m.n_shells;s++){
-            int lo=(int)((long long)s*n/m.n_shells),hi=(int)((long long)(s+1)*n/m.n_shells);
+            int lo=edges[s],hi=edges[s+1];
             long double M=0,V=0,rad=0,number[6]={0};
             m.velocity_edges[s]=lo*dv;m.velocity_edges[s+1]=hi*dv;
             for(int i=lo;i<hi;i++){
@@ -102,7 +124,7 @@ int cmf_toy_ejecta_read(CMFToyEjecta *out,const char *path,int requested,const d
     }
     cmf_toy_ejecta_free(out);*out=m;memset(&m,0,sizeof m);rc=0;
 done:
-    fclose(fp);free(rows);cmf_toy_ejecta_free(&m);return rc;
+    fclose(fp);free(rows);free(edges);cmf_toy_ejecta_free(&m);return rc;
 }
 
 int cmf_ejecta_epoch_build(CMFEjectaEpoch *out,const CMFToyEjecta *m,

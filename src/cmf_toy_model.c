@@ -25,9 +25,14 @@ void cmf_toy_model_free(CMFToyModel *m){
 
 int cmf_toy_model_prepare(CMFToyModel *m,const char *path,const char *atomic_dir,
                          int ns,const double mass[CMF_TOY_ELEMENTS]){
+    return cmf_toy_model_prepare_refined(m,path,atomic_dir,ns,mass,0);
+}
+int cmf_toy_model_prepare_refined(CMFToyModel *m,const char *path,const char *atomic_dir,
+                         int ns,const double mass[CMF_TOY_ELEMENTS],double temperature_ratio){
     if(!m||m->prepared||m->shell_storage||!path||!atomic_dir||ns<2||ns>256)return -1;
     const char *phase="ejecta";
-    if(cmf_toy_ejecta_read(&m->ejecta,path,ns,mass))goto fail;
+    if(cmf_toy_ejecta_read_refined(&m->ejecta,path,ns,mass,temperature_ratio,256))goto fail;
+    ns=m->ejecta.n_shells;
     phase="atomic structure";
     if(load_atomic_structure(&m->atom,atomic_dir,ns))goto fail;
     if(load_ion_coldata_manifest(&m->atom,atomic_dir)<=0)goto fail;

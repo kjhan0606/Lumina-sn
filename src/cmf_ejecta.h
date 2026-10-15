@@ -21,6 +21,11 @@ void cmf_toy_ejecta_free(CMFToyEjecta*);
  * requested_shells=0이면 원본 전체. 출력 실패시 기존 객체를 보존한다. */
 int cmf_toy_ejecta_read(CMFToyEjecta*,const char *path,int requested_shells,
                       const double mass_amu[CMF_TOY_ELEMENTS]);
+/* 기존 경계를 유지하면서 원본 T최대/T최소 비로만 추가 분할한다.
+ * ratio=0이면 기존 reader와 같다. 양의 ratio는1보다 커야 한다.
+ * 공개 이온분포를 사용하지 않으며 max_shells 초과 시 실패한다. */
+int cmf_toy_ejecta_read_refined(CMFToyEjecta*,const char *path,int requested_shells,
+                      const double mass_amu[CMF_TOY_ELEMENTS],double ratio,int max_shells);
 
 typedef struct {
     double lambda[2];

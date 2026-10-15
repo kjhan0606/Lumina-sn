@@ -13,7 +13,7 @@ static int check_line_selection(const NLTEConfig *n,int count,int lo,int hi){
     return nlte_pair_line_next(&it)==-1?0:-1;
 }
 int main(int argc,char **argv){
-    if(argc!=4&&argc!=6)return 2;
+    if(argc!=4&&argc!=5&&argc!=6)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};int ns=atoi(argv[3]),rc=0;
     {
@@ -29,7 +29,14 @@ int main(int argc,char **argv){
         sample.nlte_line_index_count=9;sample.nlte_ion_lines=NULL;
         CHECK(!check_line_selection(&sample,9,0,1));
     }
-    CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
+    if(argc==5){
+        char *end;double ratio=strtod(argv[4],&end);
+        CHECK(*argv[4]&&!*end&&isfinite(ratio)&&ratio>1);
+        CHECK(!cmf_toy_model_prepare_refined(&m,argv[1],argv[2],ns,masses,ratio));
+        printf("TOY_GRID_REFINED base_shells=%d effective_shells=%d T_ratio=%.17g reference_input=0\n",
+               ns,m.ejecta.n_shells,ratio);
+        ns=m.ejecta.n_shells;
+    }else CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
     const AtomicData *a=&m.atom;const NLTEConfig *n=&m.nlte;const PlasmaState *p=&m.plasma;
     CHECK(m.prepared&&m.ejecta.n_source_shells==807&&m.geometry.time_explosion==172800);
     CHECK(m.geometry.r_inner[0]==0&&m.geometry.v_outer[ns-1]==40350e5);

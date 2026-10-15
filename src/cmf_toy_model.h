@@ -25,6 +25,9 @@ typedef struct {
 } CMFToyModel;
 int cmf_toy_model_prepare(CMFToyModel*,const char *ejecta_path,const char *atomic_dir,
                           int n_shells,const double mass_amu[CMF_TOY_ELEMENTS]);
+/* 초기 공간 해상도 시험용 선택 경로. 기본 API와 생산 기본값은 바꾸지 않는다. */
+int cmf_toy_model_prepare_refined(CMFToyModel*,const char *ejecta_path,const char *atomic_dir,
+                          int base_shells,const double mass_amu[CMF_TOY_ELEMENTS],double temperature_ratio);
 void cmf_toy_model_free(CMFToyModel*);
 int cmf_toy_model_write_seed(const CMFToyModel*,const char *csv_path);
 /* 초기 반복 전용: 물리 이력/H/수렴 표지가 없다. identity는 runner가 동일

@@ -27,6 +27,51 @@ static long double kinetic_energy(const CMFToyEjecta *m){
     return sum;
 }
 
+static int refinement(const CMFToyEjecta *full,const CMFToyEjecta *base,const double *mass){
+    CMFToyEjecta fine={0},disabled={0};long double expected[8];sums(full,expected);
+    CHECK(!cmf_toy_ejecta_read_refined(&disabled,"snia_toy06_2d.dat",100,mass,0,256));
+    CHECK(disabled.n_shells==base->n_shells);
+    CHECK(!memcmp(disabled.storage,base->storage,(size_t)(9*base->n_shells+1)*sizeof(double)));
+    const double ratios[2]={1.10,1.05};int previous_count=base->n_shells;
+    for(int r=0;r<2;r++){
+        CHECK(!cmf_toy_ejecta_read_refined(&fine,"snia_toy06_2d.dat",100,mass,ratios[r],256));
+        CHECK(fine.n_shells>base->n_shells&&fine.n_shells>=previous_count);
+        previous_count=fine.n_shells;
+        long double actual[8];sums(&fine,actual);
+        for(int k=0;k<8;k++)CHECK(near(expected[k],actual[k],2e-15));
+        for(int s=0;s<=base->n_shells;s++){
+            int found=0;
+            for(int j=0;j<=fine.n_shells;j++)if(base->velocity_edges[s]==fine.velocity_edges[j])found++;
+            CHECK(found==1);
+        }
+        int i=0;double worst=1;
+        for(int s=0;s<fine.n_shells;s++){
+            CHECK(i<full->n_shells&&fine.velocity_edges[s]==full->velocity_edges[i]);
+            double tmin=INFINITY,tmax=0;
+            while(i<full->n_shells&&full->velocity_edges[i+1]<=fine.velocity_edges[s+1]){
+                tmin=fmin(tmin,full->initial_temperature[i]);
+                tmax=fmax(tmax,full->initial_temperature[i]);i++;
+            }
+            CHECK(i>0&&full->velocity_edges[i]==fine.velocity_edges[s+1]);
+            CHECK(tmax/tmin<=ratios[r]*(1+2e-15));
+            CHECK(fine.initial_temperature[s]>=tmin*(1-2e-15)&&fine.initial_temperature[s]<=tmax*(1+2e-15));
+            worst=fmax(worst,tmax/tmin);
+        }
+        CHECK(i==full->n_shells);
+        double *saved=fine.storage;
+        CHECK(cmf_toy_ejecta_read_refined(&fine,"snia_toy06_2d.dat",100,mass,ratios[r],100));
+        CHECK(fine.storage==saved);
+        printf("EJECTA_T_REFINEMENT_PASS base=100 shells=%d T_ratio_limit=%.17g actual=%.17g mass_nuclei_T4_conserved=1 base_edges_retained=1 kinetic_error=%.9Lg\n",
+               fine.n_shells,ratios[r],worst,kinetic_energy(&fine)/kinetic_energy(full)-1);
+    }
+    const double invalid[4]={1,-1,NAN,INFINITY};double *saved=fine.storage;
+    for(int i=0;i<4;i++){
+        CHECK(cmf_toy_ejecta_read_refined(&fine,"snia_toy06_2d.dat",100,mass,invalid[i],256));
+        CHECK(saved==fine.storage);
+    }
+    cmf_toy_ejecta_free(&fine);cmf_toy_ejecta_free(&disabled);return 0;
+}
+
 static int projection(const CMFToyEjecta *m,const CMFEjectaEpoch *now,const CMFEjectaEpoch *initial){
     enum{NI=12,NE=6};int ns=m->n_shells;
     int el[NE]={28,27,26,20,16,14},eo[NE+1]={0,2,4,6,8,10,12},Z[NI],stage[NI],off[NI+1],map[NI],g[NI];
@@ -80,6 +125,7 @@ int main(void){
     CHECK(!cmf_toy_ejecta_read(&full,"snia_toy06_2d.dat",0,mass));
     CHECK(!cmf_toy_ejecta_read(&m,"snia_toy06_2d.dat",100,mass));
     CHECK(!cmf_toy_ejecta_read(&finer,"snia_toy06_2d.dat",200,mass));
+    CHECK(!refinement(&full,&m,mass));
     CHECK(full.n_shells==807&&m.n_source_shells==807&&m.epoch_s==172800&&m.velocity_edges[0]==0);
     long double sf[8],sc[8],sd[8];sums(&full,sf);sums(&m,sc);sums(&finer,sd);
     for(int k=0;k<8;k++)CHECK(near(sf[k],sc[k],2e-15)&&near(sf[k],sd[k],2e-15));

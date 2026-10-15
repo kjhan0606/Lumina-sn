@@ -17,7 +17,7 @@ toy_shells=${1:-100}
 case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; 8) [[ "${2:-}" == material-native ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
- material|material-iterate) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material|material-iterate|material-refined) toy_test=tests/cmf_toy_model_selftest.c ;;
  material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate) toy_test=tests/cmf_toy_iterate_selftest.c ;;
@@ -115,6 +115,12 @@ done
 gcc -O2 "${toy_profile_flags[@]}" -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
  "${toy_objects[@]}" -Wl,--gc-sections -lm -o "$toy_out/prepare" >> "$toy_out/build.log" 2>&1
 toy_arguments=(input/snia_toy06_2d.dat input "$toy_shells")
+if [[ "$toy_mode" == material-refined ]]; then
+ toy_grid_ratio=${5:?temperature ratio required}
+ case "$toy_grid_ratio" in 1.10|1.05) ;; *) exit 2 ;; esac
+ toy_arguments+=("$toy_grid_ratio")
+ printf 'base_shells=%s\ntemperature_ratio=%s\n' "$toy_shells" "$toy_grid_ratio" > "$toy_out/grid_choice.txt"
+fi
 if [[ "$toy_mode" == material-iterate ]]; then
  toy_iterate_run=${5:?completed initial run directory required}
  (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
