@@ -22358,7 +22358,9 @@ static int nlte_solve_all_impl(
     nlte->nlte_level_populations = pop_tx.work_level;
     plasma->n_electron = pop_tx.work_ne;
     atom->partition_functions = pop_tx.work_partition;
+    struct NLTEElementBaseCache *initial_base_cache=NULL;
 #define A2_07_POP_ABORT(status_) do {                                      \
+        nlte_element_base_cache_free(initial_base_cache);                  \
         if (solve_diagnostic &&                                           \
             solve_diagnostic->stage == NLTE_POP_DIAG_STAGE_NONE)          \
             solve_diagnostic->stage = NLTE_POP_DIAG_STAGE_INTERNAL;       \
@@ -22523,6 +22525,11 @@ static int nlte_solve_all_impl(
     int last_worst_ion_slot = -1;
     int last_worst_shell = -1;
     int last_ce_iteration = -1;
+    /* 한 고정 T/ne/J 후보의 내부 반복만 소유한다. 다음 ne 후보/시간 단계에는
+     * 넘기지 않으며 비열 계수는 아래 provider가 매회 새 인구로 계산한다. */
+    if(private_population_core)
+        initial_base_cache=nlte_element_base_cache_create(
+            nlte,atom,plasma,opacity,time_explosion,gamma_dep);
     for (int ce_iter = 0; ce_iter < ce_max_iter; ce_iter++) {
         if (nlte_solve_effect_allowed(
                 nlte, NLTE_SOLVE_EFFECT_DIAGNOSTIC_FILES))
@@ -22563,7 +22570,7 @@ static int nlte_solve_all_impl(
                 if(lumina_zinert_element_inactive(atom,e,n_shells))continue;
                 for(int s=0;s<n_shells;s++){
                     PopulationStatus ps=plasma->initial_steady_nlte?
-                        nlte_element_initial_steady_solve(nlte,atom,plasma,opacity,e,s,time_explosion,&iteration_gamma):
+                        nlte_element_initial_steady_solve_cached(nlte,atom,plasma,opacity,e,s,time_explosion,&iteration_gamma,initial_base_cache):
                         nlte_element_time_solve(nlte,atom,plasma,opacity,e,s,time_explosion,&iteration_gamma);
                     if(ps!=POP_OK){
                         if(solve_diagnostic){
@@ -22891,6 +22898,7 @@ static int nlte_solve_all_impl(
     }
     free(old_pops);
     free(old_ion_totals);
+    nlte_element_base_cache_free(initial_base_cache);initial_base_cache=NULL;
     if (!ce_converged) {
         if (solve_diagnostic) {
             solve_diagnostic->stage =

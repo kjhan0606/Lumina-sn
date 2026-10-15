@@ -23,7 +23,7 @@ case "$toy_mode" in
  material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate|iterate-refined) toy_test=tests/cmf_toy_iterate_selftest.c ;;
- material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth) toy_test=tests/cmf_toy_rates_selftest.c ;;
+ material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth|material-rates-matrix-cache) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch|material-epoch-nonthermal|material-epoch-refined|material-epoch-sampled) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
  initial-prepare|initial-prepare-nonthermal|initial-prepare-refined|initial-prepare-sampled) toy_test=tests/cmf_toy_initial_selftest.c ;;
@@ -40,7 +40,8 @@ module purge
 module load gnu13/13.2.0
 if [[ "$toy_mode" == *nonthermal || "$toy_mode" == material-iterate ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2} OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL CMF_TEST_NT_COVERAGE CMF_TEST_NT_GRID CMF_TEST_NT_SOURCE
+unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL CMF_TEST_MATRIX_CACHE CMF_TEST_NT_COVERAGE CMF_TEST_NT_GRID CMF_TEST_NT_SOURCE
+if [[ "$toy_mode" == material-rates-matrix-cache ]]; then export CMF_TEST_RATE_CACHE=1 CMF_TEST_MATRIX_CACHE=1; fi
 if [[ "$toy_mode" == material-nt-coverage ]]; then export CMF_TEST_NT_COVERAGE=1; fi
 if [[ "$toy_mode" == material-nt-grid ]]; then export CMF_TEST_NT_GRID=1; fi
 if [[ "$toy_mode" == material-nt-source ]]; then export CMF_TEST_NT_SOURCE=1; fi

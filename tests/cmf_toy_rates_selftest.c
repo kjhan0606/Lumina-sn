@@ -1,6 +1,7 @@
 /* 실제 원자로 검색 최적화 전후 정상 인구를 비교한다.
  * 명시적 열평형 falsifier이며 SN 복사장/초기해/시간 이력이 아니다. */
 #include "cmf_toy_model.h"
+#include "cmf_nonthermal_rates.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,6 +33,68 @@ static void remove_partners(CMFToyModel *m,int Z,int shell){
         }
     }
 }
+/* 실제 원자 행렬/합성 Planck 장의 캐시 대조. NT 계수는 새로 바꾸는 합성값이며
+ * SF/실제 SN 이온분포 검증으로 표시하지 않는다. */
+static int matrix_cache_check(CMFToyModel *m,GammaDeposition *gamma,int e,int s,
+    const double *seed_pop,const double *seed_ion){
+    NLTEConfig *n=&m->nlte;AtomicData *a=&m->atom;PlasmaState *p=&m->plasma;
+    size_t np=(size_t)n->n_nlte_levels_total*p->n_shells,ni=(size_t)a->n_ion_pops*p->n_shells;
+    double *cached_pop=malloc(np*sizeof(double)),*cached_ion=malloc(ni*sizeof(double));
+    double *nt_value=calloc((size_t)p->n_shells,sizeof(double));
+    struct NLTEElementBaseCache *cache=NULL;int rc=0;
+    int ip=a->elem_ion_offset[e];
+    CMFNonthermalTransition transition={a->level_offset[ip],a->level_offset[ip+1],-1};
+    CMFNonthermalRates rates={.n_shells=p->n_shells,.n_levels=a->n_levels,
+        .n_ions=a->n_ion_pops,.n_transitions=1,.epoch_s=gamma->epoch,
+        .deposition_generation=gamma->generation,.transitions=&transition,.rate_per_particle=nt_value};
+    const CMFNonthermalRates *original_rates=gamma->nonthermal_rates;
+    double original_ne=p->n_electron[s],cached_seconds=0,plain_seconds=0;
+    uint64_t generation=n->line_view.generation;
+    CHECK(cached_pop&&cached_ion&&nt_value&&a->level_offset[ip+1]<a->level_offset[ip+2]);
+    cache=nlte_element_base_cache_create(n,a,p,&m->opacity,gamma->epoch,gamma);CHECK(cache);
+    gamma->nonthermal_rates=&rates;
+    for(int trial=0;trial<6;trial++){
+        p->n_electron[s]=original_ne*(trial==3?1.2:1);
+        n->line_view.generation=generation+(trial==4);
+        n->exclude_empirical_heavy_ce=trial==5?0:1;
+        nt_value[s]=trial==0?0:(trial==1?1e4:1e3);
+        size_t before=nlte_element_base_cache_hits(cache);
+        memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+        memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+        double start=seconds();
+        CHECK(nlte_element_initial_steady_solve_cached(n,a,p,&m->opacity,e,s,gamma->epoch,gamma,cache)==POP_OK);
+        double cached_s=seconds()-start;
+        memcpy(cached_pop,n->nlte_level_populations,np*sizeof(double));
+        memcpy(cached_ion,a->ion_number_density,ni*sizeof(double));
+        CHECK(nlte_element_base_cache_hits(cache)-before==(size_t)(trial==1||trial==2));
+        memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+        memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+        start=seconds();
+        CHECK(nlte_element_initial_steady_solve(n,a,p,&m->opacity,e,s,gamma->epoch,gamma)==POP_OK);
+        double plain_s=seconds()-start;
+        CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))&&
+              !memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
+        if(trial==1||trial==2){cached_seconds+=cached_s;plain_seconds+=plain_s;}
+        printf("TOY_MATRIX_CACHE shell=%d Z=%d trial=%d byte_exact=1 hit=%zu cached_s=%.9g plain_s=%.9g\n",
+            s,a->element_Z[e],trial,nlte_element_base_cache_hits(cache)-before,cached_s,plain_s);
+    }
+    n->line_view.generation=generation;n->exclude_empirical_heavy_ce=1;p->n_electron[s]=original_ne;
+    memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+    memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+    nt_value[s]=-1;
+    CHECK(nlte_element_initial_steady_solve_cached(n,a,p,&m->opacity,e,s,gamma->epoch,gamma,cache)!=POP_OK);
+    CHECK(!memcmp(seed_pop,n->nlte_level_populations,np*sizeof(double))&&
+          !memcmp(seed_ion,a->ion_number_density,ni*sizeof(double)));
+    n->line_view_status=LINE_JBAR_VIEW_DISABLED;
+    CHECK(!nlte_element_base_cache_create(n,a,p,&m->opacity,gamma->epoch,gamma));
+    n->line_view_status=LINE_JBAR_VIEW_OK;
+    printf("TOY_MATRIX_CACHE_PASS shell=%d Z=%d warm_cached_s=%.9g warm_plain_s=%.9g changed_NT_applied=1 ne_invalidated=1 field_invalidated=1 CE_not_cached=1 invalid_NT_preserved=1\n",
+        s,a->element_Z[e],cached_seconds,plain_seconds);
+done:
+    n->line_view_status=LINE_JBAR_VIEW_OK;n->line_view.generation=generation;
+    n->exclude_empirical_heavy_ce=1;p->n_electron[s]=original_ne;gamma->nonthermal_rates=original_rates;
+    nlte_element_base_cache_free(cache);free(cached_pop);free(cached_ion);free(nt_value);return rc;
+}
 int main(int argc,char **argv){
     if(argc!=4)return 2;
     setvbuf(stdout,NULL,_IOLBF,0);
@@ -53,6 +116,8 @@ int main(int argc,char **argv){
     const int profile_cached=getenv("CMF_TEST_PROFILE_CACHED")&&atoi(getenv("CMF_TEST_PROFILE_CACHED"));
     if(profile_cached)puts("TOY_RATES_PROFILE current_cached_path_repeated=1 old_search_path_tested=0");
     const int cache_test=getenv("CMF_TEST_RATE_CACHE")&&atoi(getenv("CMF_TEST_RATE_CACHE"));
+    const int matrix_test=getenv("CMF_TEST_MATRIX_CACHE")&&atoi(getenv("CMF_TEST_MATRIX_CACHE"));
+    CMFNonthermalRates empty_rates={0};
     const int gth_parallel=getenv("CMF_TEST_GTH_PARALLEL")&&atoi(getenv("CMF_TEST_GTH_PARALLEL"));
     if(gth_parallel){omp_set_dynamic(0);puts("TOY_GTH_PARALLEL same_rates=1 threads=1/2");}
     if(cache_test){rate_cache=nlte_bf_rate_cache_create(a,(size_t)ns);CHECK(rate_cache);}
@@ -82,6 +147,16 @@ int main(int argc,char **argv){
     gamma_deposition_init(&gamma,ns);
     CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,
         m.geometry.time_explosion,NULL,NULL,NULL,heat));
+    if(matrix_test){
+        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_NONLOCAL_MC,
+            m.geometry.time_explosion,NULL,NULL,NULL,heat));
+        empty_rates=(CMFNonthermalRates){.n_shells=ns,.n_levels=a->n_levels,.n_ions=a->n_ion_pops,
+            .epoch_s=gamma.epoch,.deposition_generation=gamma.generation};
+        gamma.nonthermal_rates=&empty_rates;
+        /* 이 모드는 명시적 JEQB이므로 line view 수치는 읽지 않는다. */
+        n->line_view=(LineJbarView){.n_shells=(size_t)ns,.jbar=J,.generation=1};
+        n->line_view_status=LINE_JBAR_VIEW_OK;
+    }
     printf("TOY_RATES_CONTRACT DR_multiplier=%s CE_partners_removed=%s exclude_empirical_heavy_ce=%d channel_owned_recombination=%d fixed_ne=1 transport=0\n",
         getenv("LUMINA_DR_BOOST")?getenv("LUMINA_DR_BOOST"):"1",
         getenv("CMF_TEST_ISOLATE_CE")?getenv("CMF_TEST_ISOLATE_CE"):"0",n->exclude_empirical_heavy_ce,n->channel_owned_recombination);
@@ -161,6 +236,7 @@ int main(int argc,char **argv){
         CHECK(fabs(sum/total-1)<1e-10);
         printf("TOY_RATES_PARITY shell=%d Z=%d exact_all_populations=%d cached_wall_s=%.9g searched_wall_s=%.9g ion_L1_per_nucleus=%.17g level_L1_per_nucleus=%.17g\n",
             s,Z,!cache_test,cached_s,searched_s,ion_l1/total,level_l1/total);
+        if(matrix_test)CHECK(!matrix_cache_check(&m,&gamma,e,s,seed_pop,seed_ion));
         tested++;
     }
     CHECK(tested==6);
@@ -173,6 +249,8 @@ done:
     m.nlte.bf_rate_cache=NULL;nlte_bf_rate_cache_free(rate_cache);
     memset(&m.nlte.radfield_view,0,sizeof(m.nlte.radfield_view));
     m.nlte.radfield_view_status=RADIATION_FIELD_VIEW_DISABLED;
+    memset(&m.nlte.line_view,0,sizeof(m.nlte.line_view));
+    m.nlte.line_view_status=LINE_JBAR_VIEW_DISABLED;
     gamma_deposition_free(&gamma);cmf_toy_model_free(&m);
     free(edges);free(J);free(valid);free(heat);free(seed_pop);free(seed_ion);free(cached_pop);free(cached_ion);
     return rc;

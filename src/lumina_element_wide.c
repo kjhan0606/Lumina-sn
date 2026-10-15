@@ -2116,10 +2116,79 @@ static double ew_permutation_check(const double *A, const double *b, int N,
     free(perm);free(Ap);free(bp);free(xp);free(xu); return worst;
 }
 
+typedef struct {
+    int N;
+    double T,ne;
+    double *data; /* 원래 조립 순서로 얻은 열적 행렬과 유출 합. NT 합산 전이다. */
+} EWBaseEntry;
+struct NLTEElementBaseCache {
+    const NLTEConfig *nlte;
+    const AtomicData *atom;
+    const PlasmaState *plasma;
+    const OpacityState *opacity;
+    RadiationFieldView radiation;
+    LineJbarView lines;
+    PopulationDerivedStamp within;
+    double epoch;
+    uint64_t deposition_generation,temperature_generation;
+    size_t n_shells,n_elements,bytes,hits;
+    EWBaseEntry *entry;
+};
+
+static int ew_base_eligible(const NLTEConfig *n,const AtomicData *a,
+    const PlasmaState *p,const OpacityState *o,double epoch,const GammaDeposition *g){
+    return n&&a&&p&&o&&g&&p->initial_steady_nlte==1&&!p->physical_history&&
+        n->exclude_empirical_heavy_ce==1&&n->channel_owned_recombination==1&&
+        a->bf_channels&&p->n_shells>0&&a->n_elements>0&&p->T_e&&p->n_electron&&
+        n->radfield_view_status==RADIATION_FIELD_VIEW_OK&&
+        n->line_view_status==LINE_JBAR_VIEW_OK&&
+        n->radfield_view.J_nu&&n->line_view.jbar&&
+        n->radfield_view.generation&&n->radfield_view.generation==n->line_view.generation&&
+        g->provenance==GAMMA_PROVENANCE_NONLOCAL_MC&&g->epoch==epoch&&g->generation&&
+        gamma_deposition_require(g,epoch)==GAMMA_PUBLICATION_OK;
+}
+struct NLTEElementBaseCache *nlte_element_base_cache_create(const NLTEConfig *n,
+    const AtomicData *a,const PlasmaState *p,const OpacityState *o,double epoch,const GammaDeposition *g){
+    if(!ew_base_eligible(n,a,p,o,epoch,g)||
+       (size_t)p->n_shells>SIZE_MAX/(size_t)a->n_elements/sizeof(EWBaseEntry))return NULL;
+    struct NLTEElementBaseCache *c=calloc(1,sizeof(*c));if(!c)return NULL;
+    c->n_shells=p->n_shells;c->n_elements=a->n_elements;
+    c->entry=calloc(c->n_shells*c->n_elements,sizeof(*c->entry));
+    if(!c->entry){free(c);return NULL;}
+    c->nlte=n;c->atom=a;c->plasma=p;c->opacity=o;c->epoch=epoch;
+    c->radiation=n->radfield_view;c->lines=n->line_view;c->within=n->within_sl_stamp;
+    c->deposition_generation=g->generation;c->temperature_generation=p->T_e_generation;
+    return c;
+}
+void nlte_element_base_cache_free(struct NLTEElementBaseCache *c){
+    if(c){
+        for(size_t i=0;i<c->n_shells*c->n_elements;i++)free(c->entry[i].data);
+        free(c->entry);free(c);
+    }
+}
+size_t nlte_element_base_cache_hits(const struct NLTEElementBaseCache *c){return c?c->hits:0;}
+static EWBaseEntry *ew_base_entry(struct NLTEElementBaseCache *c,const NLTEConfig *n,
+    const AtomicData *a,const PlasmaState *p,const OpacityState *o,double epoch,
+    const GammaDeposition *g,int element,int shell,int N){
+    if(!c||!ew_base_eligible(n,a,p,o,epoch,g)||c->nlte!=n||c->atom!=a||c->plasma!=p||
+       c->opacity!=o||c->epoch!=epoch||c->deposition_generation!=g->generation||
+       c->temperature_generation!=p->T_e_generation||c->n_shells!=(size_t)p->n_shells||
+       c->n_elements!=(size_t)a->n_elements||
+       memcmp(&c->radiation,&n->radfield_view,sizeof(c->radiation))||
+       memcmp(&c->lines,&n->line_view,sizeof(c->lines))||
+       memcmp(&c->within,&n->within_sl_stamp,sizeof(c->within)))return NULL;
+    EWBaseEntry *e=&c->entry[(size_t)element*c->n_shells+shell];
+    if(e->data&&(e->N!=N||e->T!=p->T_e[shell]||e->ne!=p->n_electron[shell])){
+        c->bytes-=((size_t)e->N*e->N+e->N)*sizeof(double);
+        free(e->data);memset(e,0,sizeof(*e));
+    }
+    return e;
+}
+
 /* 시간 단계와 정상 초기화가 같은 원소 전체 생성행렬을 소비한다. */
 static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom,
     PlasmaState *plasma,OpacityState *opacity,int element,int shell,
-    double epoch,GammaDeposition *gamma,int steady)
+    double epoch,GammaDeposition *gamma,int steady,struct NLTEElementBaseCache *cache)
 {
     if(!nlte||!atom||!plasma||!opacity||
        (steady?(plasma->initial_steady_nlte!=1||plasma->physical_history):
@@ -2155,6 +2224,7 @@ static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom
     int nf=nlte->nlte_ion_level_offset[first+count]-fl0;
     if(sl0<0||fl0<0||N<=0||nf<=0||nf>nlte->n_nlte_levels_total-fl0||
        (size_t)N>SIZE_MAX/(size_t)N|| (size_t)N*N>SIZE_MAX/sizeof(double)||
+       (size_t)N>SIZE_MAX/((size_t)N+1)/sizeof(double)||
        (count==1 && (N!=1||nf!=1)))return POP_ATOMIC_MISSING;
     double mass=atom->element_mass_amu[element];
     double total=atom->abundances[(size_t)element*ns+shell]*plasma->rho[shell]/(mass*AMU);
@@ -2173,11 +2243,17 @@ static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom
     double *ions=calloc((size_t)count,sizeof(*ions));
     PopulationStatus status=POP_SOLVE_FAILED;
     if(!A||!outflow||!x||!full||!ions)goto time_element_done;
+    EWBaseEntry *base=steady?ew_base_entry(cache,nlte,atom,plasma,opacity,
+                                         epoch,gamma,element,shell,N):NULL;
+    if(base&&base->data){
+        memcpy(A,base->data,(size_t)N*N*sizeof(double));
+        memcpy(outflow,base->data+(size_t)N*N,(size_t)N*sizeof(double));cache->hits++;
+    }
     /* 필요한 것은 하나의 실제 생성행렬이다. 동일 행렬/유출 배열을 capture에
      * 주어 채널별 대형 사본이나 별도 계측 파일을 만들지 않는다. */
     double *planes[NLTE_EW_N_CHANNELS],*ledgers[NLTE_EW_N_CHANNELS];
     for(int c=0;c<NLTE_EW_N_CHANNELS;c++){planes[c]=A;ledgers[c]=outflow;}
-    for(int k=0;k<count-1;k++){
+    for(int k=0;!(base&&base->data)&&k<count-1;k++){
         int lo=first+k,hi=lo+1;
         int np=nlte->nlte_ion_super_offset[hi+1]-nlte->nlte_ion_super_offset[lo];
         int terminal_pair=terminal>=0&&k==count-2;
@@ -2199,6 +2275,19 @@ static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom
             fprintf(stderr,"[NLTE-TIME][ASSEMBLY-FAILED] Z=%d shell=%d pair=%d:%d rc=%d target=%d bad_rate=%d fallback=%d deleted=%d nstar_cap=%d nonfinite=%d\n",
                 Z,shell,lo,hi,rc,failed,bad,fire.target_fallback,fire.continuum_deleted,fire.nstar_cap,fire.nonfinite_guard);
             status=POP_ATOMIC_MISSING;goto time_element_done;
+        }
+    }
+    if(base&&!base->data){
+        size_t bytes=((size_t)N*N+N)*sizeof(double);
+        /* 재사용은 선택적이다. 메모리 부족은 물리 경로/수용 기준을 바꾸지 않는다. */
+        if(bytes<=UINT64_C(2147483648)-cache->bytes){
+            double *copy=malloc(bytes);
+            if(copy){
+                memcpy(copy,A,(size_t)N*N*sizeof(double));
+                memcpy(copy+(size_t)N*N,outflow,(size_t)N*sizeof(double));
+                base->N=N;base->T=plasma->T_e[shell];base->ne=plasma->n_electron[shell];
+                base->data=copy;cache->bytes+=bytes;
+            }
         }
     }
     if(gamma && gamma->provenance==GAMMA_PROVENANCE_NONLOCAL_MC &&
@@ -2240,11 +2329,16 @@ time_element_done:
 
 PopulationStatus nlte_element_time_solve(NLTEConfig *n,AtomicData *a,PlasmaState *p,
     OpacityState *o,int e,int s,double epoch,GammaDeposition *g){
-    return element_physical_solve(n,a,p,o,e,s,epoch,g,0);
+    return element_physical_solve(n,a,p,o,e,s,epoch,g,0,NULL);
 }
 PopulationStatus nlte_element_initial_steady_solve(NLTEConfig *n,AtomicData *a,PlasmaState *p,
     OpacityState *o,int e,int s,double epoch,GammaDeposition *g){
-    return element_physical_solve(n,a,p,o,e,s,epoch,g,1);
+    return element_physical_solve(n,a,p,o,e,s,epoch,g,1,NULL);
+}
+PopulationStatus nlte_element_initial_steady_solve_cached(NLTEConfig *n,AtomicData *a,
+    PlasmaState *p,OpacityState *o,int e,int s,double epoch,GammaDeposition *g,
+    struct NLTEElementBaseCache *cache){
+    return element_physical_solve(n,a,p,o,e,s,epoch,g,1,cache);
 }
 
 static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,

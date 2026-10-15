@@ -1283,6 +1283,16 @@ PopulationStatus nlte_element_time_solve(NLTEConfig *nlte,AtomicData *atom,
 PopulationStatus nlte_element_initial_steady_solve(NLTEConfig *nlte,AtomicData *atom,
     PlasmaState *plasma,OpacityState *opacity,int element,int shell,
     double epoch,GammaDeposition *gamma);
+/* 초기 인구 내부 반복 한 건만 소유한다. 원자/투영/게시 장 배열은 그동안
+ * 불변이며 비열율과 인구는 저장하지 않는다. NULL이면 원래 조립 경로다. */
+struct NLTEElementBaseCache;
+struct NLTEElementBaseCache *nlte_element_base_cache_create(
+    const NLTEConfig*,const AtomicData*,const PlasmaState*,const OpacityState*,
+    double,const GammaDeposition*);
+void nlte_element_base_cache_free(struct NLTEElementBaseCache*);
+size_t nlte_element_base_cache_hits(const struct NLTEElementBaseCache*);
+PopulationStatus nlte_element_initial_steady_solve_cached(NLTEConfig*,AtomicData*,
+    PlasmaState*,OpacityState*,int,int,double,GammaDeposition*,struct NLTEElementBaseCache*);
 void nlte_ew_capture_transition(int channel, int target, int source,
                                 double rate);
 void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
