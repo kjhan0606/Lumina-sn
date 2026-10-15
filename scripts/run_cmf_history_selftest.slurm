@@ -52,6 +52,7 @@ case "$history_mode" in
  initial-ne-compare) history_tests=(dc1_ne_closure cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
  initial-matrix-cache) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 CMF_TEST_INITIAL_MATRIX_CACHE=1 ;;
+ initial-ne-warm) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 CMF_TEST_INITIAL_MATRIX_CACHE=1 ;;
  *) exit 2 ;;
 esac
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
@@ -89,7 +90,7 @@ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -I
  -Wl,--gc-sections -lm -o "$history_out/time_epoch" >> "$history_out/build.log" 2>&1
 (cd "$history_out"; ./time_epoch > time-epoch.log 2> time-epoch.err)
 history_matrix_flags=()
-if [[ "$history_mode" == initial-matrix-cache ]]; then
+if [[ "$history_mode" == initial-matrix-cache || "$history_mode" == initial-ne-warm ]]; then
  history_matrix_flags=(-DCMF_MATRIX_CACHE_INTEGRATION -Wl,--wrap=nlte_element_initial_steady_solve_cached)
 fi
 for history_test in "${history_tests[@]}"; do
@@ -104,6 +105,68 @@ for history_test in "${history_tests[@]}"; do
   (cd "$history_out"; mkdir cache; cd cache; CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels > ../cache.log 2> ../cache.err)
  fi
 done
+if [[ "$history_mode" == initial-ne-warm ]]; then
+ # 같은 합성 원자의 완료된 구판 산출물을 재사용한다. 기존 실행을 덮어쓰거나 재실행하지 않는다.
+ history_reference=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-423992
+ (cd "$history_reference/source"; sha256sum -c "$history_reference/source.sha256") > "$history_out/reference_verify.log"
+ for history_file in "${history_files[@]}"; do
+  case "$history_file" in src/lumina_plasma.c|scripts/run_cmf_history_selftest.slurm) continue ;; esac
+  cmp "$history_file" "$history_reference/source/$history_file"
+ done
+ mkdir "$history_out/reference" "$history_out/sanitized"
+ for history_file in initial_spectrum.csv initial_material.csv initial_evolved_spectrum.csv initial_evolved_material.csv cmf_time_coupled.log; do
+  cp "$history_reference/$history_file" "$history_out/reference/$history_file"
+ done
+ cp "$history_reference/source.sha256" "$history_out/reference_source.sha256"
+ history_warm_rest=()
+ for history_unit in "${history_units[@]}"; do
+  if [[ "$history_unit" != lumina_plasma ]]; then history_warm_rest+=("$history_out/objects/$history_unit.o"); fi
+ done
+ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+  -fsanitize=address,undefined -fno-omit-frame-pointer tests/cmf_time_coupled_selftest.c \
+  src/lumina_plasma.c "${history_warm_rest[@]}" "${history_matrix_flags[@]}" \
+  -Wl,--gc-sections -lm -o "$history_out/warm-sanitized" > "$history_out/warm-san-build.log" 2>&1
+ (cd "$history_out/sanitized"; ASAN_OPTIONS=detect_leaks=1 ../warm-sanitized > ../sanitized.log 2> ../sanitized.err)
+ module load python/3.11.14
+ python3 - "$history_out" > "$history_out/warm-comparison.log" <<'PY'
+import csv, hashlib, math, pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+sealed = {
+    'initial_material.csv': '6059a3b07110a88fcdb26341b686f641b66488c3e073973c282012f5d74d279b',
+    'initial_spectrum.csv': '503efba08574e8d2113d29c0616af1d927ae1d2e5931963dc5a6ee628994c0b6',
+    'initial_evolved_material.csv': '8515a14280988d246950707b7e2073329b3fefedb12a533b26ecb348a7a92524',
+    'initial_evolved_spectrum.csv': '785913647bedcded637327ba61b36723f434e530727caf4772fc040ca35e415d',
+}
+for name, digest in sealed.items():
+    ref = root / 'reference' / name
+    assert hashlib.sha256(ref.read_bytes()).hexdigest() == digest
+    with ref.open() as f:
+        reference = list(csv.DictReader(f))
+    field = 'flux' if 'spectrum' in name else 'value'
+    for variant in (root, root / 'sanitized'):
+        with (variant / name).open() as f:
+            result = list(csv.DictReader(f))
+        assert reference and len(reference) == len(result)
+        worst = 0.0
+        for a, b in zip(reference, result):
+            assert {k:v for k,v in a.items() if k != field} == {k:v for k,v in b.items() if k != field}
+            x, y = float(a[field]), float(b[field])
+            assert math.isfinite(x) and math.isfinite(y) and x >= 0 and y >= 0
+            worst = max(worst, abs(x-y)/max(x,y) if max(x,y) else 0)
+        assert worst < 1e-8, (name, variant.name, worst)
+        print(f'INITIAL_WARM_PARITY file={name} variant={variant.name} max_relative={worst:.17g} amplitude_fit=0')
+    assert (root/name).read_bytes() == (root/'sanitized'/name).read_bytes(), name
+pattern = r'CMF_INITIAL_NONTHERMAL_PASS provider=ACTUAL_SPENCER_FANO calls=(\d+)'
+def calls(path):
+    match = re.search(pattern, path.read_text())
+    assert match, path
+    return int(match.group(1))
+reference = calls(root/'reference'/'cmf_time_coupled.log')
+native, sanitized = calls(root/'cmf_time_coupled.log'), calls(root/'sanitized.log')
+assert native == sanitized and native < reference, (reference, native, sanitized)
+print(f'INITIAL_WARM_CALLS reference={reference} native={native} sanitized={sanitized} synthetic_atom=1')
+PY
+fi
 if [[ "$history_mode" == initial-matrix-cache ]]; then
  history_reference=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/common-build-423957
  (cd "$history_reference/source"; sha256sum -c "$history_reference/source.sha256") > "$history_out/reference_verify.log"

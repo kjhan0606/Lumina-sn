@@ -23653,13 +23653,22 @@ static NLTEPopulationCandidateStatus
 nlte_population_candidate_prepare_through_core(
         NLTEPopulationCandidate *candidate,
         const NLTEPopulationBundleRequest *request,
-        const double *prescribed_ne) {
+        const double *prescribed_ne,
+        const double *seed_levels, const double *seed_ions) {
     NLTEPopulationCandidateStatus status = nlte_population_candidate_begin(
         candidate, request->public_nlte, request->public_atom,
         request->public_plasma, request->trial_te, request->n_shells,
         request->required_te_generation,
         request->required_population_generation);
     if (status != NLTE_CANDIDATE_OK) return status;
+    /* 같은 초기 전하 요청의 직전 사유 내부해를 시작 추정으로만 쓴다.
+     * 공개 인구/세대/물리 과거는 불변이며 새 ne에서 실제 core를 다시 푼다. */
+    if (seed_levels && seed_ions) {
+        memcpy(candidate->level_population, seed_levels,
+               candidate->n_level_values * sizeof(*seed_levels));
+        memcpy(candidate->ion_population, seed_ions,
+               candidate->n_ion_values * sizeof(*seed_ions));
+    }
     status = nlte_population_candidate_prepare_opacity_view(
         candidate, request->public_opacity);
     if (status != NLTE_CANDIDATE_OK) return status;
@@ -23700,14 +23709,14 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             return candidate->status;
         }
         status = nlte_population_candidate_prepare_through_core(
-            candidate, request, prescribed_ne);
+            candidate, request, prescribed_ne, NULL, NULL);
         if (status != NLTE_CANDIDATE_OK) return status;
         candidate->ne_closure_active = 1;
         candidate->ne_closure_iterations = 0;
     } else if (!require_ne) {
         /* Gate-off is the original single stage-only n_e + pair solve. */
         status = nlte_population_candidate_prepare_through_core(
-            candidate, request, NULL);
+            candidate, request, NULL, NULL, NULL);
         if (status != NLTE_CANDIDATE_OK) return status;
     } else {
         const char *ne_acceleration = getenv("LUMINA_NLTE_NE_ANDERSON1");
@@ -23743,11 +23752,21 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             ne_anderson.previous_r = trial_ne + 2 * request->n_shells;
         }
         int accepted = 0;
+        const int reuse_initial_guess = request->public_plasma &&
+            request->public_plasma->initial_steady_nlte &&
+            !request->public_plasma->physical_history &&
+            nlte_whole_element_mode(request->public_plasma) &&
+            request->gamma_dep &&
+            request->gamma_dep->provenance == GAMMA_PROVENANCE_NONLOCAL_MC;
+        double *warm_population = NULL;
+        size_t warm_levels = 0;
         for (int iteration = 1;
              iteration <= NLTE_NE_CLOSURE_MAX_ITERATIONS; ++iteration) {
             status = nlte_population_candidate_prepare_through_core(
-                candidate, request, trial_ne);
+                candidate, request, trial_ne, warm_population,
+                warm_population ? warm_population + warm_levels : NULL);
             if (status != NLTE_CANDIDATE_OK) {
+                free(warm_population);
                 free(trial_ne);
                 free(next_ne);
                 return status;
@@ -23762,6 +23781,7 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             candidate->ne_closure_worst_shell = worst_shell;
             if (closure_status != POP_OK) {
                 candidate_ionization_fail(candidate, closure_status);
+                free(warm_population);
                 free(trial_ne);
                 free(next_ne);
                 return candidate->status;
@@ -23790,6 +23810,7 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
                         NLTE_NE_CLOSURE_RELATIVE_TOLERANCE);
                 candidate_ionization_fail(
                     candidate, POP_NE_NOT_CONVERGED);
+                free(warm_population);
                 free(trial_ne);
                 free(next_ne);
                 return candidate->status;
@@ -23811,8 +23832,22 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
                 memcpy(trial_ne, next_ne,
                        request->n_shells * sizeof(*trial_ne));
             }
+            if (reuse_initial_guess && iteration == 1 &&
+                candidate->n_level_values <= SIZE_MAX / sizeof(double) &&
+                candidate->n_ion_values <= SIZE_MAX / sizeof(double) - candidate->n_level_values) {
+                warm_levels = candidate->n_level_values;
+                warm_population = malloc((warm_levels + candidate->n_ion_values) * sizeof(double));
+                /* 선택적 시작점 보관 실패는 원래 반복법을 유지한다. */
+            }
+            if (warm_population) {
+                memcpy(warm_population, candidate->level_population,
+                       warm_levels * sizeof(double));
+                memcpy(warm_population + warm_levels, candidate->ion_population,
+                       candidate->n_ion_values * sizeof(double));
+            }
             nlte_population_candidate_free(candidate);
         }
+        free(warm_population);
         free(trial_ne);
         free(next_ne);
         if (!accepted) {
