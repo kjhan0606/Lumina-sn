@@ -36,6 +36,8 @@ if [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model
  if [[ "$1" == initial-saha-model ]]; then
   # 기존 원자료 parser는 numpy를 사용한다. 설치하지 않고 검증된 기존 환경을 지정한다.
   compare_python=/home/kjhan/miniconda3/bin/python3
+  # module Python의 표준 라이브러리를 다른 버전의 해석기에 섞지 않는다.
+  unset PYTHONHOME PYTHONPATH
   "$compare_python" -c 'import sys,numpy; print(sys.executable); print(sys.version); print(numpy.__version__); print(numpy.__file__)' > "$compare_out/python_identity.txt"
   cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/scripts/cmfgen_parser.py scripts/
   sha256sum scripts/cmfgen_parser.py >> "$compare_out/source.sha256"
