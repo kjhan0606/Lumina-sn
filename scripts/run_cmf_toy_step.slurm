@@ -66,7 +66,7 @@ fi
 step_previous_log=$step_previous/step.log
 if [[ "$step_state" == initial_state.bin ]]; then step_previous_log=$step_previous/initial.log; fi
 grep -Eq "^TOY_(INITIAL|STEP)_CONVERGED .*nonthermal=$step_nt_mode " "$step_previous_log"
-cp "$step_src/scripts/run_cmf_toy_step.slurm" "$step_out/runner.slurm"
+cp "$0" "$step_out/runner.slurm"
 sha256sum "$step_out/runner.slurm" "$step_out/previous_state.bin" > "$step_out/runner_history.sha256"
 (cd "$step_out/input"; sha256sum -c "$step_out/input.sha256") > "$step_out/input_verify.log"
 while read -r step_key; do unset "$step_key"; done < <(compgen -v LUMINA_ || true)

@@ -60,7 +60,8 @@ if [[ -n "$initial_nt" ]]; then
  initial_nt_arguments=("$initial_out/input/arnaud_rothenflug_23jun15" "$initial_out/input/nonthermal_resolved_bindings.csv")
  initial_nt_mode=RESOLVED_NONTHERMAL_SUBSET
 fi
-cp "$initial_src/scripts/run_cmf_toy_initial.slurm" "$initial_out/runner.slurm"
+# 대기 중 저장소가 바뀌어도 실제 제출된 Slurm 스크립트를 보존한다.
+cp "$0" "$initial_out/runner.slurm"
 sha256sum "$initial_out/runner.slurm" > "$initial_out/runner.sha256"
 (cd "$initial_out/input"; sha256sum -c "$initial_out/input.sha256") > "$initial_out/input_verify.log"
 while read -r initial_key; do unset "$initial_key"; done < <(compgen -v LUMINA_ || true)

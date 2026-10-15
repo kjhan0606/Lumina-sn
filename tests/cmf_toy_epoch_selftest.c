@@ -8,7 +8,7 @@
 #include <string.h>
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TOY_EPOCH_FAIL line=%d %s\n",__LINE__,#x);rc=1;goto done;}}while(0)
 int main(int argc,char **argv){
-    if(argc==10&&!strcmp(argv[1],"--cmf-toy-step"))return cmf_toy_step_main(argc,argv);
+    if((argc==10||argc==12)&&!strcmp(argv[1],"--cmf-toy-step"))return cmf_toy_step_main(argc,argv);
     if(argc!=4)return 2;
     const double masses[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};CMFPhysicalTimeState past={0},updated={0},restored={0};
