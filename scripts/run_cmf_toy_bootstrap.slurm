@@ -18,6 +18,7 @@ case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == ite
 toy_mode=${2:-material}
 case "$toy_mode" in
  material|material-iterate|material-refined) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material-bf-iterate) toy_test=tests/cmf_toy_bf_iterate_diagnostic.c ;;
  material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate|iterate-refined) toy_test=tests/cmf_toy_iterate_selftest.c ;;
@@ -46,7 +47,7 @@ if [[ "$toy_mode" == material-rates-profile ]]; then
  toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1
 fi
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
-if [[ "$toy_mode" == material-iterate ]]; then
+if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate ]]; then
  toy_iterate_run=${5:?initial run directory required}
  toy_iterate_grid=$(sed -n 's/^LUMINA_TOY_GRID_T_RATIO=//p' "$toy_iterate_run/env_lumina_effective.txt")
  case "$toy_iterate_grid" in
@@ -135,16 +136,29 @@ if [[ "$toy_mode" == material-refined ]]; then
  toy_arguments+=("$toy_grid_ratio")
  printf 'base_shells=%s\ntemperature_ratio=%s\n' "$toy_shells" "$toy_grid_ratio" > "$toy_out/grid_choice.txt"
 fi
-if [[ "$toy_mode" == material-iterate ]]; then
+if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate ]]; then
  toy_iterate_run=${5:?initial run directory required}
  (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
  for toy_file in "$toy_out"/input/*; do cmp "$toy_file" "$toy_iterate_run/input/${toy_file##*/}"; done
  # 생산의 latest 파일은 다음 반복에서 원자적으로 교체된다. 분석에는 불변 사본을 쓴다.
- cp "$toy_iterate_run/work/initial_iterate.bin" "$toy_out/iterate_input.bin"
+ if [[ "$toy_mode" == material-bf-iterate ]]; then
+  cp "$toy_iterate_run/iterate_input.bin" "$toy_out/iterate_input.bin"
+ else
+  cp "$toy_iterate_run/work/initial_iterate.bin" "$toy_out/iterate_input.bin"
+ fi
  cp "$toy_iterate_run/iterate_identity.txt" "$toy_out/iterate_identity.txt"
  toy_iterate_id=$(sha256sum "$toy_out/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
  toy_arguments+=("$toy_out/iterate_input.bin" "$toy_iterate_id")
  sha256sum "$toy_out/iterate_input.bin" "$toy_out/iterate_identity.txt" > "$toy_out/iterate.sha256"
+ if [[ "$toy_mode" == material-bf-iterate ]]; then
+  toy_prior=${6:?previous frozen analysis directory required}
+  cmp "$toy_prior/input.sha256" "$toy_iterate_run/input.sha256"
+  cmp "$toy_prior/iterate_identity.txt" "$toy_out/iterate_identity.txt"
+  sha256sum -c "$toy_prior/iterate.sha256" > "$toy_out/prior_verify.log"
+  cp "$toy_prior/iterate_input.bin" "$toy_out/prior_iterate_input.bin"
+  sha256sum "$toy_out/prior_iterate_input.bin" >> "$toy_out/iterate.sha256"
+  toy_arguments+=("$toy_out/prior_iterate_input.bin")
+ fi
 fi
 if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
 if [[ "$toy_mode" == material-rates-components ]]; then
@@ -169,6 +183,9 @@ if [[ "$toy_mode" == material-iterate ]]; then
  python3 scripts/compare_cmf_initial_iterate.py --run "$toy_out" \
   --public /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/toy06 \
   > "$toy_out/iterate-comparison.log"
+ sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
+fi
+if [[ "$toy_mode" == material-bf-iterate ]]; then
  sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
 fi
 if [[ "$toy_mode" == material-rates-profile ]]; then
