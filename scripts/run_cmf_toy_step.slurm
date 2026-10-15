@@ -83,6 +83,12 @@ case "$step_grid_ratio" in
  1.10|1.05) export LUMINA_TOY_GRID_T_RATIO="$step_grid_ratio" ;;
  *) echo '이전 시점의 격자 선택을 해석할 수 없음' >&2; exit 2 ;;
 esac
+step_gamma_mixture=$(sed -n 's/^LUMINA_GAMMA_SOURCE_MIX=//p' "$step_previous/env_lumina_effective.txt")
+case "$step_gamma_mixture" in
+ '') ;;
+ 0.5) export LUMINA_GAMMA_SOURCE_MIX="$step_gamma_mixture" ;;
+ *) echo '이전 시점의 감마 표본 선택을 해석할 수 없음' >&2; exit 2 ;;
+esac
 export LUMINA_BF_CHANNELS_FILE=$step_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$step_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$step_out/input/ionization_reference.csv

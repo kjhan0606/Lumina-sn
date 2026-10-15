@@ -6,6 +6,16 @@
 #include <unistd.h>
 
 typedef struct {CMFToyModel *model;const char *identity;int offset;} ToyInitialSave;
+static int toy_gamma_mixture(double *mixture){
+    const char *value=getenv("LUMINA_GAMMA_SOURCE_MIX");*mixture=0;
+    if(value){
+        char *end;errno=0;*mixture=strtod(value,&end);
+        if(end==value||*end||errno||!isfinite(*mixture)||!(*mixture>=0&&*mixture<=1)){
+            fprintf(stderr,"TOY_GAMMA_INVALID_SOURCE_MIXTURE\n");return -1;
+        }
+    }
+    return 0;
+}
 static int toy_initial_save(void *context,int iteration){
     ToyInitialSave *s=context;
     if(iteration>INT32_MAX-s->offset||
@@ -57,6 +67,7 @@ static int toy_nonthermal_prepare(ToyNonthermal *nt,const AtomicData *a,
 
 int cmf_toy_initial_main(int argc,char **argv){
     if(argc!=8&&argc!=10){fprintf(stderr,"usage: %s --cmf-toy-initial ejecta atomic_dir nuclear_data shells packets iterations [nonthermal_atomic resolved_bindings]\n",argv[0]);return 2;}
+    double gamma_mixture;if(toy_gamma_mixture(&gamma_mixture))return 2;
     long input[3];
     for(int i=0;i<3;i++){char *end;errno=0;input[i]=strtol(argv[5+i],&end,10);if(errno||*end)return 2;}
     int ns=(int)input[0],cap=(int)input[2];uint64_t packets=(uint64_t)input[1];
@@ -83,7 +94,8 @@ int cmf_toy_initial_main(int argc,char **argv){
     phase="gamma";
     if(cmf_gamma_nuclear_read(&nuclear,argv[4])||
        cmf_toy_gamma_source_build(&source,&m.ejecta,&nuclear,m.geometry.time_explosion)||
-       cmf_gamma_transport(&source.input,packets,UINT64_C(2026101502),&deposition))goto done;
+       cmf_gamma_transport_shell_mixture(&source.input,packets,UINT64_C(2026101502),gamma_mixture,&deposition))goto done;
+    fprintf(stderr,"[TOY-GAMMA] source_shell_mixture=%.17g weighted_tallies=%d\n",gamma_mixture,gamma_mixture>0);
     gamma_deposition_init(&gamma,ns);
     if(!gamma.heating_rate||!gamma.nonthermal_ioniz_rate)goto done;
     fp=fopen("initial_gamma.csv","wx");if(!fp)goto done;
@@ -140,6 +152,7 @@ done:
 
 int cmf_toy_step_main(int argc,char **argv){
     if(argc!=10&&argc!=12){fprintf(stderr,"usage: %s --cmf-toy-step ejecta atomic_dir nuclear_data previous_state new_epoch_s shells packets iterations [nonthermal_atomic resolved_bindings]\n",argv[0]);return 2;}
+    double gamma_mixture;if(toy_gamma_mixture(&gamma_mixture))return 2;
     char *end;errno=0;double epoch=strtod(argv[6],&end);
     if(errno||*end||!(epoch>0)||!isfinite(epoch)||getenv("LUMINA_FIXED_TE_PROFILE"))return 2;
     long values[3];
@@ -164,7 +177,8 @@ int cmf_toy_step_main(int argc,char **argv){
        cmf_toy_model_begin_epoch(&m,&past,&source.epoch,&projected)||
        cmf_toy_model_write_material(&m,"step_predictor.csv","TIME_PREDICTOR_FROM_DECAYED_HISTORY; not converged"))goto done;
     phase="gamma";
-    if(cmf_gamma_transport(&source.input,packets,UINT64_C(2026101502)^(uint64_t)llround(epoch),&deposition))goto done;
+    if(cmf_gamma_transport_shell_mixture(&source.input,packets,UINT64_C(2026101502)^(uint64_t)llround(epoch),gamma_mixture,&deposition))goto done;
+    fprintf(stderr,"[TOY-GAMMA] source_shell_mixture=%.17g weighted_tallies=%d\n",gamma_mixture,gamma_mixture>0);
     gamma_deposition_init(&gamma,ns);
     if(!gamma.heating_rate||!gamma.nonthermal_ioniz_rate)goto done;
     fp=fopen("step_gamma.csv","wx");if(!fp)goto done;

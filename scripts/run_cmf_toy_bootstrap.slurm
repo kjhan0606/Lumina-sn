@@ -24,9 +24,9 @@ case "$toy_mode" in
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate|iterate-refined) toy_test=tests/cmf_toy_iterate_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth) toy_test=tests/cmf_toy_rates_selftest.c ;;
- material-epoch|material-epoch-nonthermal|material-epoch-refined) toy_test=tests/cmf_toy_epoch_selftest.c ;;
+ material-epoch|material-epoch-nonthermal|material-epoch-refined|material-epoch-sampled) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
- initial-prepare|initial-prepare-nonthermal|initial-prepare-refined) toy_test=tests/cmf_toy_initial_selftest.c ;;
+ initial-prepare|initial-prepare-nonthermal|initial-prepare-refined|initial-prepare-sampled) toy_test=tests/cmf_toy_initial_selftest.c ;;
  *) exit 2 ;;
 esac
 toy_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
@@ -48,6 +48,9 @@ if [[ "$toy_mode" == material-rates-profile ]]; then
  toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1
 fi
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
+if [[ "$toy_mode" == *-sampled ]]; then
+ export LUMINA_GAMMA_SOURCE_MIX=0.5 LUMINA_TOY_GRID_T_RATIO=1.10
+fi
 if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-iterate ]]; then
  toy_iterate_run=${5:?initial run directory required}
  toy_iterate_grid=$(sed -n 's/^LUMINA_TOY_GRID_T_RATIO=//p' "$toy_iterate_run/env_lumina_effective.txt")
@@ -198,6 +201,16 @@ if [[ "$toy_mode" == material-rates-components ]]; then
 else
  (cd "$toy_out"; ./prepare "${toy_arguments[@]}" > prepare.log 2> prepare.err)
 fi
+if [[ "$toy_mode" == initial-prepare-sampled ]]; then
+ grep -F '[TOY-GAMMA] source_shell_mixture=0.5 weighted_tallies=1' "$toy_out/prepare.err"
+ mkdir "$toy_out/invalid-sampling"
+ (cd "$toy_out/invalid-sampling";
+  if env LUMINA_GAMMA_SOURCE_MIX=invalid ../prepare "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" "$toy_shells" > prepare.log 2> prepare.err; then
+   echo '잘못된 감마 표본 선택을 수용함' >&2; exit 1
+  fi
+  grep -Fx 'TOY_GAMMA_INVALID_SOURCE_MIXTURE' prepare.err
+  test ! -e initial_gamma.csv)
+fi
 if [[ "$toy_mode" == material-iterate ]]; then
  python3 scripts/compare_cmf_initial_iterate.py --run "$toy_out" \
   --public /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/toy06 \
@@ -271,6 +284,9 @@ if [[ "$toy_mode" == material-epoch* ]]; then
   "$toy_out/input/NUC_DECAY_DATA_ni56_co56_fe56" "$toy_out/fixture_nonconverged_epoch.bin" \
   177120 "$toy_shells" 2000 0 "${toy_step_nt[@]}" > ../step-prepare.log 2> ../step-prepare.err)
  test ! -e "$toy_out/step-prepare/step_state.bin"
+ if [[ "$toy_mode" == material-epoch-sampled ]]; then
+  grep -F '[TOY-GAMMA] source_shell_mixture=0.5 weighted_tallies=1' "$toy_out/step-prepare.err"
+ fi
 fi
 sha256sum -c "$toy_out/source.sha256" > "$toy_out/source_verify.log"
 (cd "$toy_out/input"; sha256sum -c "$toy_out/input.sha256" > "$toy_out/input_verify.log")

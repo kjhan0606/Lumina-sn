@@ -21,6 +21,8 @@ initial_nt=${5:-}
 initial_resume=${6:-}
 initial_ne_iteration=${7:-plain}
 initial_grid=${8:-uniform}
+initial_gamma_sampling=${9:-plain}
+case "$initial_gamma_sampling" in plain|mixture) ;; *) exit 2 ;; esac
 case "$initial_grid" in uniform|t10|t05) ;; *) exit 2 ;; esac
 case "$initial_ne_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 case "$initial_backend" in
@@ -77,6 +79,7 @@ export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION
 export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=$initial_devices
 if [[ "$initial_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 if [[ "$initial_ne_iteration" == anderson ]]; then export LUMINA_NLTE_NE_ANDERSON1=1; fi
+if [[ "$initial_gamma_sampling" == mixture ]]; then export LUMINA_GAMMA_SOURCE_MIX=0.5; fi
 case "$initial_grid" in
  t10) export LUMINA_TOY_GRID_T_RATIO=1.10 ;;
  t05) export LUMINA_TOY_GRID_T_RATIO=1.05 ;;
