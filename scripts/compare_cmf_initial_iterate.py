@@ -118,7 +118,7 @@ def compare(run, public):
 
 
 def grid_diagnostic(run, finer, public):
-    """100셸의 온도 급변 구간을 같은 경계의200셸 및 공개 셀 평균과 비교."""
+    """100셸의 온도 급변 구간을 같은 경계의 세분화 격자 및 공개 셀 평균과 비교."""
     _, coarse = material(run/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
     _, updated = material(run/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
     _, fine = material(finer/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
@@ -148,14 +148,14 @@ def grid_diagnostic(run, finer, public):
                 and float(r['r_inner_cm'])/epoch_velocity >= lo
                 and float(r['r_outer_cm'])/epoch_velocity <= hi]
             selected.sort(key=lambda r: float(r['r_inner_cm']))
-            if len(selected)!=2 or selected[0]['r_inner_cm']!=cell['r_inner_cm'] or selected[-1]['r_outer_cm']!=cell['r_outer_cm']:
-                raise ValueError('같은 경계를 채우는200셸 하위 셀 두 개가 필요함')
-            if selected[0]['r_outer_cm']!=selected[1]['r_inner_cm']:
+            if len(selected)<2 or selected[0]['r_inner_cm']!=cell['r_inner_cm'] or selected[-1]['r_outer_cm']!=cell['r_outer_cm']:
+                raise ValueError('같은 경계를 채우는 세분화 격자가 필요함')
+            if any(a['r_outer_cm']!=b['r_inner_cm'] for a,b in zip(selected,selected[1:])):
                 raise ValueError('하위 셀 간 공백')
             base, nuclei = fraction(cell, mass)
             components = [fraction(r, mass) for r in selected]
             if abs(math.fsum(w for f,w in components)/nuclei-1)>1e-10:
-                raise ValueError('100/200셸 핵수 불일치')
+                raise ValueError('두 격자의 핵수 불일치')
             avg = math.fsum(f*w for f,w in components)/nuclei
             volume = lambda r: float(r['r_outer_cm'])**3-float(r['r_inner_cm'])**3
             fine_T4 = math.fsum(volume(r)*float(r['T_K'])**4 for r in selected)/volume(cell)
@@ -175,7 +175,7 @@ def grid_diagnostic(run, finer, public):
             records.append(dict(Z=z, stage=q, velocity_edges_km_s=[lo,hi],
                 T_coarse=float(cell['T_K']), T_fine=[float(r['T_K']) for r in selected],
                 T_reference_volume_T4=temperature, T_reference_center=interpolate(plasma,(lo+hi)/2,ph.index('temp[K]')),
-                saha_100=base, saha_200_nuclei_average=avg,
+                saha_100=base, saha_finer_nuclei_average=avg,
                 nlte_iterate_100=fraction(updated[(30,z,q)],mass)[0],
                 reference_center=fref((lo+hi)/2), reference_nuclei_average=reference,
                 fine_cells=[int(r['shell']) for r in selected]))

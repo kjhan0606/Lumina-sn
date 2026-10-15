@@ -14,10 +14,11 @@
 set -euo pipefail
 umask 027
 toy_shells=${1:-100}
-case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; *) exit 2 ;; esac
+case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; 8) [[ "${2:-}" == material-native ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material|material-iterate) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate) toy_test=tests/cmf_toy_iterate_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth) toy_test=tests/cmf_toy_rates_selftest.c ;;
