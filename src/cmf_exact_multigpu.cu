@@ -2133,6 +2133,12 @@ static CMFMultiGPUStatus solve_impl(
             local.fixed_point_absolute_error_bound = INFINITY;
         }
         local.convergence_check_seconds += monotonic_seconds() - phase_start;
+        /* 큰 실제 장의 기존 잔차만 간헐 출력한다. 추가 계측/수렴 기준은 없다. */
+        if (cells >= 1000000 && (iteration == 0 || (iteration + 1) % 32 == 0))
+            std::fprintf(stderr,
+                "[cmf_mgpu][ITERATE] iteration=%d residual=%.17g tolerance=%.17g "
+                "sweep_total_seconds=%.6f\n", iteration + 1, max_relative,
+                tolerance, local.device_sweep_seconds);
         if (iteration > 0 && max_relative < tolerance) {
             jwork.swap(jnew);
             status = CMF_MGPU_OK;

@@ -7941,7 +7941,7 @@ static int cmf_fine_exact_owner_solve(
         return status == CMF_EXACT_OK ? 0 : -1;
     }
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
-    const CMFMultiGPUEpochSchedule schedule = {128, 64, 32};
+    const CMFMultiGPUEpochSchedule schedule = {128, 4096, 32};
     CMFMultiGPUReport report;
     CMFMultiGPUStatus status = emissivity ?
         cmf_exact_multigpu_emissivity_solve_epoch(
@@ -8316,7 +8316,7 @@ static int cmf_time_formal_apply(void *arg,const double *J,CMFFormalMoments *out
         f->n_shells,f->n_bins,f->d_log_nu,f->nu,g->r_inner,g->r_outer,g->time_explosion,
         c->temperature,cmf_inner_bb_scale(),f->chi_tot,f->chi_es,c->eta,J,out)!=CMF_EXACT_OK;
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
-    const CMFMultiGPUEpochSchedule schedule={128,64,32};CMFMultiGPUReport report;
+    const CMFMultiGPUEpochSchedule schedule={128,4096,32};CMFMultiGPUReport report;
     return cmf_exact_multigpu_formal_moments_emissivity_epoch(
         f->n_shells,f->n_bins,f->d_log_nu,f->nu,g->r_inner,g->r_outer,g->time_explosion,
         c->temperature,cmf_inner_bb_scale(),f->chi_tot,f->chi_es,c->eta,J,out,

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=CMF_TOY_INITIAL
-#SBATCH --partition=a100,h100,h200
+#SBATCH --partition=a100,a100_pcie,h100,h200
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16

@@ -46,7 +46,7 @@ static void run_case(int kind)
     Moments cpu(cells,nb),gpu(cells,nb),other(cells,nb);
     CHECK(cmf_exact_formal_moments(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
         10000,1,ct.data(),ce.data(),sf.data(),input.data(),&cpu.m)==CMF_EXACT_OK);
-    CMFMultiGPUEpochSchedule schedule={128,64,32};CMFMultiGPUReport report;
+    CMFMultiGPUEpochSchedule schedule={128,4096,32};CMFMultiGPUReport report;
     CHECK(cmf_exact_multigpu_formal_moments_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),time,
         10000,1,ct.data(),ce.data(),sf.data(),input.data(),&gpu.m,&schedule,1,&report)==CMF_MGPU_OK);
     double maximum=0;
