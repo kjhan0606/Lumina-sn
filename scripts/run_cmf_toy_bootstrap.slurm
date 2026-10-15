@@ -19,7 +19,7 @@ toy_mode=${2:-material}
 case "$toy_mode" in
  material|material-iterate|material-refined) toy_test=tests/cmf_toy_model_selftest.c ;;
  material-bf-iterate) toy_test=tests/cmf_toy_bf_iterate_diagnostic.c ;;
- material-nt-iterate) toy_test=tests/cmf_toy_nt_iterate_diagnostic.c ;;
+ material-nt-iterate|material-nt-coverage) toy_test=tests/cmf_toy_nt_iterate_diagnostic.c ;;
  material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
  iterate|iterate-refined) toy_test=tests/cmf_toy_iterate_selftest.c ;;
@@ -40,7 +40,8 @@ module purge
 module load gnu13/13.2.0
 if [[ "$toy_mode" == *nonthermal || "$toy_mode" == material-iterate ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL
+unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL CMF_TEST_NT_COVERAGE
+if [[ "$toy_mode" == material-nt-coverage ]]; then export CMF_TEST_NT_COVERAGE=1; fi
 if [[ "$toy_mode" == material-rates-gth ]]; then export CMF_TEST_GTH_PARALLEL=1 CMF_TEST_PROFILE_CACHED=1 CMF_TEST_RATE_CACHE=1; fi
 if [[ "$toy_mode" == material-rates-cache ]]; then export CMF_TEST_RATE_CACHE=1; fi
 toy_profile_flags=()
@@ -51,7 +52,7 @@ while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
 if [[ "$toy_mode" == *-sampled ]]; then
  export LUMINA_GAMMA_SOURCE_MIX=0.5 LUMINA_TOY_GRID_T_RATIO=1.10
 fi
-if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-iterate ]]; then
+if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-* ]]; then
  toy_iterate_run=${5:?initial run directory required}
  toy_iterate_grid=$(sed -n 's/^LUMINA_TOY_GRID_T_RATIO=//p' "$toy_iterate_run/env_lumina_effective.txt")
  case "$toy_iterate_grid" in
@@ -80,7 +81,7 @@ toy_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
  cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-if [[ "$toy_mode" == nonthermal || "$toy_mode" == material-nt-iterate ]]; then
+if [[ "$toy_mode" == nonthermal || "$toy_mode" == material-nt-* ]]; then
  toy_units+=(cmf_nonthermal cmf_nonthermal_atomic cmf_nonthermal_provider cmf_nonthermal_excitation cmf_nonthermal_binding)
 fi
 if [[ "$toy_mode" == initial-prepare* || "$toy_mode" == material-epoch* ]]; then
@@ -140,12 +141,12 @@ if [[ "$toy_mode" == material-refined ]]; then
  toy_arguments+=("$toy_grid_ratio")
  printf 'base_shells=%s\ntemperature_ratio=%s\n' "$toy_shells" "$toy_grid_ratio" > "$toy_out/grid_choice.txt"
 fi
-if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-iterate ]]; then
+if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-* ]]; then
  toy_iterate_run=${5:?initial run directory required}
  (cd "$toy_iterate_run/input"; sha256sum -c "$toy_iterate_run/input.sha256") > "$toy_out/iterate_input_verify.log"
  for toy_file in "$toy_out"/input/*; do cmp "$toy_file" "$toy_iterate_run/input/${toy_file##*/}"; done
  # 생산의 latest 파일은 다음 반복에서 원자적으로 교체된다. 분석에는 불변 사본을 쓴다.
- if [[ "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-iterate ]]; then
+ if [[ "$toy_mode" == material-bf-iterate || "$toy_mode" == material-nt-* ]]; then
   sha256sum -c "$toy_iterate_run/iterate.sha256" > "$toy_out/frozen_verify.log"
   cp "$toy_iterate_run/iterate_input.bin" "$toy_out/iterate_input.bin"
  else
@@ -165,7 +166,7 @@ if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "
   toy_arguments+=("$toy_out/prior_iterate_input.bin")
  fi
 fi
-if [[ "$toy_mode" == material-nt-iterate ]]; then
+if [[ "$toy_mode" == material-nt-* ]]; then
  toy_nt=${6:?verified nonthermal mapping root required}
  toy_gamma=${7:?same-identity gamma production root required}
  (cd "$toy_nt/input"; sha256sum -c "$toy_nt/input.sha256") > "$toy_out/nonthermal_input_verify.log"
@@ -227,7 +228,7 @@ if [[ "$toy_mode" == material-bf-iterate ]]; then
   grep -F 'old_iteration+1==new_iteration' prepare.err)
  sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
 fi
-if [[ "$toy_mode" == material-nt-iterate ]]; then
+if [[ "$toy_mode" == material-nt-* ]]; then
  sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
  sha256sum -c "$toy_out/nonthermal.sha256" > "$toy_out/nonthermal_verify.log"
 fi
