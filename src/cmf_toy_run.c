@@ -69,7 +69,8 @@ int cmf_toy_initial_main(int argc,char **argv){
     const char *resume=getenv("LUMINA_INITIAL_ITERATE_INPUT");
     CMFPhysicalTimeState initial={0};CMFInitialNLTEReport report={0};
     int rc=1;const char *phase="material";FILE *fp=NULL;
-    if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass))goto done;
+    if(cmf_toy_model_prepare_runtime(&m,argv[2],argv[3],ns,mass))goto done;
+    ns=m.geometry.n_shells;
     phase="initial numerical restart";
     if(save.identity&&(access("initial_iterate.bin",F_OK)==0||access("initial_iterate.next",F_OK)==0))goto done;
     if(resume&&(!save.identity||cmf_toy_initial_iterate_read(&m,resume,save.identity,&save.offset)))goto done;
@@ -151,9 +152,10 @@ int cmf_toy_step_main(int argc,char **argv){
     GammaDeposition gamma={0};CMFGENState cs={0};CMFTimeRadiationTrial trial={0};CMFTimeEpochReport report={0};
     ToyNonthermal nt={0};
     double *inner=NULL;FILE *fp=NULL;int rc=1;const char *phase="material and physical history";
-    if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass)||m.ejecta.velocity_edges[0]!=0||
+    if(cmf_toy_model_prepare_runtime(&m,argv[2],argv[3],ns,mass)||m.ejecta.velocity_edges[0]!=0||
        cmf_physical_time_state_read(&past,argv[5],&m.nlte,&m.atom,&m.geometry)||
        !(epoch>past.radiation.epoch_s))goto done;
+    ns=m.geometry.n_shells;
     phase="nonthermal model";
     if(toy_nonthermal_prepare(&nt,&m.atom,argc==12?argv[10]:NULL,argc==12?argv[11]:NULL))goto done;
     phase="decay and expansion";

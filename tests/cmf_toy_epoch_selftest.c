@@ -14,7 +14,8 @@ int main(int argc,char **argv){
     CMFToyModel m={0};CMFPhysicalTimeState past={0},updated={0},restored={0};
     NLTEPhysicalHistory projected={0};CMFGammaNuclearData nuclear={0};CMFToyGammaSource source={0};
     double *radiation=NULL,*saved=NULL,*initial_abundances=NULL;int ns=atoi(argv[3]),rc=0;
-    CHECK(!cmf_toy_model_prepare(&m,argv[1],argv[2],ns,masses));
+    CHECK(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],ns,masses));
+    ns=m.geometry.n_shells;
     initial_abundances=malloc((size_t)6*ns*sizeof(double));CHECK(initial_abundances);
     memcpy(initial_abundances,m.atom.abundances,(size_t)6*ns*sizeof(double));
     radiation=calloc((size_t)(4*ns+2),sizeof(double));CHECK(radiation);
@@ -67,6 +68,12 @@ int main(int argc,char **argv){
     CHECK(!cmf_physical_time_state_capture(&updated,&m.nlte,&m.atom,&m.plasma,&rh));
     CHECK(!cmf_physical_time_state_write(&updated,"fixture_nonconverged_epoch.bin"));
     memcpy(m.atom.abundances,initial_abundances,(size_t)6*ns*sizeof(double));
+    {
+        double boundary=m.geometry.v_inner[1];m.geometry.v_inner[1]*=1.001;
+        CHECK(cmf_physical_time_state_read(&restored,"fixture_nonconverged_epoch.bin",&m.nlte,&m.atom,&m.geometry));
+        CHECK(!restored.material.storage&&!restored.radiation_storage);
+        m.geometry.v_inner[1]=boundary;
+    }
     CHECK(!cmf_physical_time_state_read(&restored,"fixture_nonconverged_epoch.bin",&m.nlte,&m.atom,&m.geometry));
     CHECK(!memcmp(updated.material.storage,restored.material.storage,cells*sizeof(double)));
     printf("TOY_EPOCH_SELFTEST_PASS shells=%d nuclei_error=%.17g charge_error=%.17g Ni_fraction=%.17g past_preserved=1 checkpoint_exact=1 synthetic_JH=1 NLTE_converged=0 spectrum_compared=0\n",

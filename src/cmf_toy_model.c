@@ -27,6 +27,18 @@ int cmf_toy_model_prepare(CMFToyModel *m,const char *path,const char *atomic_dir
                          int ns,const double mass[CMF_TOY_ELEMENTS]){
     return cmf_toy_model_prepare_refined(m,path,atomic_dir,ns,mass,0);
 }
+int cmf_toy_model_prepare_runtime(CMFToyModel *m,const char *path,const char *atomic_dir,
+                         int ns,const double mass[CMF_TOY_ELEMENTS]){
+    const char *setting=getenv("LUMINA_TOY_GRID_T_RATIO");double ratio=0;
+    if(setting){
+        char *end;errno=0;ratio=strtod(setting,&end);
+        if(errno||!*setting||*end||!isfinite(ratio)||ratio<=1)return -1;
+    }
+    if(cmf_toy_model_prepare_refined(m,path,atomic_dir,ns,mass,ratio))return -1;
+    fprintf(stderr,"[TOY-GRID] base_shells=%d actual_shells=%d T_ratio=%.17g policy=%s\n",
+            ns,m->ejecta.n_shells,ratio,setting?"SOURCE_T_REFINEMENT":"UNIFORM_BASE");
+    return 0;
+}
 int cmf_toy_model_prepare_refined(CMFToyModel *m,const char *path,const char *atomic_dir,
                          int ns,const double mass[CMF_TOY_ELEMENTS],double temperature_ratio){
     if(!m||m->prepared||m->shell_storage||!path||!atomic_dir||ns<2||ns>256)return -1;

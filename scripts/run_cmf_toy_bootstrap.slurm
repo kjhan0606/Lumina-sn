@@ -14,17 +14,17 @@
 set -euo pipefail
 umask 027
 toy_shells=${1:-100}
-case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate ]] || exit 2 ;; 8) [[ "${2:-}" == material-native ]] || exit 2 ;; *) exit 2 ;; esac
+case "$toy_shells" in 100|200) ;; 4) [[ "${2:-}" == continuum || "${2:-}" == iterate || "${2:-}" == iterate-refined ]] || exit 2 ;; 8) [[ "${2:-}" == material-native ]] || exit 2 ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material|material-iterate|material-refined) toy_test=tests/cmf_toy_model_selftest.c ;;
  material-native) toy_test=tests/cmf_toy_native_cells_selftest.c ;;
  continuum) toy_test=tests/cmf_toy_continuum_selftest.c ;;
- iterate) toy_test=tests/cmf_toy_iterate_selftest.c ;;
+ iterate|iterate-refined) toy_test=tests/cmf_toy_iterate_selftest.c ;;
  material-rates|material-rates-components|material-rates-profile|material-rates-cache|material-rates-gth) toy_test=tests/cmf_toy_rates_selftest.c ;;
- material-epoch|material-epoch-nonthermal) toy_test=tests/cmf_toy_epoch_selftest.c ;;
+ material-epoch|material-epoch-nonthermal|material-epoch-refined) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
- initial-prepare|initial-prepare-nonthermal) toy_test=tests/cmf_toy_initial_selftest.c ;;
+ initial-prepare|initial-prepare-nonthermal|initial-prepare-refined) toy_test=tests/cmf_toy_initial_selftest.c ;;
  *) exit 2 ;;
 esac
 toy_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
@@ -46,6 +46,11 @@ if [[ "$toy_mode" == material-rates-profile ]]; then
  toy_profile_flags=(-pg);export CMF_TEST_PROFILE_CACHED=1
 fi
 while read -r toy_key; do unset "$toy_key"; done < <(compgen -v LUMINA_ || true)
+if [[ "$toy_mode" == *-refined && "$toy_mode" != material-refined ]]; then
+ toy_grid_ratio=${5:?temperature ratio required}
+ case "$toy_grid_ratio" in 1.10|1.05) ;; *) exit 2 ;; esac
+ export LUMINA_TOY_GRID_T_RATIO="$toy_grid_ratio"
+fi
 export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 if [[ "$toy_mode" == material-rates* ]]; then
@@ -180,7 +185,7 @@ if [[ "$toy_mode" == continuum ]]; then
  (cd "$toy_out"; sha256sum continuum.bin reference-run/continuum.bin > continuum.sha256)
  echo 'CONTINUUM_REFERENCE_PASS all_chi_eta_event_bins_byte_identical=1 physical_SN=0' > "$toy_out/comparison.log"
 fi
-if [[ "$toy_mode" == iterate ]]; then
+if [[ "$toy_mode" == iterate || "$toy_mode" == iterate-refined ]]; then
  toy_iterate_rest=()
  for toy_unit in "${toy_units[@]}"; do
   if [[ "$toy_unit" != cmf_toy_model ]]; then toy_iterate_rest+=("$toy_out/objects/$toy_unit.o"); fi

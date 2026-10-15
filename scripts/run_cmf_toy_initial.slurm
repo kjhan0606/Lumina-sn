@@ -20,6 +20,8 @@ initial_backend=${4:-gpu}
 initial_nt=${5:-}
 initial_resume=${6:-}
 initial_ne_iteration=${7:-plain}
+initial_grid=${8:-uniform}
+case "$initial_grid" in uniform|t10|t05) ;; *) exit 2 ;; esac
 case "$initial_ne_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 case "$initial_backend" in
  gpu) initial_variant=cluster;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
@@ -75,6 +77,10 @@ export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION
 export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=$initial_devices
 if [[ "$initial_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 if [[ "$initial_ne_iteration" == anderson ]]; then export LUMINA_NLTE_NE_ANDERSON1=1; fi
+case "$initial_grid" in
+ t10) export LUMINA_TOY_GRID_T_RATIO=1.10 ;;
+ t05) export LUMINA_TOY_GRID_T_RATIO=1.05 ;;
+esac
 export LUMINA_BF_CHANNELS_FILE=$initial_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv
