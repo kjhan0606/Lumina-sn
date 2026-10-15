@@ -1,11 +1,50 @@
 #include "cmf_toy_model.h"
 #include "cmf_time_epoch.h"
 #include "cmf_gamma_source.h"
-#include "cmf_nonthermal_provider.h"
+#include "cmf_nonthermal_binding.h"
 #include <errno.h>
 
+/* 운전 전체에서 불변 채널을 소유한다. 후보별 인구/ne는 provider가 다시 읽는다.
+ * 부분 모형을 완전한 CMFGEN 비열 처리로 표시하지 않는다. */
+typedef struct {
+    double energy[256];
+    CMFNonthermalBoundModel thermal;
+    CMFNonthermalExcitations excitation;
+    CMFNonthermalResolvedModel resolved;
+    CMFNonthermalProvider provider;
+    const char *label;
+} ToyNonthermal;
+static void toy_nonthermal_free(ToyNonthermal *nt){
+    cmf_nonthermal_binding_free(&nt->resolved);
+    cmf_nonthermal_excitation_free(&nt->excitation);
+}
+static int toy_nonthermal_prepare(ToyNonthermal *nt,const AtomicData *a,
+                                  const char *raw_path,const char *binding_path){
+    if(!raw_path&&!binding_path){
+        nt->energy[0]=1;nt->energy[1]=2000;
+        nt->thermal=(CMFNonthermalBoundModel){a->n_levels,a->n_ion_pops,2,0,nt->energy,NULL,NULL};
+        nt->provider=(CMFNonthermalProvider){&nt->thermal,cmf_nonthermal_bound_evaluate};
+        nt->label="ALL_THERMAL_CONTROL";return 0;
+    }
+    if(!raw_path||!binding_path)return -1;
+    CMFNonthermalAtomicData raw={0};
+    for(int i=0;i<256;i++)nt->energy[i]=exp((double)i/255*log(2000));
+    int failed=cmf_nonthermal_atomic_read(&raw,raw_path)||
+        cmf_nonthermal_excitation_build(a,nt->energy,256,20,&nt->excitation)||
+        cmf_nonthermal_binding_build_policy(a,&raw,&nt->excitation,binding_path,
+                                           CMF_NT_SIGMA_SOURCE_KINETIC,&nt->resolved);
+    cmf_nonthermal_atomic_free(&raw);
+    if(failed)return -1;
+    nt->provider=(CMFNonthermalProvider){&nt->resolved.view,cmf_nonthermal_bound_evaluate};
+    nt->label="RESOLVED_NONTHERMAL_SUBSET";
+    fprintf(stderr,"[TOY-NONTHERMAL] mode=%s resolved_routes=%d unresolved_routes=%d missing_ions=%d ion_channels=%d excitation_channels=%d energy_points=256 lower_limit=20 sigma=SOURCE_KINETIC complete_atomic_model=0 public_CMFGEN_equivalence=0\n",
+        nt->label,nt->resolved.n_resolved_routes,nt->resolved.n_unresolved_routes,
+        nt->resolved.n_missing_ions,nt->resolved.n_ion_channels,nt->excitation.view.n_channels);
+    return 0;
+}
+
 int cmf_toy_initial_main(int argc,char **argv){
-    if(argc!=8){fprintf(stderr,"usage: %s --cmf-toy-initial ejecta atomic_dir nuclear_data shells packets iterations\n",argv[0]);return 2;}
+    if(argc!=8&&argc!=10){fprintf(stderr,"usage: %s --cmf-toy-initial ejecta atomic_dir nuclear_data shells packets iterations [nonthermal_atomic resolved_bindings]\n",argv[0]);return 2;}
     long input[3];
     for(int i=0;i<3;i++){char *end;errno=0;input[i]=strtol(argv[5+i],&end,10);if(errno||*end)return 2;}
     int ns=(int)input[0],cap=(int)input[2];uint64_t packets=(uint64_t)input[1];
@@ -13,10 +52,13 @@ int cmf_toy_initial_main(int argc,char **argv){
     const double mass[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};CMFGammaNuclearData nuclear={0};CMFToyGammaSource source={0};
     CMFGammaResult deposition={0};GammaDeposition gamma={0};CMFGENState cs={0};
+    ToyNonthermal nt={0};
     CMFPhysicalTimeState initial={0};CMFInitialNLTEReport report={0};
     int rc=1;const char *phase="material";FILE *fp=NULL;
     if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass))goto done;
     if(cmf_toy_model_write_seed(&m,"initial_predictor.csv"))goto done;
+    phase="nonthermal model";
+    if(toy_nonthermal_prepare(&nt,&m.atom,argc==10?argv[8]:NULL,argc==10?argv[9]:NULL))goto done;
     phase="gamma";
     if(cmf_gamma_nuclear_read(&nuclear,argv[4])||
        cmf_toy_gamma_source_build(&source,&m.ejecta,&nuclear,m.geometry.time_explosion)||
@@ -35,21 +77,17 @@ int cmf_toy_initial_main(int argc,char **argv){
     }
     {int closed=fclose(fp);fp=NULL;if(closed)goto done;}
     if(gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_NONLOCAL_MC,m.geometry.time_explosion,NULL,NULL,NULL,gamma.heating_rate))goto done;
-    /* 명시적인 all-thermal 대조다. 비열이 물리적으로0이라고 주장하지 않는다.
-     * 빈 채널 provider로 기존 ETA/W 경로가 개입하지 않게 한다. */
-    double energy[]={1,2000};
-    CMFNonthermalBoundModel thermal={m.atom.n_levels,m.atom.n_ion_pops,2,0,energy,NULL,NULL};
-    CMFNonthermalProvider provider={&thermal,cmf_nonthermal_bound_evaluate};gamma.nonthermal_provider=&provider;
-    fprintf(stderr,"[TOY-INITIAL] epoch=%.17g gamma_packets=%llu gamma_emitted=%.17g gamma_deposited=%.17g gamma_MCSE=%.17g zero_sample_shells=%d nonthermal=ALL_THERMAL_CONTROL nuclear_Q_completion=0 initial_NLTE_converged=0\n",
+    gamma.nonthermal_provider=&nt.provider;
+    fprintf(stderr,"[TOY-INITIAL] epoch=%.17g gamma_packets=%llu gamma_emitted=%.17g gamma_deposited=%.17g gamma_MCSE=%.17g zero_sample_shells=%d nonthermal=%s nuclear_Q_completion=0 initial_NLTE_converged=0\n",
         m.geometry.time_explosion,(unsigned long long)packets,deposition.emitted_comoving_erg_s,
-        deposition.deposited_comoving_erg_s,deposition.deposited_comoving_standard_error,zeros);
+        deposition.deposited_comoving_erg_s,deposition.deposited_comoving_standard_error,zeros,nt.label);
     phase="hydro temperature";
     fp=fopen("initial_T.csv","wx");if(!fp)goto done;
     if(fprintf(fp,"# shell T_e (hydro input at 2 days only)\n")<0)goto done;
     for(int s=0;s<ns;s++)if(fprintf(fp,"%d %.17g\n",s,m.plasma.T_e[s])<0)goto done;
     {int closed=fclose(fp);fp=NULL;if(closed)goto done;}
     if(setenv("LUMINA_FIXED_TE_PROFILE","initial_T.csv",1))goto done;
-    if(!cap){printf("TOY_INITIAL_PREPARED gamma=ACTUAL_MC nonthermal=ALL_THERMAL_CONTROL radiation_solved=0\n");rc=0;goto done;}
+    if(!cap){printf("TOY_INITIAL_PREPARED gamma=ACTUAL_MC nonthermal=%s radiation_solved=0\n",nt.label);rc=0;goto done;}
     phase="initial coupled solve";
     if(cmfgen_init(&cs,&m.geometry))goto done;
     cs.common_obs_n=3000;cs.common_obs_nu=malloc((size_t)cs.common_obs_n*sizeof(double));
@@ -62,21 +100,24 @@ int cmf_toy_initial_main(int argc,char **argv){
     if(status!=CMF_EPOCH_OK||!report.converged)goto done;
     phase="initial history output";
     if(cmf_physical_time_state_write(&initial,"initial_state.bin")||
-       cmf_toy_model_write_material(&m,"initial_converged_material.csv","CONVERGED_INITIAL_NLTE; fixed hydro T; ALL_THERMAL_CONTROL")||
+       cmf_toy_model_write_material(&m,"initial_converged_material.csv",argc==10?
+           "CONVERGED_INITIAL_NLTE; fixed hydro T; RESOLVED_NONTHERMAL_SUBSET":
+           "CONVERGED_INITIAL_NLTE; fixed hydro T; ALL_THERMAL_CONTROL")||
        cmfgen_write_common_observer(&cs,"initial_spectrum.csv","initial_spectrum.json",m.nlte.radfield_view.generation,
           m.atom.population_committed_generation,m.plasma.T_e_generation,m.opacity.tau_computed_generation))goto done;
-    printf("TOY_INITIAL_CONVERGED epoch=%.17g nonthermal=ALL_THERMAL_CONTROL final_epoch_19_48d=0 spectrum_compared=0\n",m.geometry.time_explosion);
+    printf("TOY_INITIAL_CONVERGED epoch=%.17g nonthermal=%s final_epoch_19_48d=0 spectrum_compared=0\n",m.geometry.time_explosion,nt.label);
     rc=0;
 done:
     if(fp)fclose(fp);
     fprintf(stderr,"[TOY-INITIAL] exit=%d phase=%s\n",rc,phase);
     cmf_physical_time_state_free(&initial);cmfgen_free(&cs);gamma_deposition_free(&gamma);
+    toy_nonthermal_free(&nt);
     cmf_gamma_result_free(&deposition);cmf_toy_gamma_source_free(&source);cmf_toy_model_free(&m);
     return rc;
 }
 
 int cmf_toy_step_main(int argc,char **argv){
-    if(argc!=10){fprintf(stderr,"usage: %s --cmf-toy-step ejecta atomic_dir nuclear_data previous_state new_epoch_s shells packets iterations\n",argv[0]);return 2;}
+    if(argc!=10&&argc!=12){fprintf(stderr,"usage: %s --cmf-toy-step ejecta atomic_dir nuclear_data previous_state new_epoch_s shells packets iterations [nonthermal_atomic resolved_bindings]\n",argv[0]);return 2;}
     char *end;errno=0;double epoch=strtod(argv[6],&end);
     if(errno||*end||!(epoch>0)||!isfinite(epoch)||getenv("LUMINA_FIXED_TE_PROFILE"))return 2;
     long values[3];
@@ -87,10 +128,13 @@ int cmf_toy_step_main(int argc,char **argv){
     CMFToyModel m={0};CMFPhysicalTimeState past={0},next={0};NLTEPhysicalHistory projected={0};
     CMFGammaNuclearData nuclear={0};CMFToyGammaSource source={0};CMFGammaResult deposition={0};
     GammaDeposition gamma={0};CMFGENState cs={0};CMFTimeRadiationTrial trial={0};CMFTimeEpochReport report={0};
+    ToyNonthermal nt={0};
     double *inner=NULL;FILE *fp=NULL;int rc=1;const char *phase="material and physical history";
     if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass)||m.ejecta.velocity_edges[0]!=0||
        cmf_physical_time_state_read(&past,argv[5],&m.nlte,&m.atom,&m.geometry)||
        !(epoch>past.radiation.epoch_s))goto done;
+    phase="nonthermal model";
+    if(toy_nonthermal_prepare(&nt,&m.atom,argc==12?argv[10]:NULL,argc==12?argv[11]:NULL))goto done;
     phase="decay and expansion";
     if(cmf_gamma_nuclear_read(&nuclear,argv[4])||
        cmf_toy_gamma_source_build_at(&source,&m.ejecta,&nuclear,past.radiation.epoch_s,epoch,CMF_DECAY_INTERVAL_AVERAGE)||
@@ -110,11 +154,9 @@ int cmf_toy_step_main(int argc,char **argv){
     }
     {int closed=fclose(fp);fp=NULL;if(closed)goto done;}
     if(gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_NONLOCAL_MC,epoch,NULL,NULL,NULL,gamma.heating_rate))goto done;
-    double energy[]={1,2000};
-    CMFNonthermalBoundModel thermal={m.atom.n_levels,m.atom.n_ion_pops,2,0,energy,NULL,NULL};
-    CMFNonthermalProvider provider={&thermal,cmf_nonthermal_bound_evaluate};gamma.nonthermal_provider=&provider;
-    fprintf(stderr,"[TOY-STEP] old=%.17g new=%.17g packets=%llu gamma_deposited=%.17g gamma_MCSE=%.17g source=INTERVAL_AVERAGE nonthermal=ALL_THERMAL_CONTROL nuclear_Q_completion=0 T=FREE\n",
-        past.radiation.epoch_s,epoch,(unsigned long long)packets,deposition.deposited_comoving_erg_s,deposition.deposited_comoving_standard_error);
+    gamma.nonthermal_provider=&nt.provider;
+    fprintf(stderr,"[TOY-STEP] old=%.17g new=%.17g packets=%llu gamma_deposited=%.17g gamma_MCSE=%.17g source=INTERVAL_AVERAGE nonthermal=%s nuclear_Q_completion=0 T=FREE\n",
+        past.radiation.epoch_s,epoch,(unsigned long long)packets,deposition.deposited_comoving_erg_s,deposition.deposited_comoving_standard_error,nt.label);
     if(!cap){puts("TOY_STEP_PREPARED physical_history=FILE radiation_solved=0 new_epoch_converged=0");rc=0;goto done;}
     phase="time coupled solve";
     inner=calloc((size_t)past.radiation.n_bins,sizeof(double));if(!inner||cmfgen_init(&cs,&m.geometry))goto done;
@@ -130,14 +172,17 @@ int cmf_toy_step_main(int argc,char **argv){
     if(status!=CMF_EPOCH_OK||!report.converged)goto done;
     phase="time history output";
     if(cmf_physical_time_state_write(&next,"step_state.bin")||
-       cmf_toy_model_write_material(&m,"step_material.csv","CONVERGED_TIME_NLTE; FREE_T; ALL_THERMAL_CONTROL")||
+       cmf_toy_model_write_material(&m,"step_material.csv",argc==12?
+           "CONVERGED_TIME_NLTE; FREE_T; RESOLVED_NONTHERMAL_SUBSET":
+           "CONVERGED_TIME_NLTE; FREE_T; ALL_THERMAL_CONTROL")||
        cmfgen_write_common_observer(&cs,"step_spectrum.csv","step_spectrum.json",m.nlte.radfield_view.generation,
           m.atom.population_committed_generation,m.plasma.T_e_generation,m.opacity.tau_computed_generation))goto done;
-    printf("TOY_STEP_CONVERGED epoch=%.17g nonthermal=ALL_THERMAL_CONTROL spectrum_compared=0\n",epoch);rc=0;
+    printf("TOY_STEP_CONVERGED epoch=%.17g nonthermal=%s spectrum_compared=0\n",epoch,nt.label);rc=0;
 done:
     if(fp)fclose(fp);
     fprintf(stderr,"[TOY-STEP] exit=%d phase=%s\n",rc,phase);
     cmfgen_free(&cs);cmf_time_radiation_trial_free(&trial);free(inner);gamma_deposition_free(&gamma);
+    toy_nonthermal_free(&nt);
     cmf_gamma_result_free(&deposition);cmf_toy_gamma_source_free(&source);cmf_toy_model_free(&m);
     nlte_physical_history_free(&projected);cmf_physical_time_state_free(&past);cmf_physical_time_state_free(&next);
     return rc;

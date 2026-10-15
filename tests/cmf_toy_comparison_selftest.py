@@ -2,7 +2,20 @@
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"scripts"))
-from compare_cmf_toy_epoch import spectrum_metrics,public_spectrum,absolute_integral
+from compare_cmf_toy_epoch import spectrum_metrics,public_spectrum,absolute_integral,run_nonthermal
+
+marker="TOY_INITIAL_CONVERGED "
+for mode in ("ALL_THERMAL_CONTROL", "RESOLVED_NONTHERMAL_SUBSET"):
+    assert run_nonthermal([marker+"nonthermal="+mode+" epoch=172800\n"],marker)==mode
+for wrong in ([],[marker+"epoch=172800"],[marker+"nonthermal=UNKNOWN"],
+              [marker+"nonthermal=ALL_THERMAL_CONTROL nonthermal=RESOLVED_NONTHERMAL_SUBSET"],
+              [marker+"nonthermal=ALL_THERMAL_CONTROL"]*2):
+    try:
+        run_nonthermal(wrong,marker)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("모호한 비열 모형 수용")
 
 reference=[(2500.,1.),(25500.,1.)]
 exact=spectrum_metrics(reference,reference)

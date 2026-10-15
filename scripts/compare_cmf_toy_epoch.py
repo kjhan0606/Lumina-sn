@@ -82,6 +82,16 @@ def public_spectrum(path, day):
     return result
 
 
+def run_nonthermal(lines, marker):
+    records=[line for line in lines if line.startswith(marker)]
+    if len(records)!=1:
+        raise ValueError("수렴 성공 기록 없음 또는 중복")
+    modes=[item.split("=",1)[1] for item in records[0].split() if item.startswith("nonthermal=")]
+    if len(modes)!=1 or modes[0] not in ("ALL_THERMAL_CONTROL", "RESOLVED_NONTHERMAL_SUBSET"):
+        raise ValueError("비열 모형 정체성 없음 또는 알 수 없는 처방")
+    return modes[0]
+
+
 def compare(run, public, out):
     work=run/"work"
     kind="step" if (work/"step_state.bin").exists() else "initial"
@@ -96,14 +106,14 @@ def compare(run, public, out):
         raise ValueError("시점 정체성 오류")
     marker=f"TOY_{kind.upper()}_CONVERGED "
     with (run/f"{kind}.log").open() as handle:
-        if not any(line.startswith(marker) for line in handle):
-            raise ValueError("수렴 성공 기록 없음")
+        nonthermal=run_nonthermal(handle,marker)
     obs=json.loads((work/f"{kind}_spectrum.json").read_text())
     if obs["units"]!="erg/s/angstrom" or obs["material_generation"]!=pg:
         raise ValueError("스펙트럼 단위/물질 세대 불일치")
     material=work/("step_material.csv" if kind=="step" else "initial_converged_material.csv")
     with material.open() as handle:
-        if not handle.readline().startswith("# CONVERGED_"):
+        status=handle.readline()
+        if not status.startswith("# CONVERGED_") or status.rstrip().split("; ")[-1]!=nonthermal:
             raise ValueError("수렴 물질표가 아님")
         rows=list(csv.DictReader(handle))
     physhead,phys=public_block(public/"phys_toy06_cmfgen.txt",day)
@@ -147,7 +157,7 @@ def compare(run, public, out):
     summary=dict(day=day,material_generation=pg,temperature_generation=tg,goal_verdict="NOT_JUDGED",
         denominator="rho*mass_fraction/(mass_amu*AMU); no renormalization",velocity_interpolation="linear; no extrapolation",
         missing_atomic_stages=missing,missing_atomic_stages_are_not_zero=True,
-        nonthermal="ALL_THERMAL_CONTROL",spectrum=spectral,ionization=metrics)
+        nonthermal=nonthermal,spectrum=spectral,ionization=metrics)
     out.mkdir(parents=True,exist_ok=False)
     for name,values in (("ionization.csv",results),("plasma.csv",[shells[s] for s in sorted(shells)])):
         with (out/name).open("x",newline="") as handle:

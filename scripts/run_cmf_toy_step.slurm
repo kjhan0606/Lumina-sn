@@ -54,6 +54,18 @@ while read -r step_hash step_file; do
 done < "$step_previous/input.sha256"
 cp "$step_previous/work/$step_state" "$step_out/previous_state.bin"
 cp "$step_previous/input.sha256" "$step_build/commit.txt" "$step_build/binary.sha256" "$step_out/"
+step_nt_arguments=()
+step_nt_mode=ALL_THERMAL_CONTROL
+if [[ -e "$step_out/input/nonthermal_resolved_bindings.csv" || -e "$step_out/input/arnaud_rothenflug_23jun15" ]]; then
+ for step_nt_file in nonthermal_resolved_bindings.csv arnaud_rothenflug_23jun15; do
+  grep -Eq "^[0-9a-f]{64}  $step_nt_file$" "$step_out/input.sha256"
+ done
+ step_nt_arguments=("$step_out/input/arnaud_rothenflug_23jun15" "$step_out/input/nonthermal_resolved_bindings.csv")
+ step_nt_mode=RESOLVED_NONTHERMAL_SUBSET
+fi
+step_previous_log=$step_previous/step.log
+if [[ "$step_state" == initial_state.bin ]]; then step_previous_log=$step_previous/initial.log; fi
+grep -Eq "^TOY_(INITIAL|STEP)_CONVERGED .*nonthermal=$step_nt_mode " "$step_previous_log"
 cp "$step_src/scripts/run_cmf_toy_step.slurm" "$step_out/runner.slurm"
 sha256sum "$step_out/runner.slurm" "$step_out/previous_state.bin" > "$step_out/runner_history.sha256"
 (cd "$step_out/input"; sha256sum -c "$step_out/input.sha256") > "$step_out/input_verify.log"
@@ -68,13 +80,13 @@ export LUMINA_BF_CHANNELS_FILE=$step_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$step_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$step_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$step_out/env_lumina_effective.txt"
-printf 'mode=ALL_THERMAL_TIME_CONTROL\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\nprevious=%s\nepoch_s=%s\n' \
- "$step_backend" "$step_build/source" "$step_build" "$step_out/input" "$step_previous" "$step_epoch" > "$step_out/identity.txt"
+printf 'mode=%s\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\nprevious=%s\nepoch_s=%s\n' \
+ "$step_nt_mode" "$step_backend" "$step_build/source" "$step_build" "$step_out/input" "$step_previous" "$step_epoch" > "$step_out/identity.txt"
 cd "$step_out/work"
 (ulimit -f 2097152; exec "$step_binary" --cmf-toy-step \
  "$step_out/input/snia_toy06_2d.dat" "$step_out/input" \
  "$step_out/input/NUC_DECAY_DATA_ni56_co56_fe56" "$step_out/previous_state.bin" \
- "$step_epoch" 100 200000 128) > "$step_out/step.log" 2> "$step_out/step.err"
+ "$step_epoch" 100 200000 128 "${step_nt_arguments[@]}") > "$step_out/step.log" 2> "$step_out/step.err"
 sha256sum step_state.bin step_material.csv step_spectrum.csv step_spectrum.json > "$step_out/output.sha256"
 sha256sum -c "$step_out/runner_history.sha256" > "$step_out/history_preserved.log"
-echo 'STEP_COMPLETE: 자유 T 시간해 all-thermal 대조. 최종 CMFGEN 동등성 판정 아님.'
+echo "STEP_COMPLETE: 자유 T 시간해 $step_nt_mode. 최종 CMFGEN 동등성 판정 아님."

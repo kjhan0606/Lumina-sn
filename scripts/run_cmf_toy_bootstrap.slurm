@@ -21,7 +21,7 @@ case "$toy_mode" in
  material-rates|material-rates-components|material-rates-profile|material-rates-cache) toy_test=tests/cmf_toy_rates_selftest.c ;;
  material-epoch) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
- initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
+ initial-prepare|initial-prepare-nonthermal) toy_test=tests/cmf_toy_initial_selftest.c ;;
  *) exit 2 ;;
 esac
 toy_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
@@ -33,7 +33,7 @@ mkdir "$toy_out/source" "$toy_out/objects" "$toy_out/input"
 source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
-if [[ "$toy_mode" == nonthermal ]]; then module load python/3.11.14; fi
+if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE
 if [[ "$toy_mode" == material-rates-cache ]]; then export CMF_TEST_RATE_CACHE=1; fi
@@ -60,13 +60,13 @@ toy_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
 if [[ "$toy_mode" == nonthermal ]]; then
  toy_units+=(cmf_nonthermal cmf_nonthermal_atomic cmf_nonthermal_provider cmf_nonthermal_excitation cmf_nonthermal_binding)
 fi
-if [[ "$toy_mode" == initial-prepare || "$toy_mode" == material-epoch ]]; then
- toy_units+=(cmf_nonthermal cmf_nonthermal_provider cmf_gamma_source cmf_gamma_transport cmf_toy_run)
+if [[ "$toy_mode" == initial-prepare* || "$toy_mode" == material-epoch ]]; then
+ toy_units+=(cmf_nonthermal cmf_nonthermal_atomic cmf_nonthermal_provider cmf_nonthermal_excitation cmf_nonthermal_binding cmf_gamma_source cmf_gamma_transport cmf_toy_run)
 fi
 cd "$toy_src"
 git rev-parse HEAD > "$toy_out/commit.txt"
 toy_files=(src/*.h scripts/run_cmf_toy_bootstrap.slurm "$toy_test")
-if [[ "$toy_mode" == nonthermal ]]; then toy_files+=(scripts/map_cmf_nonthermal.py); fi
+if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then toy_files+=(scripts/map_cmf_nonthermal.py); fi
 for toy_unit in "${toy_units[@]}"; do toy_files+=("src/$toy_unit.c"); done
 cp --parents "${toy_files[@]}" "$toy_out/source/"
 toy_inputs=(line_list.csv levels.csv ionization_energies.csv zeta_ions.csv zeta_temps.csv
@@ -79,10 +79,10 @@ for toy_input in "${toy_inputs[@]}"; do cp "$toy_original/$toy_input" "$toy_out/
 cp "$toy_channels/bf_channels.bin" "$toy_channels/bf_channels.terminal.csv" "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/input_models/snia_toy06_2d.dat "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/ionization_reference.csv "$toy_out/input/"
-if [[ "$toy_mode" == initial-prepare || "$toy_mode" == material-epoch ]]; then
+if [[ "$toy_mode" == initial-prepare* || "$toy_mode" == material-epoch ]]; then
  cp /gpfs/kjhan/cmfgen_21jun23/atomic/rad_decay_data/NUC_DECAY_DATA_ni56_co56_fe56 "$toy_out/input/"
 fi
-if [[ "$toy_mode" == nonthermal ]]; then
+if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then
  cp /gpfs/kjhan/cmfgen_21jun23/atomic/misc/arnaud_rothenflug_23jun15 "$toy_out/input/"
  (cd "$toy_out"; python3 source/scripts/map_cmf_nonthermal.py > mapping.log 2> mapping.err)
  # 목표준위 처방 비교의 출처다. 실행/링크하지 않는 원본 읽기 자료다.
@@ -108,7 +108,7 @@ done
 gcc -O2 "${toy_profile_flags[@]}" -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
  "${toy_objects[@]}" -Wl,--gc-sections -lm -o "$toy_out/prepare" >> "$toy_out/build.log" 2>&1
 toy_arguments=(input/snia_toy06_2d.dat input "$toy_shells")
-if [[ "$toy_mode" == nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
+if [[ "$toy_mode" == nonthermal || "$toy_mode" == initial-prepare-nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
 if [[ "$toy_mode" == material-rates-components ]]; then
  # 동일 binary의 새 프로세스로 정적 env cache도 분리한다. 생산 처방이 아니다.
  for toy_component in without-dr without-ce without-dr-ce; do

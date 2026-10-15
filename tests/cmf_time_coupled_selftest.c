@@ -2,6 +2,7 @@
  * SN 초기조건 또는 CMFGEN 분포 시험이 아니다. 생산 함수를 wrap하지 않는다. */
 #include "cmf_time_epoch.h"
 #include "line_jbar.h"
+#include "cmf_nonthermal_provider.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,18 @@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TIME_COUPLED_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 static double Bnu(double nu,double T){return 2*H_PLANCK*nu*nu*nu/
     (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(H_PLANCK*nu/(K_BOLTZMANN*T));}
+static int nt_calls;
+static double nt_max_rate;
+static int actual_nt(const void *context,const AtomicData *a,const NLTEConfig *n,
+                     const PlasmaState *p,const GammaDeposition *g,CMFNonthermalRates *r){
+    int status=cmf_nonthermal_bound_evaluate(context,a,n,p,g,r);
+    if(!status){
+        nt_calls++;
+        for(size_t k=0;k<(size_t)r->n_transitions*r->n_shells;k++)
+            nt_max_rate=fmax(nt_max_rate,r->rate_per_particle[k]);
+    }
+    return status;
+}
 int main(void){
     enum{NS=2,NI=2,NL=3,NB=NLTE_N_FREQ_BINS};
     setenv("LUMINA_PURE_CMFGEN","1",1);setenv("LUMINA_CMF_COMMON_FIELD","1",1);
@@ -89,7 +102,21 @@ int main(void){
         CHECK(fprintf(profile,"# shell T_e\n0 10001\n1 10000\n")>0&&!fclose(profile));
         nlte_update_tau_sobolev(&n,&a,&o,newtime,NS);
         GammaDeposition gamma={0};gamma_deposition_init(&gamma,NS);double heating[NS]={0};
-        CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,newtime,NULL,NULL,NULL,heating));
+        int nonthermal=getenv("CMF_TEST_INITIAL_NT")!=NULL;
+        double nt_energy[64],nt_sigma[128],abcd[4]={1,.5,.2,.1};
+        for(int i=0;i<64;i++){
+            nt_energy[i]=exp((double)i/63*log(2000));
+            nt_sigma[i]=cmf_nonthermal_bethe(nt_energy[i],2,.1,0);
+            nt_sigma[64+i]=cmf_nonthermal_arnaud(nt_energy[i],13.6,abcd);
+        }
+        CMFNonthermalTransition nt_transitions[2]={{0,1,-1},{0,2,-1}};
+        CMFNonthermalRoute nt_channels[2]={{CMF_NT_EXCITATION,2,0,nt_sigma,0},
+                                         {CMF_NT_IONIZATION,13.6,0,nt_sigma+64,0}};
+        CMFNonthermalBoundModel nt_model={NL,NI,64,2,nt_energy,nt_transitions,nt_channels};
+        CMFNonthermalProvider provider={&nt_model,actual_nt};
+        if(nonthermal){heating[0]=1e-10;heating[1]=2e-10;}
+        CHECK(!gamma_deposition_publish(&gamma,nonthermal?GAMMA_PROVENANCE_NONLOCAL_MC:GAMMA_PROVENANCE_EXTERNAL_FILE,newtime,NULL,NULL,NULL,heating));
+        if(nonthermal)gamma.nonthermal_provider=&provider;
         BFOpacity bf={0};CHECK(!bf_opacity_init_checked(&bf,NS));
         c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
         for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
@@ -115,11 +142,17 @@ int main(void){
         CHECK(!nlte_bf_channel_rates(&n,&a,0,0,0,T[0],ne[0],&up,&down,&ci,&three)&&ci>0&&three>0);
         /* 동일한 실제 게시 J/물질에서 cache 유무의 행렬/RHS는 byte-identical이다. */
         double cached_A[9]={0},cached_b[3]={0},searched_A[9]={0},searched_b[3]={0};
+        CMFNonthermalRates matrix_nt={0};
+        if(nonthermal){
+            CHECK(!actual_nt(&nt_model,&a,&n,&p,&gamma,&matrix_nt));
+            gamma.nonthermal_rates=&matrix_nt;
+        }
         CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,newtime,cached_A,cached_b,3,&gamma,NULL,-1));
         n.nlte_line_global=NULL;n.nlte_ion_lines=NULL;
         CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,newtime,searched_A,searched_b,3,&gamma,NULL,-1));
         n.nlte_line_global=line_global;n.nlte_ion_lines=ion_line_id;
         CHECK(!memcmp(cached_A,searched_A,sizeof cached_A)&&!memcmp(cached_b,searched_b,sizeof cached_b));
+        gamma.nonthermal_rates=NULL;cmf_nonthermal_rates_free(&matrix_nt);
         puts("LINE_GLOBAL_CACHE_MATRIX_PARITY_PASS exact_matrix_and_rhs=1 ion_index=1");
         for(int s=0;s<NS;s++){
             CHECK(fabs(ne[s]/ions[NS+s]-1)<1e-8);
@@ -180,7 +213,8 @@ int main(void){
             for(int i=0;i<NI*NS;i++)ions[i]=initial.material.ion_density[i]*dilution;
             for(int i=0;i<NL*NS;i++)pops[i]=initial.material.level_density[i]*dilution;
             CHECK(!cmfgen_init(&c,&g));nlte_update_tau_sobolev(&n,&a,&o,evolved_time,NS);
-            CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,evolved_time,NULL,NULL,NULL,heating));
+            CHECK(!gamma_deposition_publish(&gamma,nonthermal?GAMMA_PROVENANCE_NONLOCAL_MC:GAMMA_PROVENANCE_EXTERNAL_FILE,evolved_time,NULL,NULL,NULL,heating));
+            if(nonthermal)gamma.nonthermal_provider=&provider;
             trial.old=&initial.radiation;trial.epoch_s=evolved_time;trial.inner_H=inner;c.time_trial=&trial;
             c.common_obs_n=5;c.common_obs_nu=malloc(5*sizeof(double));CHECK(c.common_obs_nu);
             for(int i=0;i<5;i++)c.common_obs_nu[i]=nu*(.99+.005*i);
@@ -210,6 +244,11 @@ int main(void){
         }
         CHECK(!cmfgen_write_common_observer(&c,"initial_evolved_spectrum.csv","initial_evolved_spectrum.json",
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
+        if(nonthermal){
+            CHECK(nt_calls>report.iterations+time_report.iterations&&nt_max_rate>0&&isfinite(nt_max_rate));
+            CHECK(gamma.nonthermal_rates==NULL);
+            printf("CMF_INITIAL_NONTHERMAL_PASS provider=ACTUAL_SPENCER_FANO calls=%d maximum_rate=%.17g refreshed_material=1 synthetic_atom=1 physical_gamma_transport=0 SN_comparison=0\n",nt_calls,nt_max_rate);
+        }
         puts("CMF_INITIAL_COUPLED_SELFTEST_PASS actual_radiation=1 actual_R7=1 initial_fixed_T=1 evolved_free_T=1 synthetic_atom=1 time_history=ACTUAL_INITIAL_FACE_H SN_comparison=0");
         free(inner);free(old_radiation);cmf_time_radiation_trial_free(&trial);
         cmf_physical_time_state_free(&initial);cmf_physical_time_state_free(&evolved);

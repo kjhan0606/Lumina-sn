@@ -17,6 +17,7 @@ initial_build=${1:?cluster build directory required}
 initial_input=${2:?verified initial-prepare input directory required}
 initial_iteration=${3:-plain}
 initial_backend=${4:-gpu}
+initial_nt=${5:-}
 case "$initial_backend" in
  gpu) initial_variant=cluster;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
  cpu) initial_variant=cpu;initial_binary=$initial_build/lumina_cpu;initial_devices=0 ;;
@@ -44,6 +45,21 @@ while read -r initial_hash initial_file; do
  cp "$initial_input/input/$initial_file" "$initial_out/input/$initial_file"
 done < "$initial_input/input.sha256"
 cp "$initial_input/input.sha256" "$initial_build/commit.txt" "$initial_build/binary.sha256" "$initial_out/"
+initial_nt_arguments=()
+initial_nt_mode=ALL_THERMAL_CONTROL
+if [[ -n "$initial_nt" ]]; then
+ # 연결표의 global ID가 이번 원자 모형과 같은지 확인한다.
+ (cd "$initial_nt/input"; sha256sum -c "$initial_nt/input.sha256") > "$initial_out/nonthermal_input_verify.log"
+ for initial_table in levels.csv ionization_energies.csv bf_channels.terminal.csv; do
+  cmp "$initial_nt/input/$initial_table" "$initial_out/input/$initial_table"
+ done
+ test ! -e "$initial_out/input/arnaud_rothenflug_23jun15"
+ test ! -e "$initial_out/input/nonthermal_resolved_bindings.csv"
+ cp "$initial_nt/input/arnaud_rothenflug_23jun15" "$initial_nt/nonthermal_resolved_bindings.csv" "$initial_out/input/"
+ (cd "$initial_out/input"; sha256sum arnaud_rothenflug_23jun15 nonthermal_resolved_bindings.csv) >> "$initial_out/input.sha256"
+ initial_nt_arguments=("$initial_out/input/arnaud_rothenflug_23jun15" "$initial_out/input/nonthermal_resolved_bindings.csv")
+ initial_nt_mode=RESOLVED_NONTHERMAL_SUBSET
+fi
 cp "$initial_src/scripts/run_cmf_toy_initial.slurm" "$initial_out/runner.slurm"
 sha256sum "$initial_out/runner.slurm" > "$initial_out/runner.sha256"
 (cd "$initial_out/input"; sha256sum -c "$initial_out/input.sha256") > "$initial_out/input_verify.log"
@@ -58,14 +74,14 @@ export LUMINA_BF_CHANNELS_FILE=$initial_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv
 env | LC_ALL=C sort | grep '^LUMINA_' > "$initial_out/env_lumina_effective.txt"
-printf 'mode=ALL_THERMAL_INITIAL_CONTROL\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
- "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
+printf 'mode=%s\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
+ "$initial_nt_mode" "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"
 # 2GiB/file 상한. 중간 raw dump는 생성하지 않고 수렴한 물리 이력만 저장한다.
 (ulimit -f 2097152; exec "$initial_binary" --cmf-toy-initial \
  "$initial_out/input/snia_toy06_2d.dat" "$initial_out/input" \
- "$initial_out/input/NUC_DECAY_DATA_ni56_co56_fe56" 100 200000 128) \
+ "$initial_out/input/NUC_DECAY_DATA_ni56_co56_fe56" 100 200000 128 "${initial_nt_arguments[@]}") \
  > "$initial_out/initial.log" 2> "$initial_out/initial.err"
 sha256sum initial_state.bin initial_converged_material.csv initial_spectrum.csv initial_spectrum.json \
  > "$initial_out/output.sha256"
-echo 'INITIAL_COMPLETE: 2-day all-thermal control only; final spectrum goal not achieved'
+echo "INITIAL_COMPLETE: 2-day $initial_nt_mode; final spectrum goal not achieved"
