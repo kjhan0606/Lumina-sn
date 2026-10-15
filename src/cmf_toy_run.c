@@ -74,3 +74,71 @@ done:
     cmf_gamma_result_free(&deposition);cmf_toy_gamma_source_free(&source);cmf_toy_model_free(&m);
     return rc;
 }
+
+int cmf_toy_step_main(int argc,char **argv){
+    if(argc!=10){fprintf(stderr,"usage: %s --cmf-toy-step ejecta atomic_dir nuclear_data previous_state new_epoch_s shells packets iterations\n",argv[0]);return 2;}
+    char *end;errno=0;double epoch=strtod(argv[6],&end);
+    if(errno||*end||!(epoch>0)||!isfinite(epoch)||getenv("LUMINA_FIXED_TE_PROFILE"))return 2;
+    long values[3];
+    for(int i=0;i<3;i++){errno=0;values[i]=strtol(argv[7+i],&end,10);if(errno||*end)return 2;}
+    if(values[0]<2||values[0]>256||values[1]<2||values[1]>2000000||values[2]<0||values[2]>512)return 2;
+    int ns=(int)values[0],cap=(int)values[2];uint64_t packets=(uint64_t)values[1];
+    const double mass[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
+    CMFToyModel m={0};CMFPhysicalTimeState past={0},next={0};NLTEPhysicalHistory projected={0};
+    CMFGammaNuclearData nuclear={0};CMFToyGammaSource source={0};CMFGammaResult deposition={0};
+    GammaDeposition gamma={0};CMFGENState cs={0};CMFTimeRadiationTrial trial={0};CMFTimeEpochReport report={0};
+    double *inner=NULL;FILE *fp=NULL;int rc=1;const char *phase="material and physical history";
+    if(cmf_toy_model_prepare(&m,argv[2],argv[3],ns,mass)||m.ejecta.velocity_edges[0]!=0||
+       cmf_physical_time_state_read(&past,argv[5],&m.nlte,&m.atom,&m.geometry)||
+       !(epoch>past.radiation.epoch_s))goto done;
+    phase="decay and expansion";
+    if(cmf_gamma_nuclear_read(&nuclear,argv[4])||
+       cmf_toy_gamma_source_build_at(&source,&m.ejecta,&nuclear,past.radiation.epoch_s,epoch,CMF_DECAY_INTERVAL_AVERAGE)||
+       cmf_toy_model_begin_epoch(&m,&past,&source.epoch,&projected)||
+       cmf_toy_model_write_material(&m,"step_predictor.csv","TIME_PREDICTOR_FROM_DECAYED_HISTORY; not converged"))goto done;
+    phase="gamma";
+    if(cmf_gamma_transport(&source.input,packets,UINT64_C(2026101502)^(uint64_t)llround(epoch),&deposition))goto done;
+    gamma_deposition_init(&gamma,ns);
+    if(!gamma.heating_rate||!gamma.nonthermal_ioniz_rate)goto done;
+    fp=fopen("step_gamma.csv","wx");if(!fp)goto done;
+    if(fprintf(fp,"shell,gamma_erg_cm3_s,gamma_MCSE,positive_packets,positron_erg_cm3_s,total_erg_cm3_s\n")<0)goto done;
+    for(int s=0;s<ns;s++){
+        gamma.heating_rate[s]=deposition.deposition_erg_cm3_s[s]+source.epoch.positron_emission[s];
+        if(fprintf(fp,"%d,%.17g,%.17g,%.0f,%.17g,%.17g\n",s,deposition.deposition_erg_cm3_s[s],
+            deposition.deposition_standard_error[s],deposition.positive_packet_count[s],
+            source.epoch.positron_emission[s],gamma.heating_rate[s])<0)goto done;
+    }
+    {int closed=fclose(fp);fp=NULL;if(closed)goto done;}
+    if(gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_NONLOCAL_MC,epoch,NULL,NULL,NULL,gamma.heating_rate))goto done;
+    double energy[]={1,2000};
+    CMFNonthermalBoundModel thermal={m.atom.n_levels,m.atom.n_ion_pops,2,0,energy,NULL,NULL};
+    CMFNonthermalProvider provider={&thermal,cmf_nonthermal_bound_evaluate};gamma.nonthermal_provider=&provider;
+    fprintf(stderr,"[TOY-STEP] old=%.17g new=%.17g packets=%llu gamma_deposited=%.17g gamma_MCSE=%.17g source=INTERVAL_AVERAGE nonthermal=ALL_THERMAL_CONTROL nuclear_Q_completion=0 T=FREE\n",
+        past.radiation.epoch_s,epoch,(unsigned long long)packets,deposition.deposited_comoving_erg_s,deposition.deposited_comoving_standard_error);
+    if(!cap){puts("TOY_STEP_PREPARED physical_history=FILE radiation_solved=0 new_epoch_converged=0");rc=0;goto done;}
+    phase="time coupled solve";
+    inner=calloc((size_t)past.radiation.n_bins,sizeof(double));if(!inner||cmfgen_init(&cs,&m.geometry))goto done;
+    trial.old=&past.radiation;trial.epoch_s=epoch;trial.inner_H=inner;cs.time_trial=&trial;
+    cs.common_obs_n=3000;cs.common_obs_nu=malloc((size_t)cs.common_obs_n*sizeof(double));
+    if(!cs.common_obs_nu)goto done;
+    for(int b=0;b<cs.common_obs_n;b++)cs.common_obs_nu[b]=C_SPEED_OF_LIGHT/(25500e-8)*exp(log(25500./2500)*b/(cs.common_obs_n-1));
+    CMFTimeEpochStatus status=cmfgen_solve_time_epoch(&cs,&m.geometry,&m.opacity,&m.bf,&m.plasma,
+        &m.nlte,&m.atom,&gamma,m.plasma.T_e[0],cap,1e-5,&next,&report);
+    fprintf(stderr,"[TOY-STEP] status=%d iterations=%d calls=%d T_change=%.17g ne_change=%.17g population_change=%.17g J_change=%.17g H_change=%.17g converged=%d\n",
+        status,report.iterations,report.radiation_calls,report.temperature_update,report.electron_update,
+        report.population_update,report.radiation_update,report.flux_update,report.converged);
+    if(status!=CMF_EPOCH_OK||!report.converged)goto done;
+    phase="time history output";
+    if(cmf_physical_time_state_write(&next,"step_state.bin")||
+       cmf_toy_model_write_material(&m,"step_material.csv","CONVERGED_TIME_NLTE; FREE_T; ALL_THERMAL_CONTROL")||
+       cmfgen_write_common_observer(&cs,"step_spectrum.csv","step_spectrum.json",m.nlte.radfield_view.generation,
+          m.atom.population_committed_generation,m.plasma.T_e_generation,m.opacity.tau_computed_generation))goto done;
+    printf("TOY_STEP_CONVERGED epoch=%.17g nonthermal=ALL_THERMAL_CONTROL spectrum_compared=0\n",epoch);rc=0;
+done:
+    if(fp)fclose(fp);
+    fprintf(stderr,"[TOY-STEP] exit=%d phase=%s\n",rc,phase);
+    cmfgen_free(&cs);cmf_time_radiation_trial_free(&trial);free(inner);gamma_deposition_free(&gamma);
+    cmf_gamma_result_free(&deposition);cmf_toy_gamma_source_free(&source);cmf_toy_model_free(&m);
+    nlte_physical_history_free(&projected);cmf_physical_time_state_free(&past);cmf_physical_time_state_free(&next);
+    return rc;
+}

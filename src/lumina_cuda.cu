@@ -6829,6 +6829,7 @@ int main(int argc, char *argv[]) {
     setbuf(stdout, NULL); /* Phase 6 - Step 8: unbuffered output */
     if(argc>1&&!strcmp(argv[1],"--cmf-toy-bootstrap"))return cmf_toy_bootstrap_main(argc,argv);
     if(argc>1&&!strcmp(argv[1],"--cmf-toy-initial"))return cmf_toy_initial_main(argc,argv);
+    if(argc>1&&!strcmp(argv[1],"--cmf-toy-step"))return cmf_toy_step_main(argc,argv);
     if (getenv("LUMINA_CMF_NLTE_SELFTEST")) {  /* confirmation-ladder N — CPU-only, pre-model, instant */
         cmf_nlte_selftest(getenv("LUMINA_CMF_NLTE_SELFTEST")); return 0;
     }

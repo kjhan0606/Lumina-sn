@@ -18,6 +18,7 @@ case "$toy_shells" in 100|200) ;; *) exit 2 ;; esac
 toy_mode=${2:-material}
 case "$toy_mode" in
  material) toy_test=tests/cmf_toy_model_selftest.c ;;
+ material-epoch) toy_test=tests/cmf_toy_epoch_selftest.c ;;
  nonthermal) toy_test=tests/cmf_nonthermal_actual_selftest.c ;;
  initial-prepare) toy_test=tests/cmf_toy_initial_selftest.c ;;
  *) exit 2 ;;
@@ -49,7 +50,7 @@ toy_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_jnu
 if [[ "$toy_mode" == nonthermal ]]; then
  toy_units+=(cmf_nonthermal cmf_nonthermal_atomic cmf_nonthermal_provider cmf_nonthermal_excitation cmf_nonthermal_binding)
 fi
-if [[ "$toy_mode" == initial-prepare ]]; then
+if [[ "$toy_mode" == initial-prepare || "$toy_mode" == material-epoch ]]; then
  toy_units+=(cmf_nonthermal cmf_nonthermal_provider cmf_gamma_source cmf_gamma_transport cmf_toy_run)
 fi
 cd "$toy_src"
@@ -68,7 +69,7 @@ for toy_input in "${toy_inputs[@]}"; do cp "$toy_original/$toy_input" "$toy_out/
 cp "$toy_channels/bf_channels.bin" "$toy_channels/bf_channels.terminal.csv" "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/standart_data1/input_models/snia_toy06_2d.dat "$toy_out/input/"
 cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/data/atomic/ionization_reference.csv "$toy_out/input/"
-if [[ "$toy_mode" == initial-prepare ]]; then
+if [[ "$toy_mode" == initial-prepare || "$toy_mode" == material-epoch ]]; then
  cp /gpfs/kjhan/cmfgen_21jun23/atomic/rad_decay_data/NUC_DECAY_DATA_ni56_co56_fe56 "$toy_out/input/"
 fi
 if [[ "$toy_mode" == nonthermal ]]; then
@@ -92,5 +93,15 @@ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc "$toy_test" \
 toy_arguments=(input/snia_toy06_2d.dat input "$toy_shells")
 if [[ "$toy_mode" == nonthermal ]]; then toy_arguments+=(nonthermal_resolved_bindings.csv); fi
 (cd "$toy_out"; ./prepare "${toy_arguments[@]}" > prepare.log 2> prepare.err)
+if [[ "$toy_mode" == material-epoch ]]; then
+ # 프로세스당 초기화는1회다. 별도 실제 CLI 프로세스에서 fixture 복원과
+ # 감마 준비만 시험하며 cap=0이므로 수렴한 물리 시점으로 저장하지 않는다.
+ mkdir "$toy_out/step-prepare"
+ (cd "$toy_out/step-prepare"; ../prepare --cmf-toy-step \
+  "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" \
+  "$toy_out/input/NUC_DECAY_DATA_ni56_co56_fe56" "$toy_out/fixture_nonconverged_epoch.bin" \
+  177120 "$toy_shells" 2000 0 > ../step-prepare.log 2> ../step-prepare.err)
+ test ! -e "$toy_out/step-prepare/step_state.bin"
+fi
 sha256sum -c "$toy_out/source.sha256" > "$toy_out/source_verify.log"
 (cd "$toy_out/input"; sha256sum -c "$toy_out/input.sha256" > "$toy_out/input_verify.log")

@@ -2,6 +2,7 @@
 #define LUMINA_CMF_TOY_MODEL_H
 #include "cmf_ejecta.h"
 #include "line_jbar.h"
+#include "cmf_time_epoch.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,8 +28,14 @@ int cmf_toy_model_prepare(CMFToyModel*,const char *ejecta_path,const char *atomi
 void cmf_toy_model_free(CMFToyModel*);
 int cmf_toy_model_write_seed(const CMFToyModel*,const char *csv_path);
 int cmf_toy_model_write_material(const CMFToyModel*,const char *csv_path,const char *status);
+/* 새로 prepare한 소유자에 실제 과거를 연결한다. 현재 반복 초기값일 뿐
+ * 수렴한 새 시점은 아니다. projected는 모델보다 오래 살아야 한다.
+ * 과거는 불변. 갱신 후 실패시 m->prepared=0이므로 모델을 버리고 재구축한다. */
+int cmf_toy_model_begin_epoch(CMFToyModel*,const CMFPhysicalTimeState*,
+    const CMFEjectaEpoch*,NLTEPhysicalHistory *projected);
 int cmf_toy_bootstrap_main(int argc,char **argv);
 int cmf_toy_initial_main(int argc,char **argv);
+int cmf_toy_step_main(int argc,char **argv);
 #ifdef __cplusplus
 }
 #endif

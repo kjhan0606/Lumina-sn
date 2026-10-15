@@ -236,6 +236,7 @@ static void candidate_bf_free(BFOpacity *bf)
     if (!bf) return;
     free(bf->chi_bf);
     free(bf->eta_bf);
+    free(bf->eta_milne_ok);
     free(bf->activation_level);
     free(bf->event_level_offset);
     free(bf->event_element);

@@ -123,7 +123,9 @@ int main(void){
         CMFPhysicalTimeState restored={0};
         CHECK(!cmf_physical_time_state_write(&initial,"initial_state.bin"));
         CHECK(cmf_physical_time_state_write(&initial,"initial_state.bin")!=0);
+        abund[0]=.5;abund[1]=.8; /* 현재 조성과 과거의 조성은 다를 수 있다. */
         CHECK(!cmf_physical_time_state_read(&restored,"initial_state.bin",&n,&a,&g));
+        CHECK(abund[0]==.5&&abund[1]==.8);abund[0]=abund[1]=1;
         CHECK(!memcmp(initial.material.storage,restored.material.storage,(size_t)(5+NI+NL)*NS*sizeof(double)));
         CHECK(!memcmp(initial.radiation_storage,restored.radiation_storage,
             ((size_t)NS+1+(size_t)(2*NS+1)*initial.radiation.n_bins)*sizeof(double)));

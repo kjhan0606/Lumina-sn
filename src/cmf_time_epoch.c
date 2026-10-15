@@ -82,6 +82,8 @@ int cmf_physical_time_state_read(CMFPhysicalTimeState *out,const char *path,
         raw.radiation=(CMFTimeRadiationHistory){(int)ns,(int)nb,par[0],par[1],par[2],v,v+ns+1,v+ns+1+ns*nb};
         AtomicData av=*a;NLTEConfig nv=*n;PlasmaState pv={0};PopulationAtomicView view={0};
         av.ion_number_density=m+5*ns;av.partition_functions=partition;av.population_committed_generation=h[5];
+        /* 내부에너지 계산은 저장 이온/준위 핵수를 사용한다. 현재 실행의
+         * 원소 질량분율을 과거에 덮어쓰거나 다시 정규화하지 않는다. */
         nv.nlte_level_populations=m+(5+ni)*ns;nv.population_committed_generation=h[5];
         pv.n_shells=(int)ns;pv.rho=m;pv.T_e=m+ns;pv.n_electron=m+3*ns;pv.T_e_generation=h[6];
         view.n_ions=ni;view.n_levels=a->n_levels;view.level_offset=a->level_offset;

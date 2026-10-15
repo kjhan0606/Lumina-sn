@@ -127,6 +127,72 @@ int cmf_toy_model_write_seed(const CMFToyModel *m,const char *path){
     return cmf_toy_model_write_material(m,path,"BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished");
 }
 
+int cmf_toy_model_begin_epoch(CMFToyModel *m,const CMFPhysicalTimeState *past,
+    const CMFEjectaEpoch *epoch,NLTEPhysicalHistory *projected){
+    if(!m||!m->prepared||!past||!epoch||!projected||projected==&past->material||
+       m->plasma.physical_history||m->nlte.radiation_field.field.generation.computed_generation||
+       !past->material.storage||!past->material.energy.density_g_cm3||past->material.decay_epoch_s!=0||
+       past->material.energy.n_shells!=(size_t)m->plasma.n_shells||
+       !past->material.population_generation||past->material.population_generation==UINT64_MAX||!past->material.temperature_generation||
+       past->material.energy.epoch_s!=past->radiation.epoch_s||
+       epoch->previous_epoch_s!=past->radiation.epoch_s||!(epoch->epoch_s>epoch->previous_epoch_s)||
+       !isfinite(epoch->epoch_s)||!(epoch->previous_epoch_s>0)||
+       epoch->n_shells!=m->plasma.n_shells||past->radiation.n_shells!=m->plasma.n_shells||
+       !past->radiation.velocity_edges||!epoch->number_density||!epoch->density||
+       getenv("LUMINA_FIXED_TE_PROFILE"))return -1;
+    AtomicData *a=&m->atom;NLTEConfig *n=&m->nlte;PlasmaState *p=&m->plasma;
+    size_t ns=p->n_shells;double dilution=pow(epoch->previous_epoch_s/epoch->epoch_s,3);
+    if(!(dilution>0)||!isfinite(dilution)||a->n_elements!=CMF_TOY_ELEMENTS)return -1;
+    for(size_t s=0;s<=ns;s++){
+        double v=m->ejecta.velocity_edges[s],old=past->radiation.velocity_edges[s];
+        if(!isfinite(old)||(v==0?old!=0:fabs(old/v-1)>1e-12))return -1;
+        if(s<ns&&(!(past->material.energy.density_g_cm3[s]>0)||
+           !isfinite(past->material.energy.density_g_cm3[s])||!(epoch->density[s]>0)||!isfinite(epoch->density[s])||
+           fabs(epoch->density[s]/past->material.energy.density_g_cm3[s]/dilution-1)>1e-10))return -1;
+    }
+    const int source_Z[6]={28,27,26,20,16,14};
+    double *after=malloc((size_t)a->n_elements*ns*sizeof(double));if(!after)return -1;
+    for(int e=0;e<a->n_elements;e++){
+        int k=0;while(k<6&&source_Z[k]!=a->element_Z[e])k++;
+        if(k==6){free(after);return -1;}
+        for(size_t s=0;s<ns;s++)after[e*ns+s]=epoch->number_density[k*ns+s]/dilution;
+    }
+    NLTEPhysicalHistory trial={0};
+    int status=nlte_physical_history_decay_projection(&trial,&past->material,n,a,epoch->epoch_s,after);
+    free(after);if(status!=NLTE_CANDIDATE_OK)return -1;
+    /* 여기부터 실패한 모델을 다시 소비하지 못하게 한다. 과거는 건드리지 않는다. */
+    m->prepared=0;
+    if(cmf_ejecta_apply_epoch(&m->ejecta,epoch,&m->geometry,p,a))goto failed;
+    memcpy(p->T_e,trial.energy.temperature_K,ns*sizeof(double));
+    for(size_t s=0;s<ns;s++)p->n_electron[s]=trial.energy.n_electron_cm3[s]*dilution;
+    for(size_t i=0;i<(size_t)a->n_ion_pops*ns;i++)a->ion_number_density[i]=trial.ion_density[i]*dilution;
+    for(size_t i=0;i<(size_t)n->n_nlte_levels_total*ns;i++)n->nlte_level_populations[i]=trial.level_density[i]*dilution;
+    a->population_committed_generation=trial.population_generation+1;
+    n->population_required_generation=n->population_committed_generation=a->population_committed_generation;
+    p->T_e_generation=trial.temperature_generation;
+    a210_publication_free(&p->te_publication);
+    p->te_publication.te_lane=A210_TE_LANE_FREE_T;p->te_publication.re_root_required=1;
+    p->te_publication.required_te_generation=p->te_publication.committed_te_generation=p->T_e_generation;
+    if(population_te_manifest_sha256(p->T_e,ns,p->te_publication.te_manifest_sha256)!=POP_OK)goto failed;
+    PopulationAtomicView view={0};view.n_ions=a->n_ion_pops;view.n_levels=a->n_levels;
+    view.level_offset=a->level_offset;view.energy_eV=a->level_energy_eV;view.g=a->level_g;
+    view.level_Z=a->level_Z;view.level_ion=a->level_ion;view.topion_n=a->topion_n;
+    view.topion_ion_index=a->topion_ion_index;view.topion_E_cm=a->topion_E_cm;view.topion_g=a->topion_g;
+    if(population_partition_build(&view,p->T_e,ns,a->population_committed_generation,
+        p->T_e_generation,a->partition_functions,&a->partition_stamp)!=POP_OK||
+       nlte_precompute_within_sl_frac(n,a,p,(int)ns))goto failed;
+    p->initial_steady_nlte=0;
+    nlte_update_tau_sobolev(n,a,&m->opacity,epoch->epoch_s,(int)ns);
+    if(tau_sobolev_assert_fresh(&m->opacity,"time predictor from physical history"))goto failed;
+    nlte_physical_history_free(projected);*projected=trial;
+    p->physical_history=projected;m->prepared=1;
+    fprintf(stderr,"[TOY-EPOCH] old=%.17g new=%.17g dilution=%.17g source_mode=%d predictor=DECAYED_HISTORY T=FREE new_epoch_converged=0\n",
+        epoch->previous_epoch_s,epoch->epoch_s,dilution,epoch->source_mode);
+    return 0;
+failed:
+    nlte_physical_history_free(&trial);p->physical_history=NULL;return -1;
+}
+
 int cmf_toy_bootstrap_main(int argc,char **argv){
     if(argc!=6){fprintf(stderr,"usage: %s --cmf-toy-bootstrap ejecta atomic_dir shells output.csv\n",argv[0]);return 2;}
     char *end;errno=0;long ns=strtol(argv[4],&end,10);
