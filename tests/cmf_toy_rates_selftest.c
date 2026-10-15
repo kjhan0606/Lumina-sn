@@ -64,6 +64,7 @@ static int matrix_cache_check(CMFToyModel *m,GammaDeposition *gamma,int e,int s,
         double start=seconds();
         CHECK(nlte_element_initial_steady_solve_cached(n,a,p,&m->opacity,e,s,gamma->epoch,gamma,cache)==POP_OK);
         double cached_s=seconds()-start;
+        if(trial==1||trial==2)CHECK(memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))!=0);
         memcpy(cached_pop,n->nlte_level_populations,np*sizeof(double));
         memcpy(cached_ion,a->ion_number_density,ni*sizeof(double));
         CHECK(nlte_element_base_cache_hits(cache)-before==(size_t)(trial==1||trial==2));
