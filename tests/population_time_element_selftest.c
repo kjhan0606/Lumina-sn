@@ -1,4 +1,5 @@
 #include "nlte_population_candidate.h"
+#include "cmf_nonthermal_rates.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,7 +7,20 @@
 #define CHECK(c,m) do{if(!(c)){fprintf(stderr,"[ELEMENT-TIME][FAIL] %s line=%d\n",m,__LINE__);return 1;}}while(0)
 extern int nlte_time_core_selftest_solve(NLTEConfig*,AtomicData*,PlasmaState*,OpacityState*,double,GammaDeposition*);
 
-static int chain_check(int count,int Zvalue)
+static int provider_calls,provider_fail;
+static int fixture_provider(const void *ctx,const AtomicData *a,const NLTEConfig *n,
+    const PlasmaState *p,const GammaDeposition *g,CMFNonthermalRates *out){
+    const CMFNonthermalRates *in=ctx;
+    if(provider_fail||!p->n_electron||!n->nlte_level_populations||a->n_levels!=in->n_levels)return -1;
+    *out=*in;out->epoch_s=g->epoch;out->deposition_generation=g->generation;
+    out->transitions=malloc((size_t)in->n_transitions*sizeof(*out->transitions));
+    out->rate_per_particle=malloc((size_t)in->n_transitions*in->n_shells*sizeof(double));
+    if(!out->transitions||!out->rate_per_particle)return -1;
+    memcpy(out->transitions,in->transitions,(size_t)in->n_transitions*sizeof(*out->transitions));
+    memcpy(out->rate_per_particle,in->rate_per_particle,(size_t)in->n_transitions*in->n_shells*sizeof(double));
+    provider_calls++;return 0;
+}
+static int chain_check(int count,int Zvalue,int resolved_nt)
 {
     NLTEConfig n={0};AtomicData a={0};PlasmaState p={0};OpacityState op={0};
     int Z[4],stage[4],offset[5]={0,1,2,3,4},map[4]={0,1,2,3};
@@ -42,22 +56,52 @@ static int chain_check(int count,int Zvalue)
     h.level_density=past;h.level_global=map;h.ion_Z=Z;h.ion_stage=stage;p.physical_history=&h;
     GammaDeposition gd={0};gamma_deposition_init(&gd,1);
     double heating[1]={2*35*EV_TO_ERG/.05};
-    CHECK(!gamma_deposition_publish(&gd,GAMMA_PROVENANCE_EXTERNAL_FILE,2,NULL,NULL,NULL,heating),"deposition");
+    CHECK(!gamma_deposition_publish(&gd,resolved_nt?GAMMA_PROVENANCE_NONLOCAL_MC:GAMMA_PROVENANCE_EXTERNAL_FILE,
+                                   2,NULL,NULL,NULL,heating),"deposition");
+    CMFNonthermalTransition nt_route[2]={{0,2,-1},{2,3,-1}};double nt_rate[2]={2,1};
+    CMFNonthermalRates nt={.n_shells=1,.n_levels=count,.n_ions=count,.n_transitions=count==4?2:1,
+        .epoch_s=2,.deposition_generation=gd.generation,.transitions=nt_route,.rate_per_particle=nt_rate};
+    CMFNonthermalProvider provider={&nt,fixture_provider};
+    if(resolved_nt){
+        CHECK(gd.nonthermal_ioniz_rate[0]==0&&gd.heating_rate[0]==heating[0],"MC did not invoke ETA/W or discard deposition");
+        GammaDeposition published=gd;double invalid[1]={-1};
+        CHECK(gamma_deposition_publish(&gd,GAMMA_PROVENANCE_NONLOCAL_MC,3,NULL,NULL,NULL,invalid)!=0&&
+              !memcmp(&gd,&published,sizeof gd)&&gd.heating_rate[0]==heating[0],"invalid MC publication preservation");
+        gd.nonthermal_rates=&nt;gd.nonthermal_provider=&provider;
+    }
     /* 고정 계수 시험: 전자밀도는 극소로 주어 DR을 무시 가능한 수준으로
      * 둔다. 전하/온도 자기일관성이나 실제 Si/S 원자료 시험으로 해석하지 않는다. */
     CHECK(nlte_element_time_solve(&n,&a,&p,&op,0,0,2,&gd)==POP_OK,"whole-element assembly and solve");
     double expected[4]={0},left=1;
     for(int i=0;i<count-1;i++){expected[i]=left/3;left*=2./3;}expected[count-1]=left;
+    if(resolved_nt){expected[0]=1./3;expected[1]=0;expected[2]=count==3?2./3:1./3;expected[3]=count==4?1./3:0;}
     double sum=0;
     for(int i=0;i<count;i++){
         CHECK(fabs(population[i]-expected[i])<1e-14 && population[i]==ion_population[i],"analytic multistage population");
         sum+=population[i];
     }
     CHECK(fabs(sum-1)<1e-14 && past[0]==8 && past[1]==0,"mass and past");
+    int calls_before=provider_calls;
+    if(resolved_nt)gd.nonthermal_rates=NULL; /* 실제 core가 현재 후보에서 생성해야 한다. */
     CHECK(!nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd),"actual private core whole-element route");
+    if(resolved_nt)CHECK(provider_calls>calls_before&&gd.nonthermal_rates==NULL,"current-candidate provider or lifetime");
     CHECK(a.population_committed_generation==2 && n.population_committed_generation==2,"atomic private commit");
     for(int i=0;i<count;i++)CHECK(fabs(population[i]-expected[i])<1e-14,"core preserved multistage solution");
     double saved[4],savedion[4];memcpy(saved,population,sizeof(saved));memcpy(savedion,ion_population,sizeof(savedion));
+    if(resolved_nt){
+        gd.nonthermal_rates=&nt;nt_route[0].upper_global=count;
+        CHECK(nlte_element_time_solve(&n,&a,&p,&op,0,0,2,&gd)!=POP_OK&&
+              !memcmp(saved,population,sizeof(saved))&&!memcmp(savedion,ion_population,sizeof(savedion)),"resolved target rejection");
+        nt_route[0].upper_global=2;gd.nonthermal_rates=NULL;provider_fail=1;
+        CHECK(nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd)!=0&&a.population_committed_generation==2&&
+              !memcmp(saved,population,sizeof(saved))&&!memcmp(savedion,ion_population,sizeof(savedion)),"provider failure rollback");
+        provider_fail=0;gd.nonthermal_provider=NULL;
+        CHECK(nlte_time_core_selftest_solve(&n,&a,&p,&op,2,&gd)!=0&&
+              !memcmp(saved,population,sizeof(saved)),"MC without SF provider refused");
+        printf("[ELEMENT-TIME] RESOLVED_NT_PASS Z=%d stages=%d n0=%.17g n1=%.17g n2=%.17g top=%.17g provider_calls=%d ETA_W=0 total_deposition_preserved=1\n",
+               Zvalue,count,saved[0],saved[1],saved[2],saved[count-1],provider_calls-calls_before);
+        gamma_deposition_free(&gd);return 0;
+    }
     target[0]=count;
     CHECK(nlte_element_time_solve(&n,&a,&p,&op,0,0,2,&gd)!=POP_OK &&
           !memcmp(saved,population,sizeof(saved)) && !memcmp(savedion,ion_population,sizeof(savedion)),"missing target atomic rejection");
@@ -146,7 +190,8 @@ static int charge_exchange_check(void)
 
 int main(void)
 {
-    if(chain_check(3,14)||chain_check(4,16)||charge_exchange_check())return 1;
+    if(chain_check(3,14,0)||chain_check(4,16,0)||charge_exchange_check()||
+       chain_check(3,14,1)||chain_check(4,16,1))return 1;
     puts("[ELEMENT-TIME] PASS overlapping_pair_restore=0 steady_ion_renormalization=0");
     return 0;
 }

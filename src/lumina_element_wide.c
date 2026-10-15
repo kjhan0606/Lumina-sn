@@ -10,6 +10,7 @@
 #include "lumina.h"
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf rate result type */
 #include "nlte_population_candidate.h"
+#include "cmf_nonthermal_rates.h"
 
 #include <errno.h>
 #include <float.h>
@@ -2182,6 +2183,11 @@ static PopulationStatus element_physical_solve(NLTEConfig *nlte,AtomicData *atom
                 Z,shell,lo,hi,rc,failed,bad,fire.target_fallback,fire.continuum_deleted,fire.nstar_cap,fire.nonfinite_guard);
             status=POP_ATOMIC_MISSING;goto time_element_done;
         }
+    }
+    if(gamma && gamma->provenance==GAMMA_PROVENANCE_NONLOCAL_MC &&
+       cmf_nonthermal_rates_add(gamma->nonthermal_rates,nlte,atom,Z,shell,ns,epoch,
+           gamma->generation,sl0,N,terminal,A,outflow)){
+        status=POP_ATOMIC_MISSING;goto time_element_done;
     }
     if(steady){
         PopulationGeneratorSolveDiagnostic diagnostic={0};

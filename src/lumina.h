@@ -821,7 +821,8 @@ const DRCoefficient* dr_lookup(int Z, int ion_recomb);
 typedef enum {
     GAMMA_PROVENANCE_NONE = 0,
     GAMMA_PROVENANCE_INTERNAL_BATEMAN,
-    GAMMA_PROVENANCE_EXTERNAL_FILE
+    GAMMA_PROVENANCE_EXTERNAL_FILE,
+    GAMMA_PROVENANCE_NONLOCAL_MC
 } GammaDepositionProvenance;
 
 typedef enum {
@@ -840,6 +841,10 @@ typedef struct {
     GammaDepositionProvenance provenance;
     char heating_rate_manifest_sha256[65];
     char nonthermal_ioniz_rate_manifest_sha256[65];
+    /* 새 MC/SF 경로만 사용. 소유권은 운전/현재 반복에 있고 gd는 차용한다.
+     * provider가 실제 후보에서 계산한 rates는 해당 CE 반복 직후 해제한다. */
+    const struct CMFNonthermalProvider *nonthermal_provider;
+    const struct CMFNonthermalRates *nonthermal_rates;
 } GammaDeposition;
 
 /* ============================================================ */

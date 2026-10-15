@@ -5,6 +5,7 @@
 #include "lumina.h" /* Phase 4 - Step 1 */
 #include "nlte_population_candidate.h" /* private all-shell A2-07 trial view */
 #include "cmf_time_epoch.h"
+#include "cmf_nonthermal_rates.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
 #include "line_jbar.h" /* amended A2-02C BB rate graph */
@@ -20666,7 +20667,8 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
     }
 
     /* ---- Non-thermal gamma-ray ionization ---- */
-    if (gamma_dep != NULL && gamma_dep->nonthermal_ioniz_rate[shell] > 0.0) {
+    if (gamma_dep != NULL && gamma_dep->provenance!=GAMMA_PROVENANCE_NONLOCAL_MC &&
+        gamma_dep->nonthermal_ioniz_rate[shell] > 0.0) {
         double R_nt_total = gamma_dep->nonthermal_ioniz_rate[shell]; /* ionizations/s/cm³ */
 
         /* Compute total atom number density in shell from all elements */
@@ -22266,6 +22268,12 @@ static int nlte_solve_all_impl(
     int pairs[NLTE_PAIR_COUNT][2];
     const char *names[NLTE_PAIR_COUNT];
     const int whole_element = nlte_whole_element_mode(plasma);
+    if(gamma_dep->provenance==GAMMA_PROVENANCE_NONLOCAL_MC &&
+       (!whole_element || !gamma_dep->nonthermal_provider ||
+        !gamma_dep->nonthermal_provider->evaluate)){
+        fprintf(stderr,"[NLTE] nonlocal MC requires a current-material nonthermal provider and whole-element owner\n");
+        A2_07_POP_ABORT(POP_ATOMIC_MISSING);
+    }
     if((plasma->initial_steady_nlte!=0&&plasma->initial_steady_nlte!=1)||
        (plasma->initial_steady_nlte&&plasma->physical_history))
         A2_07_POP_ABORT(POP_FORBIDDEN_FALLBACK);
@@ -22407,12 +22415,24 @@ static int nlte_solve_all_impl(
         if(whole_element){
             /* 원소별 전체 행렬을 순차 호출한다. capture의 전역 작업공간과
              * 다른 원소의 CE 파트너 인구는 이 소유자만 갱신한다. */
+            GammaDeposition iteration_gamma=*gamma_dep;
+            CMFNonthermalRates nt_rates={0};
+            if(gamma_dep->provenance==GAMMA_PROVENANCE_NONLOCAL_MC){
+                const CMFNonthermalProvider *provider=gamma_dep->nonthermal_provider;
+                if(provider->evaluate(provider->context,atom,nlte,plasma,gamma_dep,&nt_rates)){
+                    cmf_nonthermal_rates_free(&nt_rates);
+                    free(ew_status);free(old_ion_totals);free(old_pops);
+                    fprintf(stderr,"[NLTE] nonthermal evaluation failed for current material candidate\n");
+                    A2_07_POP_ABORT(POP_SOLVE_FAILED);
+                }
+                iteration_gamma.nonthermal_rates=&nt_rates;
+            }
             for(int e=0;e<atom->n_elements;e++){
                 if(lumina_zinert_element_inactive(atom,e,n_shells))continue;
                 for(int s=0;s<n_shells;s++){
                     PopulationStatus ps=plasma->initial_steady_nlte?
-                        nlte_element_initial_steady_solve(nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep):
-                        nlte_element_time_solve(nlte,atom,plasma,opacity,e,s,time_explosion,gamma_dep);
+                        nlte_element_initial_steady_solve(nlte,atom,plasma,opacity,e,s,time_explosion,&iteration_gamma):
+                        nlte_element_time_solve(nlte,atom,plasma,opacity,e,s,time_explosion,&iteration_gamma);
                     if(ps!=POP_OK){
                         if(solve_diagnostic){
                             solve_diagnostic->stage=NLTE_POP_DIAG_STAGE_ELEMENT_WIDE;
@@ -22422,11 +22442,13 @@ static int nlte_solve_all_impl(
                         fprintf(stderr,"[NLTE-ELEMENT] mode=%s Z=%d shell=%d status=%s\n",
                             plasma->initial_steady_nlte?"INITIAL_STEADY":"TIME",
                             atom->element_Z[e],s,population_status_name(ps));
+                        cmf_nonthermal_rates_free(&nt_rates);
                         free(ew_status);free(old_ion_totals);free(old_pops);
                         A2_07_POP_ABORT(ps);
                     }
                 }
             }
+            cmf_nonthermal_rates_free(&nt_rates);
         }
 
         /* 정상 경로의 pair 해. 과거 상태가 있으면 n_pairs=0이다. */
@@ -24385,6 +24407,7 @@ void gamma_deposition_init(GammaDeposition *gd, int n_shells) {
     gd->provenance = GAMMA_PROVENANCE_NONE;
     gd->heating_rate_manifest_sha256[0] = '\0';
     gd->nonthermal_ioniz_rate_manifest_sha256[0] = '\0';
+    gd->nonthermal_provider=NULL;gd->nonthermal_rates=NULL;
 }
 
 void gamma_deposition_free(GammaDeposition *gd) {
@@ -24397,6 +24420,7 @@ void gamma_deposition_free(GammaDeposition *gd) {
     gd->provenance = GAMMA_PROVENANCE_NONE;
     gd->heating_rate_manifest_sha256[0] = '\0';
     gd->nonthermal_ioniz_rate_manifest_sha256[0] = '\0';
+    gd->nonthermal_provider=NULL;gd->nonthermal_rates=NULL;
 }
 
 static void compute_gamma_deposition(GammaDeposition *gd, AtomicData *atom,
@@ -24472,6 +24496,7 @@ const char *gamma_deposition_provenance_name(
     switch (provenance) {
     case GAMMA_PROVENANCE_INTERNAL_BATEMAN: return "INTERNAL_BATEMAN";
     case GAMMA_PROVENANCE_EXTERNAL_FILE: return "EXTERNAL_FILE";
+    case GAMMA_PROVENANCE_NONLOCAL_MC: return "NONLOCAL_MC";
     default: return "NONE";
     }
 }
@@ -24493,7 +24518,8 @@ GammaDepositionPublicationStatus gamma_deposition_require(
     if (!gd || gd->generation == 0 || gd->n_shells <= 0 ||
         !gd->heating_rate || !gd->nonthermal_ioniz_rate ||
         (gd->provenance != GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
-         gd->provenance != GAMMA_PROVENANCE_EXTERNAL_FILE) ||
+         gd->provenance != GAMMA_PROVENANCE_EXTERNAL_FILE &&
+         gd->provenance != GAMMA_PROVENANCE_NONLOCAL_MC) ||
         gd->heating_rate_manifest_sha256[0] == '\0' ||
         gd->nonthermal_ioniz_rate_manifest_sha256[0] == '\0')
         return GAMMA_PUBLICATION_UNPUBLISHED;
@@ -24520,10 +24546,11 @@ int gamma_deposition_publish(GammaDeposition *gd,
     if (!gd || gd->n_shells <= 0 || !gd->heating_rate ||
         !gd->nonthermal_ioniz_rate || !isfinite(epoch) ||
         (provenance != GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
-         provenance != GAMMA_PROVENANCE_EXTERNAL_FILE) ||
+         provenance != GAMMA_PROVENANCE_EXTERNAL_FILE &&
+         provenance != GAMMA_PROVENANCE_NONLOCAL_MC) ||
         (provenance == GAMMA_PROVENANCE_INTERNAL_BATEMAN &&
          (!atom || !plasma || !geo)) ||
-        (provenance == GAMMA_PROVENANCE_EXTERNAL_FILE &&
+        ((provenance == GAMMA_PROVENANCE_EXTERNAL_FILE || provenance==GAMMA_PROVENANCE_NONLOCAL_MC) &&
          !external_heating_rate)) {
         fprintf(stderr,
                 "[GAMMA][BLOCKED] reason=GAMMA_INVALID_PUBLICATION_INPUT "
@@ -24548,12 +24575,23 @@ int gamma_deposition_publish(GammaDeposition *gd,
         return 5;
     }
 
+    if(provenance==GAMMA_PROVENANCE_NONLOCAL_MC){
+        char checked[65];
+        if(!(epoch>0)||gamma_heating_rate_manifest_sha256(external_heating_rate,
+            (size_t)gd->n_shells,checked))return 5; /* 실패한 새 입력은 기존 게시물을 보존 */
+    }
+
     if (provenance == GAMMA_PROVENANCE_INTERNAL_BATEMAN)
         compute_gamma_deposition(gd, atom, plasma, geo);
     else {
-        memcpy(gd->heating_rate, external_heating_rate,
+        memmove(gd->heating_rate, external_heating_rate,
                (size_t)gd->n_shells * sizeof(double));
-        gamma_deposition_compute_nonthermal(gd);
+        if(provenance==GAMMA_PROVENANCE_NONLOCAL_MC){
+            /* 총 침적은 그대로 에너지식에 들어간다. ETA/W를 만들지 않는다.
+             * 실제 전이율은 후보별 SF 공급자가 생성한다. */
+            memset(gd->nonthermal_ioniz_rate,0,(size_t)gd->n_shells*sizeof(double));
+            gd->nonthermal_rates=NULL;
+        }else gamma_deposition_compute_nonthermal(gd);
     }
 
     char heating_manifest[65], nonthermal_manifest[65];

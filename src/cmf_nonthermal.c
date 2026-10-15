@@ -101,7 +101,9 @@ int cmf_nonthermal_solve(const CMFNonthermalInput *in,CMFNonthermalResult *out){
         const CMFNonthermalRoute *q=&in->routes[r];
         if((q->kind!=CMF_NT_EXCITATION&&q->kind!=CMF_NT_IONIZATION)||!q->cross_section_cm2||
            !(q->threshold_eV>=in->energy_eV[0])||!isfinite(q->threshold_eV)||
-           !(q->lower_population_cm3>=0)||!isfinite(q->lower_population_cm3))return -1;
+           !(q->lower_population_cm3>=0)||!isfinite(q->lower_population_cm3)||
+           !(q->auger_electron_eV>=0&&q->auger_electron_eV<q->threshold_eV)||
+           !isfinite(q->auger_electron_eV)||(q->kind==CMF_NT_EXCITATION&&q->auger_electron_eV!=0))return -1;
         for(int i=0;i<n;i++)if(!(q->cross_section_cm2[i]>=0)||!isfinite(q->cross_section_cm2[i])||
            (in->energy_eV[i]<q->threshold_eV&&q->cross_section_cm2[i]!=0)||
            (q->kind==CMF_NT_IONIZATION&&in->energy_eV[i]==q->threshold_eV&&q->cross_section_cm2[i]!=0))return -1;
@@ -129,6 +131,8 @@ int cmf_nonthermal_solve(const CMFNonthermalInput *in,CMFNonthermalResult *out){
             int rc=q->kind==CMF_NT_IONIZATION?
                 ion_products(in->energy_eV,i+1,E,q->threshold_eV,one,&h,&t):
                 point(in->energy_eV,i+1,(long double)E-q->threshold_eV,1,one,&h,&t);
+            if(!rc&&q->auger_electron_eV>0)
+                rc=point(in->energy_eV,i+1,q->auger_electron_eV,1,one,&h,&t);
             if(rc||one[i]>=1)goto fail;
             denom+=rate*(1-one[i]);heat_coefficient+=rate*h;thermal_coefficient+=rate*t;
             for(int k=0;k<i;k++)dest[k]+=rate*one[k];
@@ -148,7 +152,10 @@ int cmf_nonthermal_solve(const CMFNonthermalInput *in,CMFNonthermalResult *out){
     long double ion=0,exc=0,ioncount=0;
     for(int r=0;r<nr;r++){
         a.events_per_eV[r]=(double)events[r];
-        if(in->routes[r].kind==CMF_NT_IONIZATION){ion+=events[r]*in->routes[r].threshold_eV;ioncount+=events[r];}
+        if(in->routes[r].kind==CMF_NT_IONIZATION){
+            ion+=events[r]*(in->routes[r].threshold_eV-in->routes[r].auger_electron_eV);
+            ioncount+=events[r]*(1+(in->routes[r].auger_electron_eV>0));
+        }
         else exc+=events[r]*in->routes[r].threshold_eV;
         if(!isfinite(a.events_per_eV[r])||!isfinite(a.coefficient_cm3_per_eV[r]))goto fail;
     }

@@ -5,12 +5,14 @@ extern "C" {
 #endif
 /* Spencer–Fano 차분형의 보존적 하강 에너지 수송. 경로마다 실제 lower
  * population을 받는다. ion은1개의 secondary를 만들고 excitation은 만들지
- * 않는다. Auger cascade/준위 연결은 호출자 몫이며 이 함수가 꾸며내지 않는다. */
+ * 않는다. 명시된1개 Auger 전자는 다시 열화한다. 방출 에너지/확률/준위
+ * 연결은 호출자가 실제 자료로 정해야 하며 여기서 추측하지 않는다. */
 enum { CMF_NT_EXCITATION=0, CMF_NT_IONIZATION=1 };
 typedef struct {
     int kind;
     double threshold_eV,lower_population_cm3;
     const double *cross_section_cm2; /* n_energy, 같은 에너지 노드 */
+    double auger_electron_eV; /*0=없음; >0이면 내부에너지 증가=threshold-Auger */
 } CMFNonthermalRoute;
 typedef struct {
     int n_energy,n_routes;
@@ -21,8 +23,8 @@ typedef struct {
 typedef struct {
     int n_energy,n_routes;
     double *storage,*path_cm_per_eV,*events_per_eV,*coefficient_cm3_per_eV;
-    double heating_fraction,ionization_fraction,excitation_fraction;
-    double ionizations_per_eV,thermal_electrons_per_eV;
+    double heating_fraction,ionization_fraction,excitation_fraction; /* 전리는 순 내부에너지 증가 */
+    double ionizations_per_eV,thermal_electrons_per_eV; /* 전리는 Auger 포함 방출 전자수 */
     double energy_error,electron_number_error;
 } CMFNonthermalResult;
 /* 첫 사용 전0초기화. 결과는 실패시 보존. 분율 재정규화/음수 clipping 없음.

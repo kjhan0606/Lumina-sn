@@ -40,7 +40,7 @@ static double excitation(int n){
      * upwind 해법의 수렴 오차와 섞지 않는다. */
     assert(n%3==0);
     for(int i=0;i<n;i++){E[i]=15.*(i+1)/n;L[i]=2;s[i]=E[i]>10?.3:0;}
-    CMFNonthermalRoute q={CMF_NT_EXCITATION,10,1,s};
+    CMFNonthermalRoute q={CMF_NT_EXCITATION,10,1,s,0};
     CMFNonthermalInput in={n,1,E,L,&q};CMFNonthermalResult r={0};
     assert(cmf_nonthermal_solve(&in,&r)==0);check(&r);
     double probability=r.events_per_eV[0]*15,exact=1-exp(-.3*5/2);
@@ -53,9 +53,19 @@ static void simple(void){
     CMFNonthermalInput in={5,0,E,L,NULL};CMFNonthermalResult r={0};
     assert(cmf_nonthermal_solve(&in,&r)==0);check(&r);close_to(r.heating_fraction,1,1e-15);
     close_to(r.thermal_electrons_per_eV,1./16,1e-16);
-    CMFNonthermalRoute ion={CMF_NT_IONIZATION,5,1,s};in.n_routes=1;in.routes=&ion;
+    CMFNonthermalRoute ion={CMF_NT_IONIZATION,5,1,s,0};in.n_routes=1;in.routes=&ion;
     assert(cmf_nonthermal_solve(&in,&r)==0);check(&r);
     assert(r.ionization_fraction>0&&r.thermal_electrons_per_eV>1./16);
+    ion.auger_electron_eV=2;
+    assert(cmf_nonthermal_solve(&in,&r)==0);check(&r);
+    close_to(r.ionizations_per_eV,2*r.events_per_eV[0],1e-15);
+    close_to(r.ionization_fraction,3*r.events_per_eV[0],1e-15);
+    close_to(r.thermal_electrons_per_eV,1./16+2*r.events_per_eV[0],1e-15);
+    printf("NT_AUGER energy_error=%.17g electrons_per_eV=%.17g net_ion_fraction=%.17g\n",
+           r.energy_error,r.ionizations_per_eV,r.ionization_fraction);
+    ion.auger_electron_eV=5;CMFNonthermalResult auger_saved=r;
+    assert(cmf_nonthermal_solve(&in,&r)!=0&&!memcmp(&auger_saved,&r,sizeof r));
+    ion.auger_electron_eV=0;
     CMFNonthermalResult saved=r;ion.threshold_eV=.5;
     assert(cmf_nonthermal_solve(&in,&r)!=0);assert(!memcmp(&saved,&r,sizeof r));
     ion.threshold_eV=5;s[0]=-1;
@@ -156,12 +166,12 @@ static CMFNonthermalResult actual_mix(const CMFNonthermalAtomicData *a,int n,dou
     E[n-1]=2000;
     for(int k=0;k<nr;k++){
         const CMFNonthermalAtomicRoute *r=&a->routes[selected[k]];
-        q[k]=(CMFNonthermalRoute){CMF_NT_IONIZATION,r->threshold_eV,2.5e7,sigma+(size_t)k*n};
+        q[k]=(CMFNonthermalRoute){CMF_NT_IONIZATION,r->threshold_eV,2.5e7,sigma+(size_t)k*n,0};
         for(int i=0;i<n;i++){sigma[(size_t)k*n+i]=cmf_nonthermal_atomic_sigma(r,E[i]);assert(isfinite(sigma[(size_t)k*n+i]));}
     }
     /* 임의 lower 인구의 성분 시험: 실제 SN 준위 인구/선 목록 아님. */
     for(int k=0;k<2;k++){
-        q[nr+k]=(CMFNonthermalRoute){CMF_NT_EXCITATION,8.+3*k,2.5e7,sigma+(size_t)(nr+k)*n};
+        q[nr+k]=(CMFNonthermalRoute){CMF_NT_EXCITATION,8.+3*k,2.5e7,sigma+(size_t)(nr+k)*n,0};
         for(int i=0;i<n;i++)sigma[(size_t)(nr+k)*n+i]=cmf_nonthermal_bethe(E[i],8.+3*k,.5,1);
     }
     CMFNonthermalInput in={n,nr+2,E,L,q};CMFNonthermalResult r={0};
