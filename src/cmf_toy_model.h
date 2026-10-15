@@ -37,6 +37,11 @@ int cmf_toy_model_write_seed(const CMFToyModel*,const char *csv_path);
  * binary/input/설정에서 만든 SHA256이다. read는 새 prepare 소유자만 받는다. */
 int cmf_toy_initial_iterate_write(const CMFToyModel*,const char *path,const char *identity,int iteration);
 int cmf_toy_initial_iterate_read(CMFToyModel*,const char *path,const char *identity,int *iteration);
+/* guess_identity가 없으면 엄격한 동일 실행 재개다. 있으면 해당 원본 신원으로
+ * 초기 추정만 읽고 새 실행의 offset을0으로 돌린다. 원본을 다시 쓰지 않는다.
+ * runner는 원본/새 binary 외의 입력·수치 설정 동일성을 별도로 확인한다. */
+int cmf_toy_initial_iterate_start(CMFToyModel*,const char *path,const char *run_identity,
+                                const char *guess_identity,int *offset);
 int cmf_toy_model_write_material(const CMFToyModel*,const char *csv_path,const char *status);
 /* 새로 prepare한 소유자에 실제 과거를 연결한다. 현재 반복 초기값일 뿐
  * 수렴한 새 시점은 아니다. projected는 모델보다 오래 살아야 한다.

@@ -22,6 +22,8 @@ initial_resume=${6:-}
 initial_ne_iteration=${7:-plain}
 initial_grid=${8:-uniform}
 initial_gamma_sampling=${9:-plain}
+initial_start=${10:-resume}
+case "$initial_start" in resume) ;; guess) [[ -n "$initial_resume" ]] || exit 2 ;; *) exit 2 ;; esac
 case "$initial_gamma_sampling" in plain|mixture) ;; *) exit 2 ;; esac
 case "$initial_grid" in uniform|t10|t05) ;; *) exit 2 ;; esac
 case "$initial_ne_iteration" in plain|anderson) ;; *) exit 2 ;; esac
@@ -99,12 +101,23 @@ initial_id=$(sha256sum "$initial_out/iterate_identity.txt");initial_id=${initial
 export LUMINA_INITIAL_ITERATE_ID=$initial_id
 if [[ -n "$initial_resume" ]]; then
  test -f "$initial_resume/work/initial_iterate.bin"
- cmp "$initial_resume/iterate_identity.txt" "$initial_out/iterate_identity.txt"
+ if [[ "$initial_start" == guess ]]; then
+  # binary만 다른 자체 계산을 초기 추정으로 읽는다. 기본 재개 검사는 완화하지 않는다.
+  cmp <(tail -n +2 "$initial_resume/iterate_identity.txt") <(tail -n +2 "$initial_out/iterate_identity.txt")
+  test "$(head -n 1 "$initial_resume/iterate_identity.txt")" != "$(head -n 1 "$initial_out/iterate_identity.txt")"
+  cp "$initial_resume/iterate_identity.txt" "$initial_out/guess_source_identity.txt"
+  initial_guess_id=$(sha256sum "$initial_out/guess_source_identity.txt");initial_guess_id=${initial_guess_id%% *}
+  export LUMINA_INITIAL_GUESS_ID=$initial_guess_id
+ else
+  cmp "$initial_resume/iterate_identity.txt" "$initial_out/iterate_identity.txt"
+ fi
  cp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
  sha256sum "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin" > "$initial_out/restart_input.sha256"
  cmp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
  export LUMINA_INITIAL_ITERATE_INPUT=$initial_out/restart_input.bin
 fi
+printf 'start=%s\nsource=%s\nsource_identity=%s\nrun_identity=%s\n' \
+ "$initial_start" "$initial_resume" "${initial_guess_id:-$initial_id}" "$initial_id" > "$initial_out/start_provenance.txt"
 printf 'mode=%s\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
  "$initial_nt_mode" "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"

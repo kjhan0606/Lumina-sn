@@ -273,6 +273,18 @@ iterate_read_done:
     fclose(fp);free(maps);free(data);free(frequency);free(j);return rc;
 }
 
+int cmf_toy_initial_iterate_start(CMFToyModel *m,const char *path,const char *run_identity,
+                                const char *guess_identity,int *offset){
+    if(!offset||iterate_identity(run_identity)||
+       (guess_identity&&(iterate_identity(guess_identity)||!strcmp(guess_identity,run_identity))))return -1;
+    int source_iteration=-1;
+    if(cmf_toy_initial_iterate_read(m,path,guess_identity?guess_identity:run_identity,&source_iteration))return -1;
+    *offset=guess_identity?0:source_iteration;
+    if(guess_identity)fprintf(stderr,"[TOY-INITIAL-GUESS] source_id=%s run_id=%s source_iterations=%d new_completed_iterations=0 physical_history=0 converged=0 J_predictor_only=1 radiation_recompute_required=1\n",
+                              guess_identity,run_identity,source_iteration);
+    return 0;
+}
+
 int cmf_toy_model_begin_epoch(CMFToyModel *m,const CMFPhysicalTimeState *past,
     const CMFEjectaEpoch *epoch,NLTEPhysicalHistory *projected){
     if(!m||!m->prepared||!past||!epoch||!projected||projected==&past->material||

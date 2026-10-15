@@ -61,8 +61,14 @@ int main(int argc,char **argv){
     }
     CHECK(cmf_toy_initial_iterate_read(&m,"truncated.bin",id,&iteration));
     CHECK(m.prepared&&iteration==-1&&!m.opacity.jnu_fine);
+    CHECK(cmf_toy_initial_iterate_start(&m,"iterate.bin",wrong,NULL,&iteration));
+    CHECK(cmf_toy_initial_iterate_start(&m,"iterate.bin",wrong,wrong,&iteration));
+    CHECK(cmf_toy_initial_iterate_start(&m,"iterate.bin","invalid",id,&iteration));
+    CHECK(cmf_toy_initial_iterate_start(&m,"iterate.bin",wrong,"invalid",&iteration));
+    CHECK(cmf_toy_initial_iterate_start(&m,"truncated.bin",wrong,id,&iteration));
+    CHECK(m.prepared&&iteration==-1&&!m.opacity.jnu_fine);
     memset(m.nlte.nlte_level_populations,0,nlevels*8);m.plasma.n_electron[0]*=.5;
-    CHECK(!cmf_toy_initial_iterate_read(&m,"iterate.bin",id,&iteration));
+    CHECK(!cmf_toy_initial_iterate_start(&m,"iterate.bin",id,NULL,&iteration));
     CHECK(iteration==7&&m.prepared&&!m.plasma.physical_history&&m.plasma.initial_steady_nlte);
     CHECK(!m.nlte.radiation_field.field.generation.computed_generation);
     CHECK(!memcmp(saved,m.plasma.n_electron,ns*8)&&!memcmp(saved+ns,m.atom.ion_number_density,nions*8));
@@ -70,6 +76,22 @@ int main(int argc,char **argv){
     CHECK(!memcmp(saved+ns+nions+nlevels,m.opacity.jnu_fine,jcells*8));
     CHECK(!tau_sobolev_assert_fresh(&m.opacity,"restart selftest"));
     CHECK(cmf_toy_initial_iterate_read(&m,"iterate.bin",id,&iteration)); /* 게시 전에도 재복원 금지 */
+    /* 이 시험의 정적 원자 bootstrap은 프로세스당 한 번이다. 아직 복사장을
+     * 게시하지 않은 동일 소유자의 J 추정만 비우고 별도 읽기 경로를 검사한다. */
+    free(m.opacity.jnu_fine);m.opacity.jnu_fine=NULL;
+    iteration=-1;
+    CHECK(!cmf_toy_initial_iterate_start(&m,"iterate.bin",wrong,id,&iteration));
+    CHECK(iteration==0&&m.prepared&&!m.plasma.physical_history&&m.plasma.initial_steady_nlte);
+    CHECK(!m.nlte.radiation_field.field.generation.computed_generation);
+    CHECK(!memcmp(saved,m.plasma.n_electron,ns*8)&&!memcmp(saved+ns,m.atom.ion_number_density,nions*8));
+    CHECK(!memcmp(saved+ns+nions,m.nlte.nlte_level_populations,nlevels*8));
+    CHECK(!memcmp(saved+ns+nions+nlevels,m.opacity.jnu_fine,jcells*8));
+    CHECK(!cmf_toy_initial_iterate_write(&m,"new_guess.bin",wrong,0));
+    free(m.opacity.jnu_fine);m.opacity.jnu_fine=NULL;
+    CHECK(cmf_toy_initial_iterate_read(&m,"new_guess.bin",id,&iteration));
+    CHECK(!cmf_toy_initial_iterate_read(&m,"iterate.bin",id,&iteration));
+    CHECK(iteration==7); /* 원본의 신원/반복 횟수는 바뀌지 않는다. */
+    puts("INITIAL_GUESS_PASS distinct_ids=1 new_iteration_zero=1 original_iteration_seven=1 old_id_rejected_for_new_output=1 physical_history=0 radiation_unpublished=1");
     printf("CMF_INITIAL_ITERATE_PASS shells=%zu actual_atomic_material=1 J_synthetic=1 byte_roundtrip=1 identity_T_geometry_truncation_rejected=1 invalid_grid_rejected=1 physical_history_rejected=1 physical_convergence=0\n",ns);
 done:
     free(saved);cmf_physical_time_state_free(&history);cmf_toy_model_free(&m);return rc;

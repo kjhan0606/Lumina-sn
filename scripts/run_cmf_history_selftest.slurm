@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_INITIAL_MATRIX_CACHE CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT
+unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_INITIAL_MATRIX_CACHE CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT CMF_TEST_INITIAL_GUESS
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -57,6 +57,7 @@ case "$history_mode" in
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-restart) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
+ initial-guess) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
  initial-ne-compare) history_tests=(dc1_ne_closure cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
  initial-matrix-cache) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 CMF_TEST_INITIAL_MATRIX_CACHE=1 ;;
@@ -271,7 +272,8 @@ assert '[A2-07][NE-ANDERSON]' in fast
 print(f'NE_ACCELERATION_ITERATIONS_PASS baseline_calls={len(p)} accelerated_calls={len(a)} baseline_solves={sum(p)} accelerated_solves={sum(a)}')
 PY
 fi
-if [[ "$history_mode" == initial-restart ]]; then
+if [[ "$history_mode" == initial-restart || "$history_mode" == initial-guess ]]; then
+ if [[ "$history_mode" == initial-guess ]]; then export CMF_TEST_INITIAL_GUESS=1; fi
  mkdir "$history_out/restarted"
  (cd "$history_out/restarted"; CMF_TEST_ITERATE_INPUT="$history_out/initial_iterate_test.bin" \
   ../cmf_time_coupled > ../restarted.log 2> ../restarted.err)

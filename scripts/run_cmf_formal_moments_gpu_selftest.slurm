@@ -28,6 +28,52 @@ else
  [[ "$moment_out" == /gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/ada-* ]]
 fi
 mkdir "$moment_out"
+if [[ -n "${CMF_TEST_COMMON_HISTORY:-}" ]]; then
+ # 이미 통과한 실제 선 조립 시험을 동일 C 객체/소스와 CUDA dispatcher로 실행한다.
+ # 형식해 회귀 전체를 중복 수행하지 않는 짧은 지정 시험이다.
+ moment_reference=$CMF_TEST_COMMON_HISTORY
+ (cd "$moment_reference/source"; sha256sum -c "$moment_reference/source.sha256") > "$moment_out/reference_verify.log"
+ test -f "$moment_reference/source/tests/cmf_common_signed_material_selftest.c"
+ mkdir "$moment_out/source" "$moment_out/objects"
+ cp "$0" "$moment_out/runner.slurm"
+ cp "$moment_reference/source.sha256" "$moment_out/reference_source.sha256"
+ cd "$moment_reference/source"
+ cp --parents src/*.h src/lumina_cmfgen.c tests/cmf_common_signed_material_selftest.c "$moment_out/source/"
+ cd "$moment_src"
+ moment_cuda_units=(cmf_exact_multigpu lumina_cmf_solve lumina_bf_gemm cmf_observer)
+ for moment_unit in "${moment_cuda_units[@]}"; do
+  cp --parents "src/$moment_unit.cu" "$moment_out/source/"
+ done
+ git rev-parse HEAD > "$moment_out/commit.txt"
+ cd "$moment_reference/objects"
+ for moment_object in *.o; do
+  [[ "$moment_object" == lumina_cmfgen.o ]] && continue
+  cp "$moment_object" "$moment_out/objects/"
+ done
+ cd "$moment_out/source"
+ sha256sum src/*.h src/*.c src/*.cu tests/*.c > "$moment_out/source.sha256"
+ (cd "$moment_out/objects"; sha256sum *.o) > "$moment_out/reference_objects.sha256"
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_HAS_CUDA_BF_GEMM -DLUMINA_W5_CONT_SOURCE_SELFTEST \
+  -fopenmp -ffunction-sections -fdata-sections -Isrc -c src/lumina_cmfgen.c \
+  -o "$moment_out/objects/lumina_cmfgen.o" > "$moment_out/build.log" 2>&1
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -Isrc -c tests/cmf_common_signed_material_selftest.c \
+  -o "$moment_out/test.o" >> "$moment_out/build.log" 2>&1
+ for moment_unit in "${moment_cuda_units[@]}"; do
+  nvcc -O2 -arch=native -std=c++14 -Isrc -Xcompiler -fopenmp -c "src/$moment_unit.cu" \
+   -o "$moment_out/$moment_unit-cuda.o" >> "$moment_out/build.log" 2>&1
+ done
+ nvcc -O2 -arch=native -Xcompiler -fopenmp "$moment_out/test.o" "$moment_out/objects/"*.o \
+  "$moment_out/"*-cuda.o -Xlinker --gc-sections -lm -lcublas -o "$moment_out/common-signed" \
+  >> "$moment_out/build.log" 2>&1
+ export LUMINA_CMF_FINE_MGPU_DEVICES=1
+ "$moment_out/common-signed" > "$moment_out/test.log" 2> "$moment_out/test.err"
+ grep -Fx 'CMF_COMMON_SIGNED_MATERIAL_SELFTEST_PASS' "$moment_out/test.log"
+ test "$(grep -c 'EXACT-MULTIGPU-EPOCH.*status=OK' "$moment_out/test.err")" -eq 12
+ sha256sum -c "$moment_out/source.sha256" > "$moment_out/source_verify.log"
+ sha256sum "$moment_out/common-signed" "$moment_out/test.log" "$moment_out/test.err" > "$moment_out/output.sha256"
+ echo 'COMMON_SIGNED_GPU_PASS cases=12 devices=1 physical_SN=0'
+ exit 0
+fi
 if [[ -n "${CMF_TEST_MATERIAL_CSV:-}" ]]; then
  cp -- "$CMF_TEST_MATERIAL_CSV" "$moment_out/geometry_input.csv"
  export CMF_TEST_MATERIAL_CSV=$moment_out/geometry_input.csv

@@ -180,8 +180,11 @@ int main(void){
         if(getenv("CMF_TEST_ITERATE_INPUT")){
             int completed=-1;save_view.prepared=1;save_view.geometry=g;save_view.opacity=o;
             save_view.plasma=p;save_view.nlte=n;save_view.atom=a;
-            CHECK(!cmf_toy_initial_iterate_read(&save_view,getenv("CMF_TEST_ITERATE_INPUT"),iterate_id,&completed));
-            CHECK(completed==3);
+            const char *guess=getenv("CMF_TEST_INITIAL_GUESS");
+            const char *run_id=guess?"1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef":iterate_id;
+            CHECK(!cmf_toy_initial_iterate_start(&save_view,getenv("CMF_TEST_ITERATE_INPUT"),run_id,guess?iterate_id:NULL,&completed));
+            CHECK(completed==(guess?0:3));
+            CHECK(!save_view.plasma.physical_history&&!save_view.nlte.radiation_field.field.generation.computed_generation);
             g=save_view.geometry;o=save_view.opacity;p=save_view.plasma;n=save_view.nlte;a=save_view.atom;
         }
         CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report,

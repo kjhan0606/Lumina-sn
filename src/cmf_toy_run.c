@@ -78,15 +78,18 @@ int cmf_toy_initial_main(int argc,char **argv){
     ToyNonthermal nt={0};
     ToyInitialSave save={&m,getenv("LUMINA_INITIAL_ITERATE_ID"),0};
     const char *resume=getenv("LUMINA_INITIAL_ITERATE_INPUT");
+    const char *guess_identity=getenv("LUMINA_INITIAL_GUESS_ID");
     CMFPhysicalTimeState initial={0};CMFInitialNLTEReport report={0};
     int rc=1;const char *phase="material";FILE *fp=NULL;
     if(cmf_toy_model_prepare_runtime(&m,argv[2],argv[3],ns,mass))goto done;
     ns=m.geometry.n_shells;
     phase="initial numerical restart";
     if(save.identity&&(access("initial_iterate.bin",F_OK)==0||access("initial_iterate.next",F_OK)==0))goto done;
-    if(resume&&(!save.identity||cmf_toy_initial_iterate_read(&m,resume,save.identity,&save.offset)))goto done;
+    if(guess_identity&&!resume)goto done;
+    if(resume&&cmf_toy_initial_iterate_start(&m,resume,save.identity,guess_identity,&save.offset))goto done;
     if(resume){if(save.offset>=cap)goto done;cap-=save.offset;}
-    if(cmf_toy_model_write_material(&m,"initial_predictor.csv",resume?
+    if(cmf_toy_model_write_material(&m,"initial_predictor.csv",guess_identity?
+       "NUMERICAL_INITIAL_GUESS; new run iteration zero; not physical history; J predictor only":resume?
        "NUMERICAL_RESTART; not converged NLTE; J predictor only":
        "BOOTSTRAP_LTE_SAHA; not converged NLTE; radiation/gamma unpublished"))goto done;
     phase="nonthermal model";
