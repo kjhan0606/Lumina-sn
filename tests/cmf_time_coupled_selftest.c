@@ -20,6 +20,19 @@ static PlasmaState *save_plasma;
 static NLTEConfig *save_nlte;
 static AtomicData *save_atom;
 static const char *iterate_id="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+static int write_test_material(const char *path,const PlasmaState *p,
+                               const AtomicData *a,const NLTEConfig *n){
+    FILE *f=fopen(path,"wx");if(!f)return -1;
+    int bad=fprintf(f,"field,index,shell,value\n")<0;
+    for(int s=0;s<p->n_shells;s++){
+        bad|=fprintf(f,"T,0,%d,%.17g\nne,0,%d,%.17g\n",s,p->T_e[s],s,p->n_electron[s])<0;
+        for(int i=0;i<a->n_ion_pops;i++)
+            bad|=fprintf(f,"ion,%d,%d,%.17g\n",i,s,a->ion_number_density[(size_t)i*p->n_shells+s])<0;
+        for(int i=0;i<n->n_nlte_levels_total;i++)
+            bad|=fprintf(f,"level,%d,%d,%.17g\n",i,s,n->nlte_level_populations[(size_t)i*p->n_shells+s])<0;
+    }
+    return fclose(f)||bad?-1:0;
+}
 static int save_iteration(void *context,int iteration){
     CMFGENState *c=context;
     if(c->common_obs_ready||iteration!=saved_iterations)return -1;
@@ -192,6 +205,7 @@ int main(void){
         }
         CHECK(!cmfgen_write_common_observer(&c,"initial_spectrum.csv","initial_spectrum.json",
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
+        CHECK(!write_test_material("initial_material.csv",&p,&a,&n));
         fprintf(stderr,"INITIAL_HISTORY epoch=%.17g face_J_residual=%.17g bins=%d center_H=0\n",
             initial.radiation.epoch_s,c.initial_face_J_residual,initial.radiation.n_bins);
         CHECK(n.bf_rate_cache==NULL); /* 요청 수명의 차용 cache를 public에 남기지 않는다. */
@@ -275,6 +289,7 @@ int main(void){
         }
         CHECK(!cmfgen_write_common_observer(&c,"initial_evolved_spectrum.csv","initial_evolved_spectrum.json",
             n.radfield_view.generation,a.population_committed_generation,p.T_e_generation,o.tau_computed_generation));
+        CHECK(!write_test_material("initial_evolved_material.csv",&p,&a,&n));
         if(nonthermal){
             CHECK(nt_calls>report.iterations+time_report.iterations&&nt_max_rate>0&&isfinite(nt_max_rate));
             CHECK(gamma.nonthermal_rates==NULL);

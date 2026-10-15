@@ -6,6 +6,7 @@
 #include "nlte_population_candidate.h" /* private all-shell A2-07 trial view */
 #include "nlte_line_index.h"
 #include "cmf_time_epoch.h"
+#include "cmf_anderson.h"
 #include "cmf_nonthermal_rates.h"
 #include "bf_event_measure_access.h" /* MC-EVT shared CPU/GPU classifier */
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf photoionization rate */
@@ -23691,8 +23692,12 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             candidate, request, NULL);
         if (status != NLTE_CANDIDATE_OK) return status;
     } else {
+        const char *ne_acceleration = getenv("LUMINA_NLTE_NE_ANDERSON1");
+        const int accelerate_ne = request->public_plasma &&
+            request->public_plasma->initial_steady_nlte &&
+            ne_acceleration && strcmp(ne_acceleration, "1") == 0;
         if (request->n_shells == 0 ||
-            request->n_shells > SIZE_MAX / sizeof(double) ||
+            request->n_shells > SIZE_MAX / sizeof(double) / 3 ||
             !request->public_plasma ||
             !request->public_plasma->n_electron ||
             request->public_plasma->n_shells <= 0 ||
@@ -23702,7 +23707,7 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             return candidate->status;
         }
         double *trial_ne = malloc(
-            request->n_shells * sizeof(*trial_ne));
+            (accelerate_ne ? 3 : 1) * request->n_shells * sizeof(*trial_ne));
         double *next_ne = malloc(
             request->n_shells * sizeof(*next_ne));
         if (!trial_ne || !next_ne) {
@@ -23714,6 +23719,11 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
         }
         memcpy(trial_ne, request->public_plasma->n_electron,
                request->n_shells * sizeof(*trial_ne));
+        CMFAnderson1 ne_anderson = {0};
+        if (accelerate_ne) {
+            ne_anderson.previous_g = trial_ne + request->n_shells;
+            ne_anderson.previous_r = trial_ne + 2 * request->n_shells;
+        }
         int accepted = 0;
         for (int iteration = 1;
              iteration <= NLTE_NE_CLOSURE_MAX_ITERATIONS; ++iteration) {
@@ -23740,6 +23750,12 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
             }
             if (max_residual <=
                 NLTE_NE_CLOSURE_RELATIVE_TOLERANCE) {
+                if (accelerate_ne)
+                    fprintf(stderr, "[A2-07][NE-ANDERSON] iterations=%d "
+                            "proposals=%zu rejected=%zu residual=%.17g "
+                            "tolerance=%.17g actual_population_solve=1\n",
+                            iteration, ne_anderson.proposals, ne_anderson.rejected,
+                            max_residual, NLTE_NE_CLOSURE_RELATIVE_TOLERANCE);
                 accepted = 1;
                 break;
             }
@@ -23760,8 +23776,23 @@ static NLTEPopulationCandidateStatus nlte_population_candidate_build_bundle_body
                 free(next_ne);
                 return candidate->status;
             }
-            memcpy(trial_ne, next_ne,
-                   request->n_shells * sizeof(*trial_ne));
+            if (accelerate_ne) {
+                /* 실제 인구에서 얻은 q(ne)-ne로만 수렴을 판정한다. AA는
+                 * 기존 1/2 감쇠 사상의 다음 추정을 바꾸며 인구는 건드리지 않는다. */
+                cmf_anderson1_next(&ne_anderson, request->n_shells,
+                                  trial_ne, next_ne, max_residual);
+                for (size_t s = 0; s < request->n_shells; ++s)
+                    if (!(trial_ne[s] > 0) || !isfinite(trial_ne[s])) {
+                        memcpy(trial_ne, next_ne,
+                               request->n_shells * sizeof(*trial_ne));
+                        ne_anderson.have_previous = ne_anderson.proposed = 0;
+                        ne_anderson.rejected++;
+                        break;
+                    }
+            } else {
+                memcpy(trial_ne, next_ne,
+                       request->n_shells * sizeof(*trial_ne));
+            }
             nlte_population_candidate_free(candidate);
         }
         free(trial_ne);

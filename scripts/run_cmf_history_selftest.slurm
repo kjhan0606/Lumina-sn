@@ -49,6 +49,7 @@ case "$history_mode" in
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-restart) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
+ initial-ne-compare) history_tests=(dc1_ne_closure cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
  *) exit 2 ;;
 esac
@@ -98,6 +99,52 @@ for history_test in "${history_tests[@]}"; do
   (cd "$history_out"; mkdir cache; cd cache; CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels > ../cache.log 2> ../cache.err)
  fi
 done
+if [[ "$history_mode" == initial-ne-compare ]]; then
+ history_ne_rest=()
+ for history_unit in "${history_units[@]}"; do
+  case "$history_unit" in
+   lumina_plasma|nlte_population_candidate|cmf_time_epoch) ;;
+   *) history_ne_rest+=("$history_out/objects/$history_unit.o") ;;
+  esac
+ done
+ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp \
+  -fsanitize=address,undefined -fno-omit-frame-pointer -ffunction-sections -fdata-sections -Isrc \
+  tests/cmf_time_coupled_selftest.c src/lumina_plasma.c src/nlte_population_candidate.c \
+  src/cmf_time_epoch.c "${history_ne_rest[@]}" -Wl,--gc-sections -lm \
+  -o "$history_out/ne-sanitized" > "$history_out/ne-san-build.log" 2>&1
+ mkdir "$history_out/ne-accelerated"
+ (cd "$history_out/ne-accelerated"; ASAN_OPTIONS=detect_leaks=1 LUMINA_NLTE_NE_ANDERSON1=1 ../ne-sanitized \
+  > ../ne-accelerated.log 2> ../ne-accelerated.err)
+ module load python/3.11.14
+ python3 - "$history_out" > "$history_out/ne-comparison.log" <<'PY'
+import csv, math, pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+for name in ('initial_spectrum.csv', 'initial_evolved_spectrum.csv',
+             'initial_material.csv', 'initial_evolved_material.csv'):
+    with (root / name).open() as f:
+        reference = list(csv.DictReader(f))
+    with (root / 'ne-accelerated' / name).open() as f:
+        accelerated = list(csv.DictReader(f))
+    assert reference and len(reference) == len(accelerated)
+    field = 'flux' if 'spectrum' in name else 'value'
+    worst = 0.0
+    for a, b in zip(reference, accelerated):
+        assert {k:v for k,v in a.items() if k != field} == {k:v for k,v in b.items() if k != field}
+        x, y = float(a[field]), float(b[field])
+        assert math.isfinite(x) and math.isfinite(y) and x >= 0 and y >= 0
+        worst = max(worst, abs(x-y)/max(x,y) if max(x,y) else 0)
+    assert worst < 1e-6, (name, worst)
+    print(f'NE_ACCELERATION_OUTPUT_PASS file={name} max_relative={worst:.17g} amplitude_fit=0 synthetic_atom=1')
+plain = (root / 'cmf_time_coupled.err').read_text()
+fast = (root / 'ne-accelerated.err').read_text()
+pattern = r'\[A2-07\]\[NE-CLOSURE\] commit=R7[^\n]* iterations=(\d+)'
+p, a = [list(map(int, re.findall(pattern, log))) for log in (plain, fast)]
+assert p and a and sum(a) < sum(p), (p, a)
+assert '[A2-07][NE-ANDERSON]' not in plain
+assert '[A2-07][NE-ANDERSON]' in fast
+print(f'NE_ACCELERATION_ITERATIONS_PASS baseline_calls={len(p)} accelerated_calls={len(a)} baseline_solves={sum(p)} accelerated_solves={sum(a)}')
+PY
+fi
 if [[ "$history_mode" == initial-restart ]]; then
  mkdir "$history_out/restarted"
  (cd "$history_out/restarted"; CMF_TEST_ITERATE_INPUT="$history_out/initial_iterate_test.bin" \
