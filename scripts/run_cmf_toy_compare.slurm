@@ -32,7 +32,11 @@ sha256sum "${compare_files[@]}" > "$compare_out/source.sha256"
 python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
 if [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model ]]; then
  compare_saha_args=()
+ compare_python=python3
  if [[ "$1" == initial-saha-model ]]; then
+  # 기존 원자료 parser는 numpy를 사용한다. 설치하지 않고 검증된 기존 환경을 지정한다.
+  compare_python=/home/kjhan/miniconda3/bin/python3
+  "$compare_python" -c 'import sys,numpy; print(sys.executable); print(sys.version); print(numpy.__version__); print(numpy.__file__)' > "$compare_out/python_identity.txt"
   cp /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn/scripts/cmfgen_parser.py scripts/
   sha256sum scripts/cmfgen_parser.py >> "$compare_out/source.sha256"
   mkdir "$compare_out/raw"
@@ -47,7 +51,7 @@ if [[ "${1:-selftest}" == initial-saha || "${1:-selftest}" == initial-saha-model
  sha256sum "$2/toy_initial_material.csv" "$2/input/levels.csv" "$2/input/ionization_energies.csv" \
   "$compare_public/phys_toy06_cmfgen.txt" "$compare_public/ionfrac_si_toy06_cmfgen.txt" \
   "$compare_public/ionfrac_s_toy06_cmfgen.txt" > "$compare_out/saha_input.sha256"
- python3 scripts/diagnose_cmf_saha_reference.py --run "$2" --public "$compare_public" \
+ "$compare_python" scripts/diagnose_cmf_saha_reference.py --run "$2" --public "$compare_public" \
   --out "$compare_out/saha" "${compare_saha_args[@]}" > "$compare_out/saha.json"
  if [[ "$1" == initial-saha-model ]]; then
   (cd "$compare_out/raw"; sha256sum -c "$compare_out/raw.sha256") > "$compare_out/raw_verify.log"
