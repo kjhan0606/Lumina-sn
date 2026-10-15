@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #define POP_EV_TO_ERG 1.602176634e-12
 #define POP_K_BOLTZMANN 1.380649e-16
@@ -640,6 +643,45 @@ done:
     return status;
 }
 
+#ifdef _OPENMP
+/* pivot 순서와 각 행의 가산 순서는 그대로다. 다른 행의 갱신만 독립이다. */
+static PopulationStatus pop_gth_reduce_parallel(
+    long double *work,long double *denominator,size_t n)
+{
+    PopulationStatus status=POP_OK;
+    long double scale=0.0L;
+    int failed=0;
+#pragma omp parallel default(none) shared(work,denominator,n,status,scale,failed)
+    {
+        for(size_t reduced=n;reduced-- >1;){
+#pragma omp single
+            {
+                scale=0.0L;failed=0;
+                for(size_t dest=0;dest<reduced;dest++)
+                    scale+=work[reduced*n+dest];
+                if(!(scale>0.0L)||!isfinite(scale))
+                    status=isfinite(scale)?POP_RANK_INCOMPLETE:POP_NONFINITE;
+                else denominator[reduced]=scale;
+            }
+            if(status!=POP_OK)break;
+#pragma omp for schedule(static) reduction(|:failed)
+            for(size_t source=0;source<reduced;source++){
+                long double factor=work[source*n+reduced]/scale;
+                if(!isfinite(factor)){failed=1;continue;}
+                for(size_t dest=0;dest<reduced;dest++){
+                    work[source*n+dest]+=factor*work[reduced*n+dest];
+                    if(!isfinite(work[source*n+dest])){failed=1;break;}
+                }
+            }
+#pragma omp single
+            {if(failed)status=POP_NONFINITE;}
+            if(status!=POP_OK)break;
+        }
+    }
+    return status;
+}
+#endif
+
 PopulationStatus population_generator_stationary_gth(
     const double *generator, size_t n, double total_population,
     double *solution, PopulationGeneratorSolveDiagnostic *diagnostic)
@@ -703,6 +745,13 @@ PopulationStatus population_generator_stationary_gth(
 
     PopulationStatus status = POP_OK;
     /* Continuous-time Grassmann-Taksar-Heyman state reduction. */
+#ifdef _OPENMP
+    if(n>=256 && omp_get_max_threads()>1 && !omp_in_parallel()){
+        status=pop_gth_reduce_parallel(work,denominator,n);
+        if(status!=POP_OK)goto done;
+    }else
+#endif
+    {
     for (size_t reduced = n; reduced-- > 1;) {
         long double scale = 0.0L;
         for (size_t dest = 0; dest < reduced; ++dest)
@@ -724,6 +773,7 @@ PopulationStatus population_generator_stationary_gth(
                 }
             }
         }
+    }
     }
 
     probability[0] = 1.0L;

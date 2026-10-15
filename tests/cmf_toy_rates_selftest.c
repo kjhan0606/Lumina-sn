@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <omp.h>
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TOY_RATES_FAIL line=%d %s\n",__LINE__,#x);rc=1;goto done;}}while(0)
 static double seconds(void){
     struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec+1e-9*t.tv_nsec;
@@ -52,6 +53,8 @@ int main(int argc,char **argv){
     const int profile_cached=getenv("CMF_TEST_PROFILE_CACHED")&&atoi(getenv("CMF_TEST_PROFILE_CACHED"));
     if(profile_cached)puts("TOY_RATES_PROFILE current_cached_path_repeated=1 old_search_path_tested=0");
     const int cache_test=getenv("CMF_TEST_RATE_CACHE")&&atoi(getenv("CMF_TEST_RATE_CACHE"));
+    const int gth_parallel=getenv("CMF_TEST_GTH_PARALLEL")&&atoi(getenv("CMF_TEST_GTH_PARALLEL"));
+    if(gth_parallel){omp_set_dynamic(0);puts("TOY_GTH_PARALLEL same_rates=1 threads=1/2");}
     if(cache_test){rate_cache=nlte_bf_rate_cache_create(a,(size_t)ns);CHECK(rate_cache);}
     n->solve_effect_policy_explicit=1;n->solve_effects_allowed=0;
     size_t np=(size_t)n->n_nlte_levels_total*ns,ni=(size_t)a->n_ion_pops*ns;
@@ -98,6 +101,7 @@ int main(int argc,char **argv){
         remove_partners(&m,Z,s);
         printf("TOY_RATES_BEGIN shell=%d Z=%d T=%.17g ne=%.17g nuclei=%.17g\n",s,Z,p->T_e[s],p->n_electron[s],total);
         double start=seconds();
+        if(gth_parallel)omp_set_num_threads(1);
         PopulationStatus cached=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
         double cached_s=seconds()-start;
         printf("TOY_RATES_CACHED shell=%d Z=%d status=%d wall_s=%.9g\n",s,Z,cached,cached_s);
@@ -110,6 +114,7 @@ int main(int argc,char **argv){
         n->bf_rate_cache=NULL;
         if(!profile_cached&&!cache_test){n->nlte_line_global=NULL;n->nlte_ion_lines=NULL;}
         start=seconds();
+        if(gth_parallel)omp_set_num_threads(2);
         PopulationStatus searched=nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma);
         double searched_s=seconds()-start;
         n->nlte_line_global=saved_global;n->nlte_ion_lines=saved_lines;
