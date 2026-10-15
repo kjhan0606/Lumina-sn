@@ -1,5 +1,6 @@
 /* 실제 시간 수송/R6/R7/온도·전자·인구 공동 실행. 합성2셸·3준위 원자이며
- * SN 초기조건 또는 CMFGEN 분포 시험이 아니다. 생산 함수를 wrap하지 않는다. */
+ * SN 초기조건 또는 CMFGEN 분포 시험이 아니다. matrix-cache 모드의 wrapper는
+ * 실제 함수를 그대로 호출하고 재사용 횟수만 읽는다. 물리 풀이를 대체하지 않는다. */
 #include "cmf_time_epoch.h"
 #include "cmf_toy_model.h"
 #include "line_jbar.h"
@@ -12,6 +13,18 @@
 static double Bnu(double nu,double T){return 2*H_PLANCK*nu*nu*nu/
     (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(H_PLANCK*nu/(K_BOLTZMANN*T));}
 static int nt_calls;
+#ifdef CMF_MATRIX_CACHE_INTEGRATION
+static size_t matrix_cache_hits;
+extern PopulationStatus __real_nlte_element_initial_steady_solve_cached(NLTEConfig*,AtomicData*,
+    PlasmaState*,OpacityState*,int,int,double,GammaDeposition*,struct NLTEElementBaseCache*);
+PopulationStatus __wrap_nlte_element_initial_steady_solve_cached(NLTEConfig *n,AtomicData *a,
+    PlasmaState *p,OpacityState *o,int e,int s,double epoch,GammaDeposition *g,
+    struct NLTEElementBaseCache *cache){
+    size_t before=nlte_element_base_cache_hits(cache);
+    PopulationStatus result=__real_nlte_element_initial_steady_solve_cached(n,a,p,o,e,s,epoch,g,cache);
+    matrix_cache_hits+=nlte_element_base_cache_hits(cache)-before;return result;
+}
+#endif
 static int saved_iterations;
 static CMFToyModel save_view;
 static Geometry *save_geo;
@@ -91,6 +104,9 @@ int main(void){
         NLTE_NU_MIN*exp((b+1)*dlog)>threshold[r]?1e-18:0;
     BfChannels channels={NL,2,NB,NLTE_NU_MIN,NLTE_NU_MAX,coff,target,threshold,sigma,2,uion,gu};a.bf_channels=&channels;
     NLTEConfig n={0};n.enabled=1;n.n_nlte_ions=NI;n.n_nlte_levels_total=n.n_super_total=NL;
+    if(getenv("CMF_TEST_INITIAL_MATRIX_CACHE")){
+        n.channel_owned_recombination=1;n.exclude_empirical_heavy_ce=1;
+    }
     for(int i=0;i<NI;i++){n.nlte_Z[i]=iz[i];n.nlte_ion[i]=st[i];}
     for(int i=0;i<=NI;i++)n.nlte_ion_level_offset[i]=n.nlte_ion_super_offset[i]=off[i];
     n.nlte_to_global_level=n.global_to_nlte_level=n.fl_to_super=n.super_anchor_global=map;
@@ -175,6 +191,10 @@ int main(void){
         CHECK(status==CMF_EPOCH_OK&&report.converged&&c.common_obs_ready&&report.iterations>1);
         CHECK(saved_iterations==report.iterations+1);
         printf("INITIAL_SAVE_CALLBACK_PASS calls=%d physical_history_created_by_callback=0\n",saved_iterations);
+#ifdef CMF_MATRIX_CACHE_INTEGRATION
+        CHECK(matrix_cache_hits>0);
+        printf("INITIAL_MATRIX_CACHE_USED hits=%zu actual_SF_provider=1 actual_checked_field=1 synthetic_atom=1\n",matrix_cache_hits);
+#endif
         CHECK(T[0]==1e4&&T[1]==1e4&&!p.physical_history&&!c.time_trial);
         CHECK(initial.material.energy.epoch_s==newtime&&initial.radiation.epoch_s==newtime);
         CHECK(initial.radiation.J!=o.jnu_fine&&initial.radiation.H!=c.initial_face_H);

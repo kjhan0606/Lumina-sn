@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT
+unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_INITIAL_MATRIX_CACHE CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -51,6 +51,7 @@ case "$history_mode" in
  initial-restart) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
  initial-ne-compare) history_tests=(dc1_ne_closure cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
+ initial-matrix-cache) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 CMF_TEST_INITIAL_MATRIX_CACHE=1 ;;
  *) exit 2 ;;
 esac
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
@@ -87,9 +88,13 @@ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -I
  tests/cmf_time_epoch_selftest.c "${history_objects[@]}" "${history_epoch_wrap[@]}" \
  -Wl,--gc-sections -lm -o "$history_out/time_epoch" >> "$history_out/build.log" 2>&1
 (cd "$history_out"; ./time_epoch > time-epoch.log 2> time-epoch.err)
+history_matrix_flags=()
+if [[ "$history_mode" == initial-matrix-cache ]]; then
+ history_matrix_flags=(-DCMF_MATRIX_CACHE_INTEGRATION -Wl,--wrap=nlte_element_initial_steady_solve_cached)
+fi
 for history_test in "${history_tests[@]}"; do
  gcc -O2 -std=gnu11 -D_GNU_SOURCE -DCMF_MATERIAL_ROOT_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
-  "tests/${history_test}_selftest.c" "${history_objects[@]}" -Wl,--gc-sections -lm \
+  "tests/${history_test}_selftest.c" "${history_objects[@]}" "${history_matrix_flags[@]}" -Wl,--gc-sections -lm \
   -o "$history_out/$history_test" >> "$history_out/build.log" 2>&1
  (cd "$history_out"; "./$history_test" > "$history_test.log" 2> "$history_test.err")
  if [[ "$history_test" == cmf_recombination ]]; then
@@ -99,6 +104,39 @@ for history_test in "${history_tests[@]}"; do
   (cd "$history_out"; mkdir cache; cd cache; CMF_TEST_BF_CACHE_ONLY=1 ../bf_channels > ../cache.log 2> ../cache.err)
  fi
 done
+if [[ "$history_mode" == initial-matrix-cache ]]; then
+ history_reference=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/common-build-423957
+ (cd "$history_reference/source"; sha256sum -c "$history_reference/source.sha256") > "$history_out/reference_verify.log"
+ cp "$history_reference/source/src/lumina_plasma.c" "$history_out/reference_plasma.c"
+ cp "$history_reference/source/src/lumina_element_wide.c" "$history_out/reference_element.c"
+ cp "$history_reference/commit.txt" "$history_out/reference_commit.txt"
+ sha256sum "$history_out/reference_plasma.c" "$history_out/reference_element.c" > "$history_out/reference.sha256"
+ history_matrix_rest=()
+ for history_unit in "${history_units[@]}"; do
+  case "$history_unit" in
+   lumina_plasma|lumina_element_wide) ;;
+   *) history_matrix_rest+=("$history_out/objects/$history_unit.o") ;;
+  esac
+ done
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+  tests/cmf_time_coupled_selftest.c "$history_out/reference_plasma.c" "$history_out/reference_element.c" \
+  "${history_matrix_rest[@]}" -Wl,--gc-sections -lm -o "$history_out/matrix-reference" \
+  > "$history_out/reference-build.log" 2>&1
+ gcc -O1 -g -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -Isrc \
+  -fsanitize=address,undefined -fno-omit-frame-pointer tests/cmf_time_coupled_selftest.c \
+  src/lumina_plasma.c src/lumina_element_wide.c "${history_matrix_rest[@]}" \
+  "${history_matrix_flags[@]}" -Wl,--gc-sections -lm -o "$history_out/matrix-sanitized" \
+  > "$history_out/matrix-san-build.log" 2>&1
+ mkdir "$history_out/reference" "$history_out/sanitized"
+ (cd "$history_out/reference"; ../matrix-reference > ../reference.log 2> ../reference.err)
+ (cd "$history_out/sanitized"; ASAN_OPTIONS=detect_leaks=1 ../matrix-sanitized > ../sanitized.log 2> ../sanitized.err)
+ for history_file in initial_spectrum.csv initial_material.csv initial_evolved_spectrum.csv initial_evolved_material.csv; do
+  cmp "$history_out/$history_file" "$history_out/reference/$history_file"
+  cmp "$history_out/$history_file" "$history_out/sanitized/$history_file"
+  sha256sum "$history_out/$history_file" >> "$history_out/parity.sha256"
+ done
+ printf 'INITIAL_MATRIX_PARITY_PASS files=4 native/reference/ASAN byte_exact=1\n' > "$history_out/matrix-parity.log"
+fi
 if [[ "$history_mode" == initial-ne-compare ]]; then
  history_ne_rest=()
  for history_unit in "${history_units[@]}"; do
