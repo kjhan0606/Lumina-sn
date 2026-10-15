@@ -74,6 +74,9 @@ int cmf_toy_model_prepare(CMFToyModel *m,const char *path,const char *atomic_dir
     lumina_bootstrap_window_close();if(prepared)goto fail;
     phase="NLTE projection and LTE level predictor";
     if(nlte_init(n,a,o,ns)||!n->super_mode)goto fail;
+    /* StaNdaRT(2022) §3.2: toy 모델에는 H/He와 그 CE가 없다.
+     * 별도의 경험적 Ca-Si/철족 CE 표를 CMFGEN 물리로 추가하지 않는다. */
+    n->exclude_empirical_heavy_ce=1;
     n->population_committed_generation=a->population_committed_generation;
     PopulationAtomicView av={0};av.n_ions=a->n_ion_pops;av.n_levels=a->n_levels;
     av.level_offset=a->level_offset;av.energy_eV=a->level_energy_eV;av.g=a->level_g;

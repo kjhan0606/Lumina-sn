@@ -20656,7 +20656,8 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         }
     }
 
-    for (int r = 0; (!ew_capture || nlte_ew_capture_time_active()) && r < CE_N_REACTIONS; r++) {
+    for (int r = 0; !nlte->exclude_empirical_heavy_ce &&
+         (!ew_capture || nlte_ew_capture_time_active()) && r < CE_N_REACTIONS; r++) {
         const ChargeExchangeReaction *ce = &CE_REACTIONS[r];
         double k_fwd = ce->rate_coeff * pow(T_e / 1e4, ce->alpha);
         double k_rev = k_fwd * exp(ce->delta_E_eV * EV_TO_ERG /

@@ -657,6 +657,10 @@ typedef struct {
     int    n_freq_bins;
     double nu_min, nu_max, d_log_nu;
 
+    /* StaNdaRT toy 원자의 비교 계약: H/He CE는 없고 이 경험적 중원소
+     * 표도 해당하지 않는다. 0은 역사적 일반 경로이며 정합 보증이 아니다. */
+    int exclude_empirical_heavy_ce;
+
     /* Target ions: (Z, ion_stage) pairs */
     int    n_nlte_ions;                        /* 8 */
     int    nlte_Z[NLTE_MAX_IONS];              /* atomic numbers */

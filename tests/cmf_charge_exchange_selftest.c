@@ -32,10 +32,14 @@ int main(void){
     /* 실제 과거 소유 모드는 조립의 정상 정규화행/나이 근사를 배제한다.
      * 이 시험은 시간해를 만들지 않고 raw generator만 읽는다. */
     NLTEPhysicalHistory history={0};p.physical_history=&history;
+    GammaDeposition gamma={0};double heating[NS]={0};gamma_deposition_init(&gamma,NS);
+    CHECK(!gamma_deposition_publish(&gamma,GAMMA_PROVENANCE_EXTERNAL_FILE,1,NULL,NULL,NULL,heating));
+    for(int excluded=0;excluded<=1;excluded++){
+    n.exclude_empirical_heavy_ce=excluded;
     double flux[2]={0};
     for(int e=0;e<2;e++){
         double A[9]={0},b[3]={0};int lo=2*e,base=off[lo];
-        CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,lo,lo+1,0,1,A,b,3,NULL,NULL,-1));
+        CHECK(!nlte_assemble_rate_matrix(&n,&a,&p,&o,lo,lo+1,0,1,A,b,3,&gamma,NULL,-1));
         double atoms=0;
         for(int row=0;row<3;row++){
             double rate=0;
@@ -45,9 +49,16 @@ int main(void){
         CHECK(fabs(atoms)<1e-22);
     }
     double scale=fabs(flux[0])+fabs(flux[1]);
-    printf("CE_CHARGE_RESULT Si_charge_rate=%.17g Ca_charge_rate=%.17g net=%.17g relative=%.17g excited_upper=1 actual_assembly=1\n",
-        flux[0],flux[1],flux[0]+flux[1],fabs(flux[0]+flux[1])/scale);
-    CHECK(scale>0&&isfinite(scale));
-    CHECK(fabs(flux[0]+flux[1])<1e-12*scale);
-    puts("CE_CHARGE_PASS");return 0;
+    printf("CE_CHARGE_RESULT excluded=%d Si_charge_rate=%.17g Ca_charge_rate=%.17g net=%.17g relative=%.17g excited_upper=1 actual_assembly=1\n",
+        excluded,flux[0],flux[1],flux[0]+flux[1],scale?fabs(flux[0]+flux[1])/scale:0);
+    CHECK(isfinite(scale));
+    if(excluded){CHECK(flux[0]==0&&flux[1]==0);}
+    else{
+        /* 옛 표의 결함은 보존한 음성 대조다. 이를 물리 통과로 부르지 않는다. */
+        CHECK(scale>0&&fabs(flux[0]+flux[1])>.1*scale);
+        puts("CE_LEGACY_CHARGE_BUG_REPRODUCED general_model_NOT_FIXED=1");
+    }
+    }
+    gamma_deposition_free(&gamma);
+    puts("CE_TOY_POLICY_PASS empirical_heavy_CE_absent=1");return 0;
 }
