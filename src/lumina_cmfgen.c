@@ -7774,6 +7774,7 @@ static int cmf_fine_line_material(
         const OpacityState *opac,const PlasmaState *plasma,
         int line,int shell,int n_shells,double nu,double tau,double dnu_d,
         double time_explosion,double legacy_chi0_pref,int parity,
+        LineNetNegativeOpacityPolicy negative_policy,
         int legacy_source_nlte,double line_eps,double sl_clamp,
         const double *upper_population_cache,
         int unmapped_eps_gate,const unsigned char *used_nlte_cache,
@@ -7798,7 +7799,7 @@ static int cmf_fine_line_material(
             g_fine_atom->line_A_ul[line]:NAN;
         if(!isfinite(nupper)||nupper<0.0||line_net_sobolev_material(
                nupper,Aul,nu,tau,time_explosion,
-               LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK,1,
+               negative_policy,1,
                &material)!=0)return-1;
         *chi0=material.effective_integrated_opacity/
               (1.7724538509055160*dnu_d);
@@ -8446,6 +8447,11 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         return -1;
     const int common_field =
         line_operator == CMF_FINE_LINE_OPERATOR_COMMON_GAUSSIAN;
+    /* 공통 Gaussian 수송과 선 에너지는 같은 raw signed 소광을 소비한다.
+     * 옛 초기화/고립선 Sobolev 경로의 SRCE_CHK 처방은 유지한다. */
+    const LineNetNegativeOpacityPolicy line_material_policy = common_field
+        ? LINE_NET_NEGATIVE_OPACITY_NONE
+        : LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK;
     const int time_field=csb->time_trial!=NULL;
     if(time_field&&!common_field)return -1;
     const char *operator_name = common_field ? "COMMON_GAUSSIAN" :
@@ -9017,7 +9023,10 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                     if (tau < minimum_tau) minimum_tau = tau;
                     if (tau < 0.0) {
                         ++raw_negative_cells;
-                        if (tau < -0.5) ++srce_chk_expected_cells;
+                        if (tau < -0.5) {
+                            if (line_material_policy == LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK)
+                                ++srce_chk_expected_cells;
+                        }
                         else ++mild_negative_cells;
                     }
                 } else {
@@ -9031,7 +9040,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 if (!isfinite(nupper) || nupper < 0.0 ||
                     line_net_sobolev_material(
                         nupper, Aul, opac->line_list_nu[l], tau, t_exp,
-                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        line_material_policy, 1,
                         &material) != 0) {
                     material_error = 1;
                     continue;
@@ -9184,7 +9193,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int srce_chk = 0, clamped = 0;
             int material_rc = cmf_fine_line_material(
                 opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
-                chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
+                chi0_pref, line_net_parity, line_material_policy, src_nlte, line_eps, sl_clamp,
                 upper_population_cache,
                 unmapped_eps_gate, used_nlte_cache,
                 &chi0, &eta0, &source_diag, &eps_line, &srce_chk, &clamped);
@@ -9241,7 +9250,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
             int srce_chk = 0, clamped = 0;
             int material_rc = cmf_fine_line_material(
                 opac, plasma, l, s, NS, nu_l, tau, dnuD, t_exp,
-                chi0_pref, line_net_parity, src_nlte, line_eps, sl_clamp,
+                chi0_pref, line_net_parity, line_material_policy, src_nlte, line_eps, sl_clamp,
                 upper_population_cache,
                 unmapped_eps_gate, used_nlte_cache,
                 &chi0, &eta0, &source_diag, &eps_line, &srce_chk, &clamped);
@@ -9324,7 +9333,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 if (!isfinite(nupper) || nupper < 0.0 ||
                     line_net_sobolev_material(
                         nupper, Aul, nu_l, tau, t_exp,
-                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        line_material_policy, 1,
                         &material) != 0) continue;
                 double eta0 = material.emission_per_sr / (SQRTPI * dnuD);
                 double ne_s = plasma->n_electron ? plasma->n_electron[s] : 0.0;
@@ -9472,7 +9481,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 LineNetSobolevMaterial material;
                 if (line_net_sobolev_material(
                         0.0, 0.0, nu_l, tau, t_exp,
-                        LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK, 1,
+                        line_material_policy, 1,
                         &material) == 0)
                     exp_ += material.effective_integrated_opacity;
             } else {
@@ -12532,7 +12541,8 @@ int cmf_fine_line_material_test(
         int *srce_chk_applied,int *clamped){
     return cmf_fine_line_material(
         opac,plasma,line,shell,n_shells,nu,tau,dnu_d,time_explosion,
-        legacy_chi0_pref,parity,legacy_source_nlte,line_eps,sl_clamp,
+        legacy_chi0_pref,parity,LINE_NET_NEGATIVE_OPACITY_CMFGEN_SRCE_CHK,
+        legacy_source_nlte,line_eps,sl_clamp,
         upper_population_cache,unmapped_eps_gate,used_nlte_cache,
         chi0,eta0,source_diag,eps_out,srce_chk_applied,clamped);
 }

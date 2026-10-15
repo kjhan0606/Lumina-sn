@@ -31,7 +31,7 @@ history_units=(lumina_transport a2_02c_segment_capture radiation_field bf_rate_j
  cmfgen_adiabatic cmf_decay cmf_ejecta cmf_toy_model cmf_exact_sliding cmf_error_envelope cmf_observer cmf_time_moment cmf_time_field cmf_time_epoch nlte_population_candidate cmf_nonthermal cmf_nonthermal_provider
  physics_comparison gpu_physics_contract lumina_plasma lumina_element_wide
  lumina_atomic lumina_cmfgen cmfgen_final_writer a210_coupled_newton)
-history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange cmf_recombination nlte_candidate_adiabatic a2_10_radeq cmf_common_field a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
+history_tests=(cmf_observer cmf_ejecta cmf_decay cmf_material_time cmf_time_line_energy bf_channels cmf_charge_exchange cmf_recombination nlte_candidate_adiabatic a2_10_radeq cmf_common_field cmf_common_signed_material a2_10_seed_commit physics_comparison population_time population_time_assembly population_time_element a2_07_population)
 history_mode=${1:-regression}
 history_iteration=${2:-plain}
 history_warm_ne=${3:-plain}
@@ -52,6 +52,7 @@ case "$history_mode" in
  recombination) history_tests=(cmf_recombination) ;;
  population-damping) history_tests=(cmf_population_damping) ;;
  energy) history_tests=(cmf_material_time nlte_candidate_adiabatic a2_10_radeq physics_comparison) ;;
+ common-material) history_tests=(cmf_common_signed_material cmf_time_line_energy cmf_common_field line_net_rate) ;;
  coupled) history_tests=(cmf_time_coupled) ;;
  coupled-center) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 ;;
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
@@ -83,10 +84,14 @@ if [[ "$history_mode" == regression ]]; then
  (cd "$history_out"; sha256sum snia_toy06_2d.dat > input.sha256)
 fi
 history_objects=()
+history_capture_flags=()
+if [[ "$history_mode" == common-material || "$history_mode" == regression ]]; then
+ history_capture_flags=(-DLUMINA_W5_CONT_SOURCE_SELFTEST)
+fi
 gcc -std=gnu11 -D_GNU_SOURCE -DLUMINA_HAS_CUDA_BF_GEMM -Isrc -fsyntax-only src/lumina_cmfgen.c \
  > "$history_out/cuda-dispatch-build.log" 2>&1
 for history_unit in "${history_units[@]}"; do
- gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST -fopenmp -ffunction-sections -fdata-sections -Isrc \
+ gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST "${history_capture_flags[@]}" -fopenmp -ffunction-sections -fdata-sections -Isrc \
   -c "src/$history_unit.c" -o "$history_out/objects/$history_unit.o" >> "$history_out/build.log" 2>&1
  history_objects+=("$history_out/objects/$history_unit.o")
 done
