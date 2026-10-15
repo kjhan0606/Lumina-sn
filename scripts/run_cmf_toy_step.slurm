@@ -16,6 +16,8 @@ umask 027
 step_build=${1:?sealed cluster build required}
 step_previous=${2:?successful physical epoch run required}
 step_epoch=${3:?new epoch in seconds required}
+step_iteration=${4:-plain}
+case "$step_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 [[ "$step_epoch" =~ ^[0-9]+([.][0-9]+)?$ ]]
 step_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 step_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-step-${SLURM_JOB_ID}
@@ -55,6 +57,7 @@ export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 export LUMINA_NLTE_NE_CLOSURE=1 LUMINA_CMF_FINE_VDOP=5000000 LUMINA_CMF_FINE_PPD=3
 export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION=1
 export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=1
+if [[ "$step_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 export LUMINA_BF_CHANNELS_FILE=$step_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$step_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$step_out/input/ionization_reference.csv

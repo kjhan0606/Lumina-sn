@@ -1,6 +1,7 @@
 #include "cmf_exact_sliding.h"
 #include "cmf_error_envelope.h"
 #include "cmf_cell_geometry.h"
+#include "cmf_anderson.h"
 
 #include <float.h>
 #include <math.h>
@@ -1427,10 +1428,17 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     double *source_cell = (double *)malloc(cells * sizeof(double));
     double *Jnew = (double *)malloc(cells * sizeof(double));
     double *inner = (double *)malloc((size_t)n_bins * sizeof(double));
+    const int accelerate=cmf_anderson1_enabled();
+    CMFAnderson1 aa={0};
+    if(accelerate) {
+        aa.previous_g=(double *)malloc(cells*sizeof(double));
+        aa.previous_r=(double *)malloc(cells*sizeof(double));
+    }
     if (!dt1 || !t1 || !in || !out || !source || !source_cell ||
-        !Jnew || !inner) {
+        !Jnew || !inner || (accelerate && (!aa.previous_g || !aa.previous_r))) {
         free(dt1); free(t1); free(in); free(out); free(source);
         free(source_cell); free(Jnew); free(inner); exact_problem_free(&p);
+        free(aa.previous_g);free(aa.previous_r);
         local.status = CMF_EXACT_ALLOCATION_FAILED;
         if (report) *report = local;
         return local.status;
@@ -1526,7 +1534,6 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
                 : (absolute == 0.0 ? 0.0 : INFINITY);
             if (relative > max_relative) max_relative = relative;
             if (absolute > max_absolute) max_absolute = absolute;
-            J[idx] = Jnew[idx];
         }
         local.iterations_used = iteration + 1;
         local.final_max_relative_change = max_relative;
@@ -1539,9 +1546,13 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             local.fixed_point_absolute_error_bound = INFINITY;
         }
         if (iteration > 0 && max_relative < tolerance) {
+            memcpy(J,Jnew,cells*sizeof(double));
             status = CMF_EXACT_OK;
             break;
         }
+        if(accelerate && iteration+1<iteration_cap)
+            cmf_anderson1_next(&aa,cells,J,Jnew,max_relative);
+        else memcpy(J,Jnew,cells*sizeof(double));
     }
 
     if (status == CMF_EXACT_OK && componentwise_error_upper &&
@@ -1556,6 +1567,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
 cleanup:
     free(dt1); free(t1); free(in); free(out); free(source);
     free(source_cell); free(Jnew); free(inner); exact_problem_free(&p);
+    free(aa.previous_g);free(aa.previous_r);
     local.status = status;
     if (report) *report = local;
     return status;

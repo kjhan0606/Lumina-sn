@@ -15,6 +15,8 @@ set -euo pipefail
 umask 027
 initial_build=${1:?cluster build directory required}
 initial_input=${2:?verified initial-prepare input directory required}
+initial_iteration=${3:-plain}
+case "$initial_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 initial_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 initial_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-initial-${SLURM_JOB_ID}
 mkdir "$initial_out"
@@ -45,6 +47,7 @@ export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 export LUMINA_NLTE_NE_CLOSURE=1 LUMINA_CMF_FINE_VDOP=5000000 LUMINA_CMF_FINE_PPD=3
 export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION=1
 export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=1
+if [[ "$initial_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
 export LUMINA_BF_CHANNELS_FILE=$initial_out/input/bf_channels.bin
 export LUMINA_TOPION_LEVELS_FILE=$initial_out/input/bf_channels.terminal.csv
 export LUMINA_IONIZATION_REFERENCE_FILE=$initial_out/input/ionization_reference.csv

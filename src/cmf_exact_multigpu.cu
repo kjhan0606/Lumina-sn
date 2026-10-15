@@ -1,6 +1,7 @@
 #include "cmf_exact_multigpu.h"
 #include "cmf_error_envelope.h"
 #include "cmf_cell_geometry.h"
+#include "cmf_anderson.h"
 
 #include <cuda_runtime.h>
 
@@ -1813,6 +1814,9 @@ static CMFMultiGPUStatus solve_impl(
     CMFMultiGPUStatus status = CMF_MGPU_INVALID_INPUT;
     std::vector<double> dt1, t1, source, source_cell, inner;
     std::vector<double> jwork, jnew, partial;
+    std::vector<double> aa_g, aa_r;
+    const bool accelerate=cmf_anderson1_enabled()!=0;
+    CMFAnderson1 aa={};
     std::vector<DeviceShard> shards;
     HostGeometry geometry;
     RayPartition partition;
@@ -1832,6 +1836,10 @@ static CMFMultiGPUStatus solve_impl(
         inner.resize((size_t)n_bins);
         jwork.assign(J, J + cells);
         jnew.resize(cells);
+        if(accelerate) {
+            aa_g.resize(cells);aa_r.resize(cells);
+            aa.previous_g=aa_g.data();aa.previous_r=aa_r.data();
+        }
         partial.resize((size_t)requested_devices * cells);
         shards.resize((size_t)requested_devices);
     } catch (const std::bad_alloc &) {
@@ -2114,7 +2122,6 @@ static CMFMultiGPUStatus solve_impl(
             if (relative > max_relative) max_relative = relative;
             if (absolute > max_absolute) max_absolute = absolute;
         }
-        jwork.swap(jnew);
         local.iterations_used = iteration + 1;
         local.final_max_relative_change = max_relative;
         local.final_max_absolute_change = max_absolute;
@@ -2127,9 +2134,13 @@ static CMFMultiGPUStatus solve_impl(
         }
         local.convergence_check_seconds += monotonic_seconds() - phase_start;
         if (iteration > 0 && max_relative < tolerance) {
+            jwork.swap(jnew);
             status = CMF_MGPU_OK;
             break;
         }
+        if(accelerate && iteration+1<iteration_cap)
+            cmf_anderson1_next(&aa,cells,jwork.data(),jnew.data(),max_relative);
+        else jwork.swap(jnew);
     }
 
 cleanup:
