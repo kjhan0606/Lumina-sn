@@ -25,12 +25,21 @@ mkdir "$compare_out/source"
 cd "$compare_src"
 compare_files=(scripts/compare_cmf_toy_epoch.py scripts/read_cmf_common_material.py
  scripts/run_cmf_toy_compare.slurm tests/cmf_toy_comparison_selftest.py
- scripts/compare_cmf_initial_iterate.py)
+ scripts/compare_cmf_initial_iterate.py scripts/diagnose_cmf_saha_reference.py)
 cp --parents "${compare_files[@]}" "$compare_out/source/"
 cd "$compare_out/source"
 sha256sum "${compare_files[@]}" > "$compare_out/source.sha256"
 python3 tests/cmf_toy_comparison_selftest.py "$compare_public/spectra_toy06_cmfgen.txt" > "$compare_out/selftest.log"
-if [[ "${1:-selftest}" == initial-grid ]]; then
+if [[ "${1:-selftest}" == initial-saha ]]; then
+ (cd "$2/source"; sha256sum -c "$2/source.sha256") > "$compare_out/original_source_verify.log"
+ (cd "$2/input"; sha256sum -c "$2/input.sha256") > "$compare_out/original_input_verify.log"
+ sha256sum "$2/toy_initial_material.csv" "$2/input/levels.csv" "$2/input/ionization_energies.csv" \
+  "$compare_public/phys_toy06_cmfgen.txt" "$compare_public/ionfrac_si_toy06_cmfgen.txt" \
+  "$compare_public/ionfrac_s_toy06_cmfgen.txt" > "$compare_out/saha_input.sha256"
+ python3 scripts/diagnose_cmf_saha_reference.py --run "$2" --public "$compare_public" \
+  --out "$compare_out/saha" > "$compare_out/saha.json"
+ sha256sum -c "$compare_out/saha_input.sha256" > "$compare_out/saha_input_verify.log"
+elif [[ "${1:-selftest}" == initial-grid ]]; then
  for compare_root in "$2" "$3"; do
   (cd "$compare_root/source"; sha256sum -c "$compare_root/source.sha256") >> "$compare_out/original_source_verify.log"
   (cd "$compare_root/input"; sha256sum -c "$compare_root/input.sha256") >> "$compare_out/original_input_verify.log"
