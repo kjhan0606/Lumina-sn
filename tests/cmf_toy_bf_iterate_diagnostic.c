@@ -7,7 +7,31 @@
 #include <string.h>
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"TOY_BF_ITERATE_FAIL line=%d %s\n",__LINE__,#x);goto done;}} while(0)
 
-static int evaluate(CMFToyModel *m,const double *pop,const double *ions,
+/* 이전 물질은 재사용하지 않는다. 기존 C reader로 이미 검증한 불변 사본에서
+ * 같은 신원/격자/크기/끝표지의 J 배열만 읽는다. runner가 전체 파일 hash도 확인한다. */
+static double *previous_field(const CMFToyModel *m,const char *path,const char *id,int *iteration){
+    FILE *fp=fopen(path,"rb");if(!fp)return NULL;
+    double *j=NULL,par[3];uint64_t h[7];char marker[8],stored_id[64];
+    size_t ns=m->plasma.n_shells,ni=m->atom.n_ion_pops,nl=m->nlte.n_nlte_levels_total;
+    size_t ne=m->atom.n_elements,nb=m->opacity.n_fine;
+    uint64_t offset=152+4*(nl+2*ni)+8*ns*(5+ne+ni+nl),bytes=offset+8*ns*nb+8;
+    if(fread(marker,1,8,fp)!=8||memcmp(marker,"CMFITER1",8)||fread(stored_id,1,64,fp)!=64||
+       memcmp(stored_id,id,64)||fread(h,8,7,fp)!=7||fread(par,8,3,fp)!=3||
+       h[0]!=ns||h[1]!=ni||h[2]!=nl||h[3]!=ne||h[4]!=nb||h[6]>INT32_MAX||
+       par[0]!=m->geometry.time_explosion||par[1]!=m->opacity.nu_lo_fine||
+       par[2]!=m->opacity.dlognu_fine||fseek(fp,0,SEEK_END)||ftell(fp)!=(long)bytes||
+       fseek(fp,(long)offset,SEEK_SET))goto done;
+    j=malloc(ns*nb*sizeof(*j));if(!j)goto done;
+    if(fread(j,8,ns*nb,fp)!=ns*nb||fread(marker,1,8,fp)!=8||memcmp(marker,"ITEREND1",8)||fgetc(fp)!=EOF){
+        free(j);j=NULL;goto done;
+    }
+    for(size_t k=0;k<ns*nb;k++)if(j[k]<0||!isfinite(j[k])){free(j);j=NULL;goto done;}
+    *iteration=(int)h[6];
+done:
+    fclose(fp);return j;
+}
+
+static int evaluate(CMFToyModel *m,double *fine_J,const double *pop,const double *ions,
     const double *ne,const double *temperature,int field_iteration,int population_iteration,FILE *fp){
     int rc=-1,ns=m->plasma.n_shells,nb=NLTE_N_FREQ_BINS;
     RadiationFieldOwner owner={0};RadiationFieldView view={0};
@@ -18,7 +42,7 @@ static int evaluate(CMFToyModel *m,const double *pop,const double *ions,
     J=malloc((size_t)ns*nb*sizeof(*J));edges=malloc((nb+1)*sizeof(*edges));
     valid=malloc((size_t)ns*nb*sizeof(*valid));REQUIRE(J&&edges&&valid);
     CMFGENState source={0},target={0};
-    source.n_shells=ns;source.n_bins=m->opacity.n_fine;source.J=m->opacity.jnu_fine;
+    source.n_shells=ns;source.n_bins=m->opacity.n_fine;source.J=fine_J;
     source.nu_min=m->opacity.nu_lo_fine;source.d_log_nu=m->opacity.dlognu_fine;
     source.nu_max=source.nu_min*exp(source.n_bins*source.d_log_nu);
     target.n_shells=ns;target.n_bins=nb;target.J=J;
@@ -87,26 +111,19 @@ done:
 int main(int argc,char **argv){
     if(argc!=7)return 2;
     const double mass[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
-    CMFToyModel m={0};double *saved=NULL;FILE *fp=NULL;int rc=-1,new_iteration=-1,old_iteration=-1;
+    CMFToyModel m={0};double *old_J=NULL;FILE *fp=NULL;int rc=-1,new_iteration=-1,old_iteration=-1;
     REQUIRE(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],atoi(argv[3]),mass));
     REQUIRE(!cmf_toy_initial_iterate_read(&m,argv[4],argv[5],&new_iteration));
-    int ns=m.plasma.n_shells,ni=m.atom.n_ion_pops,nl=m.nlte.n_nlte_levels_total;
-    size_t count=(size_t)ns*(nl+ni+2);saved=malloc(count*sizeof(*saved));REQUIRE(saved);
-    double *pop=saved,*ions=pop+(size_t)nl*ns,*ne=ions+(size_t)ni*ns,*temperature=ne+ns;
-    memcpy(pop,m.nlte.nlte_level_populations,(size_t)nl*ns*sizeof(*pop));
-    memcpy(ions,m.atom.ion_number_density,(size_t)ni*ns*sizeof(*ions));
-    memcpy(ne,m.plasma.n_electron,ns*sizeof(*ne));memcpy(temperature,m.plasma.T_e,ns*sizeof(*temperature));
+    const double *pop=m.nlte.nlte_level_populations,*ions=m.atom.ion_number_density;
+    const double *ne=m.plasma.n_electron,*temperature=m.plasma.T_e;
+    old_J=previous_field(&m,argv[6],argv[5],&old_iteration);REQUIRE(old_J);
+    REQUIRE(old_iteration+1==new_iteration);
     fp=fopen("iterate_bf_balance.csv","wx");REQUIRE(fp);
     REQUIRE(fprintf(fp,"field_iteration,population_iteration,shell,Z,velocity_km_s,T_K,ne_cm3,III_II,channels,photo_per_II_s,recomb_per_III_s,collision_per_II_s,threebody_per_III_s,forward_cm3_s,reverse_cm3_s,signed_imbalance\n")>0);
-    REQUIRE(!evaluate(&m,pop,ions,ne,temperature,new_iteration,new_iteration,fp));
-    cmf_toy_model_free(&m);
-    REQUIRE(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],atoi(argv[3]),mass));
-    REQUIRE(!cmf_toy_initial_iterate_read(&m,argv[6],argv[5],&old_iteration));
-    REQUIRE(old_iteration+1==new_iteration&&ns==m.plasma.n_shells&&ni==m.atom.n_ion_pops&&nl==m.nlte.n_nlte_levels_total);
-    REQUIRE(!memcmp(temperature,m.plasma.T_e,ns*sizeof(*temperature)));
-    REQUIRE(!evaluate(&m,pop,ions,ne,temperature,old_iteration,new_iteration,fp));
+    REQUIRE(!evaluate(&m,m.opacity.jnu_fine,pop,ions,ne,temperature,new_iteration,new_iteration,fp));
+    REQUIRE(!evaluate(&m,old_J,pop,ions,ne,temperature,old_iteration,new_iteration,fp));
     rc=0;
 done:
     if(fp&&fclose(fp))rc=-1;
-    cmf_toy_model_free(&m);free(saved);return rc?1:0;
+    cmf_toy_model_free(&m);free(old_J);return rc?1:0;
 }

@@ -186,6 +186,13 @@ if [[ "$toy_mode" == material-iterate ]]; then
  sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
 fi
 if [[ "$toy_mode" == material-bf-iterate ]]; then
+ mkdir "$toy_out/same-iteration-negative"
+ (cd "$toy_out/same-iteration-negative";
+  if ../prepare "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" "$toy_shells" \
+     "$toy_out/iterate_input.bin" "$toy_iterate_id" "$toy_out/iterate_input.bin" > prepare.log 2> prepare.err; then
+   echo '같은 반복을 이전 장으로 수용함' >&2; exit 1
+  fi
+  grep -F 'old_iteration+1==new_iteration' prepare.err)
  sha256sum -c "$toy_out/iterate.sha256" > "$toy_out/iterate_verify.log"
 fi
 if [[ "$toy_mode" == material-rates-profile ]]; then
