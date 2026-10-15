@@ -28,6 +28,11 @@ else
  [[ "$moment_out" == /gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/ada-* ]]
 fi
 mkdir "$moment_out"
+if [[ -n "${CMF_TEST_MATERIAL_CSV:-}" ]]; then
+ cp -- "$CMF_TEST_MATERIAL_CSV" "$moment_out/geometry_input.csv"
+ export CMF_TEST_MATERIAL_CSV=$moment_out/geometry_input.csv
+ sha256sum "$CMF_TEST_MATERIAL_CSV" > "$moment_out/geometry_input.sha256"
+fi
 cd "$moment_src"
 moment_files=(src/cmf_anderson.h src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h src/cmf_exact_sliding.c
  src/cmf_time_moment.c src/cmf_time_moment.h src/cmf_time_field.c src/cmf_time_field.h
@@ -78,3 +83,6 @@ nvcc -O2 -arch=native -std=c++14 -Isrc src/cmf_observer.cu "$moment_out/observer
 compute-sanitizer --tool memcheck --error-exitcode=79 "$moment_out/observer" \
  > "$moment_out/observer-memcheck.log" 2>&1
 sha256sum -c "$moment_out/source.sha256" > "$moment_out/source_verify.log"
+if [[ -n "${CMF_TEST_MATERIAL_CSV:-}" ]]; then
+ sha256sum -c "$moment_out/geometry_input.sha256" > "$moment_out/geometry_input_verify.log"
+fi

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -192,8 +193,56 @@ static void time_case(){
         error,cr.iterations,gr.iterations,cr.equation_residual,gr.equation_residual);
 }
 
+static void actual_geometry_case(const char *path){
+    /* 실제 셸 경계만 사용한다. 양의 합성 계수로 CPU/GPU 배선을 비교하며 NLTE 시험은 아니다. */
+    std::FILE *fp=std::fopen(path,"r");CHECK(fp);if(!fp)return;
+    char line[4096];std::vector<double> ri,ro;int previous=-1;
+    while(std::fgets(line,sizeof line,fp)){
+        if(line[0]=='#'||!std::strncmp(line,"shell,",6))continue;
+        int s;double low,high;
+        if(std::sscanf(line,"%d,%lf,%lf,",&s,&low,&high)!=3||
+           !std::isfinite(low)||!std::isfinite(high)||low<0||!(high>low)){
+            CHECK(false);std::fclose(fp);return;
+        }
+        if(s==previous){CHECK(low==ri.back()&&high==ro.back());continue;}
+        if(s!=previous+1||s>=256||(s&&low!=ro.back())){
+            CHECK(false);std::fclose(fp);return;
+        }
+        ri.push_back(low);ro.push_back(high);previous=s;
+    }
+    CHECK(!std::ferror(fp));CHECK(!std::fclose(fp));
+    const int ns=(int)ri.size(),nb=64;CHECK(ns>1);if(ns<2)return;
+    const size_t cells=(size_t)ns*nb;const double dlog=.02;
+    std::vector<double> nu(nb),chi(cells),scat(cells),eta(cells),j(cells);
+    for(int b=0;b<nb;b++)nu[b]=1e14*std::exp((b+.5)*dlog);
+    for(int s=0;s<ns;s++)for(int b=0;b<nb;b++){
+        size_t i=(size_t)s*nb+b;chi[i]=1e-13*(1+.2*std::sin(s*.17));
+        scat[i]=.3*chi[i];eta[i]=1e-19*(1+.2*std::cos(b*.1+s*.03));j[i]=1e-6;
+    }
+    Moments cpu(cells,nb),gpu(cells,nb);CMFMultiGPUEpochSchedule schedule={128,4096,32};
+    CHECK(cmf_exact_formal_moments_emissivity(ns,nb,dlog,nu.data(),ri.data(),ro.data(),172800,
+        10000,1,chi.data(),scat.data(),eta.data(),j.data(),&cpu.m)==CMF_EXACT_OK);
+    CHECK(cmf_exact_multigpu_formal_moments_emissivity_epoch(ns,nb,dlog,nu.data(),ri.data(),ro.data(),172800,
+        10000,1,chi.data(),scat.data(),eta.data(),j.data(),&gpu.m,&schedule,1,nullptr)==CMF_MGPU_OK);
+    double error=0;
+    for(size_t i=0;i<gpu.data.size();i++){
+        double scale=i<3*cells?cpu.m.J[i%cells]:cpu.m.outer_J[(i-3*cells)%nb];
+        if(i>=3*cells+3*nb){
+            size_t face=i-3*cells-3*nb,s=std::min(face/nb,(size_t)ns-1);
+            scale=cpu.m.J[s*nb+face%nb];
+        }
+        CHECK(std::isfinite(cpu.data[i])&&std::isfinite(gpu.data[i])&&scale>=0);
+        double delta=std::fabs(cpu.data[i]-gpu.data[i]);
+        if(scale==0)CHECK(delta==0);else error=std::max(error,delta/scale);
+    }
+    CHECK(error<3e-11);
+    std::printf("ACTUAL_GRID_FORMAL_GPU shells=%d bins=%d max_delta_over_J=%.17g coefficients=SYNTHETIC NLTE_solved=0\n",ns,nb,error);
+}
+
 int main(void)
 {
+    const char *geometry=std::getenv("CMF_TEST_MATERIAL_CSV");
+    if(geometry)actual_geometry_case(geometry);
     time_case();
     for(int kind=0;kind<5;++kind)run_case(kind);
     std::printf("CMF_FORMAL_MOMENTS_GPU_SELFTEST %s failures=%d\n",failures?"FAIL":"PASS",failures);
