@@ -35,6 +35,8 @@ if [[ "${1:-selftest}" == initial-grid ]]; then
   (cd "$compare_root/source"; sha256sum -c "$compare_root/source.sha256") >> "$compare_out/original_source_verify.log"
   (cd "$compare_root/input"; sha256sum -c "$compare_root/input.sha256") >> "$compare_out/original_input_verify.log"
  done
+ # 해상도만의 대조이므로 원자자료/충돌표/연속채널까지 같은 입력이어야 한다.
+ cmp "$2/input.sha256" "$3/input.sha256"
  sha256sum -c "$2/iterate.sha256" > "$compare_out/iterate_verify.log"
  cmp "$2/input/snia_toy06_2d.dat" "$3/input/snia_toy06_2d.dat"
  sha256sum "$2/toy_initial_material.csv" "$2/iterate_material.csv" "$3/toy_initial_material.csv" \
