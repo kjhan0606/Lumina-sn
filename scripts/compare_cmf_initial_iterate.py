@@ -117,9 +117,73 @@ def compare(run, public):
     return summary
 
 
+def grid_diagnostic(run, finer, public):
+    """100셸의 온도 급변 구간을 같은 경계의200셸 및 공개 셀 평균과 비교."""
+    _, coarse = material(run/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
+    _, updated = material(run/'iterate_material.csv', 'UNCONVERGED_INITIAL_ITERATE;')
+    _, fine = material(finer/'toy_initial_material.csv', 'BOOTSTRAP_LTE_SAHA;')
+    ph, plasma = public_block(public/'phys_toy06_cmfgen.txt', 2.)
+    nodes = (0., -.5384693101056831, .5384693101056831, -.906179845938664, .906179845938664)
+    weights = (.5688888888888889, .4786286704993665, .4786286704993665, .2369268850561891, .2369268850561891)
+
+    def integrate(fn, edges):
+        return math.fsum((b-a)/2*w*fn((a+b)/2+(b-a)/2*x)
+            for a,b in zip(edges, edges[1:]) for x,w in zip(nodes, weights))
+
+    # 양의 가중치를 쓰는5점 적분식이다. 아래 실제 보간 곱은 최대6차다.
+    assert abs(integrate(lambda v: v**6, [1., 3.])/((3.**7-1)/7)-1) < 2e-14
+    records = []
+    epoch_velocity = 172800 * 1e5
+    for z, name, mass in ((14, 'si', 28.0855), (16, 's', 32.065)):
+        ih, ions = public_block(public/f'ionfrac_{name}_toy06_cmfgen.txt', 2.)
+        for q in (1, 2, 3, 4):
+            cell = coarse[(30, z, q)]
+            lo, hi = [float(cell[k])/epoch_velocity for k in ('r_inner_cm', 'r_outer_cm')]
+            selected = [r for (s,e,stage),r in fine.items() if e==z and stage==q
+                and float(r['r_inner_cm'])/epoch_velocity >= lo
+                and float(r['r_outer_cm'])/epoch_velocity <= hi]
+            selected.sort(key=lambda r: float(r['r_inner_cm']))
+            if len(selected)!=2 or selected[0]['r_inner_cm']!=cell['r_inner_cm'] or selected[-1]['r_outer_cm']!=cell['r_outer_cm']:
+                raise ValueError('같은 경계를 채우는200셸 하위 셀 두 개가 필요함')
+            if selected[0]['r_outer_cm']!=selected[1]['r_inner_cm']:
+                raise ValueError('하위 셀 간 공백')
+            # 이 국소 진단은 조성이 일정한 영역에만 적용한다. 그러면 rho 가중치가 핵수 가중치와 같다.
+            if any(abs(float(r['mass_fraction'])/float(cell['mass_fraction'])-1)>1e-12 for r in selected):
+                raise ValueError('국소 조성 일정 가정 위반')
+            base, nuclei = fraction(cell, mass)
+            components = [fraction(r, mass) for r in selected]
+            if abs(math.fsum(w for f,w in components)/nuclei-1)>1e-10:
+                raise ValueError('100/200셸 핵수 불일치')
+            avg = math.fsum(f*w for f,w in components)/nuclei
+            volume = lambda r: float(r['r_outer_cm'])**3-float(r['r_inner_cm'])**3
+            fine_T4 = math.fsum(volume(r)*float(r['T_K'])**4 for r in selected)/volume(cell)
+            assert abs(fine_T4/float(cell['T_K'])**4-1)<1e-12
+            if lo<max(plasma[0][0], ions[0][0]) or hi>min(plasma[-1][0], ions[-1][0]):
+                raise ValueError('공개 자료 외삽 금지')
+            edges = sorted({lo, hi, *[r[0] for r in plasma+ions if lo<r[0]<hi]})
+            rho = lambda v: interpolate(plasma, v, ph.index('rho[gcc]'))
+            fref = lambda v: interpolate(ions, v, ih.index(name+str(q)))
+            norm = integrate(lambda v: rho(v)*v*v, edges)
+            reference = integrate(lambda v: rho(v)*fref(v)*v*v, edges)/norm
+            temperature = (integrate(lambda v: interpolate(plasma, v, ph.index('temp[K]'))**4*v*v, edges)
+                           /integrate(lambda v: v*v, edges))**.25
+            records.append(dict(Z=z, stage=q, velocity_edges_km_s=[lo,hi],
+                T_coarse=float(cell['T_K']), T_fine=[float(r['T_K']) for r in selected],
+                T_reference_volume_T4=temperature, T_reference_center=interpolate(plasma,(lo+hi)/2,ph.index('temp[K]')),
+                saha_100=base, saha_200_nuclei_average=avg,
+                nlte_iterate_100=fraction(updated[(30,z,q)],mass)[0],
+                reference_center=fref((lo+hi)/2), reference_nuclei_average=reference,
+                fine_cells=[int(r['shell']) for r in selected]))
+    return dict(status='INITIAL_GRID_DIAGNOSTIC', day=2., goal_verdict='NOT_JUDGED',
+        fine_NLTE_solved=False, reference_integration='piecewise-linear rho and fraction; rho*v^2; constant composition verified',
+        coarse_run=str(run), fine_run=str(finer), records=records)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run', required=True, type=Path)
     parser.add_argument('--public', required=True, type=Path)
+    parser.add_argument('--finer', type=Path)
     args = parser.parse_args()
-    print(json.dumps(compare(args.run, args.public), indent=2, allow_nan=False))
+    result = grid_diagnostic(args.run, args.finer, args.public) if args.finer else compare(args.run, args.public)
+    print(json.dumps(result, indent=2, allow_nan=False))
