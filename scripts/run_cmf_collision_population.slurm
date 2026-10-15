@@ -29,7 +29,10 @@ export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 scontrol write batch_script "$SLURM_JOB_ID" "$pop_out/runner.slurm"
 cd "$pop_src"
 git rev-parse HEAD > "$pop_out/commit.txt"
-[[ $(git rev-parse HEAD:src/lumina_plasma.c) == $(git hash-object "$pop_prior/source/src/lumina_plasma.c") ]]
+# 구판의 신원은 구판 기록과 대조한다. 수정판을 commit한 뒤에도 재현 가능해야 한다.
+pop_prior_commit=$(< "$pop_prior/commit.txt")
+[[ "$pop_prior_commit" =~ ^[0-9a-f]{40}$ ]]
+[[ $(git rev-parse "${pop_prior_commit}:src/lumina_plasma.c") == $(git hash-object "$pop_prior/source/src/lumina_plasma.c") ]]
 pop_files=(tests/cmf_toy_collision_population.c tests/cmf_collision_population_compare.py scripts/run_cmf_collision_population.slurm)
 cp --parents "${pop_files[@]}" "$pop_out/source/"
 cmp src/lumina_plasma.c "$pop_changed/source/src/lumina_plasma.c"
