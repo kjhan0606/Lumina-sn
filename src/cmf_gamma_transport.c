@@ -51,17 +51,21 @@ static double doppler(double r,double mu,double age){
 }
 static double volume(double a,double b){return (4*pi/3)*(b-a)*(b*b+a*b+a*a);}
 
-int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGammaResult *out){
+int cmf_gamma_transport_shell_mixture(const CMFGammaInput *in,uint64_t np,uint64_t seed,
+                                     double mixture,CMFGammaResult *out){
     if(!in||!out||np<2||np>UINT64_C(1000000000)||in->n_shells<1||in->n_lines<1||
        !in->radius_edges_cm||!in->total_electrons_cm3||!in->sum_number_Z5_cm3||
        !in->line_energy_MeV||!in->photon_emissivity||
-       !(in->homologous_age_s>=0)||!isfinite(in->homologous_age_s))return -1;
+       !(in->homologous_age_s>=0)||!isfinite(in->homologous_age_s)||
+       !(mixture>=0&&mixture<=1)||!isfinite(mixture))return -1;
     size_t ns=in->n_shells,nl=in->n_lines;
     if(ns>SIZE_MAX/nl/sizeof(double)||ns>SIZE_MAX/(4*sizeof(double)))return -1;
     double *cdf=malloc(ns*nl*sizeof(double)),*work=calloc(4*ns,sizeof(double));
+    double *source_power=mixture>0?calloc(ns,sizeof(double)):NULL;
+    double *weight=mixture>0?calloc(ns*nl,sizeof(double)):NULL;
     CMFGammaResult result={0};result.n_shells=(int)ns;result.packets=np;
     result.storage=calloc(3*ns,sizeof(double));
-    if(!cdf||!work||!result.storage)goto fail;
+    if(!cdf||!work||!result.storage||(mixture>0&&(!source_power||!weight)))goto fail;
     result.deposition_erg_cm3_s=result.storage;result.deposition_standard_error=result.storage+ns;
     result.positive_packet_count=result.storage+2*ns;
     double *vol=work,*per_packet=vol+ns,*mean=per_packet+ns,*m2=mean+ns;
@@ -80,27 +84,55 @@ int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGam
         for(size_t s=0;s<ns;s++){
             double rate=in->photon_emissivity[l*ns+s];
             if(!(rate>=0)||!isfinite(rate))goto fail;
-            luminosity+=rate*vol[s]*in->line_energy_MeV[l]*MeV_erg;
+            double power=rate*vol[s]*in->line_energy_MeV[l]*MeV_erg;
+            luminosity+=power;
+            if(source_power)source_power[s]+=power;
             if(!isfinite(luminosity))goto fail;
             cdf[l*ns+s]=luminosity;
         }
     }
     result.emitted_comoving_erg_s=luminosity;
-    if(luminosity==0){cmf_gamma_result_free(out);*out=result;free(cdf);free(work);return 0;}
+    if(luminosity==0){cmf_gamma_result_free(out);*out=result;free(cdf);free(work);free(source_power);free(weight);return 0;}
+    double proposal_total=luminosity;
+    if(mixture>0){
+        size_t active=0;
+        for(size_t s=0;s<ns;s++)if(source_power[s]>0)active++;
+        if(!active)goto fail;
+        proposal_total=0;
+        /* Baes et al.2016의 composite source biasing. 에너지별 방출 비는
+         * 유지하고 셸 선택만 바꾼다. 관측 tally를 이용한 사후 정규화가 아니다. */
+        for(size_t l=0;l<nl;l++)for(size_t s=0;s<ns;s++){
+            size_t index=l*ns+s;
+            double power=in->photon_emissivity[index]*vol[s]*in->line_energy_MeV[l]*MeV_erg;
+            double proposal=source_power[s]>0?
+                (1-mixture)*power+mixture*(luminosity/active)*(power/source_power[s]):0;
+            if(!(proposal>=0)||!isfinite(proposal)||(power>0&&!(proposal>0)))goto fail;
+            weight[index]=proposal>0?power/proposal:0;
+            proposal_total+=proposal;cdf[index]=proposal_total;
+        }
+        if(!(proposal_total>0)||!isfinite(proposal_total))goto fail;
+        /* CDF 누적의 반올림까지 포함한 제안 분포의 전체 정규화. */
+        for(size_t k=0;k<ns*nl;k++){
+            weight[k]*=proposal_total/luminosity;
+            if(!(weight[k]>=0)||!isfinite(weight[k]))goto fail;
+        }
+    }
     long double lab_emitted=0,lab_deposited=0,lab_escaped=0,cmf_deposited=0;
     double total_mean=0,total_m2=0;
     for(uint64_t packet=0;packet<np;packet++){
         memset(per_packet,0,ns*sizeof(double));
-        /* 독립 표본: 각 photon의 동일 공이동 에너지 가중치가 분산 정의와 일치한다. */
-        double pick=uniform(&seed)*luminosity;size_t lo=0,hi=ns*nl;
+        /* 독립 표본. 아래 Welford에는 제안 분포에서 실제 얻은 가중 침적을 넣는다. */
+        double pick=uniform(&seed)*proposal_total;size_t lo=0,hi=ns*nl;
         while(lo<hi){size_t mid=lo+(hi-lo)/2;if(pick<cdf[mid])hi=mid;else lo=mid+1;}
         if(lo==ns*nl)goto fail;
+        double packet_weight=weight?weight[lo]:1;
+        if(!(packet_weight>0)||!isfinite(packet_weight))goto fail;
         int shell=(int)(lo%ns);double E0=in->line_energy_MeV[lo/ns];
         double ri=edges[shell],ro=edges[shell+1];
         double r=cbrt(ri*ri*ri+uniform(&seed)*(ro*ro*ro-ri*ri*ri));
         double mu_c=2*uniform(&seed)-1,beta=beta_at(r,age),gamma=1/sqrt((1-beta)*(1+beta));
         double mu=(mu_c+beta)/(1+beta*mu_c),E=E0*gamma*(1+beta*mu_c);
-        lab_emitted+=E/E0;
+        lab_emitted+=packet_weight*(E/E0);
         int finished=0;
         for(int event=0;event<1000000;event++){
             if(shell<0||shell>=(int)ns||!(r>=edges[shell]&&r<=edges[shell+1])||
@@ -122,7 +154,7 @@ int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGam
             if(flight>=distance){
                 r=boundary;mu=muend;result.boundary_crossings++;
                 shell+=inward?-1:1;
-                if(shell==(int)ns){lab_escaped+=E/E0;result.escapes++;finished=1;break;}
+                if(shell==(int)ns){lab_escaped+=packet_weight*(E/E0);result.escapes++;finished=1;break;}
                 continue;
             }
             z+=flight;r=hypot(z,impact);mu=z/r;
@@ -133,7 +165,8 @@ int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGam
             if(!(opacity>0)||!isfinite(opacity)||opacity>majorant*(1+64*DBL_EPSILON))goto fail;
             if(uniform(&seed)*majorant>opacity){result.null_events++;continue;}
             if(uniform(&seed)*(scatter+absorb)<absorb){
-                per_packet[shell]+=Ec/E0;cmf_deposited+=Ec/E0;lab_deposited+=E/E0;
+                per_packet[shell]+=packet_weight*(Ec/E0);cmf_deposited+=packet_weight*(Ec/E0);
+                lab_deposited+=packet_weight*(E/E0);
                 result.absorptions++;finished=1;break;
             }
             double cosine=0,k=0;int accepted=0;
@@ -149,8 +182,8 @@ int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGam
             if(!(mu_c>=-1&&mu_c<=1))goto fail;
             double after_mu=mu_c*cosine+sqrt((1-mu_c)*(1+mu_c)*(1-cosine)*(1+cosine))*cos(2*pi*uniform(&seed));
             double after_E=Ec*k*gamma*(1+beta*after_mu);
-            double deposit=(Ec/E0)*(1-k);
-            per_packet[shell]+=deposit;cmf_deposited+=deposit;lab_deposited+=(E-after_E)/E0;
+            double deposit=packet_weight*((Ec/E0)*(1-k));
+            per_packet[shell]+=deposit;cmf_deposited+=deposit;lab_deposited+=packet_weight*((E-after_E)/E0);
             E=after_E;mu=(after_mu+beta)/(1+beta*after_mu);result.scatterings++;
         }
         if(!finished)goto fail;
@@ -179,7 +212,11 @@ int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGam
        !isfinite(result.deposited_comoving_standard_error))goto fail;
     result.lab_energy_relative_error=(double)((lab_emitted-lab_deposited-lab_escaped)/lab_emitted);
     if(!isfinite(result.lab_energy_relative_error)||fabs(result.lab_energy_relative_error)>1e-11)goto fail;
-    cmf_gamma_result_free(out);*out=result;free(cdf);free(work);return 0;
+    cmf_gamma_result_free(out);*out=result;free(cdf);free(work);free(source_power);free(weight);return 0;
 fail:
-    cmf_gamma_result_free(&result);free(cdf);free(work);return -1;
+    cmf_gamma_result_free(&result);free(cdf);free(work);free(source_power);free(weight);return -1;
+}
+
+int cmf_gamma_transport(const CMFGammaInput *in,uint64_t np,uint64_t seed,CMFGammaResult *out){
+    return cmf_gamma_transport_shell_mixture(in,np,seed,0,out);
 }

@@ -34,6 +34,12 @@ void cmf_gamma_result_free(CMFGammaResult*);
 /* 결과 객체는 첫 사용 전0초기화. 실패시 기존 결과 보존. seed와 packet 수로 재현된다. 광자 도중의 에너지
  * cutoff/국소 강제침적/음수 보정은 없다. 사건 한도 초과는 실패로 반환한다. */
 int cmf_gamma_transport(const CMFGammaInput*,uint64_t packets,uint64_t seed,CMFGammaResult*);
+/* 방출 셸 확률만 (1-a)L_s/L+a/N_active로 혼합한다. 각 패킷의 모든
+ * 에너지 기여는 원래/제안 확률로 가중하며 분산도 가중 표본으로 계산한다.
+ * 원자율/궤도/원래 총방출은 불변. a=0은 기존 경로이며 0<=a<=1.
+ * 비방출 셸에 인위적 소스를 만들지 않고 관측값으로 정규화하지 않는다. */
+int cmf_gamma_transport_shell_mixture(const CMFGammaInput*,uint64_t packets,uint64_t seed,
+                                      double mixture,CMFGammaResult*);
 #ifdef __cplusplus
 }
 #endif
