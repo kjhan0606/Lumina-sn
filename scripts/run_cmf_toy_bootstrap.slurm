@@ -41,6 +41,11 @@ module load gnu13/13.2.0
 if [[ "$toy_mode" == *nonthermal || "$toy_mode" == material-iterate ]]; then module load python/3.11.14; fi
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-2} OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 unset CMF_TEST_ISOLATE_CE CMF_TEST_PROFILE_CACHED CMF_TEST_RATE_CACHE CMF_TEST_GTH_PARALLEL CMF_TEST_MATRIX_CACHE CMF_TEST_NT_COVERAGE CMF_TEST_NT_GRID CMF_TEST_NT_SOURCE CMF_TEST_NT_LEVELS CMF_TEST_BF_LTE_LEVELS
+unset CMF_TEST_BF_SHELL
+if [[ "$toy_mode" == material-bf-iterate && -n "${8:-}" ]]; then
+ [[ "$8" =~ ^[0-9]+$ ]]
+ export CMF_TEST_BF_SHELL="$8"
+fi
 if [[ "$toy_mode" == material-rates-matrix-cache ]]; then export CMF_TEST_RATE_CACHE=1 CMF_TEST_MATRIX_CACHE=1; fi
 if [[ "$toy_mode" == material-nt-coverage ]]; then export CMF_TEST_NT_COVERAGE=1; fi
 if [[ "$toy_mode" == material-nt-grid ]]; then export CMF_TEST_NT_GRID=1; fi
@@ -161,13 +166,17 @@ if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "
  toy_arguments+=("$toy_out/iterate_input.bin" "$toy_iterate_id")
  sha256sum "$toy_out/iterate_input.bin" "$toy_out/iterate_identity.txt" > "$toy_out/iterate.sha256"
  if [[ "$toy_mode" == material-bf-iterate ]]; then
-  toy_prior=${6:?previous frozen analysis directory required}
-  cmp "$toy_prior/input.sha256" "$toy_iterate_run/input.sha256"
-  cmp "$toy_prior/iterate_identity.txt" "$toy_out/iterate_identity.txt"
-  sha256sum -c "$toy_prior/iterate.sha256" > "$toy_out/prior_verify.log"
-  cp "$toy_prior/iterate_input.bin" "$toy_out/prior_iterate_input.bin"
-  sha256sum "$toy_out/prior_iterate_input.bin" >> "$toy_out/iterate.sha256"
-  toy_arguments+=("$toy_out/prior_iterate_input.bin")
+  toy_prior=${6:?previous frozen analysis directory or single required}
+  if [[ "$toy_prior" == single ]]; then
+   printf 'single_checkpoint=1 selected_shell=%s\n' "${CMF_TEST_BF_SHELL:-default_velocity_range}" > "$toy_out/bf_scope.txt"
+  else
+   cmp "$toy_prior/input.sha256" "$toy_iterate_run/input.sha256"
+   cmp "$toy_prior/iterate_identity.txt" "$toy_out/iterate_identity.txt"
+   sha256sum -c "$toy_prior/iterate.sha256" > "$toy_out/prior_verify.log"
+   cp "$toy_prior/iterate_input.bin" "$toy_out/prior_iterate_input.bin"
+   sha256sum "$toy_out/prior_iterate_input.bin" >> "$toy_out/iterate.sha256"
+   toy_arguments+=("$toy_out/prior_iterate_input.bin")
+  fi
  fi
 fi
 if [[ "$toy_mode" == material-nt-* ]]; then
@@ -226,6 +235,9 @@ if [[ "$toy_mode" == material-bf-iterate ]]; then
  toy_bf_decompose=${7:-}
  case "$toy_bf_decompose" in ''|decompose) ;; *) exit 2 ;; esac
  if [[ "$toy_bf_decompose" == decompose ]]; then
+  toy_arm_arguments=("${toy_arguments[@]}")
+  toy_arm_arguments[0]="$toy_out/input/snia_toy06_2d.dat"
+  toy_arm_arguments[1]="$toy_out/input"
   # 정적 JEQB 캐시는 새 프로세스로 분리한다. 같은 이온 총량/T/ne의 율 분해이며
   # 공개 목표값,새 인구 풀이,생산 파일 변경은 없다.
   for toy_arm in planck actual-lte planck-lte; do
@@ -237,8 +249,7 @@ if [[ "$toy_mode" == material-bf-iterate ]]; then
    esac
    mkdir "$toy_out/$toy_arm"
    (cd "$toy_out/$toy_arm";
-    env "${toy_arm_env[@]}" ../prepare "$toy_out/input/snia_toy06_2d.dat" "$toy_out/input" "$toy_shells" \
-     "$toy_out/iterate_input.bin" "$toy_iterate_id" "$toy_out/prior_iterate_input.bin" > prepare.log 2> prepare.err)
+    env "${toy_arm_env[@]}" ../prepare "${toy_arm_arguments[@]}" > prepare.log 2> prepare.err)
   done
   (cd "$toy_out"; sha256sum iterate_bf_balance.csv planck/iterate_bf_balance.csv \
    actual-lte/iterate_bf_balance.csv planck-lte/iterate_bf_balance.csv) > "$toy_out/decomposition.sha256"

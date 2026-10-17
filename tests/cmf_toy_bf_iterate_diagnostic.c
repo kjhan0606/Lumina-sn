@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #define REQUIRE(x) do {if(!(x)){fprintf(stderr,"TOY_BF_ITERATE_FAIL line=%d %s\n",__LINE__,#x);goto done;}} while(0)
+static int selected_shell=-1;
 
 /* 이전 물질은 재사용하지 않는다. 기존 C reader로 이미 검증한 불변 사본에서
  * 같은 신원/격자/크기/끝표지의 J 배열만 읽는다. runner가 전체 파일 hash도 확인한다. */
@@ -99,7 +100,7 @@ static int evaluate(CMFToyModel *m,double *fine_J,const double *pop,const double
     int rows=0;
     for(int s=0;s<ns;s++){
         double velocity=(m->geometry.v_inner[s]+m->geometry.v_outer[s])/2e5;
-        if(velocity<12100||velocity>12900)continue;
+        if(selected_shell>=0?s!=selected_shell:(velocity<12100||velocity>12900))continue;
         for(int z=14;z<=16;z+=2){
             int low=-1,high=-1;
             for(int ip=0;ip<a->n_ion_pops;ip++)if(a->ion_pop_Z[ip]==z){
@@ -155,22 +156,30 @@ done:
 }
 
 int main(int argc,char **argv){
-    if(argc!=7)return 2;
+    if(argc!=6&&argc!=7)return 2;
     const double mass[6]={55.942132,55.939839,55.934937,40.078,32.065,28.0855};
     CMFToyModel m={0};double *old_J=NULL,*private_pop=NULL;FILE *fp=NULL;int rc=-1,new_iteration=-1,old_iteration=-1;
     REQUIRE(!cmf_toy_model_prepare_runtime(&m,argv[1],argv[2],atoi(argv[3]),mass));
     REQUIRE(!cmf_toy_initial_iterate_read(&m,argv[4],argv[5],&new_iteration));
+    const char *shell_input=getenv("CMF_TEST_BF_SHELL");
+    if(shell_input){
+        char *end;long shell=strtol(shell_input,&end,10);
+        REQUIRE(end!=shell_input&&!*end&&shell>=0&&shell<m.plasma.n_shells);
+        selected_shell=(int)shell;
+    }
     const double *pop=m.nlte.nlte_level_populations,*ions=m.atom.ion_number_density;
     const double *ne=m.plasma.n_electron,*temperature=m.plasma.T_e;
-    old_J=previous_field(&m,argv[6],argv[5],&old_iteration);REQUIRE(old_J);
-    REQUIRE(old_iteration+1==new_iteration);
+    if(argc==7){
+        old_J=previous_field(&m,argv[6],argv[5],&old_iteration);REQUIRE(old_J);
+        REQUIRE(old_iteration+1==new_iteration);
+    }
     if(getenv("CMF_TEST_BF_LTE_LEVELS")){
         private_pop=lte_levels(&m);REQUIRE(private_pop);pop=private_pop;
     }
     fp=fopen("iterate_bf_balance.csv","wx");REQUIRE(fp);
     REQUIRE(fprintf(fp,"field_iteration,population_iteration,shell,Z,velocity_km_s,T_K,ne_cm3,III_II,channels,photo_per_II_s,recomb_per_III_s,collision_per_II_s,threebody_per_III_s,forward_cm3_s,reverse_cm3_s,signed_imbalance\n")>0);
     REQUIRE(!evaluate(&m,m.opacity.jnu_fine,pop,ions,ne,temperature,new_iteration,new_iteration,fp));
-    REQUIRE(!evaluate(&m,old_J,pop,ions,ne,temperature,old_iteration,new_iteration,fp));
+    if(old_J)REQUIRE(!evaluate(&m,old_J,pop,ions,ne,temperature,old_iteration,new_iteration,fp));
     rc=0;
 done:
     if(fp&&fclose(fp))rc=-1;
