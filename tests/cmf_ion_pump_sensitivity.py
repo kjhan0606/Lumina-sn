@@ -49,6 +49,10 @@ root, output = map(Path, sys.argv[1:3])
 other_root = Path(sys.argv[3]) if len(sys.argv) == 4 else None
 assert not output.exists()
 inputs = dict(line.split('=', 1) for line in (root / 'inputs.txt').read_text().splitlines())
+# 원소별 순차 진단도 지원한다. 미지정된 과거 입력은 기존 Si/S 쌍을 요구한다.
+target_z = int(inputs.get('target_Z', '0'))
+assert target_z in (0, 14, 16, 20)
+selected_elements = (target_z,) if target_z else (14, 16)
 atom_path = Path(inputs['reader']) / 'input/levels.csv'
 atom = list(csv.DictReader(atom_path.open()))
 log = (root / 'response.log').read_text()
@@ -59,7 +63,7 @@ result = {'scope': '고정 T/ne/연속광/충돌/NT; 선 J만 변경; 공동수�
 if other_root:
     result['other_root'] = str(other_root)
     files.extend((other_root / 'inputs.txt', other_root / 'response.log'))
-for z in (14, 16):
+for z in selected_elements:
     matrix_path = root / f'matrix_Z{z}.bin'
     level_path = root / f'levels_Z{z}.csv'
     line_path = root / f'lines_Z{z}.csv'
