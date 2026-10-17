@@ -159,7 +159,16 @@ if [[ "$toy_mode" == material-iterate || "$toy_mode" == material-bf-iterate || "
   sha256sum -c "$toy_iterate_run/iterate.sha256" > "$toy_out/frozen_verify.log"
   cp "$toy_iterate_run/iterate_input.bin" "$toy_out/iterate_input.bin"
  else
-  cp "$toy_iterate_run/work/initial_iterate.bin" "$toy_out/iterate_input.bin"
+  toy_checkpoint=initial_iterate.bin
+  if [[ "$toy_mode" == material-iterate ]]; then
+   case "${6:-iterate}" in
+    iterate) ;;
+    material-guess) toy_checkpoint=initial_material_guess.bin ;;
+    *) exit 2 ;;
+   esac
+  fi
+  cp "$toy_iterate_run/work/$toy_checkpoint" "$toy_out/iterate_input.bin"
+  printf 'source_checkpoint=%s\nphysical_history=0\njoint_converged=0\n' "$toy_checkpoint" > "$toy_out/checkpoint_scope.txt"
  fi
  cp "$toy_iterate_run/iterate_identity.txt" "$toy_out/iterate_identity.txt"
  toy_iterate_id=$(sha256sum "$toy_out/iterate_identity.txt");toy_iterate_id=${toy_iterate_id%% *}
