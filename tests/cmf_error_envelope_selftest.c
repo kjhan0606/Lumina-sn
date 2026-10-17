@@ -104,6 +104,33 @@ int main(void)
           "outward-addition-rejects-false-pass");
 
     const Matrix2 negative = {0.25, -0.5, 0.0, 0.0};
+    /* 행 합 노름>=1은 성분별 상계의 부재를 뜻하지 않는다.
+     * K^2=0, ||K||inf=2인 양의 연산자에서 (I-K)^-1*[1,1]=[3,1].
+     * 실제 GPU 실패 원인을 단정하는 시험이 아니라 seed 선택의 반례다. */
+    const Matrix2 noncontractive_norm = {0.0, 2.0, 0.0, 0.0};
+    const double unit_residual[2] = {1.0, 1.0};
+    double shaped[2] = {3.0, 1.0};
+    CHECK(cmf_error_envelope_verify(
+              2, unit_residual, shaped, matrix2_apply_upper,
+              (void *)&noncontractive_norm, &report) == CMF_ENVELOPE_OK,
+          "noncontractive-infinity-norm-valid-envelope");
+    CHECK(cmf_error_envelope_refine(
+              2, unit_residual, shaped, 2, matrix2_apply_upper,
+              (void *)&noncontractive_norm, &report) == CMF_ENVELOPE_OK &&
+          shaped[0] == 3.0 && shaped[1] == 1.0,
+          "noncontractive-infinity-norm-exact-envelope-preserved");
+    shaped[0] = nextafter(3.0, 0.0);
+    CHECK(cmf_error_envelope_verify(
+              2, unit_residual, shaped, matrix2_apply_upper,
+              (void *)&noncontractive_norm, &report) == CMF_ENVELOPE_NOT_SUPERSOLUTION,
+          "noncontractive-infinity-norm-shrunk-envelope-rejected");
+    /* 실질적인 불안정성은 거부한다. K00=1과 양의 잔차에는 유한 상계가 없다. */
+    const Matrix2 no_envelope = {1.0, 0.0, 0.0, 0.0};
+    shaped[0] = 4.0;
+    CHECK(cmf_error_envelope_verify(
+              2, unit_residual, shaped, matrix2_apply_upper,
+              (void *)&no_envelope, &report) == CMF_ENVELOPE_NOT_SUPERSOLUTION,
+          "unit-feedback-positive-residual-rejected");
     double negative_candidate[2] = {4.0, 4.0};
     CHECK(cmf_error_envelope_verify(
               2, residual, negative_candidate, matrix2_apply_upper,
