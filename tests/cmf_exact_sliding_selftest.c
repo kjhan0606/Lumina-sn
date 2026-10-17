@@ -140,6 +140,45 @@ int main(void)
     }
     CHECK(locally_tighter > 0, "componentwise-envelope-is-local");
 
+    /* 정련은 오차상계만 좁혀야 한다. 적은 정련도 참인 상계이며,
+     * 같은 수렴 조건의 물리장/반복 횟수는42회와 정확히 같아야 한다. */
+    double j_one[NS * NB], j_many[NS * NB];
+    double bound_one[NS * NB], bound_many[NS * NB];
+    for (size_t i = 0; i < (size_t)NS * NB; ++i)
+        j_one[i] = j_many[i] = 0.8e-7;
+    CMFExactReport one_report, many_report;
+    CHECK(cmf_exact_characteristic_solve_with_envelope(
+        NS, NB, dlog, nu, r_inner, r_outer, texp, 10000.0, 1.0,
+        chi_tot, chi_es, fixed, j_one, bound_one, 1U,
+        120, 1.0e-13, CMF_EXACT_MODE_POSITIVE_SLIDING,
+        &one_report) == CMF_EXACT_OK, "one-refinement-status");
+    CHECK(cmf_exact_characteristic_solve_with_envelope(
+        NS, NB, dlog, nu, r_inner, r_outer, texp, 10000.0, 1.0,
+        chi_tot, chi_es, fixed, j_many, bound_many, 42U,
+        120, 1.0e-13, CMF_EXACT_MODE_POSITIVE_SLIDING,
+        &many_report) == CMF_EXACT_OK, "many-refinements-status");
+    CHECK(!memcmp(j_one, j_many, sizeof j_one), "refinement-physical-field-unchanged");
+    CHECK(one_report.iterations_used == many_report.iterations_used &&
+          one_report.final_max_relative_change == many_report.final_max_relative_change,
+          "refinement-convergence-unchanged");
+    CHECK(one_report.componentwise_error_envelope_verified &&
+          many_report.componentwise_error_envelope_verified &&
+          one_report.componentwise_error_refinement_iterations == 1U &&
+          many_report.componentwise_error_refinement_iterations == 42U,
+          "both-refinement-bounds-verified");
+    for (size_t i = 0; i < (size_t)NS * NB; ++i) {
+        CHECK(bound_many[i] <= bound_one[i], "refinement-tightens-only-bound");
+        CHECK(fabs(j_one[i] - j_direct[i]) <= bound_one[i] &&
+              fabs(j_many[i] - j_direct[i]) <= bound_many[i],
+              "both-refinement-bounds-cover-oracle");
+    }
+    if (!failures) printf("ENVELOPE_REFINEMENT_INVARIANCE physical_byte_equal=1 iterations=%d "
+           "bound_one_max=%.17g bound_42_max=%.17g proof_verified=%d/%d\n",
+           one_report.iterations_used, one_report.componentwise_error_upper_max,
+           many_report.componentwise_error_upper_max,
+           one_report.componentwise_error_envelope_verified,
+           many_report.componentwise_error_envelope_verified);
+
     /* One-sided feasibility oracle: positivity of F(J)=b+KJ gives the exact
      * fixed point J*=b+KJ* >= b.  A lower-directed application at J=0 is
      * therefore a proof field, not a floor applied to the physical iterate. */

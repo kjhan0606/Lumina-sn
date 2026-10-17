@@ -2,6 +2,7 @@
 #include "cmf_error_envelope.h"
 #include "cmf_cell_geometry.h"
 #include "cmf_anderson.h"
+#include "cmf_anderson_multi.h"
 
 #include <float.h>
 #include <math.h>
@@ -1429,17 +1430,22 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     double *Jnew = (double *)malloc(cells * sizeof(double));
     double *inner = (double *)malloc((size_t)n_bins * sizeof(double));
     const int accelerate=cmf_anderson1_enabled();
+    const int aa_depth=accelerate?cmf_anderson_depth():1;
     CMFAnderson1 aa={0};
-    if(accelerate) {
+    CMFAndersonMulti multi={0};
+    int multi_failed=aa_depth>1?cmf_anderson_multi_init(&multi,cells,aa_depth):0;
+    if(accelerate&&aa_depth==1) {
         aa.previous_g=(double *)malloc(cells*sizeof(double));
         aa.previous_r=(double *)malloc(cells*sizeof(double));
     }
     if (!dt1 || !t1 || !in || !out || !source || !source_cell ||
-        !Jnew || !inner || (accelerate && (!aa.previous_g || !aa.previous_r))) {
+        !Jnew || !inner || aa_depth<1 || multi_failed ||
+        (accelerate && aa_depth==1 && (!aa.previous_g || !aa.previous_r))) {
         free(dt1); free(t1); free(in); free(out); free(source);
         free(source_cell); free(Jnew); free(inner); exact_problem_free(&p);
         free(aa.previous_g);free(aa.previous_r);
-        local.status = CMF_EXACT_ALLOCATION_FAILED;
+        cmf_anderson_multi_free(&multi);
+        local.status = aa_depth<1?CMF_EXACT_INVALID_INPUT:CMF_EXACT_ALLOCATION_FAILED;
         if (report) *report = local;
         return local.status;
     }
@@ -1550,7 +1556,9 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             status = CMF_EXACT_OK;
             break;
         }
-        if(accelerate && iteration+1<iteration_cap)
+        if(accelerate && aa_depth>1 && iteration+1<iteration_cap)
+            cmf_anderson_multi_next(&multi,J,Jnew,max_relative);
+        else if(accelerate && iteration+1<iteration_cap)
             cmf_anderson1_next(&aa,cells,J,Jnew,max_relative);
         else memcpy(J,Jnew,cells*sizeof(double));
     }
@@ -1568,6 +1576,7 @@ cleanup:
     free(dt1); free(t1); free(in); free(out); free(source);
     free(source_cell); free(Jnew); free(inner); exact_problem_free(&p);
     free(aa.previous_g);free(aa.previous_r);
+    cmf_anderson_multi_free(&multi);
     local.status = status;
     if (report) *report = local;
     return status;

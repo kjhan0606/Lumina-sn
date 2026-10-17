@@ -585,9 +585,8 @@ static void nlte_bb_counter_inc(uint64_t *counter)
     (*counter)++;
 }
 
-/* This is the enabled BB rate-graph decision, made before a cache request.
- * An excluded transition therefore never masquerades as a zero-valued cache
- * cell.  Its caller simply has no J-driven edge, while keeping A_ul/C terms. */
+/* 캐시 요청 전에 물리 주파수를 확인한다. 유한 양수인 모든 모형 전이가
+ * 활성 집합에 포함되며, 관측 출력 창으로 J 구동 항을 잘라내지 않는다. */
 static int nlte_bb_rate_graph_contains(NLTEConfig *nlte, double line_nu)
 {
     if (line_jbar_frequency_in_bb_domain(line_nu)) return 1;
@@ -4431,9 +4430,6 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
         int ion_stage = atom->line_ion_number[line];
         int lev_lower = atom->line_level_lower[line];
         int lev_upper = atom->line_level_upper[line];
-        double f_lu   = atom->line_f_lu[line];
-        double lam_cm = atom->line_wavelength_cm[line];
-
         int element_inactive = lumina_zinert_Z_inactive_or_absent(
             atom, Z, n_shells);
         if (element_inactive) {
@@ -4492,9 +4488,6 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
             continue;
         }
 
-        int g_lower    = atom->level_g[lower_idx];
-        int g_upper    = atom->level_g[upper_idx];
-
         for (int s = 0; s < n_shells; s++) {
             double n_ion = atom->ion_number_density[ip * n_shells + s];
             if (!plasma || !plasma->T_e || s >= plasma->n_shells ||
@@ -4541,10 +4534,11 @@ static void compute_tau_sobolev(AtomicData *atom, PlasmaState *plasma,
                     opacity->tau_validity[(size_t)line * n_shells + s] = A208_INVALID_POPULATION;
                 continue;
             }
-            A208ValueView tau = a208_signed_sobolev(
-                SOBOLEV_COEFF, f_lu, lam_cm, time_explosion,
-                n_lower, n_upper, g_lower, g_upper,
-                opacity->tau_required_generation);
+            A208ValueView tau = a208_signed_einstein_counted(
+                atom->line_B_lu ? atom->line_B_lu[line] : NAN,
+                atom->line_B_ul ? atom->line_B_ul[line] : NAN,
+                time_explosion, n_lower, n_upper,
+                opacity->tau_required_generation, a208_counters());
             opacity->tau_sobolev[line * n_shells + s] = tau.value;
             if (opacity->tau_validity)
                 opacity->tau_validity[line * n_shells + s] = tau.validity;
@@ -17077,13 +17071,14 @@ static RadeqStatus a210_private_line_energy_build(
                 exact_constant_sum[s] += (long double)result.signed_rate;
                 einstein_srce_chk_cells[s]++;
             } else {
+                /* 게시 τ는 이미 Einstein 정의다. 옛 f/파장 반사실만
+                 * 역변환하며 같은 보정비를 생산 소광에 두 번 곱하지 않는다. */
                 double exact_constant_opacity =
-                    material.raw_integrated_opacity * exact_sobolev_ratio;
+                    material.raw_integrated_opacity / opacity_ratio * exact_sobolev_ratio;
                 double exact_constant_net_per_sr =
                     fma(-exact_constant_opacity, jbar.jbar,
                         material.emission_per_sr);
-                double einstein_opacity =
-                    material.raw_integrated_opacity * opacity_ratio;
+                double einstein_opacity = material.raw_integrated_opacity;
                 double einstein_net_per_sr =
                     fma(-einstein_opacity, jbar.jbar,
                         material.emission_per_sr);
@@ -17209,16 +17204,16 @@ static RadeqStatus a210_private_line_energy_build(
             double delta = einstein_rate - out->signed_rate;
             fprintf(stderr,
                 "[A2-10][LINE-COEFFICIENT-IDENTITY] phase=%s shell=%zu "
-                "sobolev_signed_rate=%.17g exact_constant_rate=%.17g "
-                "einstein_consistent_rate=%.17g constant_delta=%.17g "
-                "serialization_delta=%.17g delta=%.17g "
+                "published_einstein_rate=%.17g exact_constant_counterfactual_rate=%.17g "
+                "einstein_consistent_rate=%.17g exact_minus_published=%.17g "
+                "einstein_minus_exact=%.17g delta=%.17g "
                 "scaled_emission=%.17g scaled_absorption=%.17g "
                 "cancellation_condition=%.17g positive_tau_delta=%.17Lg "
                 "negative_tau_delta=%.17Lg "
-                "constant_positive_tau_delta=%.17Lg "
-                "constant_negative_tau_delta=%.17Lg "
-                "serialization_positive_tau_delta=%.17Lg "
-                "serialization_negative_tau_delta=%.17Lg "
+                "exact_minus_published_positive_tau=%.17Lg "
+                "exact_minus_published_negative_tau=%.17Lg "
+                "einstein_minus_exact_positive_tau=%.17Lg "
+                "einstein_minus_exact_negative_tau=%.17Lg "
                 "raw_cells=%llu srce_chk_cells=%llu "
                 "interpretation=DIAGNOSTIC_ONLY repair=0\n",
                 endpoint_phase ? endpoint_phase : "INTERIOR", s,
@@ -21928,7 +21923,6 @@ static void nlte_update_tau_sobolev_with_authority(
          * write. Default 0 = previous behaviour, bit-identical. */
         int skip_tau = authority.skip_tau;
         if (skip_tau && !nlte_sl_write_on_skipz()) continue;
-        double f_lu   = atom->line_f_lu[line];
         double lam_cm = atom->line_wavelength_cm[line];
 
         int lower_global = authority.lower_global;
@@ -21949,9 +21943,10 @@ static void nlte_update_tau_sobolev_with_authority(
             double n_lower = nlte->nlte_level_populations[nlte_lo * n_shells + s];
             double n_upper = nlte->nlte_level_populations[nlte_up * n_shells + s];
 
-            A208ValueView tau_view = a208_signed_sobolev_counted(
-                SOBOLEV_COEFF, f_lu, lam_cm, time_explosion,
-                n_lower, n_upper, g_lo, g_up,
+            A208ValueView tau_view = a208_signed_einstein_counted(
+                atom->line_B_lu ? atom->line_B_lu[line] : NAN,
+                atom->line_B_ul ? atom->line_B_ul[line] : NAN,
+                time_explosion, n_lower, n_upper,
                 opacity->tau_required_generation, a208_counter_sink);
             if (!skip_tau)   /* SKIP_Z elements keep their nebular tau */
                 opacity->tau_sobolev[line * n_shells + s] = tau_view.value;

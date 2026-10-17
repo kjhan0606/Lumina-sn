@@ -17,7 +17,7 @@ source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_INITIAL_MATRIX_CACHE CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT CMF_TEST_INITIAL_GUESS
+unset CMF_TEST_CENTER CMF_TEST_INITIAL CMF_TEST_INITIAL_NT CMF_TEST_INITIAL_MATRIX_CACHE CMF_TEST_BF_CACHE_ONLY CMF_TEST_ITERATE CMF_TEST_ITERATE_INPUT CMF_TEST_INITIAL_GUESS CMF_TEST_MATERIAL_GUESS CMF_TEST_MATERIAL_STOP
 while read -r history_key; do unset "$history_key"; done < <(compgen -v LUMINA_ || true)
 history_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
 history_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/history-${SLURM_JOB_ID}
@@ -58,6 +58,7 @@ case "$history_mode" in
  initial) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-restart) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
  initial-guess) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 ;;
+ initial-material-guess) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_ITERATE=1 CMF_TEST_MATERIAL_GUESS=1 CMF_TEST_INITIAL_NT=1 ;;
  initial-ne-compare) history_tests=(dc1_ne_closure cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 ;;
  initial-nonthermal) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 ;;
  initial-matrix-cache) history_tests=(cmf_time_coupled); export CMF_TEST_CENTER=1 CMF_TEST_INITIAL=1 CMF_TEST_INITIAL_NT=1 CMF_TEST_INITIAL_MATRIX_CACHE=1 ;;
@@ -66,6 +67,7 @@ case "$history_mode" in
 esac
 history_files=(scripts/run_cmf_history_selftest.slurm src/*.h)
 history_files+=(tests/cmf_time_epoch_selftest.c)
+if [[ "$history_mode" == initial-material-guess ]]; then history_files+=(src/cmf_toy_run.c); fi
 if [[ "$history_mode" == regression ]]; then history_files+=(tests/cmf_decay_oracle.f90); fi
 for history_unit in "${history_units[@]}"; do history_files+=("src/$history_unit.c"); done
 for history_test in "${history_tests[@]}"; do history_files+=("tests/${history_test}_selftest.c"); done
@@ -91,6 +93,9 @@ if [[ "$history_mode" == common-material || "$history_mode" == regression ]]; th
 fi
 gcc -std=gnu11 -D_GNU_SOURCE -DLUMINA_HAS_CUDA_BF_GEMM -Isrc -fsyntax-only src/lumina_cmfgen.c \
  > "$history_out/cuda-dispatch-build.log" 2>&1
+if [[ "$history_mode" == initial-material-guess ]]; then
+ gcc -std=gnu11 -D_GNU_SOURCE -Isrc -fsyntax-only src/cmf_toy_run.c > "$history_out/toy-run-build.log" 2>&1
+fi
 for history_unit in "${history_units[@]}"; do
  gcc -O2 -std=gnu11 -D_GNU_SOURCE -DLUMINA_TIME_PAIR_SELFTEST "${history_capture_flags[@]}" -fopenmp -ffunction-sections -fdata-sections -Isrc \
   -c "src/$history_unit.c" -o "$history_out/objects/$history_unit.o" >> "$history_out/build.log" 2>&1
@@ -103,6 +108,9 @@ gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -ffunction-sections -fdata-sections -I
  -Wl,--gc-sections -lm -o "$history_out/time_epoch" >> "$history_out/build.log" 2>&1
 (cd "$history_out"; ./time_epoch > time-epoch.log 2> time-epoch.err)
 history_matrix_flags=()
+if [[ "$history_mode" == initial-material-guess ]]; then
+ history_matrix_flags=(-DCMF_MATERIAL_GUESS_PRODUCER_TEST)
+fi
 if [[ "$history_mode" == initial-matrix-cache || "$history_mode" == initial-ne-warm ]]; then
  history_matrix_flags=(-DCMF_MATRIX_CACHE_INTEGRATION -Wl,--wrap=nlte_element_initial_steady_solve_cached)
 fi
@@ -272,15 +280,33 @@ assert '[A2-07][NE-ANDERSON]' in fast
 print(f'NE_ACCELERATION_ITERATIONS_PASS baseline_calls={len(p)} accelerated_calls={len(a)} baseline_solves={sum(p)} accelerated_solves={sum(a)}')
 PY
 fi
-if [[ "$history_mode" == initial-restart || "$history_mode" == initial-guess ]]; then
+if [[ "$history_mode" == initial-restart || "$history_mode" == initial-guess || "$history_mode" == initial-material-guess ]]; then
  if [[ "$history_mode" == initial-guess ]]; then export CMF_TEST_INITIAL_GUESS=1; fi
+ history_restart_input=$history_out/initial_iterate_test.bin
+ if [[ "$history_mode" == initial-material-guess ]]; then
+  mkdir "$history_out/interrupted"
+  if (cd "$history_out/interrupted"; CMF_TEST_MATERIAL_STOP=1 ../cmf_time_coupled > ../interrupted.log 2> ../interrupted.err); then
+   exit 1
+  else
+   history_interrupted_rc=$?
+   [[ "$history_interrupted_rc" == 86 ]] || exit "$history_interrupted_rc"
+  fi
+  test ! -e "$history_out/interrupted/initial_state.bin"
+  test ! -e "$history_out/interrupted/initial_spectrum.csv"
+  cmp "$history_out/initial_material_guess_test.bin" "$history_out/interrupted/initial_material_guess_test.bin"
+  cmp "$history_out/interrupted/initial_material_guess_test.bin" "$history_out/interrupted/initial_material_guess.bin"
+  cmp "$history_out/interrupted/initial_iterate_test.bin" "$history_out/interrupted/initial_iterate.bin"
+  test ! -e "$history_out/interrupted/initial_material_guess.next"
+  test ! -e "$history_out/interrupted/initial_iterate.next"
+  history_restart_input=$history_out/interrupted/initial_material_guess.bin
+ fi
  mkdir "$history_out/restarted"
- (cd "$history_out/restarted"; CMF_TEST_ITERATE_INPUT="$history_out/initial_iterate_test.bin" \
+ (cd "$history_out/restarted"; CMF_TEST_ITERATE_INPUT="$history_restart_input" \
   ../cmf_time_coupled > ../restarted.log 2> ../restarted.err)
  # 초기/시간 관측 CSV의 절대값을 비교한다. 진폭 재조정은 없다.
  module load python/3.11.14
  python3 - "$history_out" > "$history_out/restart-comparison.log" <<'PY'
-import csv, math, pathlib, sys
+import csv, math, pathlib, struct, sys
 root = pathlib.Path(sys.argv[1])
 for name in ('initial_spectrum.csv', 'initial_evolved_spectrum.csv'):
     with (root / name).open() as f:
@@ -297,6 +323,30 @@ for name in ('initial_spectrum.csv', 'initial_evolved_spectrum.csv'):
         worst = max(worst, error)
     assert worst < 1e-6, (name, worst)
     print(f'INITIAL_RESTART_SPECTRUM_PASS file={name} max_relative={worst:.17g} amplitude_fit=0 synthetic_atom=1')
+for name in ('initial_material.csv', 'initial_evolved_material.csv'):
+    with (root/name).open() as f: reference = list(csv.DictReader(f))
+    with (root/'restarted'/name).open() as f: resumed = list(csv.DictReader(f))
+    assert reference and len(reference) == len(resumed)
+    worst = 0.
+    for a,b in zip(reference,resumed):
+        assert all(a[k] == b[k] for k in ('field','index','shell'))
+        x,y = float(a['value']),float(b['value'])
+        assert math.isfinite(x) and math.isfinite(y) and x >= 0 and y >= 0
+        worst=max(worst,abs(x-y)/max(x,y) if max(x,y) else 0)
+    assert worst < 1e-6, (name,worst)
+    print(f'INITIAL_RESTART_MATERIAL_PASS file={name} max_relative={worst:.17g}')
+if (root/'interrupted').exists():
+    old=(root/'interrupted/initial_iterate_test.bin').read_bytes()
+    new=(root/'interrupted/initial_material_guess_test.bin').read_bytes()
+    h0,h1=[struct.unpack_from('<7Q',x,72) for x in (old,new)]
+    assert old[:72]==new[:72] and h0[:5]==h1[:5] and h0[6]==h1[6]==3
+    assert h1[5]>h0[5] and old[-8:]==new[-8:]==b'ITEREND1'
+    ns,ni,nl,ne,nb=h0[:5]
+    start=152+4*(nl+2*ni)
+    material_end=start+8*ns*(5+ne+ni+nl)
+    assert old[start:material_end]!=new[start:material_end]
+    assert old[material_end:]==new[material_end:]
+    print('INITIAL_MATERIAL_INTERRUPT_RESTART_PASS newer_material=1 lagged_J_predictor=1 completed_iterations=3 physical_history_before_resume=0')
 PY
 fi
 if [[ "$history_mode" == initial || "$history_mode" == initial-nonthermal ]]; then

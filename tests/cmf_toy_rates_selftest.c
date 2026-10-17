@@ -120,6 +120,10 @@ int main(int argc,char **argv){
     const int matrix_test=getenv("CMF_TEST_MATRIX_CACHE")&&atoi(getenv("CMF_TEST_MATRIX_CACHE"));
     CMFNonthermalRates empty_rates={0};
     const int gth_parallel=getenv("CMF_TEST_GTH_PARALLEL")&&atoi(getenv("CMF_TEST_GTH_PARALLEL"));
+    const char *gth_scale_value=getenv("CMF_TEST_GTH_SCALE");
+    const int gth_scale=gth_scale_value&&!strcmp(gth_scale_value,"1");
+    CHECK(!gth_scale_value||gth_scale);
+    CHECK(!gth_scale||(gth_parallel&&cache_test&&!matrix_test&&omp_get_max_threads()>=16));
     if(gth_parallel){omp_set_dynamic(0);puts("TOY_GTH_PARALLEL same_rates=1 threads=1/2");}
     if(cache_test){rate_cache=nlte_bf_rate_cache_create(a,(size_t)ns);CHECK(rate_cache);}
     n->solve_effect_policy_explicit=1;n->solve_effects_allowed=0;
@@ -218,6 +222,21 @@ int main(int argc,char **argv){
             CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))&&
                 !memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
             printf("TOY_RATE_CACHE shell=%d Z=%d max_relative=%.17g uncached_wall_s=%.9g warm_wall_s=%.9g warm_repeat_exact=1\n",s,Z,difference,searched_s,warm_s);
+            if(gth_scale){
+                /* 생산 소스는 그대로다. 마지막1스레드로 순서/공유부하 변동도 본다. */
+                const int counts[]={4,8,16,1};
+                for(size_t k=0;k<sizeof(counts)/sizeof(counts[0]);k++){
+                    memcpy(n->nlte_level_populations,seed_pop,np*sizeof(double));
+                    memcpy(a->ion_number_density,seed_ion,ni*sizeof(double));
+                    omp_set_num_threads(counts[k]);start=seconds();
+                    CHECK(nlte_element_initial_steady_solve(n,a,p,&m.opacity,e,s,m.geometry.time_explosion,&gamma)==POP_OK);
+                    double elapsed=seconds()-start;
+                    CHECK(!memcmp(cached_pop,n->nlte_level_populations,np*sizeof(double))&&
+                          !memcmp(cached_ion,a->ion_number_density,ni*sizeof(double)));
+                    printf("TOY_GTH_SCALE shell=%d Z=%d threads=%d seconds=%.9g byte_exact=1 repeated_one=%d\n",
+                        s,Z,counts[k],elapsed,counts[k]==1);
+                }
+            }
         }
         double sum=0,ion_l1=0,level_l1=0;
         for(int ip=a->elem_ion_offset[e];ip<a->elem_ion_offset[e+1];ip++){

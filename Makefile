@@ -362,7 +362,7 @@ l1bf_fixture: tests/a2_05_l1bf_fixture.c src/bf_rate_jnu.c src/radiation_field.c
 
 # A2-06 selective line-Jbar estimator selftest (closed-form phi integrals,
 # packet-population variance identity, Q-set hash determinism)
-selftest_a2_06_line_jbar: tests/a2_06_line_jbar_selftest.c src/line_jbar.c src/line_jbar.h
+selftest_a2_06_line_jbar: tests/a2_06_line_jbar_selftest.c src/line_jbar.c src/line_jbar.h src/cmf_free_free.h src/lumina.h
 	$(CC) -O2 -std=gnu11 -Isrc -o selftest_a2_06_line_jbar \
 		tests/a2_06_line_jbar_selftest.c src/line_jbar.c $(LDFLAGS)
 

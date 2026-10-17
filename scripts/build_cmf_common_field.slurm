@@ -31,11 +31,26 @@ case "$build_variant" in
 esac
 printf 'variant=%s managed=%s\n' "$build_variant" "$build_managed" > "$build_out/variant.txt"
 git rev-parse HEAD > "$build_out/commit.txt"
-git diff --exit-code -- src
-git diff --cached --exit-code -- src
-git ls-files -z -- src | xargs -0 sha256sum > "$build_out/source.sha256"
+build_snapshot=${3:-clean}
+case "$build_snapshot" in
+ clean)
+  git diff --exit-code -- src
+  git diff --cached --exit-code -- src
+  ;;
+ full-domain-snapshot)
+  # 승인된 전체 BB 범위 수정의 미커밋 소스를 그대로 봉인한다.
+  # HEAD만으로 바이너리를 식별하지 않으며, patch와 전체 파일 hash를 남긴다.
+  git diff --binary -- src > "$build_out/source.patch"
+  git diff --cached --binary -- src > "$build_out/source-staged.patch"
+  test -f src/cmf_free_free.h
+  test -f src/cmf_anderson_multi.h
+  ;;
+ *) exit 2 ;;
+esac
+{ git ls-files -z -- src; if [[ "$build_snapshot" == full-domain-snapshot ]];then printf 'src/cmf_free_free.h\0src/cmf_anderson_multi.h\0';fi; } | sort -zu > "$build_out/source-files.list0"
+xargs -0 sha256sum < "$build_out/source-files.list0" > "$build_out/source.sha256"
 mkdir "$build_out/source"
-git ls-files -z -- src | xargs -0 cp --parents -t "$build_out/source/"
+xargs -0 cp --parents -t "$build_out/source/" < "$build_out/source-files.list0"
 cp scripts/build_cmf_common_field.slurm "$build_out/runner.slurm"
 cd "$build_out/source"
 sha256sum -c "$build_out/source.sha256" > "$build_out/snapshot_verify.log"

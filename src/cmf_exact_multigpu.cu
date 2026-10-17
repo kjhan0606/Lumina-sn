@@ -2,6 +2,7 @@
 #include "cmf_error_envelope.h"
 #include "cmf_cell_geometry.h"
 #include "cmf_anderson.h"
+#include "cmf_anderson_multi.h"
 
 #include <cuda_runtime.h>
 
@@ -1816,7 +1817,14 @@ static CMFMultiGPUStatus solve_impl(
     std::vector<double> jwork, jnew, partial;
     std::vector<double> aa_g, aa_r;
     const bool accelerate=cmf_anderson1_enabled()!=0;
+    const int aa_depth=accelerate?cmf_anderson_depth():1;
+    if(aa_depth<1){local.status=CMF_MGPU_INVALID_INPUT;if(report)*report=local;return local.status;}
     CMFAnderson1 aa={};
+    CMFAndersonMulti multi={};
+    struct MultiOwner {
+        CMFAndersonMulti *state;
+        ~MultiOwner(){cmf_anderson_multi_free(state);}
+    } multi_owner{&multi};
     std::vector<DeviceShard> shards;
     HostGeometry geometry;
     RayPartition partition;
@@ -1836,9 +1844,12 @@ static CMFMultiGPUStatus solve_impl(
         inner.resize((size_t)n_bins);
         jwork.assign(J, J + cells);
         jnew.resize(cells);
-        if(accelerate) {
+        if(accelerate&&aa_depth==1) {
             aa_g.resize(cells);aa_r.resize(cells);
             aa.previous_g=aa_g.data();aa.previous_r=aa_r.data();
+        }
+        if(aa_depth>1&&cmf_anderson_multi_init(&multi,cells,aa_depth)){
+            local.status=CMF_MGPU_ALLOCATION_FAILED;if(report)*report=local;return local.status;
         }
         partial.resize((size_t)requested_devices * cells);
         shards.resize((size_t)requested_devices);
@@ -2144,7 +2155,9 @@ static CMFMultiGPUStatus solve_impl(
             status = CMF_MGPU_OK;
             break;
         }
-        if(accelerate && iteration+1<iteration_cap)
+        if(accelerate && aa_depth>1 && iteration+1<iteration_cap)
+            cmf_anderson_multi_next(&multi,jwork.data(),jnew.data(),max_relative);
+        else if(accelerate && iteration+1<iteration_cap)
             cmf_anderson1_next(&aa,cells,jwork.data(),jnew.data(),max_relative);
         else jwork.swap(jnew);
     }

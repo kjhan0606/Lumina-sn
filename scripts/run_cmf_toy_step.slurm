@@ -19,22 +19,37 @@ step_epoch=${3:?new epoch in seconds required}
 step_iteration=${4:-plain}
 step_backend=${5:-gpu}
 case "$step_backend" in
- gpu) step_variant=cluster;step_binary=$step_build/lumina_cuda;step_devices=1 ;;
- cpu) step_variant=cpu;step_binary=$step_build/lumina_cpu;step_devices=0 ;;
+ gpu) step_variant=cluster;step_managed=0;step_binary=$step_build/lumina_cuda;step_devices=1 ;;
+ ada) [[ "$(hostname -s)" == LagEunha && -z "${SLURM_JOB_ID:-}" ]];step_variant=ada;step_managed=1;step_binary=$step_build/lumina_cuda;step_devices=1 ;;
+ cpu) step_variant=cpu;step_managed=0;step_binary=$step_build/lumina_cpu;step_devices=0 ;;
  *) exit 2 ;;
 esac
 case "$step_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 [[ "$step_epoch" =~ ^[0-9]+([.][0-9]+)?$ ]]
+# 초기해와 같은 명시적 CPU 선택. 잘못된 요청은 출력 생성 전에 거부한다.
+step_cpus=${CMF_TOY_CPUS:-16}
+[[ "$step_cpus" =~ ^([1-9]|1[0-6])$ ]] || exit 2
+if [[ -n "${SLURM_CPUS_PER_TASK:-}" ]]; then
+ [[ "$SLURM_CPUS_PER_TASK" =~ ^[1-9][0-9]*$ ]] || exit 2
+ (( step_cpus <= SLURM_CPUS_PER_TASK )) || exit 2
+fi
 step_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
-step_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-step-${SLURM_JOB_ID}
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+ step_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-step-${SLURM_JOB_ID}
+else
+ [[ "$(hostname -s)" == LagEunha ]]
+ step_out=${CMF_TOY_RUN_OUT:?manual Ada output directory required}
+ [[ "$step_out" =~ ^/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/ada-evolution-[0-9]{8}-[0-9]{4}/step$ ]]
+ export CUDA_VISIBLE_DEVICES=0
+fi
 mkdir "$step_out"
 mkdir "$step_out/input" "$step_out/work"
 source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0 cuda/13.0.2
-export OMP_NUM_THREADS=16 OMP_PLACES=cores OMP_PROC_BIND=close
+export OMP_NUM_THREADS=$step_cpus OMP_PLACES=cores OMP_PROC_BIND=close
 export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-grep -Fxq "variant=$step_variant managed=0" "$step_build/variant.txt"
+grep -Fxq "variant=$step_variant managed=$step_managed" "$step_build/variant.txt"
 (cd "$step_build/source"; sha256sum -c "$step_build/source.sha256") > "$step_out/build_source_verify.log"
 sha256sum -c "$step_build/binary.sha256" > "$step_out/binary_verify.log"
 (cd "$step_previous/input"; sha256sum -c "$step_previous/input.sha256") > "$step_out/previous_input_verify.log"

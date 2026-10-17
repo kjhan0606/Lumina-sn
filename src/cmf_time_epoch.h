@@ -62,6 +62,13 @@ typedef struct {
 /* 완결된 반복의 보존만 수행하는 선택 callback. 0은 첫 장, 양수는 완료한
  * 물질/장 반복 수다. 물리 수렴 판정 또는 시간 이력 생성 권한은 없다. */
 typedef int (*CMFInitialIterationSave)(void *context,int iteration);
+/* 물질 갱신 직후, 다음 수송 전에 저장하는 별도 초기 추정 callback.
+ * 인자는 이미 완료한 물질/장 반복 수이며 방금 끝난 물질 갱신은 세지 않는다.
+ * 저장된 J는 이전 물질의 predictor다. 재개 시 반드시 새 수송부터 수행한다. */
+CMFTimeEpochStatus cmfgen_solve_initial_nlte_checkpointed(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
+    PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
+    int iteration_cap,double tolerance,CMFPhysicalTimeState*,CMFInitialNLTEReport*,
+    CMFInitialIterationSave completed_save,CMFInitialIterationSave material_guess_save,void *context);
 CMFTimeEpochStatus cmfgen_solve_initial_nlte_saved(CMFGENState*,Geometry*,OpacityState*,BFOpacity*,
     PlasmaState*,NLTEConfig*,AtomicData*,GammaDeposition*,double T_inner,
     int iteration_cap,double tolerance,CMFPhysicalTimeState*,CMFInitialNLTEReport*,

@@ -282,7 +282,7 @@ int main(void)
           "persistent-context-initialized-once");
     CHECK(gpu_envelope_report.persistent_upper_operator_applications ==
               gpu_envelope_report.componentwise_error_seed_attempts + 1U +
-              2U * gpu_envelope_report.
+              gpu_envelope_report.
                        componentwise_error_refinement_iterations,
           "persistent-upper-application-count");
     CHECK(gpu_envelope_report.persistent_bound_applications ==
@@ -305,6 +305,54 @@ int main(void)
                   "envelope-error", epoch_error_envelope,
                   gpu_error_envelope, cells),
           "epoch-envelope-bitwise-serial");
+    /* 생산 emissivity 경로: 정밀화는 이미 검증된 오차상계만 좁히며
+     * J/수렴 반복을 바꾸지 않아야 한다. 영소광 방출과 signed 소광도 포함한다. */
+    for (int material_case=0; material_case<3; ++material_case) {
+        double trial_chi[cells], trial_eta[cells], direct[cells];
+        double one_j[cells], many_j[cells], one_error[cells], many_error[cells];
+        for (size_t i=0;i<cells;++i) {
+            trial_chi[i]=chi_tot[i];trial_eta[i]=chi_tot[i]*fixed[i];
+            direct[i]=one_j[i]=many_j[i]=initial[i];
+            one_error[i]=many_error[i]=NAN;
+        }
+        if(material_case)trial_chi[NB/2]=material_case==1?0:-0.1*chi_tot[NB/2];
+        CMFExactReport direct_report={};
+        CMFMultiGPUReport one_envelope={},many_envelope={};
+        CHECK(cmf_exact_emissivity_solve(NS,NB,dlog,nu,r_inner,r_outer,texp,
+                  10000.0,1.0,trial_chi,chi_es,trial_eta,direct,nullptr,0U,
+                  120,1e-13,CMF_EXACT_MODE_DIRECT_REFERENCE,&direct_report)==CMF_EXACT_OK,
+              "refinement-emissivity-direct-oracle");
+        CHECK(cmf_exact_multigpu_emissivity_solve_epoch(NS,NB,dlog,nu,r_inner,r_outer,
+                  texp,10000.0,1.0,trial_chi,chi_es,trial_eta,one_j,one_error,1U,
+                  &epoch_schedule,requested,120,1e-13,&one_envelope)==CMF_MGPU_OK,
+              "refinement-emissivity-one");
+        CHECK(cmf_exact_multigpu_emissivity_solve_epoch(NS,NB,dlog,nu,r_inner,r_outer,
+                  texp,10000.0,1.0,trial_chi,chi_es,trial_eta,many_j,many_error,42U,
+                  &epoch_schedule,requested,120,1e-13,&many_envelope)==CMF_MGPU_OK,
+              "refinement-emissivity-many");
+        CHECK(bitwise_equal_or_report("emissivity-refinement-J",one_j,many_j,cells),
+              "refinement-emissivity-field-invariant");
+        CHECK(one_envelope.iterations_used==many_envelope.iterations_used &&
+                  one_envelope.final_max_relative_change==many_envelope.final_max_relative_change,
+              "refinement-emissivity-convergence-invariant");
+        CHECK(one_envelope.componentwise_error_envelope_verified==1 &&
+                  many_envelope.componentwise_error_envelope_verified==1 &&
+                  one_envelope.componentwise_error_refinement_iterations==1U &&
+                  many_envelope.componentwise_error_refinement_iterations==42U,
+              "refinement-emissivity-both-certified");
+        for(size_t i=0;i<cells;++i) {
+            CHECK(std::isfinite(one_error[i]) && std::isfinite(many_error[i]) &&
+                      many_error[i]>=0 && one_error[i]>=many_error[i],
+                  "refinement-emissivity-bound-monotone");
+            CHECK(std::fabs(one_j[i]-direct[i])<=one_error[i] &&
+                      std::fabs(many_j[i]-direct[i])<=many_error[i],
+                  "refinement-emissivity-both-cover-direct");
+        }
+        if(!failures)std::printf("GPU_ENVELOPE_REFINEMENT_INVARIANCE case=%d refinements=1/42 "
+            "J_byte_equal=1 both_bounds_verified=1 iterations=%d bound_max_1=%.17g bound_max_42=%.17g\n",
+            material_case,one_envelope.iterations_used,one_envelope.componentwise_error_upper_max,
+            many_envelope.componentwise_error_upper_max);
+    }
     CHECK(gpu_report.devices_used == requested, "device-count");
     CHECK(gpu_report.visible_devices == visible, "visible-count");
     CHECK(gpu_report.weighted_contiguous_ray_partition == 1 &&

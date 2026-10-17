@@ -25,6 +25,15 @@ static int toy_initial_save(void *context,int iteration){
             s->offset+iteration);
     return 0;
 }
+static int toy_material_guess_save(void *context,int completed){
+    ToyInitialSave *s=context;
+    if(completed>INT32_MAX-s->offset||
+       cmf_toy_initial_iterate_write(s->model,"initial_material_guess.next",s->identity,s->offset+completed)||
+       rename("initial_material_guess.next","initial_material_guess.bin"))return -1;
+    fprintf(stderr,"[TOY-MATERIAL-GUESS] saved=initial_material_guess.bin completed_iterations=%d pending_material_update=1 radiation_recompute_required=1 physical_history=0 converged=0\n",
+            s->offset+completed);
+    return 0;
+}
 
 /* 운전 전체에서 불변 채널을 소유한다. 후보별 인구/ne는 provider가 다시 읽는다.
  * 부분 모형을 완전한 CMFGEN 비열 처리로 표시하지 않는다. */
@@ -84,7 +93,8 @@ int cmf_toy_initial_main(int argc,char **argv){
     if(cmf_toy_model_prepare_runtime(&m,argv[2],argv[3],ns,mass))goto done;
     ns=m.geometry.n_shells;
     phase="initial numerical restart";
-    if(save.identity&&(access("initial_iterate.bin",F_OK)==0||access("initial_iterate.next",F_OK)==0))goto done;
+    if(save.identity&&(access("initial_iterate.bin",F_OK)==0||access("initial_iterate.next",F_OK)==0||
+       access("initial_material_guess.bin",F_OK)==0||access("initial_material_guess.next",F_OK)==0))goto done;
     if(guess_identity&&!resume)goto done;
     if(resume&&cmf_toy_initial_iterate_start(&m,resume,save.identity,guess_identity,&save.offset))goto done;
     if(resume){if(save.offset>=cap)goto done;cap-=save.offset;}
@@ -129,9 +139,9 @@ int cmf_toy_initial_main(int argc,char **argv){
     cs.common_obs_n=3000;cs.common_obs_nu=malloc((size_t)cs.common_obs_n*sizeof(double));
     if(!cs.common_obs_nu)goto done;
     for(int b=0;b<cs.common_obs_n;b++)cs.common_obs_nu[b]=C_SPEED_OF_LIGHT/(25500e-8)*exp(log(25500./2500)*b/(cs.common_obs_n-1));
-    CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&cs,&m.geometry,&m.opacity,&m.bf,&m.plasma,
+    CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_checkpointed(&cs,&m.geometry,&m.opacity,&m.bf,&m.plasma,
         &m.nlte,&m.atom,&gamma,m.plasma.T_e[0],cap,1e-5,&initial,&report,
-        save.identity?toy_initial_save:NULL,&save);
+        save.identity?toy_initial_save:NULL,save.identity?toy_material_guess_save:NULL,&save);
     fprintf(stderr,"[TOY-INITIAL] status=%d iterations=%d calls=%d ne_change=%.17g population_change=%.17g J_change=%.17g converged=%d\n",
         status,report.iterations,report.radiation_calls,report.electron_update,report.population_update,report.radiation_update,report.converged);
     if(status!=CMF_EPOCH_OK||!report.converged)goto done;

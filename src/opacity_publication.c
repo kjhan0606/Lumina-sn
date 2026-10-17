@@ -44,6 +44,36 @@ A208ValueView a208_signed_sobolev(double coefficient, double f_lu,
         n_lower, n_upper, g_lower, g_upper, generation, &g_a208);
 }
 
+A208ValueView a208_signed_einstein_counted(
+                               double B_lu, double B_ul, double time_explosion,
+                               double n_lower, double n_upper,
+                               uint64_t generation, A208Counters *counter_sink) {
+    A208ValueView out = {NAN, A208_INVALID_POPULATION, generation};
+    if (!isfinite(n_lower) || !isfinite(n_upper) || n_lower < 0.0 || n_upper < 0.0)
+        return out;
+    if (!isfinite(B_lu) || !isfinite(B_ul) || B_lu < 0.0 || B_ul < 0.0 ||
+        !isfinite(time_explosion) || time_explosion <= 0.0) {
+        out.validity = A208_NONFINITE;
+        if (counter_sink) counter_sink->nonfinite_failures++;
+        return out;
+    }
+    /* chi_int=h*nu/(4*pi)*(n_l B_lu-n_u B_ul), tau=chi_int*c*t/nu.
+     * 큰 양의 두 항을 확장 정밀도로 빼며 부호/정확 영점을 보존한다. */
+    const long double hc_over_four_pi =
+        6.62607015e-27L * 2.99792458e10L /
+        12.56637061435917295385057353311801153679L;
+    long double difference = (long double)n_lower * B_lu -
+                             (long double)n_upper * B_ul;
+    out.value = (double)(hc_over_four_pi * time_explosion * difference);
+    out.validity = numeric_status(out.value);
+    if (out.validity == A208_EXACT_ZERO) out.value = 0.0;
+    if (out.validity == A208_VALID && out.value < 0.0 && counter_sink)
+        counter_sink->negative_tau_line_shells++;
+    if (out.validity == A208_NONFINITE && counter_sink)
+        counter_sink->nonfinite_failures++;
+    return out;
+}
+
 A208ValueView a208_line_source_counted(double prefactor, double n_lower,
                                double n_upper, double g_lower, double g_upper,
                                uint64_t generation,

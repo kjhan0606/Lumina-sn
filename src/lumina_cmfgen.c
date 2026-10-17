@@ -13,6 +13,7 @@
 #include "cmf_cell_geometry.h"
 #include "cmf_observer.h"
 #include "cmf_time_epoch.h"
+#include "cmf_free_free.h"
 #ifdef LUMINA_HAS_CUDA_BF_GEMM
 #include "cmf_exact_multigpu.h"
 #endif
@@ -1457,12 +1458,11 @@ int cmfgen_dump_line_populations(const CMFGENState *cs, const Geometry *geo,
              * nlte_update_tau_sobolev used to write opac->tau_sobolev. */
             double tau_pop = -1.0;
             if ((flags & CMF_LP_F_POPS_DEFINED) && g_lo > 0 && g_up > 0 &&
-                atom->line_f_lu && atom->line_wavelength_cm) {
-                A208ValueView roundtrip = a208_signed_sobolev(
-                    SOBOLEV_COEFF, atom->line_f_lu[l],
-                    atom->line_wavelength_cm[l], geo->time_explosion,
-                    n_lower, n_upper, g_lo, g_up,
-                    opac->tau_computed_generation);
+                atom->line_B_lu && atom->line_B_ul) {
+                A208ValueView roundtrip = a208_signed_einstein_counted(
+                    atom->line_B_lu[l], atom->line_B_ul[l],
+                    geo->time_explosion, n_lower, n_upper,
+                    opac->tau_computed_generation, NULL);
                 tau_pop = roundtrip.value;
                 if (memcmp(&tau_pop,&tau,sizeof(double))==0)
                     flags |= CMF_LP_F_TAU_ROUNDTRIP;
@@ -8608,6 +8608,17 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     }
     double line_nu_lo = CM_C / (lam_hi * 1.0e-8);
     double line_nu_hi = CM_C / (lam_lo * 1.0e-8);
+    /* 출력 창과 내부 전이망을 분리한다. 방출에 남긴 모든 선의 순·역
+     * 과정과 Gaussian 날개가 실제 공통장 안에 있어야 한다. */
+    if (common_field) {
+        if (NL <= 0 || !opac->line_list_nu) return -1;
+        for (int l = 0; l < NL; ++l) {
+            double nu = opac->line_list_nu[l];
+            if (!line_jbar_frequency_in_bb_domain(nu)) return -1;
+            if (nu < line_nu_lo) line_nu_lo = nu;
+            if (nu > line_nu_hi) line_nu_hi = nu;
+        }
+    }
     double support_nu_lo = line_nu_lo * (1.0 - profile_width);
     double support_nu_hi = line_nu_hi * (1.0 + profile_width);
     /* Redward bins cannot affect Q_g (the characteristic is blue->red), but
@@ -8664,6 +8675,33 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     int NF = (int)ceil(span);
     if (NF < 2) return -1;
     double nu_hi = nu_lo * exp((double)NF * dlognu);
+
+    double red_z2ni[256] = {0};
+    int physical_red_tail = common_field && g_fine_bf && nu_lo < csb->nu_min;
+    if (physical_red_tail) {
+        const AtomicData *a = g_fine_atom;
+        const BfChannels *ch = a ? a->bf_channels : NULL;
+        if (!a || !ch || ch->n_channels <= 0 || !ch->threshold ||
+            !a->ion_number_density || !a->ion_pop_stage ||
+            !plasma->T_e || !plasma->n_electron) return -1;
+        for (int k = 0; k < ch->n_channels; ++k) {
+            if (!isfinite(ch->threshold[k]) || ch->threshold[k] < csb->nu_min) {
+                fprintf(stderr,"[cmf_fine] BF table omits redward channel support; rebuild required\n");
+                return -1;
+            }
+        }
+        for (int s = 0; s < NS; ++s) {
+            for (int ip = 0; ip < a->n_ion_pops; ++ip) {
+                int charge = a->ion_pop_stage[ip];
+                double ni = a->ion_number_density[(size_t)ip * NS + s];
+                if (charge < 0 || !isfinite(ni) || ni < 0) return -1;
+                red_z2ni[s] += (double)charge * charge * ni;
+            }
+            double chi, emiss;
+            if (cmf_free_free(nu_lo, plasma->T_e[s], plasma->n_electron[s],
+                             red_z2ni[s], &chi, &emiss)) return -1;
+        }
+    }
 
     /* default ALL lines to the sentinel (out-of-window fall back) */
     if ((size_t)NL > SIZE_MAX / (size_t)NS ||
@@ -8731,6 +8769,17 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     #pragma omp parallel for schedule(static) reduction(+:w5_cont_interp_cells)
     for (int s = 0; s < NS; ++s) {
         for (int i = 0; i < NF; ++i) {
+            if (physical_red_tail && fs.nu[i] < csb->nu_min) {
+                size_t cell = (size_t)s * NF + i;
+                double chi, emiss;
+                if (cmf_free_free(fs.nu[i], plasma->T_e[s], plasma->n_electron[s],
+                                 red_z2ni[s], &chi, &emiss)) chi = emiss = NAN;
+                fs.chi_es[cell] = plasma->n_electron[s] * SIGMA_THOMSON;
+                fs.chi_abs[cell] = chi;
+                fs.S_fixed[cell] = emiss;
+                ++w5_cont_interp_cells;
+                continue;
+            }
             double x = log(fs.nu[i] / csb->nu_min) / csb->d_log_nu - 0.5;
             int b = (int)floor(x); double f = x - b;
             if (b < 0) { b = 0; f = 0.0; }
@@ -9074,16 +9123,13 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         double stimulated_upper = NAN, population_difference = NAN;
         double reconstructed_lower = NAN;
         if (minimum_line >= 0 && lower_global >= 0 && upper_global >= 0 &&
-            g_fine_atom->level_g && g_fine_atom->line_f_lu &&
-            g_fine_atom->line_wavelength_cm) {
-            double g_lower = g_fine_atom->level_g[lower_global];
-            double g_upper = g_fine_atom->level_g[upper_global];
-            double denominator = SOBOLEV_COEFF *
-                g_fine_atom->line_f_lu[minimum_line] *
-                g_fine_atom->line_wavelength_cm[minimum_line] * t_exp;
-            if (g_lower > 0.0 && g_upper > 0.0 && denominator != 0.0 &&
+            g_fine_atom->line_B_lu && g_fine_atom->line_B_ul) {
+            double B_lu = g_fine_atom->line_B_lu[minimum_line];
+            double B_ul = g_fine_atom->line_B_ul[minimum_line];
+            double denominator = CM_H * CM_C / LINE_NET_FOUR_PI * B_lu * t_exp;
+            if (B_lu > 0.0 && B_ul >= 0.0 && denominator != 0.0 &&
                 isfinite(denominator)) {
-                stimulated_upper = (g_lower / g_upper) * n_upper;
+                stimulated_upper = (B_ul / B_lu) * n_upper;
                 population_difference = minimum_tau / denominator;
                 reconstructed_lower = stimulated_upper + population_difference;
             }

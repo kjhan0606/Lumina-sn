@@ -1,4 +1,5 @@
 #include "line_jbar.h"
+#include "cmf_free_free.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -38,6 +39,23 @@ static double quad(double nul, double nu0, double nu1, double e0, double e1,
 
 int main(void)
 {
+    /* 같은 FF 모형의 저주파 한계와 Kirchhoff 관계를 독립식으로 확인한다. */
+    {
+        const double T=9461.6, ne=3e11, z2ni=5e11;
+        const double freq[]={1.918672e9,1e12,5.8412785919616062e13};
+        for (size_t k=0;k<sizeof(freq)/sizeof(freq[0]);++k) {
+            double chi,eta,nu=freq[k],x=H_PLANCK*nu/(K_BOLTZMANN*T);
+            CHECK(cmf_free_free(nu,T,ne,z2ni,&chi,&eta)==0,"ff-red-valid");
+            double B=2*H_PLANCK*nu*nu*nu/(C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(x);
+            CHECK(rel_err(eta,chi*B)<1e-14,"ff-red-kirchhoff");
+            double reference=C_FF_OPACITY*ne*z2ni/sqrt(T)/pow(nu,3)*(-expm1(-x));
+            CHECK(rel_err(chi,reference)<1e-14,"ff-red-opacity");
+        }
+        double chi,eta;
+        CHECK(cmf_free_free(1e9,T,0,z2ni,&chi,&eta)==0 && chi==0 && eta==0,"ff-zero-ne");
+        CHECK(cmf_free_free(1e9,T,-1,z2ni,&chi,&eta)!=0,"ff-invalid-ne");
+        CHECK(cmf_free_free(1e9,0,ne,z2ni,&chi,&eta)!=0,"ff-invalid-T");
+    }
     double nul = 1.0e15;
     double dD = nul * (LINE_JBAR_VDOPPLER_CMS / C_CGS);
 
@@ -171,14 +189,13 @@ int main(void)
     for (size_t i = 1; i < q1.n_q; i++)
         CHECK(q1.line_nu[q1.by_nu[i - 1]] <= q1.line_nu[q1.by_nu[i]], "qsort");
 
-    /* Canonical BB_IN_DOMAIN graph: closed endpoints, mapped lines only, and
-     * Q identity bound to the edge hash even when the selected IDs coincide. */
+    /* 내부 전이망은 출력 창 밖의 적외선/고주파 전이도 보존한다. */
     {
         double dnu[5] = {
             LINE_JBAR_BB_NU_MIN_HZ,
             LINE_JBAR_BB_NU_MAX_HZ,
-            nextafter(LINE_JBAR_BB_NU_MIN_HZ, 0.0),
-            nextafter(LINE_JBAR_BB_NU_MAX_HZ, INFINITY),
+            1.0e9,
+            4.0e16,
             sqrt(LINE_JBAR_BB_NU_MIN_HZ * LINE_JBAR_BB_NU_MAX_HZ)
         };
         int dmap[5] = {0, 1, 2, 3, -1};
@@ -187,19 +204,23 @@ int main(void)
         CHECK(line_jbar_bb_domain_mask_build(mask, 5, dnu, dmap,
                                              &inside, &outside) == 0,
               "domain-mask");
-        CHECK(inside == 2 && outside == 2, "domain-count");
-        CHECK(mask[0] == 1 && mask[1] == 1 && mask[2] == 0 &&
-              mask[3] == 0 && mask[4] == 0, "domain-membership");
+        CHECK(inside == 4 && outside == 0, "domain-count");
+        CHECK(mask[0] == 1 && mask[1] == 1 && mask[2] == 1 &&
+              mask[3] == 1 && mask[4] == 0, "domain-membership");
+        CHECK(!line_jbar_frequency_in_bb_domain(0) &&
+              !line_jbar_frequency_in_bb_domain(-1) &&
+              !line_jbar_frequency_in_bb_domain(NAN) &&
+              !line_jbar_frequency_in_bb_domain(INFINITY), "invalid-domain-rejected");
         CHECK(line_jbar_frequency_in_bb_domain(dnu[0]) &&
               line_jbar_frequency_in_bb_domain(dnu[1]), "domain-closed");
 
         LineJbarQSet filtered, same_ids_unbound;
-        int same_map[5] = {0, 1, -1, -1, -1};
+        int same_map[5] = {0, 1, 2, 3, -1};
         CHECK(line_jbar_qset_build(&filtered, 5, dnu, dmap, mask) == 0,
               "domain-qset");
         CHECK(line_jbar_qset_build(&same_ids_unbound, 5, dnu, same_map,
                                    NULL) == 0, "unbound-qset");
-        CHECK(filtered.n_q == 2 && same_ids_unbound.n_q == 2,
+        CHECK(filtered.n_q == 4 && same_ids_unbound.n_q == 4,
               "domain-qcount");
         CHECK(strcmp(filtered.domain_contract_hash,
                      LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256) == 0,
@@ -209,8 +230,8 @@ int main(void)
         CHECK(filtered.set_kind == LINE_JBAR_SET_RATE_GRAPH,
               "qg-role");
         CHECK(strcmp(filtered.q_set_hash,
-              "ae6163fee5e036e2d751ba19559704401f6734338c413dbedc3b7517e97e1a30")
-              == 0, "qg-hash-backward-identity");
+              "65301fe97010e1dd5def9a7fe3b5e914d34cdec067aab60c0286b12e1ef6b662")
+              == 0, "qg-full-domain-hash");
 
         /* Q_E includes every registered in-domain line, even the unmapped
          * centre line.  Q_g must be a checked subset, never a second cache. */
@@ -220,11 +241,12 @@ int main(void)
         CHECK(line_jbar_eset_build(&energy2, 5, dnu) == 0,
               "energy-set-repeat");
         CHECK(energy.set_kind == LINE_JBAR_SET_ENERGY_DOMAIN &&
-              energy.n_q == 3, "energy-role-count");
+              energy.n_q == 5, "energy-role-count");
         CHECK(energy.line_id[0] == 0 && energy.line_id[1] == 1 &&
-              energy.line_id[2] == 4, "energy-membership");
+              energy.line_id[2] == 2 && energy.line_id[3] == 3 &&
+              energy.line_id[4] == 4, "energy-membership");
         CHECK(strcmp(energy.q_set_hash,
-              "f781482b70a921a3e780e8ae8e111cabe41117d55c72e3aa1d1c5e3668ae1720")
+              "57d8d5ee1b804a399aa39518f0b9361b7f49b25521bb8a197da76e47c887dc9f")
               == 0, "energy-hash-known-answer");
         CHECK(strcmp(energy.q_set_hash, energy2.q_set_hash) == 0,
               "energy-hash-deterministic");
@@ -251,10 +273,7 @@ int main(void)
               "qg-qe-frequency-mismatch");
         energy.line_nu[1] = saved_nu;
 
-        double missing_nu[5];
-        memcpy(missing_nu, dnu, sizeof(missing_nu));
-        missing_nu[1] = nextafter(LINE_JBAR_BB_NU_MAX_HZ, INFINITY);
-        CHECK(line_jbar_eset_build(&missing, 5, missing_nu) == 0,
+        CHECK(line_jbar_eset_build(&missing, 1, dnu) == 0,
               "missing-energy-build");
         CHECK(line_jbar_qset_subset_of_eset(&filtered, &missing,
                                              &missing_q) ==
@@ -264,16 +283,16 @@ int main(void)
                        LINE_JBAR_VDOPPLER_CMS / C_CGS;
         size_t bad_q = SIZE_MAX;
         CHECK(line_jbar_qset_profile_support_covered(
-                  &filtered, LINE_JBAR_BB_NU_MIN_HZ * (1.0 - width),
-                  LINE_JBAR_BB_NU_MAX_HZ * (1.0 + width), &bad_q) == 0,
+                  &filtered, dnu[2] * (1.0 - width),
+                  dnu[3] * (1.0 + width), &bad_q) == 0,
               "profile-support-covered");
         CHECK(bad_q == SIZE_MAX, "profile-support-no-bad-q");
         CHECK(line_jbar_qset_profile_support_covered(
                   &filtered,
-                  nextafter(LINE_JBAR_BB_NU_MIN_HZ * (1.0 - width), INFINITY),
-                  LINE_JBAR_BB_NU_MAX_HZ * (1.0 + width), &bad_q) != 0,
+                  nextafter(dnu[2] * (1.0 - width), INFINITY),
+                  dnu[3] * (1.0 + width), &bad_q) != 0,
               "profile-support-red-truncation");
-        CHECK(bad_q == 0, "profile-support-red-witness");
+        CHECK(bad_q == 2, "profile-support-red-witness");
         line_jbar_qset_free(&filtered);
         line_jbar_qset_free(&same_ids_unbound);
         line_jbar_qset_free(&energy);

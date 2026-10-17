@@ -24,6 +24,24 @@ int main(void) {
     }
 
     a208_counters_reset();
+    {
+        A208Counters private_counts = {0};
+        A208Counters before = *a208_counters();
+        A208ValueView a = a208_signed_einstein_counted(2,1,172800,3,1,7,&private_counts);
+        A208ValueView b = a208_signed_einstein_counted(2,1,172800,0,1,7,&private_counts);
+        A208ValueView z = a208_signed_einstein_counted(2,1,172800,1,2,7,&private_counts);
+        A208ValueView bad = a208_signed_einstein_counted(NAN,1,172800,1,2,7,&private_counts);
+        A208ValueView popbad = a208_signed_einstein_counted(2,1,172800,-1,2,7,NULL);
+        long double scale=6.62607015e-27L*2.99792458e10L*172800/
+            12.56637061435917295385057353311801153679L;
+        if(a.validity!=A208_VALID || a.generation!=7 || a.value!=(double)(5*scale) ||
+           b.validity!=A208_VALID || b.value!=(double)-scale ||
+           z.validity!=A208_EXACT_ZERO || signbit(z.value) ||
+           bad.validity!=A208_NONFINITE || popbad.validity!=A208_INVALID_POPULATION ||
+           private_counts.negative_tau_line_shells!=1 || private_counts.nonfinite_failures!=1 ||
+           memcmp(a208_counters(),&before,sizeof(before)))
+            return fail("Einstein signed tau and isolated counters");
+    }
     A208ValueView normal=a208_signed_sobolev(1,1,1,1,2,0,1,1,1);
     A208ValueView zero=a208_signed_sobolev(1,1,1,1,0,0,1,1,1);
     A208ValueView inversion=a208_signed_sobolev(1,1,1,1,0,2,1,1,1);

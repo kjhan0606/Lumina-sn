@@ -23,26 +23,75 @@ initial_ne_iteration=${7:-plain}
 initial_grid=${8:-uniform}
 initial_gamma_sampling=${9:-plain}
 initial_start=${10:-resume}
-case "$initial_start" in resume) ;; guess) [[ -n "$initial_resume" ]] || exit 2 ;; *) exit 2 ;; esac
+initial_refinements=${11:-42}
+initial_aa_depth=${12:-1}
+check_refinement_guess_identity() {
+ local source_id=$1 target_id=$2 requested=$3 binary_change=${4:-0} strip_binary=
+ [[ "$binary_change" == 0 || "$binary_change" == 1 ]] || return 1
+ if [[ "$binary_change" == 1 ]]; then
+  [[ "$(head -n 1 "$source_id")" =~ ^[0-9a-f]{64}$ ]] &&
+  [[ "$(head -n 1 "$target_id")" =~ ^[0-9a-f]{64}$ ]] &&
+  [[ "$(head -n 1 "$source_id")" != "$(head -n 1 "$target_id")" ]] || return 1
+  strip_binary='1d;'
+ fi
+ [[ "$requested" == 42 ]] &&
+ [[ "$(grep -c '^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=' "$source_id")" == 1 ]] &&
+ grep -Fxq 'LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=1' "$source_id" &&
+ [[ "$(grep -c '^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=' "$target_id")" == 1 ]] &&
+ grep -Fxq 'LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42' "$target_id" &&
+ cmp <(sed "${strip_binary}/^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=/d" "$source_id") \
+     <(sed "${strip_binary}/^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=/d" "$target_id")
+}
+check_accelerated_guess_identity() {
+ local source_id=$1 target_id=$2
+ # 바뀔 수 있는 것은 binary/이력1→4/상계1또는42→42뿐이다.
+ [[ "$(head -n 1 "$source_id")" =~ ^[0-9a-f]{64}$ ]] &&
+ [[ "$(head -n 1 "$target_id")" =~ ^[0-9a-f]{64}$ ]] &&
+ [[ "$(head -n 1 "$source_id")" != "$(head -n 1 "$target_id")" ]] &&
+ [[ "$(grep -c '^LUMINA_CMF_ANDERSON_DEPTH=' "$source_id")" == 0 ]] &&
+ [[ "$(grep -c '^LUMINA_CMF_ANDERSON_DEPTH=' "$target_id")" == 1 ]] &&
+ grep -Fxq 'LUMINA_CMF_ANDERSON_DEPTH=4' "$target_id" &&
+ [[ "$(grep -c '^LUMINA_CMF_ANDERSON1=' "$source_id")" == 1 ]] &&
+ grep -Fxq 'LUMINA_CMF_ANDERSON1=1' "$source_id" &&
+ [[ "$(grep -c '^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=' "$source_id")" == 1 ]] &&
+ grep -Eq '^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=(1|42)$' "$source_id" &&
+ [[ "$(grep -c '^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=' "$target_id")" == 1 ]] &&
+ grep -Fxq 'LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42' "$target_id" &&
+ cmp <(sed '1d;/^LUMINA_CMF_ANDERSON_DEPTH=/d;/^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=/d' "$source_id") \
+     <(sed '1d;/^LUMINA_CMF_ANDERSON_DEPTH=/d;/^LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=/d' "$target_id")
+}
+case "$initial_refinements" in 1|42) ;; *) exit 2 ;; esac
+case "$initial_aa_depth" in 1) ;; 2|4) [[ "$initial_iteration" == anderson ]] || exit 2 ;; *) exit 2 ;; esac
+case "$initial_start" in resume) ;; resume-material|guess|refinement-guess|binary-refinement-guess) [[ -n "$initial_resume" ]] || exit 2 ;; accelerated-guess) [[ -n "$initial_resume" && "$initial_aa_depth" == 4 && "$initial_refinements" == 42 ]] || exit 2 ;; fresh) [[ -z "$initial_resume" ]] || exit 2 ;; *) exit 2 ;; esac
 case "$initial_gamma_sampling" in plain|mixture) ;; *) exit 2 ;; esac
 case "$initial_grid" in uniform|t10|t05) ;; *) exit 2 ;; esac
 case "$initial_ne_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 case "$initial_backend" in
- gpu) initial_variant=cluster;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
- cpu) initial_variant=cpu;initial_binary=$initial_build/lumina_cpu;initial_devices=0 ;;
+ gpu) initial_variant=cluster;initial_managed=0;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
+ ada) [[ "$(hostname -s)" == LagEunha && -z "${SLURM_JOB_ID:-}" ]];initial_variant=ada;initial_managed=1;initial_binary=$initial_build/lumina_cuda;initial_devices=1 ;;
+ cpu) initial_variant=cpu;initial_managed=0;initial_binary=$initial_build/lumina_cpu;initial_devices=0 ;;
  *) exit 2 ;;
 esac
 case "$initial_iteration" in plain|anderson) ;; *) exit 2 ;; esac
 initial_src=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn-timedep-20261015
-initial_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-initial-${SLURM_JOB_ID}
+if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+ initial_out=/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/toy-initial-${SLURM_JOB_ID}
+else
+ [[ "$(hostname -s)" == LagEunha ]]
+ initial_out=${CMF_TOY_RUN_OUT:?manual Ada output directory required}
+ [[ "$initial_out" =~ ^/gpfs/kjhan/lumina/cmfgen_map/trace13_20261010/results/ada-evolution-[0-9]{8}-[0-9]{4}/initial$ ]]
+ export CUDA_VISIBLE_DEVICES=0
+fi
 mkdir "$initial_out"
 mkdir "$initial_out/input" "$initial_out/work"
 source /opt/ohpc/admin/lmod/lmod/init/bash
 module purge
 module load gnu13/13.2.0 cuda/13.0.2
-export OMP_NUM_THREADS=16 OMP_PLACES=cores OMP_PROC_BIND=close
+initial_cpus=${CMF_TOY_CPUS:-16}
+[[ "$initial_cpus" =~ ^([1-9]|1[0-6])$ ]] || exit 2
+export OMP_NUM_THREADS=$initial_cpus OMP_PLACES=cores OMP_PROC_BIND=close
 export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-grep -Fxq "variant=$initial_variant managed=0" "$initial_build/variant.txt"
+grep -Fxq "variant=$initial_variant managed=$initial_managed" "$initial_build/variant.txt"
 (cd "$initial_build/source"; sha256sum -c "$initial_build/source.sha256") > "$initial_out/build_source_verify.log"
 sha256sum -c "$initial_build/binary.sha256" > "$initial_out/binary_verify.log"
 # 실행되는 것은 위에서 검증한 봉인 binary/source다. 이후 작업 트리 편집이
@@ -78,8 +127,12 @@ export LUMINA_PURE_CMFGEN=1 LUMINA_CMF_COMMON_FIELD=1 LUMINA_CMF_BF_MILNE=2
 export LUMINA_SUPER_LEVELS=1 LUMINA_NLTE_COLL_ION=1 LUMINA_OMEGA_CMFGEN=1
 export LUMINA_NLTE_NE_CLOSURE=1 LUMINA_CMF_FINE_VDOP=5000000 LUMINA_CMF_FINE_PPD=3
 export LUMINA_CMF_FINE_ALI=768 LUMINA_CMF_FINE_TOL=1e-8 LUMINA_CMF_FINE_PHOTOION=1
-export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=42 LUMINA_CMF_FINE_MGPU_DEVICES=$initial_devices
+# 정밀화 횟수는 검증된 오차상계의 폭만 바꾼다. 수송/공동 수렴 기준은 유지한다.
+# 기본42를 보존하며, 선택값은 아래 effective env와 실행 정체성에 포함된다.
+export LUMINA_CMF_FINE_ENVELOPE_REFINEMENTS=$initial_refinements LUMINA_CMF_FINE_MGPU_DEVICES=$initial_devices
 if [[ "$initial_iteration" == anderson ]]; then export LUMINA_CMF_ANDERSON1=1; fi
+# 기본1에서는 기존 실행 정체성까지 보존한다. 선택값은 env/신원에 기록한다.
+if [[ "$initial_aa_depth" != 1 ]]; then export LUMINA_CMF_ANDERSON_DEPTH=$initial_aa_depth; fi
 if [[ "$initial_ne_iteration" == anderson ]]; then export LUMINA_NLTE_NE_ANDERSON1=1; fi
 if [[ "$initial_gamma_sampling" == mixture ]]; then export LUMINA_GAMMA_SOURCE_MIX=0.5; fi
 case "$initial_grid" in
@@ -100,8 +153,25 @@ env | LC_ALL=C sort | grep '^LUMINA_' > "$initial_out/env_lumina_effective.txt"
 initial_id=$(sha256sum "$initial_out/iterate_identity.txt");initial_id=${initial_id%% *}
 export LUMINA_INITIAL_ITERATE_ID=$initial_id
 if [[ -n "$initial_resume" ]]; then
- test -f "$initial_resume/work/initial_iterate.bin"
- if [[ "$initial_start" == guess ]]; then
+ initial_checkpoint=$initial_resume/work/initial_iterate.bin
+ if [[ "$initial_start" == resume-material ]]; then initial_checkpoint=$initial_resume/work/initial_material_guess.bin; fi
+ test -f "$initial_checkpoint"
+ if [[ "$initial_start" == refinement-guess || "$initial_start" == binary-refinement-guess ]]; then
+  # 같은 물리/바이너리의 장을 초기 추정으로만 읽는다. 기존1→42 정밀화만 허용.
+  initial_binary_change=0
+  if [[ "$initial_start" == binary-refinement-guess ]]; then initial_binary_change=1; fi
+  # 복합 초기추정은 binary와1→42 상계만 다를 수 있다. 원본 신원은 그대로 읽는다.
+  check_refinement_guess_identity "$initial_resume/iterate_identity.txt" \
+      "$initial_out/iterate_identity.txt" "$initial_refinements" "$initial_binary_change"
+  cp "$initial_resume/iterate_identity.txt" "$initial_out/guess_source_identity.txt"
+  initial_guess_id=$(sha256sum "$initial_out/guess_source_identity.txt");initial_guess_id=${initial_guess_id%% *}
+  export LUMINA_INITIAL_GUESS_ID=$initial_guess_id
+ elif [[ "$initial_start" == accelerated-guess ]]; then
+  check_accelerated_guess_identity "$initial_resume/iterate_identity.txt" "$initial_out/iterate_identity.txt"
+  cp "$initial_resume/iterate_identity.txt" "$initial_out/guess_source_identity.txt"
+  initial_guess_id=$(sha256sum "$initial_out/guess_source_identity.txt");initial_guess_id=${initial_guess_id%% *}
+  export LUMINA_INITIAL_GUESS_ID=$initial_guess_id
+ elif [[ "$initial_start" == guess ]]; then
   # binary만 다른 자체 계산을 초기 추정으로 읽는다. 기본 재개 검사는 완화하지 않는다.
   cmp <(tail -n +2 "$initial_resume/iterate_identity.txt") <(tail -n +2 "$initial_out/iterate_identity.txt")
   test "$(head -n 1 "$initial_resume/iterate_identity.txt")" != "$(head -n 1 "$initial_out/iterate_identity.txt")"
@@ -111,9 +181,9 @@ if [[ -n "$initial_resume" ]]; then
  else
   cmp "$initial_resume/iterate_identity.txt" "$initial_out/iterate_identity.txt"
  fi
- cp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
- sha256sum "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin" > "$initial_out/restart_input.sha256"
- cmp "$initial_resume/work/initial_iterate.bin" "$initial_out/restart_input.bin"
+ cp "$initial_checkpoint" "$initial_out/restart_input.bin"
+ sha256sum "$initial_checkpoint" "$initial_out/restart_input.bin" > "$initial_out/restart_input.sha256"
+ cmp "$initial_checkpoint" "$initial_out/restart_input.bin"
  export LUMINA_INITIAL_ITERATE_INPUT=$initial_out/restart_input.bin
 fi
 printf 'start=%s\nsource=%s\nsource_identity=%s\nrun_identity=%s\n' \
@@ -121,7 +191,7 @@ printf 'start=%s\nsource=%s\nsource_identity=%s\nrun_identity=%s\n' \
 printf 'mode=%s\nbackend=%s\nsource=%s\nbuild=%s\ninput=%s\n' \
  "$initial_nt_mode" "$initial_backend" "$initial_build/source" "$initial_build" "$initial_out/input" > "$initial_out/identity.txt"
 cd "$initial_out/work"
-# 2GiB/file 상한. 최신 수치 반복 하나와 수렴 성공시의 물리 이력을 구분한다.
+# 2GiB/file 상한. 최신 완료 반복/중간 물질 추정 각 하나와 수렴 물리 이력을 구분한다.
 (ulimit -f 2097152; exec "$initial_binary" --cmf-toy-initial \
  "$initial_out/input/snia_toy06_2d.dat" "$initial_out/input" \
  "$initial_out/input/NUC_DECAY_DATA_ni56_co56_fe56" 100 200000 128 "${initial_nt_arguments[@]}") \

@@ -89,6 +89,11 @@ A208ValueView a208_signed_sobolev_counted(
 A208ValueView a208_line_source(double prefactor, double n_lower,
                                double n_upper, double g_lower, double g_upper,
                                uint64_t generation);
+/* SE와 같은 B 계수로 signed Sobolev 깊이를 만든다. 상수/f/파장 재변환 없음. */
+A208ValueView a208_signed_einstein_counted(
+                               double B_lu, double B_ul, double time_explosion,
+                               double n_lower, double n_upper,
+                               uint64_t generation, A208Counters *counter_sink);
 A208ValueView a208_line_source_counted(
                                double prefactor, double n_lower,
                                double n_upper, double g_lower, double g_upper,

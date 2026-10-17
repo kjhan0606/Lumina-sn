@@ -73,10 +73,10 @@ static CMFEnvelopeStatus validate_vectors(size_t n,
     return CMF_ENVELOPE_OK;
 }
 
-CMFEnvelopeStatus cmf_error_envelope_verify(
+static CMFEnvelopeStatus verify_with_upper_workspace(
     size_t n, const double *residual_upper, const double *candidate,
     CMFEnvelopeApplyUpper apply_upper, void *context,
-    CMFEnvelopeReport *report)
+    CMFEnvelopeReport *report, double *cached_upper)
 {
     report_init(report);
     if (!apply_upper) return CMF_ENVELOPE_INVALID_INPUT;
@@ -87,13 +87,13 @@ CMFEnvelopeStatus cmf_error_envelope_verify(
         if (report) report->status = CMF_ENVELOPE_ALLOCATION_FAILED;
         return CMF_ENVELOPE_ALLOCATION_FAILED;
     }
-    double *ku = (double *)malloc(n * sizeof(*ku));
+    double *ku = cached_upper ? cached_upper : (double *)malloc(n * sizeof(*ku));
     if (!ku) {
         if (report) report->status = CMF_ENVELOPE_ALLOCATION_FAILED;
         return CMF_ENVELOPE_ALLOCATION_FAILED;
     }
     if (apply_upper(candidate, ku, n, context) != 0) {
-        free(ku);
+        if (!cached_upper) free(ku);
         if (report) report->status = CMF_ENVELOPE_OPERATOR_FAILED;
         return CMF_ENVELOPE_OPERATOR_FAILED;
     }
@@ -124,15 +124,24 @@ CMFEnvelopeStatus cmf_error_envelope_verify(
                 report->required_upper = ku[i];
             report->minimum_margin = minimum_margin;
         }
-        free(ku);
+        if (!cached_upper) free(ku);
         return status;
     }
-    free(ku);
+    if (!cached_upper) free(ku);
     if (report) {
         report->status = CMF_ENVELOPE_OK;
         report->minimum_margin = minimum_margin;
     }
     return CMF_ENVELOPE_OK;
+}
+
+CMFEnvelopeStatus cmf_error_envelope_verify(
+    size_t n, const double *residual_upper, const double *candidate,
+    CMFEnvelopeApplyUpper apply_upper, void *context,
+    CMFEnvelopeReport *report)
+{
+    return verify_with_upper_workspace(n, residual_upper, candidate,
+                                      apply_upper, context, report, NULL);
 }
 
 CMFEnvelopeStatus cmf_error_envelope_refine(
@@ -143,12 +152,8 @@ CMFEnvelopeStatus cmf_error_envelope_refine(
     report_init(report);
     if (!apply_upper) return CMF_ENVELOPE_INVALID_INPUT;
     CMFEnvelopeReport verify_report;
-    CMFEnvelopeStatus status = cmf_error_envelope_verify(
-        n, residual_upper, candidate, apply_upper, context, &verify_report);
-    if (status != CMF_ENVELOPE_OK) {
-        if (report) *report = verify_report;
-        return status;
-    }
+    CMFEnvelopeStatus status = validate_vectors(n, residual_upper, candidate, report);
+    if (status != CMF_ENVELOPE_OK) return status;
     if (n > SIZE_MAX / (2U * sizeof(double))) {
         if (report) report->status = CMF_ENVELOPE_ALLOCATION_FAILED;
         return CMF_ENVELOPE_ALLOCATION_FAILED;
@@ -159,11 +164,17 @@ CMFEnvelopeStatus cmf_error_envelope_refine(
         return CMF_ENVELOPE_ALLOCATION_FAILED;
     }
     double *next = ku + n;
+    status = verify_with_upper_workspace(
+        n, residual_upper, candidate, apply_upper, context, &verify_report, ku);
+    if (status != CMF_ENVELOPE_OK) {
+        if (report) *report = verify_report;
+        free(ku);
+        return status;
+    }
     for (size_t iteration = 0; iteration < iterations; ++iteration) {
-        if (apply_upper(candidate, ku, n, context) != 0) {
-            status = CMF_ENVELOPE_OPERATOR_FAILED;
-            break;
-        }
+        /* 직전 검증이 계산한 K(candidate)의 상계를 그대로 재사용한다.
+         * 다음 후보에는 여전히 새 K(next)를 적용해 모든 성분을 검증한다.
+         * 물리 J/상계 수식/반올림 방향/수용 조건은 바꾸지 않는다. */
         for (size_t i = 0; i < n; ++i) {
             if (!isfinite(ku[i])) {
                 status = CMF_ENVELOPE_NONFINITE;
@@ -191,8 +202,8 @@ CMFEnvelopeStatus cmf_error_envelope_refine(
             }
         }
         if (status != CMF_ENVELOPE_OK) break;
-        status = cmf_error_envelope_verify(
-            n, residual_upper, next, apply_upper, context, &verify_report);
+        status = verify_with_upper_workspace(
+            n, residual_upper, next, apply_upper, context, &verify_report, ku);
         if (status != CMF_ENVELOPE_OK) {
             if (report) *report = verify_report;
             break;

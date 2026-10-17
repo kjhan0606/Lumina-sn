@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef CMF_MATERIAL_GUESS_PRODUCER_TEST
+/* 실제 원자적 저장 callback을 사용한다. 사용하지 않는 CLI 함수는 링크 GC한다. */
+#include "cmf_toy_run.c"
+#endif
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"TIME_COUPLED_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 static double Bnu(double nu,double T){return 2*H_PLANCK*nu*nu*nu/
     (C_SPEED_OF_LIGHT*C_SPEED_OF_LIGHT)/expm1(H_PLANCK*nu/(K_BOLTZMANN*T));}
@@ -26,6 +30,7 @@ PopulationStatus __wrap_nlte_element_initial_steady_solve_cached(NLTEConfig *n,A
 }
 #endif
 static int saved_iterations;
+static int material_guesses;
 static CMFToyModel save_view;
 static Geometry *save_geo;
 static OpacityState *save_opac;
@@ -33,6 +38,10 @@ static PlasmaState *save_plasma;
 static NLTEConfig *save_nlte;
 static AtomicData *save_atom;
 static const char *iterate_id="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+static void sync_save_view(void){
+    save_view.prepared=1;save_view.geometry=*save_geo;save_view.opacity=*save_opac;
+    save_view.plasma=*save_plasma;save_view.nlte=*save_nlte;save_view.atom=*save_atom;
+}
 static int write_test_material(const char *path,const PlasmaState *p,
                                const AtomicData *a,const NLTEConfig *n){
     FILE *f=fopen(path,"wx");if(!f)return -1;
@@ -50,10 +59,32 @@ static int save_iteration(void *context,int iteration){
     CMFGENState *c=context;
     if(c->common_obs_ready||iteration!=saved_iterations)return -1;
     saved_iterations++;
+#ifdef CMF_MATERIAL_GUESS_PRODUCER_TEST
+    sync_save_view();ToyInitialSave producer={&save_view,iterate_id,0};
+    if(toy_initial_save(&producer,iteration))return -1;
+#endif
     if(iteration==3&&getenv("CMF_TEST_ITERATE")&&!getenv("CMF_TEST_ITERATE_INPUT")){
-        save_view.prepared=1;save_view.geometry=*save_geo;save_view.opacity=*save_opac;
-        save_view.plasma=*save_plasma;save_view.nlte=*save_nlte;save_view.atom=*save_atom;
+        sync_save_view();
         return cmf_toy_initial_iterate_write(&save_view,"initial_iterate_test.bin",iterate_id,iteration);
+    }
+    return 0;
+}
+static int save_material_guess(void *context,int completed){
+    CMFGENState *c=context;
+    if(c->common_obs_ready||completed+1!=saved_iterations||completed!=material_guesses||
+       save_plasma->physical_history||!save_plasma->initial_steady_nlte)return -1;
+    material_guesses++;
+    sync_save_view();
+#ifdef CMF_MATERIAL_GUESS_PRODUCER_TEST
+    ToyInitialSave producer={&save_view,iterate_id,0};
+    if(toy_material_guess_save(&producer,completed))return -1;
+#endif
+    if(completed==3&&!getenv("CMF_TEST_ITERATE_INPUT")){
+        if(cmf_toy_initial_iterate_write(&save_view,"initial_material_guess_test.bin",iterate_id,completed))return -1;
+        if(getenv("CMF_TEST_MATERIAL_STOP")){
+            puts("INITIAL_MATERIAL_INTERRUPTION completed_iterations=3 pending_material_update=1 physical_history=0 converged=0");
+            fflush(NULL);_Exit(86); /* 저장 직후 강제 종료: 이후 수송/성공 출력 없음. */
+        }
     }
     return 0;
 }
@@ -187,12 +218,16 @@ int main(void){
             CHECK(!save_view.plasma.physical_history&&!save_view.nlte.radiation_field.field.generation.computed_generation);
             g=save_view.geometry;o=save_view.opacity;p=save_view.plasma;n=save_view.nlte;a=save_view.atom;
         }
-        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_saved(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report,
-                                                               save_iteration,&c);
+        CMFTimeEpochStatus status=cmfgen_solve_initial_nlte_checkpointed(&c,&g,&o,&bf,&p,&n,&a,&gamma,1e4,64,1e-7,&initial,&report,
+            save_iteration,getenv("CMF_TEST_MATERIAL_GUESS")?save_material_guess:NULL,&c);
         fprintf(stderr,"INITIAL_COUPLED_RESULT status=%d iterations=%d ne=%.17g/%.17g T=%.17g/%.17g\n",
                 status,report.iterations,ne[0],ne[1],T[0],T[1]);
         CHECK(status==CMF_EPOCH_OK&&report.converged&&c.common_obs_ready&&report.iterations>1);
         CHECK(saved_iterations==report.iterations+1);
+        if(getenv("CMF_TEST_MATERIAL_GUESS")){
+            CHECK(material_guesses==report.iterations);
+            printf("INITIAL_MATERIAL_GUESS_CALLBACK_PASS calls=%d completed_count_unchanged=1\n",material_guesses);
+        }
         printf("INITIAL_SAVE_CALLBACK_PASS calls=%d physical_history_created_by_callback=0\n",saved_iterations);
 #ifdef CMF_MATRIX_CACHE_INTEGRATION
         CHECK(matrix_cache_hits>0);

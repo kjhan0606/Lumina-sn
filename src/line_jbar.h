@@ -21,19 +21,22 @@
 #define LINE_JBAR_PROFILE_GAUSS_VD50 2
 #define LINE_JBAR_VDOPPLER_CMS 1.0e6      /* 10 km/s */
 #define LINE_JBAR_PROFILE_NDOPPLER 4.0    /* +-4 Doppler support */
+/* 역사적 출력 창이다. 내부 BB 전이망의 절단 경계로 사용하지 않는다. */
 #define LINE_JBAR_BB_LAMBDA_MIN_ANGSTROM 100.0
 #define LINE_JBAR_BB_LAMBDA_MAX_ANGSTROM 20000.0
 #define LINE_JBAR_BB_NU_MIN_HZ 1.49896229e14
 #define LINE_JBAR_BB_NU_MAX_HZ 2.99792458e16
 #define LINE_JBAR_BB_DOMAIN_CONTRACT_SHA256 \
-    "3278062cf80281ffdcc4eb74ffc37e743cbdc51a128da5a319bfba7d3a6416c4"
+    "b86bbd812d797d7fc6ac85e313e0bf55b798276425f29bbf9b174ea3d91d0da5"
 #define LINE_JBAR_PROFILE_SHA256 \
     "f8572907be3ad2e9738a84dae1000338bb7100772cf1d3b52ec17561da409bbf"
 
 static inline int line_jbar_frequency_in_bb_domain(double nu)
 {
-    return isfinite(nu) && nu > 0.0 &&
-           nu >= LINE_JBAR_BB_NU_MIN_HZ && nu <= LINE_JBAR_BB_NU_MAX_HZ;
+    /* A_ul을 유지하는 모든 모형 전이는 실제 장의 역과정도 소비한다.
+     * 범위 충족 여부는 Q/E의 전체 프로파일 지지범위로 검사한다.
+     * hash 원문: BB_ALL_FINITE_POSITIVE_MODEL_LINES_V1|profiles_fully_covered|no_observer_window_cut */
+    return isfinite(nu) && nu > 0.0;
 }
 
 typedef enum {

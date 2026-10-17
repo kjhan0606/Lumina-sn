@@ -166,10 +166,10 @@ static double flux_update(const double *ja,const double *jb,const double *ha,
     return result;
 }
 
-CMFTimeEpochStatus cmfgen_solve_initial_nlte_saved(CMFGENState *cs,Geometry *g,OpacityState *o,
+CMFTimeEpochStatus cmfgen_solve_initial_nlte_checkpointed(CMFGENState *cs,Geometry *g,OpacityState *o,
     BFOpacity *bf,PlasmaState *p,NLTEConfig *n,AtomicData *a,GammaDeposition *gamma,
     double T_inner,int cap,double tol,CMFPhysicalTimeState *initial,CMFInitialNLTEReport *out,
-    CMFInitialIterationSave save,void *context){
+    CMFInitialIterationSave save,CMFInitialIterationSave material_guess_save,void *context){
     CMFInitialNLTEReport rep={0};rep.tolerance=tol;
     rep.electron_update=rep.population_update=rep.radiation_update=INFINITY;
     if(out)*out=rep;
@@ -214,6 +214,7 @@ CMFTimeEpochStatus cmfgen_solve_initial_nlte_saved(CMFGENState *cs,Geometry *g,O
         }
         rep.iterations=it+1;rep.electron_update=update(ne,p->n_electron,ns);
         rep.population_update=fmax(update(ions,a->ion_number_density,ni*ns),update(levels,n->nlte_level_populations,nl*ns));
+        if(material_guess_save&&material_guess_save(context,it)){status=CMF_EPOCH_HISTORY;goto initial_done;}
         rep.radiation_calls++;
         if(cmfgen_initial_radiation_publish(cs,g,o,bf,p,n,a,T_inner,0)||
            o->n_fine!=(int)nb||!o->jnu_fine){status=CMF_EPOCH_RADIATION;goto initial_done;}
@@ -253,6 +254,14 @@ initial_done:
     cs->initial_face_requested=0;
     if(status!=CMF_EPOCH_OK){cs->common_obs_ready=0;cs->initial_face_ready=0;}
     *out=rep;free(saved);free(j);return status;
+}
+
+CMFTimeEpochStatus cmfgen_solve_initial_nlte_saved(CMFGENState *cs,Geometry *g,OpacityState *o,
+    BFOpacity *bf,PlasmaState *p,NLTEConfig *n,AtomicData *a,GammaDeposition *gamma,
+    double T_inner,int cap,double tol,CMFPhysicalTimeState *initial,CMFInitialNLTEReport *out,
+    CMFInitialIterationSave save,void *context){
+    return cmfgen_solve_initial_nlte_checkpointed(cs,g,o,bf,p,n,a,gamma,T_inner,cap,tol,
+                                                initial,out,save,NULL,context);
 }
 
 CMFTimeEpochStatus cmfgen_solve_initial_nlte(CMFGENState *cs,Geometry *g,OpacityState *o,
