@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 027
-# 전체 BB 순·역과정 수정본의 새 자기일관 초기해 시도. CPU8/GPU1/128GiB/최대6시간.
+# 전체 BB 순·역과정 수정본의 새 자기일관 초기해 시도. CPU8/GPU1/128GiB/최대12시간.
 # 일곱 번째 인자는 실행 초 상한(기본7200, 종료 유예15초는 별도 예약).
 # fresh는 LTE/Saha 추정, guess는 이전 미수렴 물질 추정이며 모두 새 복사장을 푼다.
 # resume는 네 번째 인자의 동일 정체성 저장점을 재개하며 완료 반복 수를 보존한다.
@@ -12,7 +12,7 @@ fd_limit=${7:-7200}
 fd_aa_depth=${8:-1}
 [[ $# -le 8 && "$fd_limit" =~ ^[1-9][0-9]{0,4}$ ]] || exit 2
 case "$fd_aa_depth" in 1|2|4) ;; *) exit 2 ;; esac
-(( fd_limit >= 60 && fd_limit <= 21600 )) || exit 2
+(( fd_limit >= 60 && fd_limit <= 43200 )) || exit 2
 # 읽기 전용 검사: 호스트/락/디렉터리/GPU에 접근하지 않는다.
 if [[ "${CMF_FULL_DOMAIN_CHECK_LIMIT_ONLY:-0}" == 1 ]];then
  printf 'runtime_seconds=%s kill_grace_seconds=15 max_timeout_seconds=%s\n' "$fd_limit" "$((fd_limit+15))"
