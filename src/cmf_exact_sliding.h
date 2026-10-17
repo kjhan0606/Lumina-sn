@@ -77,6 +77,8 @@ typedef struct {
     double max_scattering_ratio;
     /* 실제 양의 산란 연산자의 ||K||_infinity 상계. 지역 계수비와 구별. */
     double scattering_operator_norm_upper;
+    /* 별도 양의 가중 노름 인증. 미사용/미인증은 INFINITY. */
+    double scattering_operator_weighted_norm_upper;
     double fixed_point_absolute_error_bound;
     double max_characteristic_drift_bins;
     uint64_t negative_recurrence_count;

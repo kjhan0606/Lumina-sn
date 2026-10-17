@@ -1306,11 +1306,19 @@ static int exact_componentwise_error_envelope(
         }
     }
     if(report)report->scattering_operator_norm_upper=operator_norm;
-    if (!(operator_norm >= 0.0) || !(operator_norm < 1.0) ||
+    if (!(operator_norm >= 0.0) || !isfinite(operator_norm) ||
         !isfinite(max_residual)) return -1;
 
-    double seed;
-    if (max_residual == 0.0) {
+    double seed = 0.0;
+    if (operator_norm >= 1.0) {
+        double weighted_norm = INFINITY;
+        CMFEnvelopeStatus weighted_status = cmf_error_envelope_weighted_seed(
+            cells, componentwise_error_upper, work, 4U,
+            exact_apply_scattering_upper, &operator_context, work,
+            &weighted_norm, NULL);
+        if (report) report->scattering_operator_weighted_norm_upper = weighted_norm;
+        if (weighted_status != CMF_ENVELOPE_OK) return -1;
+    } else if (max_residual == 0.0) {
         seed = 0.0;
     } else {
         double denominator = 1.0 - operator_norm;
@@ -1321,19 +1329,22 @@ static int exact_componentwise_error_envelope(
         if (!isfinite(seed)) return -1;
         seed = nextafter(seed, INFINITY);
     }
+    if (operator_norm < 1.0)
+        for (size_t idx = 0; idx < cells; ++idx) work[idx] = seed;
     CMFEnvelopeReport envelope_report;
     CMFEnvelopeStatus envelope_status = CMF_ENVELOPE_INVALID_INPUT;
     size_t seed_attempts = 0;
     for (; seed_attempts < 64U; ++seed_attempts) {
-        for (size_t idx = 0; idx < cells; ++idx) work[idx] = seed;
         envelope_status = cmf_error_envelope_verify(
             cells, componentwise_error_upper, work,
             exact_apply_scattering_upper, &operator_context,
             &envelope_report);
         if (envelope_status == CMF_ENVELOPE_OK) break;
-        if (envelope_status != CMF_ENVELOPE_NOT_SUPERSOLUTION ||
-            !(seed > 0.0) || seed > 0.5 * DBL_MAX) return -1;
-        seed *= 2.0;
+        if (envelope_status != CMF_ENVELOPE_NOT_SUPERSOLUTION) return -1;
+        for (size_t idx = 0; idx < cells; ++idx) {
+            if (work[idx] > 0.5 * DBL_MAX) return -1;
+            work[idx] *= 2.0;
+        }
     }
     if (envelope_status != CMF_ENVELOPE_OK) return -1;
     envelope_status = cmf_error_envelope_refine(
@@ -1386,6 +1397,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     local.componentwise_error_upper_max = INFINITY;
     local.first_negative_recurrence = NAN;
     local.scattering_operator_norm_upper = INFINITY;
+    local.scattering_operator_weighted_norm_upper = INFINITY;
     if (report) *report = local;
     if (!J || iteration_cap < 2 || !(tolerance > 0.0) ||
         !isfinite(tolerance) || !(T_inner > 0.0) || !isfinite(T_inner) ||

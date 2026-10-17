@@ -6836,7 +6836,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                 "[R6][BLOCKED] reason=EXACT_SOLVER_QUALIFICATION "
                 "converged=%d iterations=%d cap=%d residual=%.17g "
                 "tolerance=%.17g absolute_error_bound=%.17g "
-                "scattering_ratio_bound=%.17g fine_bins=%d "
+                "scattering_ratio_bound=%.17g norm_weighted=%d fine_bins=%d "
                 "component_envelope=%d refinements=%zu "
                 "component_error=[%.17g,%.17g] profile_error=[%.17g,%.17g] "
                 "fine_nu=[%.17g,%.17g]\n",
@@ -6847,6 +6847,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
                 opac->jbar_line_det_exact_tolerance,
                 opac->jbar_line_det_exact_absolute_error_bound,
                 opac->jbar_line_det_exact_max_scattering_ratio,
+                opac->jbar_line_det_exact_norm_weighted,
                 opac->jbar_line_det_grid_n_bins,
                 opac->jbar_line_det_error_envelope_verified,
                 opac->jbar_line_det_error_refinement_iterations,
@@ -7085,7 +7086,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
             "domain_hash=%s profile_id=%llu profile_hash=%s "
             "exact_iterations=%d exact_cap=%d exact_residual=%.17g "
             "exact_tolerance=%.17g absolute_error_bound=%.17g "
-            "scattering_ratio_bound=%.17g fine_bins=%d "
+            "scattering_ratio_bound=%.17g norm_weighted=%d fine_bins=%d "
             "component_envelope=%d refinements=%zu "
             "component_error=[%.17g,%.17g] profile_error=[%.17g,%.17g] "
             "fine_nu=[%.17g,%.17g] "
@@ -7100,6 +7101,7 @@ int cmfgen_commit_jnu(const CMFGENState *cs, NLTEConfig *nlte,
             opac->jbar_line_det_exact_tolerance,
             opac->jbar_line_det_exact_absolute_error_bound,
             opac->jbar_line_det_exact_max_scattering_ratio,
+            opac->jbar_line_det_exact_norm_weighted,
             opac->jbar_line_det_grid_n_bins,
             opac->jbar_line_det_error_envelope_verified,
             opac->jbar_line_det_error_refinement_iterations,
@@ -7914,6 +7916,7 @@ static int cmf_fine_exact_owner_solve(
     result->exact.final_max_absolute_change = INFINITY;
     result->exact.max_scattering_ratio = INFINITY;
     result->exact.scattering_operator_norm_upper = INFINITY;
+    result->exact.scattering_operator_weighted_norm_upper = INFINITY;
     result->exact.fixed_point_absolute_error_bound = INFINITY;
     result->exact.componentwise_residual_upper_max = INFINITY;
     result->exact.componentwise_error_upper_min = INFINITY;
@@ -8014,6 +8017,7 @@ static int cmf_fine_exact_owner_solve(
         report.final_max_absolute_change;
     result->exact.max_scattering_ratio = report.max_scattering_ratio;
     result->exact.scattering_operator_norm_upper = report.scattering_operator_norm_upper;
+    result->exact.scattering_operator_weighted_norm_upper = report.scattering_operator_weighted_norm_upper;
     result->exact.fixed_point_absolute_error_bound =
         report.fixed_point_absolute_error_bound;
     result->exact.max_characteristic_drift_bins =
@@ -8413,6 +8417,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
     opac->jbar_line_det_exact_tolerance = 0.0;
     opac->jbar_line_det_exact_absolute_error_bound = INFINITY;
     opac->jbar_line_det_exact_max_scattering_ratio = INFINITY;
+    opac->jbar_line_det_exact_norm_weighted = 0;
     opac->jbar_line_det_error_envelope_verified = 0;
     opac->jbar_line_det_error_refinement_iterations = 0;
     opac->jbar_line_det_component_error_min = INFINITY;
@@ -9680,6 +9685,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         exact_report.tolerance=solve_tol;exact_report.final_max_relative_change=r->relative_update;
         exact_report.fixed_point_absolute_error_bound=INFINITY;
         exact_report.scattering_operator_norm_upper=INFINITY;
+        exact_report.scattering_operator_weighted_norm_upper=INFINITY;
         exact_report.componentwise_error_upper_min=INFINITY;
         if(!owner_rc)for(size_t i=0;i<fine_cells;i++){
             exact_report.componentwise_error_upper_min=fmin(exact_report.componentwise_error_upper_min,fine_error_upper[i]);
@@ -9712,6 +9718,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "[cmf_fine][EXACT-MULTIGPU-EPOCH] status=%s devices=%d/%d "
                 "iterations=%d cap=%d residual=%.17g tolerance=%.17g "
                 "absolute_change=%.17g scattering_ratio_bound=%.17g "
+                "operator_norm_upper=%.17g weighted_norm_upper=%.17g "
                 "absolute_error_bound=%.17g component_envelope=%d "
                 "seed_attempts=%zu refinements=%zu "
                 "component_residual_upper=%.17g "
@@ -9730,6 +9737,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 exact_report.tolerance,
                 exact_report.final_max_absolute_change,
                 exact_report.max_scattering_ratio,
+                exact_report.scattering_operator_norm_upper,
+                exact_report.scattering_operator_weighted_norm_upper,
                 exact_report.fixed_point_absolute_error_bound,
                 exact_report.componentwise_error_envelope_verified,
                 exact_report.componentwise_error_seed_attempts,
@@ -9800,6 +9809,7 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 "[cmf_fine][EXACT-POSITIVE-SLIDING] status=%s iterations=%d cap=%d "
                 "residual=%.17g tolerance=%.17g absolute_change=%.17g "
                 "scattering_ratio_bound=%.17g absolute_error_bound=%.17g "
+                "operator_norm_upper=%.17g weighted_norm_upper=%.17g "
                 "component_envelope=%d seed_attempts=%zu refinements=%zu "
                 "component_residual_upper=%.17g component_error=[%.17g,%.17g] "
                 "max_drift_bins=%.17g "
@@ -9812,6 +9822,8 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
                 exact_report.final_max_absolute_change,
                 exact_report.max_scattering_ratio,
                 exact_report.fixed_point_absolute_error_bound,
+                exact_report.scattering_operator_norm_upper,
+                exact_report.scattering_operator_weighted_norm_upper,
                 exact_report.componentwise_error_envelope_verified,
                 exact_report.componentwise_error_seed_attempts,
                 exact_report.componentwise_error_refinement_iterations,
@@ -10767,6 +10779,14 @@ int cmfgen_fine_jbar(CMFGENState *csb, const Geometry *geo,
         exact_report.fixed_point_absolute_error_bound;
     opac->jbar_line_det_exact_max_scattering_ratio =
         exact_report.scattering_operator_norm_upper;
+    opac->jbar_line_det_exact_norm_weighted = 0;
+    if (exact_report.scattering_operator_norm_upper >= 1.0 &&
+        exact_report.scattering_operator_weighted_norm_upper >= 0.0 &&
+        exact_report.scattering_operator_weighted_norm_upper < 1.0) {
+        opac->jbar_line_det_exact_max_scattering_ratio =
+            exact_report.scattering_operator_weighted_norm_upper;
+        opac->jbar_line_det_exact_norm_weighted = 1;
+    }
     opac->jbar_line_det_error_envelope_verified =
         exact_report.componentwise_error_envelope_verified;
     opac->jbar_line_det_error_refinement_iterations =

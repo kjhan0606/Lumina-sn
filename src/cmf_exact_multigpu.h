@@ -54,6 +54,7 @@ typedef struct {
      * These are diagnostics/certificates, never numerical repair controls. */
     double max_scattering_ratio;
     double scattering_operator_norm_upper;
+    double scattering_operator_weighted_norm_upper;
     double fixed_point_absolute_error_bound;
     double max_characteristic_drift_bins;
     size_t n_rays;

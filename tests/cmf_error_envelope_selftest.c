@@ -131,6 +131,45 @@ int main(void)
               2, unit_residual, shaped, matrix2_apply_upper,
               (void *)&no_envelope, &report) == CMF_ENVELOPE_NOT_SUPERSOLUTION,
           "unit-feedback-positive-residual-rejected");
+    /* 같은 비정규 행렬에서 가중 seed 구성과 기존 검증을 연결한다. */
+    double kones[2] = {2.0, 0.0}, weighted_seed[2], q = INFINITY;
+    size_t weight_steps = 0;
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, unit_residual, kones, 4, matrix2_apply_upper,
+              (void *)&noncontractive_norm, weighted_seed, &q, &weight_steps) == CMF_ENVELOPE_OK &&
+          q > 0.0 && q < 1.0 && weight_steps == 1,
+          "weighted-seed-contraction-proved");
+    CHECK(cmf_error_envelope_verify(2, unit_residual, weighted_seed,
+              matrix2_apply_upper, (void *)&noncontractive_norm, &report) == CMF_ENVELOPE_OK,
+          "weighted-seed-componentwise-verified");
+    CHECK(cmf_error_envelope_refine(2, unit_residual, weighted_seed, 2,
+              matrix2_apply_upper, (void *)&noncontractive_norm, &report) == CMF_ENVELOPE_OK &&
+          weighted_seed[0] == 3.0 && weighted_seed[1] == 1.0,
+          "weighted-seed-exact-answer-after-refinement");
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, unit_residual, kones, 4, matrix2_apply_upper,
+              (void *)&noncontractive_norm, kones, &q, NULL) == CMF_ENVELOPE_OK,
+          "weighted-seed-kones-alias-supported");
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, unit_residual, kones, 4, matrix2_apply_upper,
+              (void *)&no_envelope, weighted_seed, &q, &weight_steps) == CMF_ENVELOPE_NOT_SUPERSOLUTION &&
+          q >= 1.0 && weight_steps == 4,
+          "weighted-seed-unit-feedback-rejected");
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, unit_residual, kones, 4, failing_apply,
+              NULL, weighted_seed, &q, NULL) == CMF_ENVELOPE_OPERATOR_FAILED,
+          "weighted-seed-failed-operator-rejected");
+    const Matrix2 all_negative = {-1.0, 0.0, 0.0, 0.0};
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, unit_residual, kones, 4, matrix2_apply_upper,
+              (void *)&all_negative, weighted_seed, &q, NULL) == CMF_ENVELOPE_OPERATOR_NEGATIVE,
+          "weighted-seed-negative-operator-rejected");
+    const double zero_residual[2] = {0.0, 0.0};
+    CHECK(cmf_error_envelope_weighted_seed(
+              2, zero_residual, kones, 4, matrix2_apply_upper,
+              (void *)&noncontractive_norm, weighted_seed, &q, NULL) == CMF_ENVELOPE_OK &&
+          weighted_seed[0] == 0.0 && weighted_seed[1] == 0.0,
+          "weighted-seed-zero-residual-exact");
     double negative_candidate[2] = {4.0, 4.0};
     CHECK(cmf_error_envelope_verify(
               2, residual, negative_candidate, matrix2_apply_upper,

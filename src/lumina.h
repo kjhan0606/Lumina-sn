@@ -317,6 +317,8 @@ typedef struct {
     /* 과거 필드명 보존: R6에는 실제 K의 무한대 노름 상계를 게시한다.
      * 정상 물질은 기존 지역비 상계, signed 물질은 필요시 K*1 상계를 쓴다. */
     double  jbar_line_det_exact_max_scattering_ratio;
+    /* 위 값은 선택된 수축 노름. 1이면 양의 가중 노름이며 지역율이 아니다. */
+    int     jbar_line_det_exact_norm_weighted;
     int     jbar_line_det_error_envelope_verified;
     size_t  jbar_line_det_error_refinement_iterations;
     double  jbar_line_det_component_error_min;

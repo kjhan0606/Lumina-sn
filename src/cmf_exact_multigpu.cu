@@ -3365,6 +3365,7 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         j_work.data(), requested_devices, iteration_cap, tolerance,
         &solve_report, true, partition_mode, epoch_schedule,emissivity);
     local = solve_report;
+    local.scattering_operator_weighted_norm_upper = INFINITY;
     local.componentwise_residual_upper_max = INFINITY;
     local.componentwise_error_upper_min = INFINITY;
     local.componentwise_error_upper_max = INFINITY;
@@ -3457,14 +3458,14 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
         local.fixed_point_absolute_error_bound = INFINITY;
     }
     if (!(operator_norm >= 0.0) ||
-        !(operator_norm < 1.0) || !std::isfinite(max_residual)) {
+        !std::isfinite(operator_norm) || !std::isfinite(max_residual)) {
         local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
         if (report) *report = local;
         return local.status;
     }
 
     double seed = 0.0;
-    if (max_residual != 0.0) {
+    if (operator_norm < 1.0 && max_residual != 0.0) {
         double denominator = std::nextafter(
             1.0 - operator_norm, 0.0);
         if (!(denominator > 0.0)) {
@@ -3483,23 +3484,41 @@ static CMFMultiGPUStatus positive_solve_envelope_impl(
     MultiGPUEnvelopeContext context = {
         &persistent, zero_fixed.data(), cells
     };
+    if (operator_norm >= 1.0) {
+        CMFEnvelopeStatus weighted_status = cmf_error_envelope_weighted_seed(
+            cells, residual.data(), upper.data(), 4U,
+            multigpu_apply_scattering_upper, &context, candidate.data(),
+            &local.scattering_operator_weighted_norm_upper, nullptr);
+        if (weighted_status != CMF_ENVELOPE_OK) {
+            local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
+            if (report) *report = local;
+            return local.status;
+        }
+    } else {
+        std::fill(candidate.begin(), candidate.end(), seed);
+    }
     CMFEnvelopeReport envelope_report;
     CMFEnvelopeStatus envelope_status = CMF_ENVELOPE_INVALID_INPUT;
     size_t seed_attempts = 0;
     phase_start = monotonic_seconds();
     for (; seed_attempts < 64U; ++seed_attempts) {
-        std::fill(candidate.begin(), candidate.end(), seed);
         envelope_status = cmf_error_envelope_verify(
             cells, residual.data(), candidate.data(),
             multigpu_apply_scattering_upper, &context, &envelope_report);
         if (envelope_status == CMF_ENVELOPE_OK) break;
-        if (envelope_status != CMF_ENVELOPE_NOT_SUPERSOLUTION ||
-            !(seed > 0.0) || seed > 0.5 * DBL_MAX) {
+        if (envelope_status != CMF_ENVELOPE_NOT_SUPERSOLUTION) {
             local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
             if (report) *report = local;
             return local.status;
         }
-        seed *= 2.0;
+        for (double &value : candidate) {
+            if (value > 0.5 * DBL_MAX) {
+                local.status = CMF_MGPU_ERROR_ENVELOPE_FAILED;
+                if (report) *report = local;
+                return local.status;
+            }
+            value *= 2.0;
+        }
     }
     local.envelope_verify_seconds = monotonic_seconds() - phase_start;
     if (envelope_status != CMF_ENVELOPE_OK) {

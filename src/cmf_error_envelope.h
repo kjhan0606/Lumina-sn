@@ -36,6 +36,16 @@ typedef struct {
     double minimum_margin;
 } CMFEnvelopeReport;
 
+/* 무가중 노름이 수축하지 않을 때 양의 w로 max(Kw/w)<1을 증명하고
+ * u=w*max(r/w)/(1-q) 후보를 만든다. 입력 K1 상계는 초기 w 선택에만
+ * 쓰며, 모든 후보 w에 실제 콜백을 적용한다. 물리장은 받지 않는다.
+ * 반환 OK도 최종 성분별 verify를 대신하지 않는다. 출력 candidate는
+ * K1과 같아도 되지만 residual과 달라야 한다. 실패 시 출력은 미정이다. */
+CMFEnvelopeStatus cmf_error_envelope_weighted_seed(
+    size_t n, const double *residual_upper, const double *operator_ones_upper,
+    size_t max_weight_steps, CMFEnvelopeApplyUpper apply_upper, void *context,
+    double *candidate, double *weighted_norm_upper, size_t *weight_steps);
+
 /* Prove candidate >= residual_upper + K*candidate componentwise.  A PASS is
  * an a-posteriori proof; no convergence or tolerance claim is involved. */
 CMFEnvelopeStatus cmf_error_envelope_verify(

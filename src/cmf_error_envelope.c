@@ -73,6 +73,73 @@ static CMFEnvelopeStatus validate_vectors(size_t n,
     return CMF_ENVELOPE_OK;
 }
 
+CMFEnvelopeStatus cmf_error_envelope_weighted_seed(
+    size_t n, const double *residual_upper, const double *operator_ones_upper,
+    size_t max_weight_steps, CMFEnvelopeApplyUpper apply_upper, void *context,
+    double *candidate, double *weighted_norm_upper, size_t *weight_steps)
+{
+    if (weighted_norm_upper) *weighted_norm_upper = INFINITY;
+    if (weight_steps) *weight_steps = 0;
+    if (!candidate || candidate == residual_upper || !apply_upper ||
+        !max_weight_steps || n > SIZE_MAX / sizeof(double))
+        return CMF_ENVELOPE_INVALID_INPUT;
+    CMFEnvelopeStatus status = validate_vectors(
+        n, residual_upper, operator_ones_upper, NULL);
+    if (status != CMF_ENVELOPE_OK) return status;
+    double *ku = (double *)malloc(n * sizeof(double));
+    if (!ku) return CMF_ENVELOPE_ALLOCATION_FAILED;
+    for (size_t i = 0; i < n; ++i) {
+        if (add_nonnegative_up(1.0, operator_ones_upper[i], &candidate[i])) {
+            status = CMF_ENVELOPE_NONFINITE;
+            goto done;
+        }
+    }
+    for (size_t step = 0; step < max_weight_steps; ++step) {
+        if (apply_upper(candidate, ku, n, context)) {
+            status = CMF_ENVELOPE_OPERATOR_FAILED;
+            goto done;
+        }
+        double q = 0.0;
+        for (size_t i = 0; i < n; ++i) {
+            if (!isfinite(ku[i])) { status = CMF_ENVELOPE_NONFINITE; goto done; }
+            if (ku[i] < 0.0) { status = CMF_ENVELOPE_OPERATOR_NEGATIVE; goto done; }
+            double ratio = ku[i] == 0.0 ? 0.0 : nextafter(ku[i] / candidate[i], INFINITY);
+            if (!isfinite(ratio)) { status = CMF_ENVELOPE_NONFINITE; goto done; }
+            if (ratio > q) q = ratio;
+        }
+        if (weighted_norm_upper) *weighted_norm_upper = q;
+        if (weight_steps) *weight_steps = step + 1;
+        if (q < 1.0) {
+            double rnorm = 0.0;
+            for (size_t i = 0; i < n; ++i) {
+                double value = residual_upper[i] == 0.0 ? 0.0 :
+                    nextafter(residual_upper[i] / candidate[i], INFINITY);
+                if (value > rnorm) rnorm = value;
+            }
+            double denominator = nextafter(1.0 - q, 0.0);
+            if (!(denominator > 0.0)) { status = CMF_ENVELOPE_NONFINITE; goto done; }
+            double scale = rnorm == 0.0 ? 0.0 : nextafter(rnorm / denominator, INFINITY);
+            if (!isfinite(scale)) { status = CMF_ENVELOPE_NONFINITE; goto done; }
+            for (size_t i = 0; i < n; ++i) {
+                candidate[i] = scale == 0.0 ? 0.0 : nextafter(scale * candidate[i], INFINITY);
+                if (!isfinite(candidate[i])) { status = CMF_ENVELOPE_NONFINITE; goto done; }
+            }
+            status = CMF_ENVELOPE_OK;
+            goto done;
+        }
+        if (step + 1 < max_weight_steps) for (size_t i = 0; i < n; ++i) {
+            if (add_nonnegative_up(1.0, ku[i], &candidate[i])) {
+                status = CMF_ENVELOPE_NONFINITE;
+                goto done;
+            }
+        }
+    }
+    status = CMF_ENVELOPE_NOT_SUPERSOLUTION;
+done:
+    free(ku);
+    return status;
+}
+
 static CMFEnvelopeStatus verify_with_upper_workspace(
     size_t n, const double *residual_upper, const double *candidate,
     CMFEnvelopeApplyUpper apply_upper, void *context,
