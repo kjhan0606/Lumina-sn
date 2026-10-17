@@ -6,6 +6,7 @@ umask 027
 # fresh는 LTE/Saha 추정, guess는 이전 미수렴 물질 추정이며 모두 새 복사장을 푼다.
 # resume는 네 번째 인자의 동일 정체성 저장점을 재개하며 완료 반복 수를 보존한다.
 # resume-material은 동일 신원의 중간 물질 추정을 명시적으로 선택한다. J는 다시 푼다.
+# material-guess는 binary만 바뀐 중간 물질을 원래 신원으로 읽어 새 J의 추정에 쓴다.
 # 시간 진화·최종 CMFGEN 일치의 완료를 이 실행 시작이나 중간 반복으로 대체하지 않는다.
 fd_limit=${7:-7200}
 fd_aa_depth=${8:-1}
@@ -31,13 +32,17 @@ case "$fd_backend" in ada|gpu) ;; *) exit 2 ;; esac
 test -f "$fd_build/binary.sha256"
 case "$fd_refinements" in 1|42) ;; *) exit 2 ;; esac
 case "$fd_start" in
- guess|refinement-guess|binary-refinement-guess|accelerated-guess)
+ guess|material-guess|refinement-guess|binary-refinement-guess|accelerated-guess)
   if [[ -z "$fd_previous" ]];then
    [[ "$fd_start" == guess ]] || exit 2
    fd_resume="$fd_base/ada-evolution-20261016-1036/initial"
   else
    [[ "$fd_previous" =~ ^$fd_base/((first-field|baseline)-[0-9]+-[0-9]{8}\.[A-Za-z0-9]+|ada-evolution-[0-9]{8}-[0-9]{4}/initial)$ ]] || exit 2
-   test -f "$fd_previous/work/initial_iterate.bin"
+   if [[ "$fd_start" == material-guess ]];then
+    test -f "$fd_previous/work/initial_material_guess.bin"
+   else
+    test -f "$fd_previous/work/initial_iterate.bin"
+   fi
    test -f "$fd_previous/iterate_identity.txt"
    fd_resume=$fd_previous
   fi

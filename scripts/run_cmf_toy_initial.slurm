@@ -62,7 +62,7 @@ check_accelerated_guess_identity() {
 }
 case "$initial_refinements" in 1|42) ;; *) exit 2 ;; esac
 case "$initial_aa_depth" in 1) ;; 2|4) [[ "$initial_iteration" == anderson ]] || exit 2 ;; *) exit 2 ;; esac
-case "$initial_start" in resume) ;; resume-material|guess|refinement-guess|binary-refinement-guess) [[ -n "$initial_resume" ]] || exit 2 ;; accelerated-guess) [[ -n "$initial_resume" && "$initial_aa_depth" == 4 && "$initial_refinements" == 42 ]] || exit 2 ;; fresh) [[ -z "$initial_resume" ]] || exit 2 ;; *) exit 2 ;; esac
+case "$initial_start" in resume) ;; resume-material|guess|material-guess|refinement-guess|binary-refinement-guess) [[ -n "$initial_resume" ]] || exit 2 ;; accelerated-guess) [[ -n "$initial_resume" && "$initial_aa_depth" == 4 && "$initial_refinements" == 42 ]] || exit 2 ;; fresh) [[ -z "$initial_resume" ]] || exit 2 ;; *) exit 2 ;; esac
 case "$initial_gamma_sampling" in plain|mixture) ;; *) exit 2 ;; esac
 case "$initial_grid" in uniform|t10|t05) ;; *) exit 2 ;; esac
 case "$initial_ne_iteration" in plain|anderson) ;; *) exit 2 ;; esac
@@ -154,7 +154,7 @@ initial_id=$(sha256sum "$initial_out/iterate_identity.txt");initial_id=${initial
 export LUMINA_INITIAL_ITERATE_ID=$initial_id
 if [[ -n "$initial_resume" ]]; then
  initial_checkpoint=$initial_resume/work/initial_iterate.bin
- if [[ "$initial_start" == resume-material ]]; then initial_checkpoint=$initial_resume/work/initial_material_guess.bin; fi
+ if [[ "$initial_start" == resume-material || "$initial_start" == material-guess ]]; then initial_checkpoint=$initial_resume/work/initial_material_guess.bin; fi
  test -f "$initial_checkpoint"
  if [[ "$initial_start" == refinement-guess || "$initial_start" == binary-refinement-guess ]]; then
   # 같은 물리/바이너리의 장을 초기 추정으로만 읽는다. 기존1→42 정밀화만 허용.
@@ -171,7 +171,7 @@ if [[ -n "$initial_resume" ]]; then
   cp "$initial_resume/iterate_identity.txt" "$initial_out/guess_source_identity.txt"
   initial_guess_id=$(sha256sum "$initial_out/guess_source_identity.txt");initial_guess_id=${initial_guess_id%% *}
   export LUMINA_INITIAL_GUESS_ID=$initial_guess_id
- elif [[ "$initial_start" == guess ]]; then
+ elif [[ "$initial_start" == guess || "$initial_start" == material-guess ]]; then
   # binary만 다른 자체 계산을 초기 추정으로 읽는다. 기본 재개 검사는 완화하지 않는다.
   cmp <(tail -n +2 "$initial_resume/iterate_identity.txt") <(tail -n +2 "$initial_out/iterate_identity.txt")
   test "$(head -n 1 "$initial_resume/iterate_identity.txt")" != "$(head -n 1 "$initial_out/iterate_identity.txt")"
