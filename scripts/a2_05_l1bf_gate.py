@@ -110,19 +110,19 @@ def conservative_rebin(nu: np.ndarray, y: np.ndarray,
                        edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Trapezoid-conservative bin average + validity (A2-04 replay semantics:
     bins outside the native support are OUT_OF_GRID, never zero-VALID)."""
-    dx = np.diff(nu)
-    cum = np.concatenate(([0.0], np.cumsum(0.5 * (y[:-1] + y[1:]) * dx)))
-
-    def primitive(q):
-        i = np.clip(np.searchsorted(nu, q, side='right') - 1, 0, nu.size - 2)
-        d = q - nu[i]
-        slope = (y[i + 1] - y[i]) / (nu[i + 1] - nu[i])
-        return cum[i] + y[i] * d + 0.5 * slope * d * d
-
     inside = (edges[:-1] >= nu[0]) & (edges[1:] <= nu[-1])
     avg = np.zeros(edges.size - 1)
-    avg[inside] = (primitive(edges[1:][inside]) - primitive(edges[:-1][inside])) \
-        / np.diff(edges)[inside]
+    # Integrate each target bin locally. Subtracting two global cumulative
+    # integrals loses small high-frequency tails when the low-frequency prefix
+    # is much larger; a positive J_nu bin can otherwise become EXACT_ZERO.
+    for b in np.flatnonzero(inside):
+        lo, hi = edges[b], edges[b + 1]
+        first = np.searchsorted(nu, lo, side='right')
+        last = np.searchsorted(nu, hi, side='left')
+        nodes = np.concatenate(([lo], nu[first:last], [hi]))
+        values = np.interp(nodes, nu, y)
+        area = np.sum(0.5 * (values[:-1] + values[1:]) * np.diff(nodes))
+        avg[b] = area / (hi - lo)
     state = np.full(edges.size - 1, OUT_OF_GRID, dtype=np.int32)
     state[inside & (avg > 0.0)] = VALID
     state[inside & (avg == 0.0)] = EXACT_ZERO

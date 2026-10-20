@@ -21,6 +21,46 @@ static int failures;
     } \
 } while (0)
 
+static void run_result_contract_tests(void)
+{
+    BfRateResult r = {1.25, BF_RATE_VALID, 0.0, 0, 0.0};
+    CHECK(bf_rate_result_is_consumable(&r), "result-valid-consumable");
+    r.w_miss = 0.5 * BF_RATE_W_MISS_TOLERANCE;
+    CHECK(bf_rate_result_is_consumable(&r), "result-valid-tolerated-miss");
+    r.state = BF_RATE_EXACT_ZERO;
+    r.gamma = 0.0;
+    r.w_miss = 0.0;
+    r.gamma_poisson_var = 0.0;
+    CHECK(bf_rate_result_is_consumable(&r), "result-exact-zero-consumable");
+    r.gamma = 1.0;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-exact-zero-nonzero");
+    r.gamma = 0.0;
+    r.w_miss = 1.0e-12;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-exact-zero-with-miss");
+    r.w_miss = 0.0;
+    r.state = BF_RATE_STALE;
+    r.gamma = 0.0;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-stale-rejected");
+    r.state = BF_RATE_VALID;
+    r.gamma = NAN;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-nan-gamma-rejected");
+    r.gamma = -1.0;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-negative-gamma-rejected");
+    r.gamma = 1.0;
+    r.w_miss = NAN;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-nan-miss-rejected");
+    r.w_miss = BF_RATE_W_MISS_TOLERANCE + 1.0e-12;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-large-miss-rejected");
+    r.w_miss = -1.0e-12;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-negative-miss-rejected");
+    r.w_miss = 0.0;
+    r.gamma_poisson_var = NAN;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-nan-variance-rejected");
+    r.gamma_poisson_var = -1.0;
+    CHECK(!bf_rate_result_is_consumable(&r), "result-negative-variance-rejected");
+    CHECK(!bf_rate_result_is_consumable(NULL), "result-null-rejected");
+}
+
 static double rel_err(double got, double want)
 {
     return fabs(got - want) / fabs(want);
@@ -97,6 +137,45 @@ static double sigma_hydrogenic(double nu, double sigma0, double nu_th)
 {
     double x = nu_th / nu;
     return sigma0 * x * x * x;
+}
+
+static void run_log_weight_milne_detailed_balance_test(void)
+{
+    const double nu_lo = 1.0e15;
+    const double nu_hi = nu_lo * exp(0.01);
+    const double nu_th = nu_lo + 0.37 * (nu_hi - nu_lo);
+    const double sigma_active = 2.0e-18;
+    const double sigma_average = sigma_active * (nu_hi - nu_th) /
+                                 (nu_hi - nu_lo);
+    double weight = bf_rate_sigma_log_weight(
+        sigma_average, nu_lo, nu_hi, nu_th);
+    double expected = sigma_active * log(nu_hi / nu_th);
+    CHECK(rel_err(weight, expected) < 2.0e-15, "milne-partial-log-weight");
+    CHECK(rel_err(bf_rate_sigma_log_weight(
+        sigma_active, nu_lo, nu_hi, nu_lo),
+        sigma_active * log(nu_hi / nu_lo)) < 2.0e-15,
+        "milne-full-log-weight");
+    CHECK(bf_rate_sigma_log_weight(sigma_average, nu_lo, nu_hi, nu_hi) == 0.0,
+          "milne-inactive-bin-zero");
+
+    /* The route consumer uses this same log-kernel weight for Gamma and the
+     * Milne integral. Under its JEQB test field, evaluate both Planck terms at
+     * the identical active-bin representative; Planck's identity must close. */
+    const double T = 15000.0;
+    const double nu_eval = 0.5 * (nu_th + nu_hi);
+    const double x = H_CGS * nu_eval / (1.380649e-16 * T);
+    const double spont = 2.0 * H_CGS * nu_eval * nu_eval * nu_eval /
+                         (2.99792458e10 * 2.99792458e10);
+    const double Bnu = spont / expm1(x);
+    const double pref = 4.0 * M_PI / H_CGS * weight;
+    const double gamma = pref * Bnu;
+    const double milne = pref * (spont + Bnu) * exp(-x);
+    CHECK(rel_err(milne, gamma) < 5.0e-15, "milne-planck-rate-closure");
+    const double nstar = 2.3e-4, upper_population = 7.0;
+    double forward_flux = gamma * nstar * upper_population;
+    double reverse_flux = nstar * milne * upper_population;
+    CHECK(rel_err(forward_flux, reverse_flux) < 5.0e-15,
+          "milne-lte-population-flux-closure");
 }
 
 static void run_integrator_tests(void)
@@ -213,6 +292,21 @@ static void run_integrator_tests(void)
     CHECK(bf_rate_gamma_from_view(&tf.view, 0, &cs_oog, &r3e) == 0, "c3e-rc");
     CHECK(r3e.state == BF_RATE_OUT_OF_GRID, "c3e-state");
 
+    /* 3f: known zero sigma is independent of missing J, but a zero row
+     * ending below the physical edge is still a structural coverage error. */
+    {
+        double znu[2]={tf.edges[0],tf.edges[tf.n_bins]},zsg[2]={0,0};
+        BfCrossSection zero_sigma={2,znu,zsg,NU_TH};
+        for(size_t b=0;b<tf.n_bins;b++)tf.validity[b]=RADIATION_FIELD_UNSAMPLED;
+        CHECK(bf_rate_gamma_from_view(&tf.view,0,&zero_sigma,&r3e)==0,"c3f-rc");
+        CHECK(r3e.state==BF_RATE_EXACT_ZERO&&r3e.gamma==0&&r3e.w_miss==0,
+              "c3f-known-zero-sigma");
+        znu[1]=NU_TH*0.9;
+        CHECK(bf_rate_gamma_from_view(&tf.view,0,&zero_sigma,&r3e)==0,"c3f-trunc-rc");
+        CHECK(r3e.state==BF_RATE_OUT_OF_GRID,"c3f-trunc-not-zero");
+        for(size_t b=0;b<tf.n_bins;b++)tf.validity[b]=RADIATION_FIELD_VALID;
+    }
+
     /* --- Case 5: bin-constant (step) sigma encoded as duplicated edge nodes,
      * the representation the legacy-grid migration adapter emits.  Constant J
      * gives the exact per-step closed form sum(sigma_k * ln(hi_k/lo_k)). */
@@ -286,6 +380,36 @@ static void run_read_view_tests(void)
           RADIATION_FIELD_VIEW_OK, "rv-ok");
     CHECK(view.n_bins == LUMINA_RADFIELD_N_BINS, "rv-bins");
     CHECK(view.J_nu == owner.field.J_nu.values, "rv-alias");
+
+    /* Stimulated recombination must consume this published field, not a stale
+     * legacy J_nu array.  A deterministic replay deliberately differs from the
+     * unrelated legacy value, and unavailable bins must contribute no J term. */
+    {
+        double selected = -1.0;
+        double unrelated_legacy_j = 9.0 * J0;
+        CHECK(bf_rate_view_jnu(&view, 1, 17, &selected) == 0,
+              "rv-channel-j-valid");
+        CHECK(selected == J0, "rv-channel-j-common-view");
+        CHECK(selected != unrelated_legacy_j, "rv-channel-j-not-legacy-array");
+        owner.field.validity.values[LUMINA_RADFIELD_N_BINS + 17] =
+            RADIATION_FIELD_UNSAMPLED;
+        CHECK(bf_rate_view_jnu(&view, 1, 17, &selected) == 1,
+              "rv-channel-j-unsampled");
+        CHECK(selected == 0.0, "rv-channel-j-unsampled-zero");
+        owner.field.validity.values[LUMINA_RADFIELD_N_BINS + 17] =
+            RADIATION_FIELD_EXACT_ZERO;
+        owner.field.J_nu.values[LUMINA_RADFIELD_N_BINS + 17] = 0.0;
+        CHECK(bf_rate_view_jnu(&view, 1, 17, &selected) == 0,
+              "rv-channel-j-exact-zero");
+        CHECK(selected == 0.0, "rv-channel-j-exact-zero-value");
+        owner.field.J_nu.values[LUMINA_RADFIELD_N_BINS + 17] = J0;
+        owner.field.validity.values[LUMINA_RADFIELD_N_BINS + 17] =
+            RADIATION_FIELD_VALID;
+        CHECK(bf_rate_view_jnu(&view, 1, LUMINA_RADFIELD_N_BINS,
+                               &selected) == -1,
+              "rv-channel-j-out-of-range");
+        CHECK(selected == 0.0, "rv-channel-j-error-zero");
+    }
 
     /* Every failure mode maps to its own distinct code. */
     CHECK(radiation_field_read_view(&owner, EPOCH + 1.0, n_shells, 1, &view) ==
@@ -506,6 +630,8 @@ static void run_sh_grid_upper_closure_test(void)
 
 int main(void)
 {
+    run_result_contract_tests();
+    run_log_weight_milne_detailed_balance_test();
     run_integrator_tests();
     run_kramers_adapter_test();
     run_cmfgen_partial_bin_adapter_test();

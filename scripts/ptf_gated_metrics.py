@@ -4,6 +4,7 @@
 This program is deliberately read-only with respect to every rundir.  For each
 preserved STEQ solution it reports
 
+  * the unfiltered correction distribution over every population equation,
   * gated MAXCH = 100 * max(abs(correction)) after excluding population
     variables with POPS < threshold * species total,
   * the un-gated SOLVEBA_V13 returned-MAXCH semantics, and
@@ -429,6 +430,73 @@ def source_returned_maxch(solution: np.ndarray) -> float:
     return maxch
 
 
+def _steq_rounding_half_unit(value: float) -> float:
+    """Half-unit uncertainty for WR2D_V2's ES12.4 solution serialization."""
+    magnitude = abs(float(value))
+    if magnitude == 0.0:
+        return 0.5e-4
+    exponent = math.floor(math.log10(magnitude))
+    return 0.5 * (10.0 ** (exponent - 4))
+
+
+def _source_decrease_conversion(fractional_correction: float) -> float:
+    decrease_percent = 100.0 * fractional_correction
+    if decrease_percent < 99.999:
+        return 100.0 * decrease_percent / (100.0 - decrease_percent)
+    return 1.0e7
+
+
+def returned_maxch_rounding_interval(solution: np.ndarray) -> tuple[float, float]:
+    """Bound source MAXCH from the printed STEQ solution's decimal precision.
+
+    The source reports `SOL` through WR2D_V2's ES12.4 fields but prints the
+    returned scalar at higher precision. Propagate each serialized value's
+    half-unit interval through the extrema and 10-variable fallback. This
+    avoids rejecting a correctly decoded solution when the decrease transform
+    amplifies the five-significant-digit STEQ serialization near 100%.
+    """
+    flat = np.asarray(solution, dtype=np.float64).ravel()
+    if flat.size == 0 or not np.isfinite(flat).all():
+        raise BatteryError("cannot bound returned MAXCH for empty/non-finite STEQ")
+    half_units = np.asarray(
+        [_steq_rounding_half_unit(value) for value in flat], dtype=np.float64
+    )
+    lower = flat - half_units
+    upper = flat + half_units
+
+    increase_low = 100.0 * max(0.0, -float(np.min(upper)))
+    increase_high = 100.0 * max(0.0, -float(np.min(lower)))
+    decrease_low = _source_decrease_conversion(max(0.0, float(np.max(lower))))
+    decrease_high = _source_decrease_conversion(max(0.0, float(np.max(upper))))
+    raw_low = max(increase_low, decrease_low)
+    raw_high = max(increase_high, decrease_high)
+
+    fallback_possible = False
+    fallback_always = False
+    fallback_low = fallback_high = 0.0
+    if flat.size >= SOURCE_NV:
+        inc_low = float(np.sort(np.minimum(lower, 0.0))[SOURCE_NV - 1])
+        inc_high = float(np.sort(np.minimum(upper, 0.0))[SOURCE_NV - 1])
+        dec_low = float(np.sort(np.maximum(lower, 0.0))[::-1][SOURCE_NV - 1])
+        dec_high = float(np.sort(np.maximum(upper, 0.0))[::-1][SOURCE_NV - 1])
+        fallback_possible = inc_high > -0.1 and dec_low < 0.1
+        fallback_always = inc_low > -0.1 and dec_high < 0.1
+        if fallback_possible:
+            def fallback_value(inc: float, dec: float) -> float:
+                return 100.0 * max(
+                    abs(inc), dec / (1.0 - min(dec, 0.9999))
+                )
+
+            fallback_low = fallback_value(inc_high, dec_low)
+            fallback_high = fallback_value(inc_low, dec_high)
+
+    if fallback_always:
+        return fallback_low, fallback_high
+    if fallback_possible:
+        return min(raw_low, fallback_low), max(raw_high, fallback_high)
+    return raw_low, raw_high
+
+
 def species_slices(variables: list[Variable]) -> dict[str, np.ndarray]:
     grouped: dict[str, list[int]] = {}
     for variable in variables:
@@ -440,6 +508,116 @@ def state_species_totals(
     state: np.ndarray, grouped: dict[str, np.ndarray]
 ) -> dict[str, np.ndarray]:
     return {species: state[indexes].sum(axis=0) for species, indexes in grouped.items()}
+
+
+def population_correction_summary(
+    solution: np.ndarray, variables: list[Variable]
+) -> dict[str, Any]:
+    """Summarize every population-equation correction without activity filtering.
+
+    These unfiltered quantiles are diagnostic only. They do not implement the
+    v2 physically-active set, which also depends on ion fractions and rate/
+    opacity/emissivity contributions.
+    """
+    npop = len(variables)
+    if solution.ndim != 2 or solution.shape[0] < npop or npop == 0:
+        raise BatteryError("invalid STEQ solution dimensions for population summary")
+    values = np.abs(np.asarray(solution[:npop], dtype=np.float64)).ravel() * 100.0
+    if values.size == 0 or not np.isfinite(values).all():
+        raise BatteryError("population corrections are empty or non-finite")
+    flat_index = int(np.argmax(np.abs(solution[:npop])))
+    variable_index, depth_index = np.unravel_index(
+        flat_index, solution[:npop].shape
+    )
+    owner = variables[int(variable_index)]
+    return {
+        "population_cells": int(values.size),
+        "p95_percent": float(np.percentile(values, 95.0)),
+        "max_percent": float(values.max()),
+        "max_owner": {
+            "variable": owner.index,
+            "ion": owner.ion,
+            "superlevel": owner.superlevel,
+            "depth": int(depth_index) + 1,
+        },
+        "selection": "all population STEQ variables and depths; no activity filtering",
+    }
+
+
+def ion_fraction_active_correction_summary(
+    solution: np.ndarray,
+    pre_state: np.ndarray,
+    variables: list[Variable],
+    grouped: dict[str, np.ndarray],
+    threshold: float = 1.0e-8,
+) -> dict[str, Any]:
+    """Measure corrections for ions active by fraction alone.
+
+    This is a strict subset of the v2 active union: it includes every
+    population equation for an ion whose fraction exceeds `threshold` at that
+    depth, but does not add ions active only through rate/opacity/emissivity
+    contributions. A max above the v2 limit is therefore decisive failure;
+    a value below the limit is not sufficient for acceptance.
+    """
+    npop = len(variables)
+    if (
+        solution.ndim != 2
+        or pre_state.ndim != 2
+        or solution.shape[0] < npop
+        or pre_state.shape[0] < npop
+        or solution.shape[1] != pre_state.shape[1]
+        or npop == 0
+        or not math.isfinite(threshold)
+        or threshold <= 0.0
+    ):
+        raise BatteryError("invalid dimensions or threshold for ion-fraction activity summary")
+
+    species_totals = state_species_totals(pre_state, grouped)
+    ion_rows: dict[str, list[int]] = {}
+    for row, variable in enumerate(variables):
+        ion_rows.setdefault(variable.ion, []).append(row)
+
+    active = np.zeros((npop, pre_state.shape[1]), dtype=bool)
+    ion_fraction_by_row_depth = np.zeros_like(active, dtype=np.float64)
+    for ion, rows in ion_rows.items():
+        species = variables[rows[0]].species
+        total = species_totals.get(species)
+        if total is None:
+            raise BatteryError(f"missing species total for active-set ion {ion}")
+        ion_population = pre_state[np.asarray(rows, dtype=np.int64)].sum(axis=0)
+        fraction = np.zeros_like(total, dtype=np.float64)
+        positive_total = total > 0.0
+        fraction[positive_total] = ion_population[positive_total] / total[positive_total]
+        active_depths = fraction > threshold
+        active[np.ix_(np.asarray(rows, dtype=np.int64), active_depths)] = True
+        ion_fraction_by_row_depth[np.ix_(np.asarray(rows, dtype=np.int64), np.arange(total.size))] = fraction
+
+    if not bool(active.any()):
+        raise BatteryError("no ion-fraction-active population cells")
+    selected = np.abs(np.asarray(solution[:npop], dtype=np.float64))[active] * 100.0
+    if not np.isfinite(selected).all():
+        raise BatteryError("ion-fraction-active corrections contain non-finite values")
+    active_rows, active_depths = np.nonzero(active)
+    selected_flat = np.abs(solution[:npop][active])
+    maximum_index = int(np.argmax(selected_flat))
+    owner_row = int(active_rows[maximum_index])
+    owner_depth = int(active_depths[maximum_index])
+    owner = variables[owner_row]
+    return {
+        "threshold": threshold,
+        "active_cells": int(selected.size),
+        "p95_percent": float(np.percentile(selected, 95.0)),
+        "max_percent": float(selected.max()),
+        "max_owner": {
+            "variable": owner.index,
+            "ion": owner.ion,
+            "superlevel": owner.superlevel,
+            "depth": owner_depth + 1,
+            "ion_fraction": float(ion_fraction_by_row_depth[owner_row, owner_depth]),
+        },
+        "contribution_channels_included": False,
+        "selection": "ion fraction > threshold only; contribution-active ions not added",
+    }
 
 
 def shell_weights(radius: np.ndarray) -> np.ndarray:
@@ -590,6 +768,10 @@ def gate_metrics(
     )
     raw_meta = variables[raw_variable] if raw_variable < npop else None
     return {
+        "all_population_correction": population_correction_summary(solution, variables),
+        "ion_fraction_active_correction": ion_fraction_active_correction_summary(
+            solution, pre_state, variables, grouped
+        ),
         "threshold": threshold,
         "included_cells": int(include.sum()),
         "excluded_cells": int(include.size - include.sum()),
@@ -648,8 +830,17 @@ def validate_solution(
         # OUTGEN extrema have only three significant digits; the returned line
         # is more precise, while STEQ_VALS stores five significant digits.
         tolerance = 6.0e-3 if label != "returned" else 1.0e-4
-        ok = math.isclose(computed, observed, rel_tol=tolerance, abs_tol=1.0e-10)
-        checks.append({"field": label, "computed": computed, "observed": observed, "ok": ok})
+        if label == "returned":
+            interval = returned_maxch_rounding_interval(solution)
+            rounding = tolerance * max(abs(computed), abs(observed), 1.0e-10)
+            ok = interval[0] - rounding <= observed <= interval[1] + rounding
+        else:
+            interval = None
+            ok = math.isclose(computed, observed, rel_tol=tolerance, abs_tol=1.0e-10)
+        check = {"field": label, "computed": computed, "observed": observed, "ok": ok}
+        if interval is not None:
+            check["printed_solution_interval"] = list(interval)
+        checks.append(check)
         if not ok:
             raise BatteryError(
                 f"iteration {iteration}: STEQ/OUTGEN {label} mismatch "
@@ -713,12 +904,30 @@ def solution_iterations(
     if not solutions:
         return []
     ids = sorted(outgen)
-    if len(ids) >= len(solutions):
-        ids = ids[-len(solutions):]
-        if all(reader.has_iteration(value) for value in ids):
-            return ids
+    if ids:
+        # Restarted runs may retain older STEQ blocks while OUTGEN contains
+        # only the current run's iterations.  OUTGEN IDs therefore map to the
+        # newest corresponding STEQ blocks, not to the start of the STEQ file.
+        count = min(len(ids), len(solutions))
+        mapped_ids = ids[-count:]
+        if all(reader.has_iteration(value) for value in mapped_ids):
+            return mapped_ids
+        raise BatteryError(
+            "OUTGEN iterations do not map to the SCRTEMP state range: "
+            f"{mapped_ids} vs {reader.state_first_it}..{reader.last_it}"
+        )
     first = reader.last_it - len(solutions) + 1
     return list(range(first, reader.last_it + 1))
+
+
+def mapped_solution_pairs(
+    solutions: list[np.ndarray], iterations: list[int]
+) -> list[tuple[int, np.ndarray]]:
+    if not iterations:
+        return []
+    if len(iterations) > len(solutions):
+        raise BatteryError("more mapped STEQ iterations than solution blocks")
+    return list(zip(iterations, solutions[-len(iterations):]))
 
 
 def signatures_match(left: list[Variable], right: list[Variable]) -> bool:
@@ -785,7 +994,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 rows[iteration]["state_source"] = label
 
-        for iteration, solution in zip(sol_ids, solutions):
+        for iteration, solution in mapped_solution_pairs(solutions, sol_ids):
             validation = validate_solution(iteration, solution, outgen)
             if iteration not in rows:
                 continue
@@ -828,6 +1037,7 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
                 "scrtemp_states": reader.nstates,
                 "scrtemp_iteration_range": [reader.state_first_it, reader.last_it],
                 "steq_blocks": len(solutions),
+                "steq_unmapped_prefix_blocks": len(solutions) - len(sol_ids),
                 "steq_iterations": sol_ids,
                 "correction_link": link_result,
                 "rvtj": validate_rvtj(reader, path / "RVTJ"),
@@ -841,8 +1051,16 @@ def collect(args: argparse.Namespace) -> dict[str, Any]:
             row["note"] = "STEQ solution unavailable; physical metrics only"
 
     return {
-        "schema": "ptf-gated-metrics-v1",
+        "schema": "ptf-gated-metrics-v2",
         "gate_definition": {
+            "all_population_correction": (
+                "diagnostic p95/max over every population STEQ variable and depth; "
+                "not the v2 physically-active population acceptance metric"
+            ),
+            "ion_fraction_active_correction": (
+                "p95/max for ions with fraction >1e-8 only; rate/opacity/emissivity-active ions "
+                "are not added, so this is a strict subset diagnostic, not acceptance"
+            ),
             "threshold": args.threshold,
             "exclude_if": "POPS(variable,depth) < threshold * species_total(species,depth)",
             "gated_maxch": "100 * max(abs(STEQ correction)) over included population variables",
@@ -885,6 +1103,34 @@ def markdown_output(result: dict[str, Any]) -> str:
             f"{owner['ion']} SL{owner['superlevel']} (v{owner['variable']}) | {owner['depth']} | "
             f"{owner['species_fraction_before']:.3e} | {gate['ungated_raw_max_abs_percent']:.4e} | "
             f"{gate['ungated_returned_maxch_percent']:.4e} | {e1} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Population-correction diagnostics",
+            "",
+            "The ion-fraction subset uses `ion fraction > 1e-8` only and omits contribution-active ions.",
+            "Neither diagnostic alone is the full v2 acceptance metric.",
+            "",
+            "| it | all-pop cells | all-pop p95 (%) | all-pop max (%) | ion-fraction-active cells | active p95 (%) | active max (%) | active max owner |",
+            "|---:|---:|---:|---:|---:|---:|---:|:---|",
+        ]
+    )
+    for row in result["rows"]:
+        gate = row["gate"]
+        if gate is None:
+            lines.append(f"| {row['iteration']} | N/A | N/A | N/A | N/A | N/A | N/A | — |")
+            continue
+        summary = gate["all_population_correction"]
+        fraction_active = gate["ion_fraction_active_correction"]
+        owner = fraction_active["max_owner"]
+        lines.append(
+            f"| {row['iteration']} | {summary['population_cells']} | "
+            f"{summary['p95_percent']:.4e} | {summary['max_percent']:.4e} | "
+            f"{fraction_active['active_cells']} | {fraction_active['p95_percent']:.4e} | "
+            f"{fraction_active['max_percent']:.4e} | {owner['ion']} SL{owner['superlevel']} "
+            f"(v{owner['variable']}, d{owner['depth']}; ion fraction {owner['ion_fraction']:.3e}) |"
         )
 
     lines.extend(
@@ -935,6 +1181,14 @@ def csv_output(result: dict[str, Any]) -> str:
     stream = io.StringIO()
     fieldnames = [
         "iteration", "state_source", "solution_source", "gated_maxch_percent",
+        "all_population_correction_cells", "all_population_correction_p95_percent",
+        "all_population_correction_max_percent",
+        "all_population_correction_max_owner_ion", "all_population_correction_max_owner_superlevel",
+        "all_population_correction_max_owner_depth",
+        "ion_fraction_active_cells", "ion_fraction_active_p95_percent",
+        "ion_fraction_active_max_percent", "ion_fraction_active_max_owner_ion",
+        "ion_fraction_active_max_owner_superlevel", "ion_fraction_active_max_owner_depth",
+        "ion_fraction_active_max_owner_fraction",
         "owner_variable", "owner_ion", "owner_superlevel", "owner_depth",
         "owner_species_fraction", "ungated_raw_max_abs_percent",
         "ungated_returned_maxch_percent", "ne_max_abs_dln", "ne_max_depth",
@@ -947,6 +1201,10 @@ def csv_output(result: dict[str, Any]) -> str:
     for row in result["rows"]:
         gate = row["gate"] or {}
         owner = gate.get("gated_owner", {})
+        all_population = gate.get("all_population_correction", {})
+        all_population_owner = all_population.get("max_owner", {})
+        fraction_active = gate.get("ion_fraction_active_correction", {})
+        fraction_active_owner = fraction_active.get("max_owner", {})
         phys = row["physical"] or {}
         writer.writerow(
             {
@@ -954,6 +1212,19 @@ def csv_output(result: dict[str, Any]) -> str:
                 "state_source": row["state_source"],
                 "solution_source": row["solution_source"],
                 "gated_maxch_percent": gate.get("gated_maxch_percent"),
+                "all_population_correction_cells": all_population.get("population_cells"),
+                "all_population_correction_p95_percent": all_population.get("p95_percent"),
+                "all_population_correction_max_percent": all_population.get("max_percent"),
+                "all_population_correction_max_owner_ion": all_population_owner.get("ion"),
+                "all_population_correction_max_owner_superlevel": all_population_owner.get("superlevel"),
+                "all_population_correction_max_owner_depth": all_population_owner.get("depth"),
+                "ion_fraction_active_cells": fraction_active.get("active_cells"),
+                "ion_fraction_active_p95_percent": fraction_active.get("p95_percent"),
+                "ion_fraction_active_max_percent": fraction_active.get("max_percent"),
+                "ion_fraction_active_max_owner_ion": fraction_active_owner.get("ion"),
+                "ion_fraction_active_max_owner_superlevel": fraction_active_owner.get("superlevel"),
+                "ion_fraction_active_max_owner_depth": fraction_active_owner.get("depth"),
+                "ion_fraction_active_max_owner_fraction": fraction_active_owner.get("ion_fraction"),
                 "owner_variable": owner.get("variable"),
                 "owner_ion": owner.get("ion"),
                 "owner_superlevel": owner.get("superlevel"),

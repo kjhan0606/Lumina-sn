@@ -133,6 +133,23 @@ typedef struct {
 
 const char *population_status_name(PopulationStatus status);
 
+/* Close the NLTE stage-density/electron-density authority after one complete
+ * population sweep.  NLTE stage totals replace their prior stage densities;
+ * element nuclei conservation is checked before publication, then n_e is
+ * damped toward sum(stage * n_stage).  Arrays are updated atomically only if
+ * every layout, number-conservation, and charge check succeeds. */
+PopulationStatus population_nlte_stage_charge_close(
+    size_t n_ion_pops, const int *ion_pop_Z, const int *ion_pop_stage,
+    size_t n_elements, const int *element_Z, const int *elem_ion_offset,
+    const double *element_mass_amu, const double *abundances,
+    const double *rho, double atomic_mass_unit_g,
+    size_t n_nlte_ions, const int *nlte_Z, const int *nlte_ion,
+    const int *nlte_level_offset, size_t n_nlte_levels,
+    size_t n_shells, const double *nlte_level_populations,
+    double *ion_number_density, double *electron_density,
+    double electron_density_damping,
+    double *max_charge_residual, int *worst_charge_shell);
+
 PopulationStatus population_te_manifest_sha256(const double *te,
                                                 size_t n_shells,
                                                 char out[65]);

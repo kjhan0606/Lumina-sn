@@ -20,6 +20,8 @@ REBUILT = {
     "atomic_data_cmfgen.h5",
     "atomic_vintage_manifest.csv",
     "cmfgen_sigma_bf.bin",
+    "cmfgen_bf_channels.bin",
+    "cmfgen_bf_channels_manifest.json",
     "coldata_cmfgen_manifest.csv",
     "ionization_energies.csv",
     "level_multiplicity.csv",
@@ -102,6 +104,7 @@ def main() -> None:
     module.OUT_DIR = NEW
     module.OUT_H5 = NEW / "atomic_data_cmfgen.h5"
     module.OUT_SIGMA_BIN = NEW / "cmfgen_sigma_bf.bin"
+    module.OUT_BF_CHANNEL_BIN = NEW / "cmfgen_bf_channels.bin"
     module.main()
     copy_companions()
     validate_composition_shape(NEW)

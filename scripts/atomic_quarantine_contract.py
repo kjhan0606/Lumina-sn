@@ -33,6 +33,8 @@ ACTIVE_ROOT_FILES = frozenset({
     "atomic_data_cmfgen.h5",
     "atomic_vintage_manifest.csv",
     "cmfgen_sigma_bf.bin",
+    "cmfgen_bf_channels.bin",
+    "cmfgen_bf_channels_manifest.json",
     "coldata_cmfgen_manifest.csv",
     "config.json",
     "ionization_energies.csv",

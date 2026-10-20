@@ -28,6 +28,8 @@ void nlte_population_solve_diagnostic_reset(
     diagnostic->shell = -1;
     diagnostic->worst_ion_slot = -1;
     diagnostic->worst_shell = -1;
+    diagnostic->max_charge_residual = NAN;
+    diagnostic->worst_charge_shell = -1;
     diagnostic->ion_lock_active = -1;
     diagnostic->solve_level_index = -1;
     diagnostic->super_level_index = -1;
@@ -62,7 +64,7 @@ const char *nlte_population_solve_stage_name(
     static const char *const names[] = {
         "NONE", "PRECONDITION", "TRANSACTION", "THERMODYNAMIC",
         "IONIZATION", "WORKSPACE", "ELEMENT_WIDE", "PAIR_SOLVE",
-        "CE_NONCONVERGED", "PUBLISH", "INTERNAL"
+        "CE_NONCONVERGED", "PUBLISH", "INTERNAL", "CHARGE_CLOSURE"
     };
     size_t index = (size_t)stage;
     return index < sizeof(names) / sizeof(names[0]) ? names[index]

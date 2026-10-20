@@ -20,6 +20,7 @@ SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c 
 HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h \
           src/lumina_frequency_grid.h \
           src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h \
+          src/population_generator_interval.h \
           src/atomic_internal_energy.h src/line_net_rate.h \
           src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h \
           src/cmfgen_adiabatic.h \
@@ -196,6 +197,14 @@ selftest_bootstrap_window: tests/bootstrap_window_selftest.c src/lumina_plasma.c
 	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o $@ tests/bootstrap_window_selftest.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) $(ATOMIC_INTERNAL_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
 # Gate-B Phase-1.6 deterministic frozen-cell oracle (CPU single-thread observer)
+CMFGEN_OWNER_TARGET ?= bench_cmfgen_owner
+$(CMFGEN_OWNER_TARGET): bench_cmfgen_owner.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/seed_capability.c $(HEADERS)
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
+		-ffunction-sections -fdata-sections -Wl,--gc-sections \
+		-o $@ bench_cmfgen_owner.c src/lumina_plasma.c src/lumina_element_wide.c \
+		src/lumina_atomic.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) \
+		src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/seed_capability.c $(LDFLAGS)
+
 bench_frozen_oracle: bench_frozen_oracle.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_FROZEN_ORACLE \
 		-o bench_frozen_oracle bench_frozen_oracle.c \
@@ -220,10 +229,18 @@ selftest_wave32_ew_rc: tests/wave32_ew_rc_selftest.c tests/wave32_ew_rc_wrap.c s
 
 selftest_wave32_ew_io: tests/wave32_ew_io_selftest.c src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_atomic.c $(HEADERS)
 	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE \
+		-DLUMINA_EW_SYNTHETIC_TEST \
 		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
 		-o selftest_wave32_ew_io tests/wave32_ew_io_selftest.c \
 		src/lumina_element_wide.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c \
 		src/lumina_atomic.c $(LDFLAGS)
+
+selftest_nlte_element_wide_layout: tests/nlte_element_wide_layout_selftest.c src/lumina_element_wide.c src/lumina_plasma.c src/population_contract.c src/opacity_publication.c src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c $(HEADERS)
+	$(CC) -O2 -Wall -Wextra -std=gnu11 -D_GNU_SOURCE -DLUMINA_EW_SYNTHETIC_TEST \
+		-ffunction-sections -fdata-sections -Isrc -Wl,--gc-sections \
+		-o $@ tests/nlte_element_wide_layout_selftest.c \
+		src/lumina_element_wide.c src/lumina_plasma.c src/population_contract.c src/opacity_publication.c \
+		src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c $(LDFLAGS)
 
 # Wave-3.2 R7 offline binary writer fixture (no model/GPU execution).
 selftest_cmf_chieta_dump: scripts/cmf_chieta_writer_fixture.c src/lumina_cmfgen.c $(A2_PUBLICATION_SRC) src/lumina_cmfgen.h $(HEADERS)
@@ -306,6 +323,7 @@ selftest_a2_04_replay_commit: tests/a2_04_replay_commit.c src/radiation_field.c 
 clean:
 	rm -f $(TARGET) lumina_cuda bench_frozen_oracle_rc selftest_wave32_ew_rc \
 		selftest_wave32_ew_io \
+		selftest_nlte_element_wide_layout \
 		selftest_cmf_chieta_dump \
 		selftest_emiss_ab_insitu \
 		selftest_wave32_matrix_debit selftest_wave32_within_sl_oom \

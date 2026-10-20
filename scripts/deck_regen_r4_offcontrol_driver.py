@@ -17,6 +17,7 @@ EXPAND = ROOT / "scripts/expand_atomic_data_cmfgen.py"
 REBUILT = {
     "atom_masses.csv", "atomic_data_cmfgen.h5",
     "atomic_vintage_manifest.csv", "cmfgen_sigma_bf.bin",
+    "cmfgen_bf_channels.bin", "cmfgen_bf_channels_manifest.json",
     "coldata_cmfgen_manifest.csv", "ionization_energies.csv",
     "level_multiplicity.csv", "levels.csv", "line2macro_level_upper.npy",
     "line_list.csv", "kshape_contract.txt", "ma_radrecomb_target.bin",
@@ -78,6 +79,7 @@ def main() -> None:
     module.OUT_DIR = output
     module.OUT_H5 = output / "atomic_data_cmfgen.h5"
     module.OUT_SIGMA_BIN = output / "cmfgen_sigma_bf.bin"
+    module.OUT_BF_CHANNEL_BIN = output / "cmfgen_bf_channels.bin"
     module.main()
 
     for source in sorted(OLD.iterdir()):

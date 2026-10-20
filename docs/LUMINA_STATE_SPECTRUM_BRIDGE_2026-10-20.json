@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "purpose_id": "LUMINA_STATE_SPECTRUM_BRIDGE_2026-10-20",
+  "status": "Astra 계획 및 동일물질 phase 정정 수신; 운전자 소스 확인 완료 범위를 기록. 구현·실제 물리 실행은 아직 없음",
+  "planning_owner": "gpt-6-astra",
+  "planning_submission": "01a15738-6334-78c0-8c8f-5b7834568a0e",
+  "phase_correction_submission": "01a15745-1454-7df3-8739-93c5a88ef143",
+  "execution_owner": "운전자",
+  "objective": "동일한 봉인 물질70에서 Lumina 독립 물질·장 응답을 시작해 최종 물질과 일치하는 관측자계 절대 스펙트럼을 생산하고 공동해를 제한하는 물리 연산을 판별한다.",
+  "final_goal_preserved": "최종 일치 대상은 CMFGEN과의 스펙트럼 및 물리량이다. 원래 released-T 앵커, 자기일관 T/ne/J·준위인구·분포, 전체 SE/charge/RE·에너지, M/E동등, 스펙트럼·3-grid·재현·자체 종료감사를 유지한다. 고정T 개발 출력이나 조건부 C1 비교를 최종 합격으로 대체하지 않는다.",
+  "initial_material": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material",
+  "initial_native_record": 70,
+  "initial_record_storage_sha256": "1818d10b47031134d23700b51a6fabfbfe1094d3ffc46c82eaf74199cf3a80f9",
+  "initial_runtime": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/seq_logs/feedback-runtime.json",
+  "initial_runtime_sha256": "70478a81a0966b1fd1e56030854e08503eded547e855ddb9f7d07e3d0d93bbfd",
+  "same_material_reference_field": "/gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429062/field",
+  "reference_radiation_record": 71,
+  "reference_radiation_material_record": 70,
+  "reference_field_sha256": "d9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563",
+  "phase_correction": "최초 제안의 물질71 대신 물질70을 쓴다. J71은 물질70에서 생성됐으므로 첫 고정물질 수송 대조를 같은 상태로 맞춘다. 원래71은 보존하고71B는 채택하지 않는다.",
+  "model_atom_template": "/gpfs/kjhan/cmfgen_runs/lumina_dr_policy_20261019-wYEzAc/atomic_view",
+  "model_atom_template_rule": "원자자료 후보이며 물질 상태의 권위값은 아니다. 과거 shell 수·밀도·Te/ne·조성을 그대로 유용하지 않고 원본 MODEL_SPEC과 SL/FL/전이/연속단 동일성을 확인해 전 model-atom·전 원소를 하나의 새 입력으로 구성한다.",
+  "input_requirements": [
+    "원래70의 깊이별 T/ne·전 원소 인구·밀도·쉘·원자자료·경계조건을 새 실행영역에 봉인한다.",
+    "CMFGEN 점/쉘 및 Lumina 부피평균의 역할·반경/속도 순서·단위와 보존 재빈닝을 명시한다. 모델·격자가 다른 과거 템플릿을 같은 상태로 표시하지 않는다.",
+    "C1 bench처럼 Si/S 이외의 원소를 지우거나 고정한 상태를 전역해로 표시하지 않는다. 모델의 실제 continuum boundary/terminal stage까지 누락을 드러낸다.",
+    "초기 CMFGEN J는 동일물질 대조에만 사용한다. 이후 Lumina 권위장을 외부 J 또는 beta*B로 대체하지 않는다."
+  ],
+  "driver_confirmed_source_findings": [
+    "src/lumina_atomic.c:1060에서 opacity->t_electrons[i]=config->T_inner로 초기화하고 main은 이를 plasma.T_e에 복사한다. 원래 깊이별 상태를 받는 재시작 연결이 필요하다.",
+    "src/lumina_plasma.c의 lumina_r7_publish_and_solve_te는 !solve_te이면 A208/A209 게시 뒤 return한다. 단순 false 설정으로 고정T 물질/ne 갱신을 구현할 수 없다.",
+    "src/lumina_cmfgen.c는 continuum cs와 별도 cmfgen_fine_jbar 결과를 하나의 generation에 게시한다. 실제 동일 수송해에서 파생됐는지 소비자 연결을 확인해야 한다.",
+    "observer writer는 cs의 chi_tot/chi_es/S_fixed/J와 현재 opac/Te를 함께 사용한다. 마지막 물질 갱신 뒤 같은 물질로 장을 다시 닫아야 상태 혼합을 피한다."
+  ],
+  "implementation_scope": [
+    "실제 전 원소 인구·비균일 T/ne·물리 프로필의 재시작 입력과 정확한 model-atom 대응.",
+    "고정T에서 실제 전 원소 물질/공유 ne를 갱신하는 생산 경로. 온도 hold를 물질 갱신 생략으로 대체하지 않는다.",
+    "선택한 결정론 권위장의 continuum/fine line 소비자를 같은 물질·chi/eta·산란 규약과 수송해에 연결한다. 같은 generation 번호만으로 동일 해라고 표시하지 않는다.",
+    "마지막 물질의 신선한 수송과 같은 chi/eta·산란 규약을 쓰는 관측자계 observer formal 연결."
+  ],
+  "sequence": [
+    "봉인 물질70 -> Lumina 장0; 동일 물질70에서 생성된 CMFGEN J71와 첫 고정물질 대조",
+    "Lumina 물질1/ne1 -> 자체 장1 -> 물질2/ne2 -> 자체 장2",
+    "물질2와 동일한 chi/eta·산란 규약에서 관측자계 절대 스펙트럼 생산"
+  ],
+  "maximum_Lumina_authoritative_fields": 3,
+  "maximum_material_updates": 2,
+  "maximum_observer_spectrum_evaluations": 1,
+  "additional_CMFGEN_native_executions": 0,
+  "additional_CMFGEN_RT_executions": 0,
+  "automatic_extension": false,
+  "temperature_policy": "개발 묶음에서는 원래 깊이별 T를 유지한다. 새로운 RE 해나 released-T 앵커로 표시하지 않는다.",
+  "observable_outputs": [
+    "각 실제 물질/장 단계의 입력·원자·바이너리·물질/복사장 생산세대 신원",
+    "전 원소 이온분포·준위인구·공유 ne와 원래 T, 실제 Lumina J 및 field/matter 변화",
+    "마지막 물질과 수송이 일치하는 관측자계 절대 스펙트럼 및 에너지 수지 진단",
+    "첫 동일물질 차이와 후속 피드백 차이를 분리한 해석, 다음 물리 수정 대상을 결정하는 근거"
+  ],
+  "acceptance_and_end_rule": "첫 동일물질 대조에서 원자 매핑·율·수송의 설명되지 않은 차이가 있으면 뒤 물질 갱신을 중단하고 해당 물리 연산을 수정 대상으로 삼는다. 대조가 설명되면 최대 두 물질 피드백과 마지막 장/observer를 완료해 어느 연산이 공동해를 제한하는지 판별한다. 산출물 존재·CE 1% 종료조건·기존 작은 C1 Q를 전체 SE/RE나 최종 물리 합격으로 바꾸지 않는다. 전체 SE 분모/RE 미증명은 그대로 미증명이며 CMFGEN observer 참조가 없으면 comoving moment나 dummy flux로 대신하지 않는다. 목표 출력이 미완료면 이를 명시하고 작은 시험 통과로 묶음을 닫지 않는다.",
+  "immediate_stop": "자원 상한 초과·비유한 값·원자/과정 지원 누락·입력/세대 혼합·보존 위반·같은 최종 물질이 아닌 스펙트럼. 미지원 부분을 옵션·개별 clipping·인구 freeze·재정규화로 우회하지 않고 실패 산출물을 보존한다.",
+  "resources_per_run": {"CPU": 16, "OMP": 16, "memory_GiB": 32, "GPU": 0, "parent_seconds": 2700, "child_seconds": 2400, "node_pinned": false, "retry": 0},
+  "maximum_runs": 3,
+  "maximum_parent_reservation_seconds": 8100,
+  "offline_resources": {"CPU": 1, "memory_GiB": 4, "seconds": 300, "host": "grammar-debug"},
+  "cost_warning": "Lumina 실제 비용은 미실증이므로 시간 내 완료를 보장하지 않는다. 메모리/시간 초과를 숨기려고 모델·주파수·물리 범위를 축소하지 않는다.",
+  "preservation": "원래70/71·J71·비채택71B·C1·원자자료·native·기존 계약/청구·실패와 사용자 미커밋 변경을 보존한다. source 편집은 운전자 한 명이 apply_patch로 수행한다. writer·build·실행은 새 root만 사용한다. commit/push와 공유 전역 문맥 편집은 하지 않는다.",
+  "reproducibility": "실행 전 새 입력/소스/바이너리/설정 신원을 봉인하고 고정물질·물질 갱신·마지막 스펙트럼의 출처를 재현한다. 실제 명령·결과·실패 분류와 물리 해석 범위를 인수인계서에 기록한다. 완료 산출물은 별도 새 출력에서 재현한다.",
+  "T_release": false,
+  "final_goal_complete": false
+}

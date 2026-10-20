@@ -73,6 +73,208 @@ const char *population_status_name(PopulationStatus s){
     return (s>=POP_OK&&s<=POP_FORBIDDEN_FALLBACK)?n[s]:"POP_UNKNOWN";
 }
 
+PopulationStatus population_nlte_stage_charge_close(
+    size_t n_ion_pops, const int *ion_pop_Z, const int *ion_pop_stage,
+    size_t n_elements, const int *element_Z, const int *elem_ion_offset,
+    const double *element_mass_amu, const double *abundances,
+    const double *rho, double atomic_mass_unit_g,
+    size_t n_nlte_ions, const int *nlte_Z, const int *nlte_ion,
+    const int *nlte_level_offset, size_t n_nlte_levels,
+    size_t n_shells, const double *nlte_level_populations,
+    double *ion_number_density, double *electron_density,
+    double electron_density_damping,
+    double *max_charge_residual, int *worst_charge_shell)
+{
+    if (max_charge_residual) *max_charge_residual = NAN;
+    if (worst_charge_shell) *worst_charge_shell = -1;
+    if (n_ion_pops == 0 || n_elements == 0 || n_nlte_ions == 0 ||
+        n_nlte_levels == 0 || n_shells == 0 || !ion_pop_Z ||
+        !ion_pop_stage || !element_Z || !elem_ion_offset ||
+        !element_mass_amu || !abundances || !rho || !nlte_Z ||
+        !nlte_ion || !nlte_level_offset || !nlte_level_populations ||
+        !ion_number_density || !electron_density || !max_charge_residual ||
+        !worst_charge_shell || !(atomic_mass_unit_g > 0.0) ||
+        !isfinite(atomic_mass_unit_g) ||
+        !(electron_density_damping > 0.0 &&
+          electron_density_damping <= 1.0) ||
+        !isfinite(electron_density_damping) ||
+        n_ion_pops > SIZE_MAX / n_shells ||
+        n_ion_pops * n_shells > SIZE_MAX / sizeof(double) ||
+        n_nlte_levels > SIZE_MAX / n_shells ||
+        n_nlte_levels * n_shells > SIZE_MAX / sizeof(double))
+        return POP_ATOMIC_MISSING;
+
+    size_t n_ion_values = n_ion_pops * n_shells;
+    double *ion_work = malloc(n_ion_values * sizeof(*ion_work));
+    double *ne_work = malloc(n_shells * sizeof(*ne_work));
+    if (!ion_work || !ne_work) {
+        free(ion_work);
+        free(ne_work);
+        return POP_SOLVE_FAILED;
+    }
+    memcpy(ion_work, ion_number_density, n_ion_values * sizeof(*ion_work));
+
+    if (elem_ion_offset[0] != 0 || elem_ion_offset[n_elements] != (int)n_ion_pops) {
+        free(ion_work);
+        free(ne_work);
+        return POP_ATOMIC_MISSING;
+    }
+    for (size_t e = 0; e < n_elements; ++e) {
+        int begin = elem_ion_offset[e], end = elem_ion_offset[e + 1];
+        if (begin < 0 || end < begin || (size_t)end > n_ion_pops ||
+            !(element_mass_amu[e] > 0.0) ||
+            !isfinite(element_mass_amu[e])) {
+            free(ion_work);
+            free(ne_work);
+            return POP_ATOMIC_MISSING;
+        }
+        for (int ip = begin; ip < end; ++ip)
+            if (ion_pop_Z[ip] != element_Z[e] || ion_pop_stage[ip] < 0) {
+                free(ion_work);
+                free(ne_work);
+                return POP_ATOMIC_MISSING;
+            }
+    }
+
+    for (size_t ii = 0; ii < n_nlte_ions; ++ii) {
+        int lev_begin = nlte_level_offset[ii];
+        int lev_end = nlte_level_offset[ii + 1];
+        if (nlte_Z[ii] <= 0 || nlte_ion[ii] < 0 || lev_begin < 0 ||
+            lev_end <= lev_begin || (size_t)lev_end > n_nlte_levels) {
+            free(ion_work);
+            free(ne_work);
+            return POP_ATOMIC_MISSING;
+        }
+        for (size_t prior = 0; prior < ii; ++prior)
+            if (nlte_Z[prior] == nlte_Z[ii] &&
+                nlte_ion[prior] == nlte_ion[ii]) {
+                free(ion_work);
+                free(ne_work);
+                return POP_ATOMIC_MISSING;
+            }
+
+        int matched_ip = -1, matches = 0;
+        for (size_t ip = 0; ip < n_ion_pops; ++ip)
+            if (ion_pop_Z[ip] == nlte_Z[ii] &&
+                ion_pop_stage[ip] == nlte_ion[ii]) {
+                matched_ip = (int)ip;
+                matches++;
+            }
+        if (matches != 1) {
+            free(ion_work);
+            free(ne_work);
+            return POP_ATOMIC_MISSING;
+        }
+        for (size_t shell = 0; shell < n_shells; ++shell) {
+            long double stage_sum = 0.0L;
+            for (int level = lev_begin; level < lev_end; ++level) {
+                double value = nlte_level_populations[
+                    (size_t)level * n_shells + shell];
+                if (!isfinite(value) || value < 0.0) {
+                    free(ion_work);
+                    free(ne_work);
+                    return POP_NONFINITE;
+                }
+                stage_sum += (long double)value;
+            }
+            double stage_density = (double)stage_sum;
+            if (!isfinite(stage_density) || stage_density < 0.0) {
+                free(ion_work);
+                free(ne_work);
+                return POP_NONFINITE;
+            }
+            ion_work[(size_t)matched_ip * n_shells + shell] = stage_density;
+        }
+    }
+
+    /* The rate-solved adjacent-stage pairs conserve their total.  Verify that
+     * replacing their stage authority did not leak nuclei between stages. */
+    for (size_t e = 0; e < n_elements; ++e) {
+        int begin = elem_ion_offset[e], end = elem_ion_offset[e + 1];
+        for (size_t shell = 0; shell < n_shells; ++shell) {
+            double rho_shell = rho[shell];
+            double abundance = abundances[e * n_shells + shell];
+            if (!isfinite(rho_shell) || rho_shell < 0.0 ||
+                !isfinite(abundance) || abundance < 0.0) {
+                free(ion_work);
+                free(ne_work);
+                return POP_NONFINITE;
+            }
+            long double solved = 0.0L;
+            for (int ip = begin; ip < end; ++ip) {
+                double value = ion_work[(size_t)ip * n_shells + shell];
+                if (!isfinite(value) || value < 0.0) {
+                    free(ion_work);
+                    free(ne_work);
+                    return POP_NONFINITE;
+                }
+                solved += (long double)value;
+            }
+            long double expected = (long double)abundance * rho_shell /
+                ((long double)element_mass_amu[e] * atomic_mass_unit_g);
+            long double scale = fmaxl(fabsl(expected), fabsl(solved));
+            long double rel = scale > 0.0L
+                ? fabsl(expected - solved) / scale : 0.0L;
+            if (!isfinite((double)expected) ||
+                rel > 1.0e-10L) {
+                free(ion_work);
+                free(ne_work);
+                return POP_SOLVE_FAILED;
+            }
+        }
+    }
+
+    double worst_residual = 0.0;
+    int worst_shell = -1;
+    for (size_t shell = 0; shell < n_shells; ++shell) {
+        double old_ne = electron_density[shell];
+        if (!isfinite(old_ne) || old_ne <= 0.0) {
+            free(ion_work);
+            free(ne_work);
+            return POP_NONFINITE;
+        }
+        long double charge = 0.0L;
+        for (size_t ip = 0; ip < n_ion_pops; ++ip) {
+            double density = ion_work[ip * n_shells + shell];
+            int stage = ion_pop_stage[ip];
+            if (!isfinite(density) || density < 0.0 || stage < 0) {
+                free(ion_work);
+                free(ne_work);
+                return POP_NONFINITE;
+            }
+            charge += (long double)stage * density;
+        }
+        double target_ne = (double)charge;
+        if (!isfinite(target_ne) || target_ne <= 0.0) {
+            free(ion_work);
+            free(ne_work);
+            return POP_NE_NOT_CONVERGED;
+        }
+        double next_ne = old_ne + electron_density_damping *
+                         (target_ne - old_ne);
+        if (!isfinite(next_ne) || next_ne <= 0.0) {
+            free(ion_work);
+            free(ne_work);
+            return POP_NONFINITE;
+        }
+        double residual = fabs(target_ne - next_ne) /
+                          fmax(target_ne, next_ne);
+        if (residual > worst_residual) {
+            worst_residual = residual;
+            worst_shell = (int)shell;
+        }
+        ne_work[shell] = next_ne;
+    }
+
+    memcpy(ion_number_density, ion_work, n_ion_values * sizeof(*ion_work));
+    memcpy(electron_density, ne_work, n_shells * sizeof(*ne_work));
+    *max_charge_residual = worst_residual;
+    *worst_charge_shell = worst_shell;
+    free(ion_work);
+    free(ne_work);
+    return POP_OK;
+}
+
 PopulationStatus population_te_manifest_sha256(const double *te,size_t n,char out[65]){
     if (!te || !out || n == 0) return POP_INVALID_TE;
     PopSha256 s;

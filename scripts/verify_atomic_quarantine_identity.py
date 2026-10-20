@@ -492,6 +492,36 @@ def gate_derived_contract(deck: Path, failures: list[str]) -> None:
                 f"ma_radrecomb magic/version/n_levels={magic:#x}/{version}/{target_levels}"
             )
 
+    route_path = deck / "cmfgen_bf_channels.bin"
+    if route_path.is_file():
+        route_path = guard_active_path(deck, route_path)
+        with route_path.open("rb") as stream:
+            header = stream.read(36)
+            if len(header) == 36:
+                rmagic, rversion, rlevels, rbins, nroutes, rmin, rmax = \
+                    struct.unpack("<IIiiidd", header)
+                expected_size = (36 + 4 * (rlevels + 1) + 16 * nroutes
+                                 + 8 * nroutes * rbins)
+                if (rmagic != 0x434D4643 or rversion != 1 or
+                        rlevels != n_levels or rbins != 1234 or nroutes < 1 or
+                        rmin != 5.8412785919616062e13 or
+                        rmax != 4.0362581455823112e16 or
+                        route_path.stat().st_size != expected_size):
+                    shape_bad.append(
+                        "BF-channel header/size mismatch: "
+                        f"{rmagic:#x}/{rversion}/{rlevels}/{rbins}/{nroutes}/"
+                        f"[{rmin:.17g},{rmax:.17g}] bytes={route_path.stat().st_size}"
+                    )
+                else:
+                    with route_path.open("rb") as stream:
+                        stream.seek(36)
+                        offsets = np.fromfile(stream, dtype="<i4", count=rlevels + 1)
+                    if (offsets.size != rlevels + 1 or offsets[0] != 0 or
+                            offsets[-1] != nroutes or np.any(np.diff(offsets) < 0)):
+                        shape_bad.append("BF-channel CSR offsets malformed")
+            else:
+                shape_bad.append("BF-channel header truncated")
+
     dynamic_bad = 0
     with open_active(deck, "coldata_cmfgen_manifest.csv", newline="") as stream:
         for row in csv.DictReader(stream):

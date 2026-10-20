@@ -8,6 +8,114 @@
 
 #define BF_H_CGS 6.62607015e-27
 
+int bf_rate_result_is_consumable(const BfRateResult *result)
+{
+    if (!result ||
+        (result->state != BF_RATE_VALID &&
+         result->state != BF_RATE_EXACT_ZERO) ||
+        !isfinite(result->gamma) || result->gamma < 0.0 ||
+        !isfinite(result->w_miss) || result->w_miss < 0.0 ||
+        result->w_miss > BF_RATE_W_MISS_TOLERANCE ||
+        !isfinite(result->gamma_poisson_var) ||
+        result->gamma_poisson_var < 0.0)
+        return 0;
+    if (result->state == BF_RATE_EXACT_ZERO &&
+        (result->gamma != 0.0 || result->w_miss != 0.0 ||
+         result->gamma_poisson_var != 0.0))
+        return 0;
+    return 1;
+}
+
+int bf_rate_view_jnu(const RadiationFieldView *view, size_t shell, size_t bin,
+                     double *out)
+{
+    if (!out) return -1;
+    *out = 0.0;
+    if (!view || !view->J_nu || !view->validity ||
+        shell >= view->n_shells || bin >= view->n_bins)
+        return -1;
+
+    size_t index = shell * view->n_bins + bin;
+    RadiationFieldValidityState state = view->validity[index];
+    double value = view->J_nu[index];
+    if (state == RADIATION_FIELD_VALID) {
+        if (!(value > 0.0) || !isfinite(value)) return -1;
+        *out = value;
+        return 0;
+    }
+    if (state == RADIATION_FIELD_EXACT_ZERO) {
+        if (value != 0.0) return -1;
+        return 0;
+    }
+    if (state == RADIATION_FIELD_UNSAMPLED ||
+        state == RADIATION_FIELD_OUT_OF_GRID ||
+        state == RADIATION_FIELD_STALE)
+        return 1;
+    return -1;
+}
+
+int bf_rate_view_log_band_jnu(const RadiationFieldView *view, size_t shell,
+                              double nu_lo, double nu_hi, double *out)
+{
+    if (!out) return -1;
+    *out = 0.0;
+    if (!view || !view->frequency_bin_edges || !view->n_bins ||
+        view->n_bins == SIZE_MAX || shell >= view->n_shells ||
+        !isfinite(nu_lo) || !isfinite(nu_hi) ||
+        !(nu_lo > 0.0) || !(nu_hi > nu_lo)) return -1;
+    const double *edges = view->frequency_bin_edges;
+    size_t nb = view->n_bins;
+    if (!isfinite(edges[0]) || !isfinite(edges[nb]) ||
+        !(edges[0] > 0.0) || !(edges[nb] > edges[0])) return -1;
+    if (nu_lo < edges[0] || nu_hi > edges[nb]) return 1;
+    /* 게시된 view의 단조 edges를 이진 탐색한다. 사용 구간도 직접 검사한다. */
+    size_t low = 0, high = nb;
+    while (low < high) {
+        size_t mid = low + (high-low)/2;
+        if (!isfinite(edges[mid]) || !isfinite(edges[mid+1]) ||
+            !(edges[mid+1] > edges[mid])) return -1;
+        if (edges[mid+1] <= nu_lo) low = mid+1;
+        else high = mid;
+    }
+    double cursor = nu_lo, sum = 0.0;
+    for (size_t b = low; cursor < nu_hi && b < nb; ++b) {
+        if (!isfinite(edges[b]) || !isfinite(edges[b+1]) ||
+            !(edges[b+1] > edges[b])) return -1;
+        if (edges[b] > cursor) return 1;
+        double end = edges[b+1] < nu_hi ? edges[b+1] : nu_hi;
+        if (!(end > cursor)) return -1;
+        double j;
+        int status = bf_rate_view_jnu(view, shell, b, &j);
+        if (status != 0) return status;
+        sum += j * log1p((end-cursor)/cursor);
+        cursor = end;
+    }
+    if (cursor != nu_hi) return 1;
+    double result = sum/log1p((nu_hi-nu_lo)/nu_lo);
+    if (!(result >= 0.0) || !isfinite(result)) return -1;
+    *out = result;
+    return 0;
+}
+
+double bf_rate_sigma_log_weight(double sigma_bin_average, double nu_lo,
+                                double nu_hi, double nu_thresh)
+{
+    if (!(sigma_bin_average > 0.0) || !isfinite(sigma_bin_average) ||
+        !(nu_lo > 0.0) || !isfinite(nu_lo) ||
+        !(nu_hi > nu_lo) || !isfinite(nu_hi) ||
+        !(nu_thresh > 0.0) || !isfinite(nu_thresh) ||
+        !(nu_hi > nu_thresh))
+        return 0.0;
+
+    double active_lo = nu_lo > nu_thresh ? nu_lo : nu_thresh;
+    double active_width = nu_hi - active_lo;
+    if (!(active_width > 0.0)) return 0.0;
+    double sigma_active = sigma_bin_average;
+    if (nu_lo < nu_thresh)
+        sigma_active *= (nu_hi - nu_lo) / active_width;
+    return sigma_active * log(nu_hi / active_lo);
+}
+
 /* Integral of a linear sigma segment against 1/nu on [a,b]:
  *   sigma(nu) = s0 + m*(nu - n0)
  *   I = Integral sigma(nu)/nu dnu = (s0 - m*n0)*ln(b/a) + m*(b - a)
@@ -106,6 +214,18 @@ int bf_rate_gamma_from_view(const RadiationFieldView *view, size_t shell,
 
     double total_weight = valid_weight + miss_weight;
     if (total_weight <= 0.0) {
+        /* A declared, identically-zero cross section with tabulated support
+         * above the edge defines a zero rate, not an unobserved radiation
+         * field. Keep structural truncation (e.g. the old grid ending below
+         * the Si V edge) OUT_OF_GRID, even when its stored row is all zero. */
+        int zero_curve = sigma->nu[sigma->n_points-1] > nu_start &&
+                         sigma->nu[0] < nu_hi_grid;
+        for (size_t j=0; zero_curve && j<sigma->n_points; j++)
+            if (sigma->sigma[j] != 0.0) zero_curve = 0;
+        if (zero_curve) {
+            out->state = BF_RATE_EXACT_ZERO;
+            return 0;
+        }
         out->state = BF_RATE_OUT_OF_GRID;
         return 0;
     }

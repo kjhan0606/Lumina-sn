@@ -21,7 +21,9 @@ import numpy as np
 
 
 # CMFGEN header tags we look for in osc_data / phot_data / col_data
-_TAG_RE = re.compile(r'^\s*([0-9.eE+\-DdRr]+)\s*!(.*)$')
+# Header values also include final-state names, units and logical flags.
+# Restricting this to numerals silently erased the continuum target identity.
+_TAG_RE = re.compile(r'^\s*([^!\s][^!]*?)\s*!(.*)$')
 
 
 def _read_text(path: Path) -> list[str]:
@@ -261,6 +263,7 @@ class PhotIon:
     final_state_g: float = 0.0
     cs_unit: str = 'Megabarns'
     split_J: bool = False
+    smoothing_sigma_kms: float | None = None
     n_data_pairs: int = 0
     entries: list[PhotEntry] = field(default_factory=list)
 
@@ -292,6 +295,8 @@ def parse_phot(path: Path) -> PhotIon:
             out.cs_unit = v
         elif 'Split J levels' in k:
             out.split_J = (v.strip().lower() == 'true')
+        elif 'Sigma used for Gaussian smoothing (km/s)' in k:
+            out.smoothing_sigma_kms = _to_float(v)
         elif 'Total number of data pairs' in k:
             out.n_data_pairs = int(v)
             body_start = idx + 1

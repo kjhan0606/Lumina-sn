@@ -1,3 +1,15 @@
+## 최신 상태 (2026-10-18) — 현 문서대로의 실행은 No-Go
+
+Astra read-only 계획 검토 결과, 아래 A/B/C는 안정화 후보일 뿐 실행 승인이나 앵커 자격을 주지 않는다.
+특히 `MAXCH < 50%`는 CMFGEN의 알고리즘 전환 조건이지 물리적 population·복사장·moment 안정성 증거가
+아니다. 아래 추천 A안의 자동 `DO_T_AUTO` 해제대로 released-T 계산을 제출하지 않는다.
+
+다음 묶음 전에 시작 source/binary/config/원자자료/restart의 동일 세대 신원, fixed-T에서의 실제 안정성
+측정, 성공 checkpoint 보존과 실패 rollback, Stage 0 acceptance 자료의 생산 방법, 시간·재시도 상한을
+정해야 한다. 우선 fixed-T 안정화를 독립 staging으로 두고 `DO_T_AUTO=F`를 유지하며, 그 결과가
+계획된 물리 안정성 판단을 충족한 뒤에만 별도 T-release 결정을 내린다. 아래 본문은 이 변경 전의
+forensic 기록과 후보 레시피로 보존한다.
+
 결론부터 말하면, 385770은 “수렴 fixed-T 해에서 FIX_T만 해제한 시험”이 아니었습니다. 실제 초기 체크포인트는 fixed-T에서도 `MAXCH=1.24×10^7%`, 표면광도 `7.70×10^11 L☉`인 강한 limit-cycle 상태였습니다. 반면 현재 `modern`도 정상 종료·finite이기는 하지만 마지막 `MAXCH=3.46×10^3%`이므로 `EPS_TERM=0.1%` 수렴본은 아닙니다. 따라서 추천안은 modern을 먼저 fixed-T로 더 연마한 뒤, CMFGEN의 내장 `<50%` 자동 게이트로 T를 해제하고 `MAX_dT=0.05`로 제한하는 방식입니다.
 
 어떤 파일도 변경하거나 제출하지 않았습니다.

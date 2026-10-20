@@ -893,6 +893,61 @@ static int lumina_env_surface_report(void) {
 #define LOAD_STAGE(name) do { \
     printf("[LOAD-STAGE] %s\n", (name)); fflush(stdout); } while (0)
 
+int load_material_temperature_profile(const char *ref_dir, int n_shells,
+                                      double boundary_temperature,
+                                      double **temperature_out) {
+    if (!ref_dir || !temperature_out || n_shells <= 0 ||
+        !isfinite(boundary_temperature) || boundary_temperature <= 0.0)
+        return -1;
+    char path[4096], line[256];
+    int written = snprintf(path, sizeof(path), "%s/electron_temperatures.csv", ref_dir);
+    if (written < 0 || (size_t)written >= sizeof(path)) return -1;
+    errno = 0;
+    FILE *fp = fopen(path, "r");
+    if (!fp && errno != ENOENT) return -1;
+    double *te = malloc((size_t)n_shells * sizeof(*te));
+    if (!te) { if (fp) fclose(fp); return -1; }
+    if (!fp) {
+        for (int s = 0; s < n_shells; s++) te[s] = boundary_temperature;
+        *temperature_out = te;
+        return 0;
+    }
+    int status = -1, row = 0;
+    if (!fgets(line, sizeof(line), fp)) goto done;
+    line[strcspn(line, "\r\n")] = '\0';
+    if (strcmp(line, "shell_id,T_e") != 0) goto done;
+    while (fgets(line, sizeof(line), fp)) {
+        if (row >= n_shells) goto done;
+        char *end = NULL, *number_end = NULL;
+        errno = 0;
+        long shell = strtol(line, &end, 10);
+        if (errno || end == line || *end != ',' || shell != row) goto done;
+        const char *number = end + 1;
+        errno = 0;
+        double value = strtod(number, &number_end);
+        if (errno || number_end == number || !isfinite(value) || value <= 0.0)
+            goto done;
+        while (*number_end == ' ' || *number_end == '\t' ||
+               *number_end == '\r' || *number_end == '\n') number_end++;
+        if (*number_end) goto done;
+        te[row++] = value;
+    }
+    if (ferror(fp) || row != n_shells) goto done;
+    status = 0;
+done:
+    if (fclose(fp) != 0) status = -1;
+    if (status) {
+        fprintf(stderr, "[MATERIAL-RESTART][FATAL] invalid temperature profile: %s row=%d\n",
+                path, row);
+        free(te);
+        return -1;
+    }
+    printf("  [MATERIAL-RESTART] explicit T_e seed: %d shells; boundary T unchanged\n",
+           n_shells);
+    *temperature_out = te;
+    return 0;
+}
+
 int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
                                 OpacityState *opacity, PlasmaState *plasma,
                                 MCConfig *config) {
@@ -1055,10 +1110,9 @@ int load_tardis_reference_data(const char *ref_dir, Geometry *geo,
     }
 
     /* Generation-zero material-temperature seed; radiation is not consulted. */
-    opacity->t_electrons = (double *)malloc(geo->n_shells * sizeof(double)); /* Phase 2 - Step 10d3 */
-    for (int i = 0; i < geo->n_shells; i++) { /* Phase 2 - Step 10d3 */
-        opacity->t_electrons[i] = config->T_inner;
-    }
+    if (load_material_temperature_profile(ref_dir, geo->n_shells,
+            config->T_inner, &opacity->t_electrons) != 0)
+        return -1;
 
     /* Phase 2 - Step 10e: Load line list (nu, sorted descending) */
     snprintf(path, sizeof(path), "%s/line_list.csv", ref_dir); /* Phase 2 - Step 10e */
@@ -2441,6 +2495,353 @@ int load_cmfgen_sigma_bf(AtomicData *atom, const char *path) {
     return 0;
 }
 
+/* Load the channel-resolved companion to cmfgen_sigma_bf.bin. Versions 1/2
+ * remain readable for radiative-only compatibility. Version 3 stores the raw
+ * CMFGEN edge cross section; version 4 identifies destinations as grouped
+ * CMFGEN F_TO_S superlevels and stores their route statistical weight.
+ * Version 5 appends the mandatory source-selected recombination policy. */
+int load_cmfgen_bf_channels(AtomicData *atom, const char *path) {
+    if (!atom || !path || !atom->cmfgen_loaded || !atom->cmfgen_sigma_bf ||
+        !atom->cmfgen_has_sigma || !atom->level_Z || !atom->level_ion ||
+        !atom->level_energy_eV || !atom->level_g) {
+        fprintf(stderr, "ERROR: BF channel load requires atomic levels and CMFGEN sigma grid\n");
+        return -1;
+    }
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        fprintf(stderr, "ERROR: CMFGEN BF channel asset not found: %s\n", path);
+        return -1;
+    }
+    uint32_t magic = 0, version = 0;
+    int32_t n_lev = 0, n_freq = 0, n_routes = 0;
+    double nu_min = 0.0, nu_max = 0.0;
+    int *offset = NULL, *target = NULL, *phot_grid = NULL;
+    double *probability = NULL, *target_energy = NULL, *target_g = NULL;
+    double *sigma_edge = NULL;
+    double *sigma = NULL;
+    int recombination_policy[2][4] = {{0}};
+    unsigned char policy_model_sha256[32] = {0};
+    int rc = -1;
+    if (fread(&magic, 4, 1, fp) != 1 || fread(&version, 4, 1, fp) != 1 ||
+        fread(&n_lev, 4, 1, fp) != 1 || fread(&n_freq, 4, 1, fp) != 1 ||
+        fread(&n_routes, 4, 1, fp) != 1 || fread(&nu_min, 8, 1, fp) != 1 ||
+        fread(&nu_max, 8, 1, fp) != 1) {
+        fprintf(stderr, "ERROR: %s BF channel header read failed\n", path);
+        goto done;
+    }
+    if (magic != 0x434D4643u || (version < 1u || version > 5u)) {
+        fprintf(stderr, "ERROR: %s bad BF channel magic/version (0x%08x v%u)\n",
+                path, magic, version);
+        goto done;
+    }
+    if (version >= 4u && !atom->level_super) {
+        fprintf(stderr, "ERROR: %s v4 BF channels require CMFGEN F_TO_S levels\n",
+                path);
+        goto done;
+    }
+    if (n_lev != atom->n_levels || n_freq != atom->cmfgen_n_freq_bins ||
+        n_freq != NLTE_N_FREQ_BINS || n_routes <= 0 ||
+        !isfinite(nu_min) || !isfinite(nu_max) ||
+        nu_min != atom->cmfgen_nu_min || nu_max != atom->cmfgen_nu_max ||
+        nu_min != NLTE_NU_MIN || nu_max != NLTE_NU_MAX) {
+        fprintf(stderr,
+                "ERROR: %s stale BF channel dimensions/grid levels=%d/%d bins=%d/%d "
+                "routes=%d nu=[%.17g,%.17g]\n",
+                path, n_lev, atom->n_levels, n_freq, atom->cmfgen_n_freq_bins,
+                n_routes, nu_min, nu_max);
+        goto done;
+    }
+    size_t nl = (size_t)n_lev, nr = (size_t)n_routes, nf = (size_t)n_freq;
+    if (nl > SIZE_MAX / sizeof(int) - 1 || nr > SIZE_MAX / sizeof(int) ||
+        nr > SIZE_MAX / sizeof(double) || nf > SIZE_MAX / sizeof(double) ||
+        nr > SIZE_MAX / nf || nr * nf > SIZE_MAX / sizeof(double)) {
+        fprintf(stderr, "ERROR: %s BF channel allocation size overflow\n", path);
+        goto done;
+    }
+    offset = (int *)malloc((nl + 1) * sizeof(int));
+    target = (int *)malloc(nr * sizeof(int));
+    probability = (double *)malloc(nr * sizeof(double));
+    phot_grid = (int *)malloc(nr * sizeof(int));
+    target_energy = (double *)malloc(nr * sizeof(double));
+    target_g = (double *)malloc(nr * sizeof(double));
+    if (version >= 3u) sigma_edge = (double *)malloc(nr * sizeof(double));
+    sigma = (double *)malloc(nr * nf * sizeof(double));
+    if (!offset || !target || !probability || !phot_grid || !target_energy ||
+        !target_g || (version >= 3u && !sigma_edge) || !sigma) {
+        fprintf(stderr, "ERROR: %s BF channel allocation failed\n", path);
+        goto done;
+    }
+    if (fread(offset, sizeof(int), nl + 1, fp) != nl + 1 ||
+        fread(target, sizeof(int), nr, fp) != nr ||
+        fread(probability, sizeof(double), nr, fp) != nr ||
+        fread(phot_grid, sizeof(int), nr, fp) != nr) {
+        fprintf(stderr, "ERROR: %s BF channel payload read failed\n", path);
+        goto done;
+    }
+    if (version >= 2u) {
+        if (fread(target_energy, sizeof(double), nr, fp) != nr ||
+            fread(target_g, sizeof(double), nr, fp) != nr) {
+            fprintf(stderr, "ERROR: %s BF terminal-target payload read failed\n", path);
+            goto done;
+        }
+    }
+    if (version >= 3u && fread(sigma_edge, sizeof(double), nr, fp) != nr) {
+        fprintf(stderr, "ERROR: %s BF edge-sigma payload read failed\n", path);
+        goto done;
+    }
+    if (fread(sigma, sizeof(double), nr * nf, fp) != nr * nf) {
+        fprintf(stderr, "ERROR: %s BF channel sigma payload read failed\n", path);
+        goto done;
+    }
+    if (version >= 5u) {
+        uint32_t policy_magic=0, policy_version=0, n_policy=0;
+        if(fread(&policy_magic,4,1,fp)!=1 || fread(&policy_version,4,1,fp)!=1 ||
+           fread(&n_policy,4,1,fp)!=1 || fread(policy_model_sha256,1,32,fp)!=32 ||
+           policy_magic!=0x43525035u || policy_version!=1u || n_policy<1 || n_policy>8) {
+            fprintf(stderr,"ERROR: %s missing/invalid v5 recombination policy\n",path);
+            goto done;
+        }
+        unsigned char model_or=0;
+        for(int k=0;k<32;k++) model_or |= policy_model_sha256[k];
+        if(!model_or) { fprintf(stderr,"ERROR: %s v5 MODEL identity missing\n",path); goto done; }
+        for(uint32_t k=0;k<n_policy;k++) {
+            int32_t p[6]; unsigned char phot_sha[32], phot_or=0;
+            if(fread(p,4,6,fp)!=6 || fread(phot_sha,1,32,fp)!=32) {
+                fprintf(stderr,"ERROR: %s truncated v5 recombination policy\n",path); goto done;
+            }
+            for(int j=0;j<32;j++)phot_or |= phot_sha[j];
+            int zi=p[0]==14?0:p[0]==16?1:-1;
+            if(zi<0 || p[1]<1 || p[1]>4 || p[2]!=p[1]+1 || p[3]!=0 || p[4]!=0 ||
+               p[5]!=0 || !phot_or || recombination_policy[zi][p[1]-1]) {
+                fprintf(stderr,"ERROR: %s unsupported/duplicate v5 recombination boundary\n",path); goto done;
+            }
+            recombination_policy[zi][p[1]-1]=1;
+        }
+        for(size_t l=0;l<nl;l++) {
+            int zi=atom->level_Z[l]==14?0:atom->level_Z[l]==16?1:-1;
+            int stage=atom->level_ion[l];
+            if(zi>=0 && stage>=1 && stage<=4 && atom->cmfgen_has_sigma[l] &&
+               !recombination_policy[zi][stage-1]) {
+                fprintf(stderr,"ERROR: %s v5 recombination boundary missing Z=%d stage=%d\n",
+                        path,atom->level_Z[l],stage); goto done;
+            }
+        }
+    }
+    if (fgetc(fp) != EOF || ferror(fp)) {
+        fprintf(stderr, "ERROR: %s BF channel asset has trailing bytes/read error\n", path);
+        goto done;
+    }
+    if (offset[0] != 0 || offset[nl] != n_routes) {
+        fprintf(stderr, "ERROR: %s BF channel CSR endpoints invalid\n", path);
+        goto done;
+    }
+    for (size_t l = 0; l < nl; ++l) {
+        int begin = offset[l], end = offset[l + 1];
+        if (begin < 0 || end < begin || end > n_routes) {
+            fprintf(stderr, "ERROR: %s BF channel CSR row %zu invalid [%d,%d)\n",
+                    path, l, begin, end);
+            goto done;
+        }
+        if (begin == end) continue;
+        if (!atom->cmfgen_has_sigma[l]) {
+            fprintf(stderr, "ERROR: %s BF channel row %zu lacks total-sigma flag\n", path, l);
+            goto done;
+        }
+        int current_grid = -1, previous_grid = -1;
+        double grid_probability_sum = 0.0;
+        for (int r = begin; r < end; ++r) {
+            int up = target[r], grid = phot_grid[r];
+            double p = probability[r];
+            if (grid < 0 || !(p > 0.0) || !isfinite(p)) {
+                fprintf(stderr, "ERROR: %s invalid BF route row=%zu route=%d target=%d grid=%d p=%.17g\n",
+                        path, l, r, up, grid, p);
+                goto done;
+            }
+            if (version >= 3u &&
+                (!(sigma_edge[r] >= 0.0) || !isfinite(sigma_edge[r]))) {
+                fprintf(stderr, "ERROR: %s invalid CMFGEN edge sigma row=%zu route=%d value=%.17g\n",
+                        path, l, r, sigma_edge[r]);
+                goto done;
+            }
+            if (up >= 0 && up < atom->n_levels &&
+                atom->level_Z[up] == atom->level_Z[l] &&
+                atom->level_ion[up] == atom->level_ion[l] + 1) {
+                if (version == 1u) {
+                    target_energy[r] = atom->level_energy_eV[up];
+                    target_g[r] = atom->level_g[up];
+                } else {
+                    double expected_e = atom->level_energy_eV[up];
+                    /* levels.csv serializes energy_eV with %.10f, whereas
+                     * the channel binary retains the source double. The
+                     * identity tolerance is half that decimal quantum plus
+                     * floating-point roundoff, not a physical rate tolerance. */
+                    double e_tol = 0.5e-10 +
+                        64.0 * DBL_EPSILON * fmax(1.0, fabs(expected_e));
+                    if (!isfinite(target_energy[r]) || target_energy[r] < 0.0 ||
+                        !isfinite(target_g[r]) || !(target_g[r] > 0.0) ||
+                        fabs(target_energy[r] - expected_e) > e_tol ||
+                        (version < 4u &&
+                         fabs(target_g[r] - (double)atom->level_g[up]) >
+                            64.0 * DBL_EPSILON *
+                            fmax(1.0, fabs((double)atom->level_g[up]))) ||
+                        (version >= 4u &&
+                         target_g[r] < (double)atom->level_g[up])) {
+                        fprintf(stderr,
+                                "ERROR: %s BF target metadata disagrees with level row=%zu route=%d\n",
+                                path, l, r);
+                        goto done;
+                    }
+                    if (version >= 4u) {
+                        for (int prior = begin; prior < r; ++prior) {
+                            int prior_up = target[prior];
+                            if (phot_grid[prior] == grid && prior_up >= 0 &&
+                                prior_up < atom->n_levels &&
+                                atom->level_super[prior_up] == atom->level_super[up]) {
+                                fprintf(stderr,
+                                        "ERROR: %s v4 duplicates target superlevel row=%zu grid=%d routes=%d/%d\n",
+                                        path, l, grid, prior, r);
+                                goto done;
+                            }
+                        }
+                    }
+                }
+            } else if (up == -1 && version >= 2u &&
+                       (atom->level_Z[l] == 14 || atom->level_Z[l] == 16) &&
+                       atom->level_ion[l] == 4 &&
+                       isfinite(target_energy[r]) && target_energy[r] >= 0.0 &&
+                       isfinite(target_g[r]) && target_g[r] > 0.0) {
+                /* CMFGEN collapses a missing Si/S VI atom to one virtual target.
+                 * The lower level table uses ion_number=4 for Si/S V, while
+                 * its separate ion-population ladder calls terminal VI stage 5.
+                 * E and g come from PHOT, not the partition catalog. */
+            } else {
+                fprintf(stderr,
+                        "ERROR: %s invalid BF target identity row=%zu route=%d target=%d\n",
+                        path, l, r, up);
+                goto done;
+            }
+            if (grid != current_grid) {
+                if (current_grid >= 0 &&
+                    fabs(grid_probability_sum - 1.0) > 1e-12) {
+                    fprintf(stderr, "ERROR: %s route probabilities row=%zu grid=%d sum=%.17g\n",
+                            path, l, current_grid, grid_probability_sum);
+                    goto done;
+                }
+                if (grid <= previous_grid) {
+                    fprintf(stderr, "ERROR: %s BF route grids are not strictly grouped at row=%zu\n",
+                            path, l);
+                    goto done;
+                }
+                previous_grid = current_grid = grid;
+                grid_probability_sum = 0.0;
+            }
+            grid_probability_sum += p;
+        }
+        if (fabs(grid_probability_sum - 1.0) > 1e-12) {
+            fprintf(stderr, "ERROR: %s route probabilities row=%zu grid=%d sum=%.17g\n",
+                    path, l, current_grid, grid_probability_sum);
+            goto done;
+        }
+        const double *total_row = &atom->cmfgen_sigma_bf[l * nf];
+        for (size_t b = 0; b < nf; ++b) {
+            double total = 0.0;
+            for (int r = begin; r < end; ++r) {
+                double value = sigma[(size_t)r * nf + b];
+                if (!(value >= 0.0) || !isfinite(value)) {
+                    fprintf(stderr, "ERROR: %s nonfinite/negative route sigma row=%zu route=%d bin=%zu\n",
+                            path, l, r, b);
+                    goto done;
+                }
+                total += probability[r] * value;
+            }
+            if (!(total_row[b] >= 0.0) || !isfinite(total_row[b]) ||
+                fabs(total - total_row[b]) >
+                    64.0 * DBL_EPSILON * fmax(fabs(total), fabs(total_row[b])) + 1e-300) {
+                fprintf(stderr, "ERROR: %s channel sum mismatch row=%zu bin=%zu total=%.17g channels=%.17g\n",
+                        path, l, b, total_row[b], total);
+                goto done;
+            }
+        }
+    }
+    atom->cmfgen_bf_channel_offset = offset; offset = NULL;
+    atom->cmfgen_bf_channel_target = target; target = NULL;
+    atom->cmfgen_bf_channel_probability = probability; probability = NULL;
+    atom->cmfgen_bf_channel_phot_grid = phot_grid; phot_grid = NULL;
+    atom->cmfgen_bf_channel_target_energy_eV = target_energy; target_energy = NULL;
+    atom->cmfgen_bf_channel_target_g = target_g; target_g = NULL;
+    atom->cmfgen_bf_channel_sigma_edge = sigma_edge; sigma_edge = NULL;
+    atom->cmfgen_bf_channel_sigma = sigma; sigma = NULL;
+    atom->cmfgen_bf_channel_version = (int)version;
+    memcpy(atom->cmfgen_bf_recombination_policy,recombination_policy,sizeof(recombination_policy));
+    memcpy(atom->cmfgen_bf_policy_model_sha256,policy_model_sha256,sizeof(policy_model_sha256));
+    atom->cmfgen_bf_channels_n_routes = n_routes;
+    atom->cmfgen_bf_channels_loaded = 1;
+    printf("  CMFGEN BF channels v%u: %d routes on %d levels × %d bins; "
+           "edge sigma %s; weighted sums reproduce total sigma\n",
+           version, n_routes, n_lev, n_freq,
+           atom->cmfgen_bf_channel_sigma_edge ? "present" : "absent");
+    rc = 0;
+
+done:
+    free(offset);
+    free(target);
+    free(probability);
+    free(phot_grid);
+    free(target_energy);
+    free(target_g);
+    free(sigma_edge);
+    free(sigma);
+    fclose(fp);
+    return rc;
+}
+
+/* Optional by default for backward-compatible decks. An explicit path or
+ * LUMINA_CMFGEN_BF_CHANNELS=1 makes absence/corruption fail closed. */
+int load_cmfgen_bf_channels_from_env(AtomicData *atom, const char *default_path) {
+    const char *env = getenv("LUMINA_CMFGEN_BF_CHANNELS");
+    if (env && (!strcmp(env, "0") || !strcmp(env, "off") || !strcmp(env, "no"))) {
+        /* An explicit legacy OFF must not discard a new deck's mandatory
+         * selection-physics policy and quietly restore unrelated DR fits. */
+        FILE *policy_probe=default_path?fopen(default_path,"rb"):NULL;
+        if(policy_probe) {
+            uint32_t h[2]={0,0};size_t got=fread(h,4,2,policy_probe);fclose(policy_probe);
+            if(got==2 && h[0]==0x434D4643u && h[1]>=5u) {
+                fprintf(stderr,"ERROR: cannot disable mandatory v5 BF/recombination policy\n");
+                return -1;
+            }
+        }
+        return 0;
+    }
+    const char *path = default_path;
+    int required = 0;
+    if (env) {
+        required = 1;
+        if (strchr(env, '/')) path = env;
+        else if (strcmp(env, "1") && strcmp(env, "on") && strcmp(env, "yes")) {
+            fprintf(stderr, "ERROR: unknown LUMINA_CMFGEN_BF_CHANNELS=%s\n", env);
+            return -1;
+        }
+    }
+    if (!path || !*path) return required ? -1 : 0;
+    FILE *probe = fopen(path, "rb");
+    if (!probe) {
+        if (required) {
+            fprintf(stderr, "ERROR: required CMFGEN BF channel file unavailable: %s\n", path);
+            return -1;
+        }
+        return 0;
+    }
+    fclose(probe);
+    if (!atom->cmfgen_loaded) {
+        if (required) {
+            fprintf(stderr, "ERROR: BF channels requested without CMFGEN sigma grid\n");
+            return -1;
+        }
+        return 0;
+    }
+    return load_cmfgen_bf_channels(atom, path);
+}
+
 /* Load the bound-free upper-ion photoionization TARGET map (B4/D1/M1 data gap).
  * Parallel to cmfgen_sigma_bf.bin (same n_levels ordering); records per level the
  * GLOBAL index of the upper-ion level a photoionization lands on (== the recomb
@@ -2925,6 +3326,12 @@ void inject_topstage_continuum_levels(AtomicData *atom, OpacityState *opacity) {
                                                   (size_t)new_n*nf*sizeof(double));
         memset(&atom->cmfgen_sigma_bf[(size_t)old_n*nf], 0, (size_t)n_syn*nf*sizeof(double));
     }
+    if (atom->cmfgen_bf_channels_loaded && atom->cmfgen_bf_channel_offset) {
+        atom->cmfgen_bf_channel_offset = (int *)realloc(
+            atom->cmfgen_bf_channel_offset, (size_t)(new_n + 1) * sizeof(int));
+        for (int l = old_n + 1; l <= new_n; ++l)
+            atom->cmfgen_bf_channel_offset[l] = atom->cmfgen_bf_channels_n_routes;
+    }
     atom->n_levels = new_n;
 
     if (opacity && opacity->macro_block_references) {
@@ -2980,6 +3387,14 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->partition_functions);
     free(atom->cmfgen_has_sigma);
     free(atom->cmfgen_sigma_bf);
+    free(atom->cmfgen_bf_channel_offset);
+    free(atom->cmfgen_bf_channel_target);
+    free(atom->cmfgen_bf_channel_probability);
+    free(atom->cmfgen_bf_channel_phot_grid);
+    free(atom->cmfgen_bf_channel_target_energy_eV);
+    free(atom->cmfgen_bf_channel_target_g);
+    free(atom->cmfgen_bf_channel_sigma_edge);
+    free(atom->cmfgen_bf_channel_sigma);
     free(atom->ma_rr_target);
     free(atom->ma_rr_target_offset);
     free(atom->ma_rr_targets);

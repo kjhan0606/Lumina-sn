@@ -23,8 +23,12 @@ The CSV trio is fully drop-in compatible with the existing TARDIS-derived data.
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
+import os
 import re
 import shlex
+import struct
 import sys
 from pathlib import Path
 
@@ -32,7 +36,9 @@ import numpy as np
 import h5py
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cmfgen_parser import parse_osc, parse_phot, parse_col, parse_f_to_s  # noqa: E402
+from cmfgen_parser import parse_osc, parse_phot as parse_phot_raw, parse_col, parse_f_to_s  # noqa: E402
+from cmfgen_phot_smoothing import PhotSmoother  # noqa: E402
+from cmfgen_recombination_policy import build_policy, encode_policy
 
 ROOT        = Path('/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn')
 CMFGEN_ROOT = ROOT / 'data' / 'atomic' / 'cmfgen'
@@ -317,12 +323,41 @@ BF_NU_MIN     = 5.8412785919616062e13  # SH-GRID aligned lower edge
 BF_NU_MAX     = 4.0362581455823112e16  # aligned 74.2748474421 A upper edge
 BF_N_FREQ_BIN = 1234
 OUT_SIGMA_BIN = ROOT / 'data' / 'atomic' / f'cmfgen_sigma_bf{_OUT_SUFFIX}.bin'
+OUT_BF_CHANNEL_BIN = ROOT / 'data' / 'atomic' / f'cmfgen_bf_channels{_OUT_SUFFIX}.bin'
+BF_CHANNEL_MAGIC = 0x434D4643  # 'CMFC'
+BF_CHANNEL_VERSION = 4
+BF_CHANNEL_IONS = {(14, 2), (14, 3), (16, 2), (16, 3), (14, 5), (16, 5)}
+BF_TERMINAL_IONS = {(14, 5), (16, 5)}
 _DATE_RE = re.compile(r'^\d{1,2}[a-z]{3}\d{2}$')
 _MONTHS = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
            'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
 
 CMFGEN_LINKS_PATH = (Path(os.environ['CMFGEN_LINKS']).expanduser()
                      if os.environ.get('CMFGEN_LINKS') else None)
+CMFGEN_MODEL_SPEC_PATH = (Path(os.environ['CMFGEN_MODEL_SPEC']).expanduser()
+                          if os.environ.get('CMFGEN_MODEL_SPEC') else None)
+PHOT_SMOOTHER = None
+
+
+def parse_phot(path: Path):
+    """봉인 실행의 MODEL 전처리를 거친 PHOT를 모든 덱 출력에 공급한다."""
+    global PHOT_SMOOTHER
+    if CMFGEN_MODEL_SPEC_PATH is None:
+        return parse_phot_raw(path)
+    if PHOT_SMOOTHER is None:
+        lib = os.environ.get('CMFGEN_PHOT_SMOOTH_LIB')
+        source = os.environ.get('CMFGEN_PHOT_SMOOTH_SOURCE_ROOT')
+        PHOT_SMOOTHER = PhotSmoother(
+            CMFGEN_MODEL_SPEC_PATH.parent / 'MODEL',
+            Path(lib) if lib else None, Path(source) if source else None)
+    return PHOT_SMOOTHER.read(path)
+
+
+CMFGEN_LEVEL_SL_STEQ_LINKS_PATH = (
+    Path(os.environ['CMFGEN_LEVEL_SL_STEQ_LINKS']).expanduser()
+    if os.environ.get('CMFGEN_LEVEL_SL_STEQ_LINKS') else
+    (CMFGEN_MODEL_SPEC_PATH.parent / 'LEVEL_SL_STEQ_LINKS'
+     if CMFGEN_MODEL_SPEC_PATH is not None else None))
 _LINK_KINDS = ('osc', 'f_to_s', 'phot', 'col')
 
 
@@ -414,10 +449,116 @@ def load_cmfgen_links(path: Path) -> dict[tuple[int, int], dict[str, Path]]:
     return result
 
 
+def load_cmfgen_model_spec(path: Path, links_path: Path
+                           ) -> dict[tuple[int, int], dict[str, int | str]]:
+    """Join MODEL_SPEC active-level counts to oscillator links in run order."""
+    spec_pattern = re.compile(
+        r'^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s+\[([^]]+)_ISF\]')
+    model_rows = []
+    for lineno, line in enumerate(Path(path).read_text(encoding='latin-1').splitlines(), 1):
+        if '_ISF]' not in line:
+            continue
+        match = spec_pattern.match(line)
+        if match is None:
+            raise ValueError(f"{path}:{lineno}: malformed MODEL_SPEC ISF row")
+        n_super, n_group, n_full, label = match.groups()
+        counts = tuple(map(int, (n_super, n_group, n_full)))
+        if any(value <= 0 for value in counts):
+            raise ValueError(f"{path}:{lineno}: nonpositive MODEL_SPEC counts {counts}")
+        model_rows.append((counts, label))
+
+    osc_links = []
+    for lineno, line in enumerate(Path(links_path).read_text(encoding='latin-1').splitlines(), 1):
+        fields = shlex.split(line, comments=True)
+        if not fields or fields[0] != 'ln':
+            continue
+        operands = [field for field in fields[1:] if not field.startswith('-')]
+        if len(operands) != 2:
+            raise ValueError(f"{links_path}:{lineno}: expected ln SOURCE TARGET")
+        if operands[1].endswith('_F_OSCDAT'):
+            osc_links.append((_atomic_path_identity(Path(operands[0]))[0],
+                              operands[1][:-len('_F_OSCDAT')]))
+
+    if len(model_rows) != len(osc_links):
+        raise ValueError(
+            f"MODEL_SPEC/osc-link count mismatch: {len(model_rows)}/{len(osc_links)}")
+    osc_keys = [key for key, _label in osc_links]
+    if len(set(osc_keys)) != len(osc_keys):
+        raise ValueError(f"duplicate oscillator ion in {links_path}")
+    result = {}
+    for (key, link_label), (counts, model_label) in zip(
+            osc_links, model_rows, strict=True):
+        if model_label != link_label:
+            raise ValueError(
+                f"MODEL_SPEC label {model_label!r} does not match oscillator "
+                f"link label {link_label!r} for {key}")
+        result[key] = {'n_super': counts[0], 'n_group': counts[1],
+                       'n_full': counts[2], 'label': model_label}
+    return result
+
+
+def load_cmfgen_level_sl_map(path: Path) -> dict[tuple[str, int], dict[str, int | str]]:
+    """Read the final per-run full-level to superlevel identity table."""
+    result = {}
+    for lineno, line in enumerate(Path(path).read_text(encoding='latin-1').splitlines(), 1):
+        fields = line.split()
+        if not fields or fields[0] == 'Ion(ID)' or fields[0].startswith('#'):
+            continue
+        if len(fields) < 6:
+            raise ValueError(f"{path}:{lineno}: malformed LEVEL_SL_STEQ_LINKS row")
+        try:
+            species_id, level_id, superlevel_id, steq_level = map(int, fields[1:5])
+        except ValueError as exc:
+            raise ValueError(f"{path}:{lineno}: malformed integer field") from exc
+        if min(species_id, level_id, superlevel_id, steq_level) <= 0:
+            raise ValueError(f"{path}:{lineno}: nonpositive level-map identity")
+        key = (fields[0], level_id)
+        if key in result:
+            raise ValueError(f"{path}:{lineno}: duplicate level-map identity {key}")
+        result[key] = {'species_id': species_id, 'superlevel': superlevel_id,
+                       'steq_level': steq_level,
+                       'configuration': ' '.join(fields[5:])}
+    return result
+
+
 if CMFGEN_LINKS_PATH is not None and VINTAGE_MATCH:
     raise RuntimeError("CMFGEN_LINKS and CMFGEN_VINTAGE_MATCH are mutually exclusive")
 CMFGEN_LINK_MAP = (load_cmfgen_links(CMFGEN_LINKS_PATH)
                    if CMFGEN_LINKS_PATH is not None else {})
+if CMFGEN_MODEL_SPEC_PATH is not None and CMFGEN_LINKS_PATH is None:
+    raise RuntimeError("CMFGEN_MODEL_SPEC requires CMFGEN_LINKS")
+CMFGEN_MODEL_SPEC_MAP = (
+    load_cmfgen_model_spec(CMFGEN_MODEL_SPEC_PATH, CMFGEN_LINKS_PATH)
+    if CMFGEN_MODEL_SPEC_PATH is not None else {})
+if CMFGEN_MODEL_SPEC_MAP and set(CMFGEN_MODEL_SPEC_MAP) != set(CMFGEN_LINK_MAP):
+    raise RuntimeError("CMFGEN_MODEL_SPEC and CMFGEN_LINKS ion sets differ")
+if CMFGEN_MODEL_SPEC_PATH is not None:
+    if CMFGEN_LEVEL_SL_STEQ_LINKS_PATH is None or \
+            not CMFGEN_LEVEL_SL_STEQ_LINKS_PATH.is_file():
+        raise RuntimeError(
+            "CMFGEN_MODEL_SPEC requires sibling LEVEL_SL_STEQ_LINKS or "
+            "CMFGEN_LEVEL_SL_STEQ_LINKS")
+    CMFGEN_LEVEL_SL_STEQ_LINKS_MAP = load_cmfgen_level_sl_map(
+        CMFGEN_LEVEL_SL_STEQ_LINKS_PATH)
+    spec_labels = {str(row['label']) for row in CMFGEN_MODEL_SPEC_MAP.values()}
+    level_labels = {label for label, _level in CMFGEN_LEVEL_SL_STEQ_LINKS_MAP}
+    if spec_labels != level_labels:
+        raise RuntimeError("MODEL_SPEC and LEVEL_SL_STEQ_LINKS ion labels differ")
+    for key, spec in CMFGEN_MODEL_SPEC_MAP.items():
+        label = str(spec['label'])
+        n_full = int(spec['n_full'])
+        active = [CMFGEN_LEVEL_SL_STEQ_LINKS_MAP.get((label, level))
+                  for level in range(1, n_full + 1)]
+        if any(row is None for row in active):
+            raise RuntimeError(
+                f"LEVEL_SL_STEQ_LINKS lacks {label} active levels 1..{n_full}")
+        superlevels = {int(row['superlevel']) for row in active if row is not None}
+        if superlevels != set(range(1, int(spec['n_super']) + 1)):
+            raise RuntimeError(
+                f"{label} active LEVEL_SL_STEQ_LINKS superlevels disagree "
+                f"with MODEL_SPEC N_S={spec['n_super']}: {sorted(superlevels)}")
+else:
+    CMFGEN_LEVEL_SL_STEQ_LINKS_MAP = {}
 if LINK_FTOS_ENABLED and CMFGEN_LINKS_PATH is None:
     raise RuntimeError("CMFGEN_LINK_FTOS=1 requires CMFGEN_LINKS")
 
@@ -445,6 +586,31 @@ def _phot_path(date_dir: Path) -> Path | None:
     return cands[0] if cands else None
 
 
+_PHOT_PATH_OVERRIDE_ENV = {
+    (16, 3): 'LUMINA_SIII_PHOT_PATH',
+    (27, 2): 'LUMINA_COII_PHOT_PATH',
+}
+
+
+def _apply_phot_path_override(key: tuple[int, int], default_path: Path | None
+                              ) -> tuple[Path | None, str | None]:
+    """Select an explicit run-local PHOT source, failing closed if invalid."""
+    env_name = _PHOT_PATH_OVERRIDE_ENV.get(key)
+    raw_override = os.environ.get(env_name) if env_name else None
+    if raw_override is None or not raw_override.strip():
+        return default_path, None
+
+    candidate = Path(raw_override).expanduser()
+    try:
+        selected = candidate.resolve(strict=True)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"{env_name} selects missing PHOT file: {candidate}") from exc
+    if not selected.is_file():
+        raise ValueError(f"{env_name} must select a regular PHOT file: {selected}")
+    return selected, env_name
+
+
 def _norm_cfg(s) -> str:
     return str(s).strip().lower()
 
@@ -456,11 +622,281 @@ def _term_cfg(s) -> str:
     return _TERM_RE.sub('', _norm_cfg(s))
 
 
+def _phot_route_paths(primary: Path) -> list[Path]:
+    """Return the ordered phot grids belonging to the selected CMFGEN vintage."""
+    primary = Path(primary)
+    m = re.fullmatch(r'phot_data_([A-Za-z])', primary.name)
+    if not m:
+        return [primary]
+    paths = []
+    for code in range(ord('A'), ord('Z') + 1):
+        for name in (f'phot_data_{chr(code)}', f'phot_data_{chr(code).lower()}'):
+            candidate = primary.parent / name
+            if candidate.is_file() and candidate not in paths:
+                paths.append(candidate)
+    return paths
+
+
+def _phot_target_components(phot, upper_data: dict, level_lookup: dict,
+                            Z: int, upper_stage: int) -> list[dict]:
+    """Resolve one PHOT grid as CMFGEN's ordered superlevel routes.
+
+    GET_NUM_PHOT_ROUTES_V1 selects the first matching alternate term and
+    coalesces all matching fine levels that share an F_TO_S superlevel.  Its
+    route energy is the first matching fine level's energy and its statistical
+    weight is the sum over matching members of that superlevel.
+    """
+    aliases = [s.strip() for s in str(phot.final_state).split('/') if s.strip()]
+    upper_levels = upper_data['levels']
+    n_upper = int(upper_data['n_kept'])
+    selected: list[int] = []
+    for alias in aliases:
+        alias_norm = _norm_cfg(alias)
+        matches = [i for i in range(n_upper)
+                   if _term_cfg(upper_levels['config'][i]) == alias_norm]
+        if matches:
+            # CMFGEN exits the alternate-name loop after the first alias that
+            # matches any upper-ion level; later aliases are fallbacks, not a
+            # union of additional destinations.
+            selected = matches
+            break
+    if not selected:
+        raise ValueError(f"unresolved phot final state {phot.final_state!r} in Z={Z} stage={upper_stage}")
+
+    ftos = upper_data.get('ftos')
+    if ftos is not None and len(ftos.sl_of_fl) < n_upper:
+        raise ValueError(
+            f"F_TO_S has {len(ftos.sl_of_fl)} levels, upper ion has {n_upper} "
+            f"for Z={Z} stage={upper_stage}")
+    grouped: dict[int, dict] = {}
+    for i in selected:
+        superlevel = int(ftos.sl_of_fl[i]) if ftos is not None else i
+        row = grouped.get(superlevel)
+        if row is None:
+            row = {'anchor': i, 'g': 0.0}
+            grouped[superlevel] = row
+        row['g'] += float(upper_levels['g'][i])
+
+    g_sum = sum(float(row['g']) for row in grouped.values())
+    if not (g_sum > 0.0):
+        raise ValueError(f"nonpositive target statistical weight for {phot.final_state!r}")
+    declared_g = float(phot.final_state_g)
+    if declared_g > 0.0 and abs(g_sum - declared_g) > 1e-7 * max(1.0, declared_g):
+        raise ValueError(f"target g mismatch for {phot.final_state!r}: levels={g_sum:g}, header={declared_g:g}")
+
+    components = []
+    for row in grouped.values():
+        i = int(row['anchor'])
+        target_global = level_lookup.get((Z, upper_stage, i + 1))
+        if target_global is None:
+            raise ValueError(f"target level {i + 1} for {phot.final_state!r} is absent from the ref atom")
+        g = float(row['g'])
+        if not (g > 0.0):
+            raise ValueError(f"nonpositive g for target superlevel at level {i + 1} of {phot.final_state!r}")
+        components.append({
+            'upper_level_num': i,
+            'upper_superlevel': int(ftos.sl_of_fl[i]) if ftos is not None else i,
+            'upper_global': int(target_global),
+            'energy_eV': float(upper_levels['E_cm'][i]) * 1.239841984e-4,
+            'g': g,
+            'probability': g / g_sum,
+        })
+    return components
+
+
+def _phot_terminal_target_component(phot, Z: int, upper_stage: int) -> list[dict]:
+    """Represent CMFGEN's missing-next-ion route as its declared scalar target.
+
+    GET_NUM_PHOT_ROUTES_V1 sends every route to virtual level 1 when the next
+    ion is absent, while retaining the PHOT final-state excitation and GION.
+    This is deliberately not resolved against the top-ion partition catalog.
+    """
+    if int(phot.n_routes) != 1:
+        raise ValueError(
+            f"terminal route requires exactly one PHOT route, got {phot.n_routes} "
+            f"for Z={Z} stage={upper_stage}")
+    energy = float(phot.final_state_excit_eV)
+    g = float(phot.final_state_g)
+    if not phot.final_state.strip() or not (energy >= 0.0) or not np.isfinite(energy):
+        raise ValueError(
+            f"invalid terminal target energy/state for Z={Z} stage={upper_stage}")
+    if not (g > 0.0) or not np.isfinite(g):
+        raise ValueError(
+            f"invalid terminal target statistical weight for Z={Z} stage={upper_stage}")
+    return [{
+        'upper_level_num': -1,
+        'upper_superlevel': -1,
+        'upper_global': -1,
+        'energy_eV': energy,
+        'g': g,
+        'probability': 1.0,
+    }]
+
+
+def _route_sigma_model(entry, nu_th: float, Z: int, zion: float):
+    """Evaluate a scoped Si/S route without the legacy hydrogenic stand-in."""
+    if entry.cs_type in _SIGMA_STANDIN_FIT:
+        nef = _cmfgen_nef(Z, zion, nu_th)
+        model = _sigma_hydrogenic_exact(
+            entry.cs_type, entry.sigma_Mb, nu_th, zion, nef)
+    else:
+        model = _sigma_model(entry.cs_type, entry.energy, entry.sigma_Mb,
+                             nu_th, zion=zion, nef=_cmfgen_nef(Z, zion, nu_th))
+    if model is None or model[3] == 'standin':
+        raise ValueError(f"no exact CMFGEN sigma evaluator for type={entry.cs_type} at nu_th={nu_th:.9e} Hz")
+    return model
+
+
+def _bake_route_aware_ion(ion_data: dict, key: tuple[int, int],
+                          level_lookup: dict, nu_edges: np.ndarray,
+                          d_nu: np.ndarray, sigma_grid: np.ndarray,
+                          has_cmfgen: np.ndarray,
+                          routes_by_lower: list[list[dict]],
+                          source_records: dict) -> int:
+    """Bake actual CMFGEN target channels for one Si/S ion into route CSR rows."""
+    Z, stage = key
+    d = ion_data[key]
+    upper = ion_data.get((Z, stage + 1))
+    terminal_target = upper is None and key in BF_TERMINAL_IONS
+    if upper is None and not terminal_target:
+        raise ValueError(f"route-aware Z={Z} stage={stage} lacks its upper ion in the atom")
+    primary = d.get('provenance', {}).get('phot_path')
+    if not primary:
+        raise ValueError(f"route-aware Z={Z} stage={stage} has no selected phot source")
+    paths = _phot_route_paths(Path(primary))
+    if not paths:
+        raise ValueError(f"route-aware Z={Z} stage={stage} has no phot grids")
+    phot_routes = []
+    for path in paths:
+        try:
+            phot_routes.append((path, parse_phot(path)))
+        except Exception as exc:
+            raise ValueError(f"failed parsing required CMFGEN route {path}") from exc
+    declared_routes = int(phot_routes[0][1].n_routes)
+    if declared_routes != len(phot_routes):
+        raise ValueError(f"Z={Z} stage={stage}: header declares {declared_routes} phot grids, found {len(phot_routes)}")
+    if any(int(p.n_routes) != declared_routes for _, p in phot_routes):
+        raise ValueError(f"Z={Z} stage={stage}: inconsistent photo-route counts across grids")
+
+    levs = d['levels']
+    n_kept = int(d['n_kept'])
+    cfg_to_lvl: dict[str, int] = {}
+    term_to_lvls: dict[str, list[int]] = {}
+    for i in range(n_kept):
+        cfg = _norm_cfg(levs['config'][i])
+        cfg_to_lvl[cfg] = i
+        term_to_lvls.setdefault(_term_cfg(cfg), []).append(i)
+
+    n_baked = 0
+    ion_route_counts = []
+    ion_sources = []
+    E_ion = float(d['osc'].ionization_eV)
+    zion = float(d['osc'].z_screen)
+    for grid_id, (path, phot) in enumerate(phot_routes):
+        components = (_phot_terminal_target_component(phot, Z, stage + 1)
+                      if terminal_target else _phot_target_components(
+                          phot, upper, level_lookup, Z, stage + 1))
+        entries_by_lower: dict[int, list] = {}
+        for entry in phot.entries:
+            cfg_norm = _norm_cfg(entry.config)
+            lower_indices = ([cfg_to_lvl[cfg_norm]] if phot.split_J and cfg_norm in cfg_to_lvl
+                             else [] if phot.split_J
+                             else term_to_lvls.get(cfg_norm, []))
+            for lower_idx in lower_indices:
+                entries_by_lower.setdefault(lower_idx, []).append(entry)
+
+        n_grid_channels = 0
+        routed_lower: set[int] = set()
+        for lower_idx, entries in entries_by_lower.items():
+            lower_global = level_lookup.get((Z, stage, lower_idx + 1))
+            if lower_global is None:
+                raise ValueError(
+                    f"CMFGEN-active lower level {lower_idx + 1} for Z={Z} "
+                    f"stage={stage} is absent from the reference atom")
+            E_lower = float(levs['E_cm'][lower_idx]) * 1.239841984e-4
+            for component in components:
+                threshold_eV = E_ion - E_lower + component['energy_eV']
+                if not (threshold_eV > 0.0):
+                    continue
+                nu_th = threshold_eV * EV_TO_ERG / H_CGS
+                sigma_route = np.zeros(len(d_nu), dtype='f8')
+                sigma_edge = 0.0
+                # CMFGEN OMEGA_GEN_V3 asks SUB_PHOT_GEN for the PHOT_ID=1
+                # edge cross section (FREQ=0, SET_TO_EDGE=.TRUE.). Its
+                # frequency is the physical edge nudged upward by
+                # EQUAL_COR_FAC=1+1e-14. Preserve that raw evaluator result;
+                # the first Lumina bin average is diluted by the partial bin
+                # and is not an edge cross section.
+                nu_edge_eval = nu_th * (1.0 + 1.0e-14)
+                for entry in entries:
+                    model = _route_sigma_model(entry, nu_th, Z, zion)
+                    fn, nodes, nu_start, _tag = model
+                    sigma_route += _bin_average_sigma(
+                        fn, nodes, nu_edges, d_nu, nu_start)
+                    edge_value = np.asarray(fn(np.asarray([nu_edge_eval],
+                                                           dtype='f8')),
+                                             dtype='f8').reshape(-1)
+                    if edge_value.size != 1 or not np.isfinite(edge_value[0]) or \
+                            edge_value[0] < 0.0:
+                        raise ValueError(
+                            f"invalid CMFGEN edge sigma for Z={Z} stage={stage} "
+                            f"lower={lower_idx + 1} route={grid_id}")
+                    sigma_edge += float(edge_value[0])
+                probability = float(component['probability'])
+                routes_by_lower[int(lower_global)].append({
+                    'target': int(component['upper_global']),
+                    'probability': probability,
+                    'phot_grid': grid_id,
+                    'target_energy_eV': float(component['energy_eV']),
+                    'target_g': float(component['g']),
+                    'sigma_edge_cm2': sigma_edge,
+                    'sigma': sigma_route,
+                })
+                sigma_grid[int(lower_global)] += probability * sigma_route
+                has_cmfgen[int(lower_global)] = 1
+                n_baked += 1
+                n_grid_channels += 1
+                routed_lower.add(lower_idx)
+
+        if n_grid_channels == 0:
+            raise ValueError(f"Z={Z} stage={stage} grid {path.name} produced no mapped lower-level channels")
+        expected_lower = set(range(n_kept))
+        missing_lower = sorted(expected_lower - routed_lower)
+        if missing_lower:
+            preview = ','.join(str(i + 1) for i in missing_lower[:12])
+            raise ValueError(
+                f"Z={Z} stage={stage} grid {path.name} omits CMFGEN-active "
+                f"lower levels ({len(missing_lower)} missing; first={preview})")
+        ion_route_counts.append({'phot_grid': grid_id, 'path': str(path),
+                                 'channels': n_grid_channels,
+                                 'target_superlevels': [c['upper_superlevel'] for c in components],
+                                 'target_states': [
+                                     {'energy_eV': c['energy_eV'], 'g': c['g'],
+                                      'probability': c['probability']}
+                                     for c in components]})
+        ion_sources.append(path)
+
+    source_records[f"Z{Z:02d}_stage{stage}"] = {
+        'channels_by_grid': ion_route_counts,
+        'sources': [
+            {'path': str(path), 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+            for path in ion_sources
+        ],
+    }
+    return n_baked
+
+
 def parse_all_ions() -> dict:
     """Parse every (Z, stage) listed in ION_LEVEL_CAPS that has CMFGEN data."""
     print("=== Phase 1: parse CMFGEN ions ===")
     out: dict[tuple[int,int], dict] = {}
     for (Z, stage), cap in sorted(ION_LEVEL_CAPS.items()):
+        # A sealed MODEL_SPEC defines the complete atom set for a matched
+        # CMFGEN run. Do not silently add repository-local auto-discovered
+        # ions (for example Si I or S I) that the run did not model.
+        if CMFGEN_MODEL_SPEC_PATH is not None and \
+                (Z, stage) not in CMFGEN_MODEL_SPEC_MAP:
+            continue
         eldir = CMFGEN_DIRS.get(Z)
         if eldir is None: continue
         ion_dir = CMFGEN_ROOT / eldir / ROMAN[stage]
@@ -509,6 +945,8 @@ def parse_all_ions() -> dict:
             pp = vm_phot if vm_phot is not None else _phot_path(date_dir)
             cp = col_dir / 'col_data'
 
+        pp, phot_override_env = _apply_phot_path_override((Z, stage), pp)
+
         try:
             osc = parse_osc(osc_p)
         except Exception as e:
@@ -519,11 +957,18 @@ def parse_all_ions() -> dict:
             continue
         if osc.n_levels == 0:
             continue
+        model_spec = CMFGEN_MODEL_SPEC_MAP.get((Z, stage))
+        model_nf = int(model_spec['n_full']) if model_spec is not None else None
+        if model_nf is not None and model_nf > osc.n_levels:
+            raise ValueError(
+                f"{SYM[Z]} {ROMAN[stage]} MODEL_SPEC NF={model_nf} exceeds "
+                f"linked osc levels={osc.n_levels}: {osc_p}")
 
         # Super-level ions keep ALL full levels (FL carry opacity); the NLTE
         # solve later collapses them to f_to_s super-levels.
         ftos = None
-        use_link_ftos = LINK_FTOS_ENABLED and linked_ftos is not None
+        use_link_ftos = ((LINK_FTOS_ENABLED or model_spec is not None) and
+                         linked_ftos is not None)
         use_superlev = (use_link_ftos or
                         (SUPER_LEVEL_ENABLED and (Z, stage) in SUPER_LEVEL_IONS))
         if use_superlev:
@@ -562,10 +1007,40 @@ def parse_all_ions() -> dict:
                         ftos = None
                         use_superlev = False
 
+        if model_spec is not None and linked_ftos is None:
+            raise ValueError(
+                f"{SYM[Z]} {ROMAN[stage]} has MODEL_SPEC input but no linked F_TO_S")
         if use_superlev:
             n_kept = osc.n_levels   # keep everything for opacity
         else:
             n_kept = osc.n_levels if cap is None else min(osc.n_levels, cap)
+        if model_nf is not None:
+            # MODEL_SPEC is the active CMFGEN atom.  The linked oscillator and
+            # F_TO_S files may contain extra inactive levels; use only the
+            # same leading NF levels used by the sealed CMFGEN run.
+            n_kept = model_nf
+        active_n_super = (len(np.unique(ftos.sl_of_fl[:n_kept]))
+                          if ftos is not None else n_kept)
+        if model_spec is not None and active_n_super != int(model_spec['n_super']):
+            raise ValueError(
+                f"{SYM[Z]} {ROMAN[stage]} active F_TO_S prefix has "
+                f"{active_n_super} superlevels; MODEL_SPEC expects "
+                f"{model_spec['n_super']} at NF={model_nf}")
+        if model_spec is not None:
+            label = str(model_spec['label'])
+            for level_idx in range(n_kept):
+                runtime_row = CMFGEN_LEVEL_SL_STEQ_LINKS_MAP[(label, level_idx + 1)]
+                osc_cfg = _norm_cfg(osc.levels['config'][level_idx])
+                runtime_cfg = _norm_cfg(runtime_row['configuration'])
+                if osc_cfg != runtime_cfg:
+                    raise ValueError(
+                        f"{label} level {level_idx + 1} identity mismatch: "
+                        f"osc={osc_cfg!r} runtime={runtime_cfg!r}")
+                fts_sl = int(ftos.sl_of_fl[level_idx]) + 1 if ftos is not None else level_idx + 1
+                if fts_sl != int(runtime_row['superlevel']):
+                    raise ValueError(
+                        f"{label} level {level_idx + 1} F_TO_S SL={fts_sl} "
+                        f"but LEVEL_SL_STEQ_LINKS SL={runtime_row['superlevel']}")
         levels = osc.levels[:n_kept]
         # CMFGEN encodes Kurucz-computed (theoretical, no observed lambda)
         # transitions with negative lam_A. |lam_A| is the correct rest
@@ -602,6 +1077,10 @@ def parse_all_ions() -> dict:
             fts_p if use_superlev else None)
         provenance = {
             'selection_source': selection_source,
+            'phot_override_env': phot_override_env,
+            'model_spec_nf': model_nf,
+            'active_superlevels': active_n_super,
+            'model_spec_path': CMFGEN_MODEL_SPEC_PATH,
             'latest_vintage': latest_dir.name,
             'osc_path': osc_p,
             'f_to_s_path': fts_source,
@@ -756,11 +1235,12 @@ def write_atomic_vintage_manifest(ion_data: dict, path: Path) -> None:
     """Record the exact per-ion source choice used by this deck bake."""
     fields = [
         'atomic_number', 'ion_stage', 'ion_number', 'ion',
-        'selection_source', 'latest_vintage',
+        'selection_source', 'phot_override_env', 'latest_vintage',
+        'model_spec_path', 'model_spec_nf', 'active_superlevels',
         'osc_vintage', 'osc_path', 'f_to_s_vintage', 'f_to_s_path',
         'phot_vintage', 'phot_path', 'col_vintage', 'col_path',
     ]
-    if LINK_FTOS_ENABLED:
+    if LINK_FTOS_ENABLED or CMFGEN_MODEL_SPEC_PATH is not None:
         fields.extend([
             'f_to_s_format', 'f_to_s_format_basis',
             'f_to_s_declared_full_levels', 'f_to_s_declared_super_levels',
@@ -776,6 +1256,12 @@ def write_atomic_vintage_manifest(ion_data: dict, path: Path) -> None:
                 'ion_number': stage - 1,
                 'ion': f"{SYM[z]} {ROMAN[stage]}",
                 'selection_source': provenance['selection_source'],
+                'phot_override_env': provenance.get('phot_override_env') or '',
+                'model_spec_path': str(provenance['model_spec_path'])
+                    if provenance.get('model_spec_path') is not None else '',
+                'model_spec_nf': provenance.get('model_spec_nf')
+                    if provenance.get('model_spec_nf') is not None else '',
+                'active_superlevels': provenance.get('active_superlevels', ''),
                 'latest_vintage': provenance['latest_vintage'],
             }
             for kind in _LINK_KINDS:
@@ -783,7 +1269,7 @@ def write_atomic_vintage_manifest(ion_data: dict, path: Path) -> None:
                 row[f'{kind}_path'] = str(source) if source is not None else ''
                 row[f'{kind}_vintage'] = (
                     _atomic_path_identity(source)[1] if source is not None else '')
-            if LINK_FTOS_ENABLED:
+            if LINK_FTOS_ENABLED or CMFGEN_MODEL_SPEC_PATH is not None:
                 ftos = data.get('ftos')
                 if ftos is None and provenance['selection_source'] == 'links':
                     raise RuntimeError(
@@ -813,7 +1299,9 @@ def write_line_list_csv(L, levels_rows, path: Path) -> None:
     f_ul = f_lu * g_lo / g_up
     nu   = L['nu']
     A_ul = L['A_ul']
-    B_lu = A_ul * (C_CGS ** 2) / (8 * np.pi * H_CGS * (nu ** 3)) * (g_up / g_lo)
+    # 소비자는 각도 평균 강도 J_nu를 사용한다. A/B=2h nu^3/c^2이며
+    # 8*pi 분모는 이 소비자에서 흡수·유도방출을 4*pi만큼 작게 만든다.
+    B_lu = A_ul * (C_CGS ** 2) / (2 * H_CGS * (nu ** 3)) * (g_up / g_lo)
     B_ul = B_lu * g_lo / g_up
     wl_cm = L['lam'] * 1e-8
     with open(path, 'w') as fp:
@@ -870,7 +1358,7 @@ def write_macro_atom(L, levels_rows, level_lookup_global,
                      for i in range(n_lines)], dtype='f8')
     nu_l  = L['nu'].astype('f8')
     A_ul  = L['A_ul'].astype('f8')
-    B_lu  = A_ul * (C_CGS ** 2) / (8 * np.pi * H_CGS * (nu_l ** 3)) * (g_up / g_lo)
+    B_lu  = A_ul * (C_CGS ** 2) / (2 * H_CGS * (nu_l ** 3)) * (g_up / g_lo)
     x = H_CGS * nu_l / (K_CGS * T_RAD_REF)
     B_nu = (2 * H_CGS * nu_l ** 3 / C_CGS ** 2) / np.expm1(np.clip(x, 1e-30, 700.0))
     w_emit = A_ul                    # ttype -1  (β folded into per-block norm)
@@ -990,15 +1478,14 @@ def write_atom_masses(elements_used, path: Path) -> None:
 #             wrong depends on the ion: legacy/CMFGEN vs fallback/CMFGEN =
 #             0.85 vs 0.34 (Co III), 0.41 vs 0.53 (Fe II), 0.41 vs 1.03 (Co II),
 #             0.09 vs 0.12 (Sc I).  Swapping one for the other is not a repair.
-#         So the stand-in stays, LABELLED, until types 2/3/8 are evaluated
-#         exactly.  That is feasible and is the real fix: it needs CMFGEN's
-#         HYD_L_DATA / GBF_N_DATA (present at
-#         /gpfs/kjhan/cmfgen_runs/toy06_19.48d/), whose units were verified
-#         here -- 10^BF_L_CROSS(1,0,u=1) * 1e-10 = 6.3034e-18 cm^2 vs the
-#         analytic H ground-state 6.30e-18.  Type 2 additionally needs NEF and
-#         type 3 needs ALPHA_BF/GBF_N_DATA.  Deliberately NOT done in this
-#         change: the certification harness has no exact evaluator for these
-#         types either (VERDICT caveat 2), so it would ship untestable.
+#         The historical BAKEFIX stage retained this labelled stand-in because
+#         its certification harness lacked an exact evaluator.  BAKEFIX2 below
+#         now ports CMFGEN's types 2/3/8/9 and uses HYD_L_DATA/GBF_N_DATA; the
+#         table units are checked by the ground-state answer
+#         10^BF_L_CROSS(1,0,u=1)*1e-10 = 6.3034e-18 cm^2 (analytic: 6.30e-18).
+#         Comparison decks must set CMFGEN_EXACT_HYD=1.  In that mode a malformed
+#         or unevaluable fit is fatal; it must never silently fall back to this
+#         stand-in.  The default remains OFF only for historical byte parity.
 #
 # (2) The old code point-sampled sigma at the geometric bin centre.  Where the
 #     CMFGEN table is finer than the 1588 km/s bin (unsmoothed OP data, e.g.
@@ -1019,9 +1506,8 @@ def write_atom_masses(elements_used, path: Path) -> None:
 # Fit types this baker can evaluate exactly (CMFGEN newsubs/sub_phot_gen.f).
 _SIGMA_TABULATED = (20, 21, 22)
 _SIGMA_EXACT_FIT = (1, 7)
-# Hydrogenic (2/3/8) and Verner (9): no exact evaluator offline.  Carried by
-# the known-wrong params[0]-as-sigma_0 Kramers stand-in -- see the head note for
-# why it is kept rather than removed, and what replacing it would take.
+# Hydrogenic (2/3/8) and Verner (9): legacy fallback only when exact mode is
+# disabled. Comparison-deck mode evaluates them exactly and fails closed.
 _SIGMA_STANDIN_FIT = (2, 3, 8, 9)
 
 # --------------------------------------------------------------------------
@@ -1065,6 +1551,10 @@ _SIGMA_STANDIN_FIT = (2, 3, 8, 9)
 SIGMA_EXACT_HYD = os.environ.get('CMFGEN_EXACT_HYD', '0') not in ('0', '', 'false')
 
 _HYD_BF_DIR = CMFGEN_ROOT / 'HYD' / 'I' / '5dec96'
+HYD_BF_DATA_FILES = (
+    _HYD_BF_DIR / 'hyd_l_data.dat',
+    _HYD_BF_DIR / 'gbf_n_data.dat',
+)
 _HYD_BF: dict | None = None
 
 # rdphot_gen_v2.f:465 -- 1e-15 * R_inf[cm^-1] * c[cm/s], in CMFGEN's 1e15 Hz.
@@ -1238,16 +1728,24 @@ def _sigma_model(cs_type: int, energy: np.ndarray, params: np.ndarray,
         lo = max(nu_th, float(nu_pts[0]))   # left=0.0 convention -> start at node 1
 
         def fn(nu, _p=nu_pts, _s=sig_pts):
-            return np.interp(nu, _p, _s, left=0.0, right=_s[-1])
+            x = np.asarray(nu)
+            interp = np.interp(x, _p, _s, left=0.0, right=_s[-1])
+            tail = _s[-1] * (_p[-1] / x) ** 3
+            return np.where(x >= _p[-1], tail, interp)
 
         return fn, nu_pts, lo, 'tab'
+
+    if cs_type == 1 and ((params.size == 1 and params[0] == 0.0) or
+                         (params.size >= 3 and params[0] == 0.0)):
+        # CMFGEN encodes a forbidden/zero continuum route as type 1 with
+        # a single zero, or a zero-amplitude Seaton fit. This is known data,
+        # not a missing model: preserve has_cmfgen=1 so the runtime cannot
+        # replace an explicit zero by a nonzero Kramers fallback.
+        return (lambda nu: np.zeros(np.shape(nu))), np.array([nu_th]), nu_th, 'explicit_zero'
 
     if cs_type == 1 and params.size >= 3:
         # Seaton fit, sub_phot_gen.f:412-419.
         s0, beta, s_exp = (float(params[0]), float(params[1]), float(params[2]))
-        if s0 == 0.0:
-            return None
-
         def fn(nu, _s0=s0, _b=beta, _e=s_exp, _n=nu_th):
             out = np.zeros(np.shape(nu))
             m = nu >= _n
@@ -1258,15 +1756,18 @@ def _sigma_model(cs_type: int, energy: np.ndarray, params: np.ndarray,
 
         return fn, np.array([nu_th]), nu_th, 'seaton'
 
-    # ---- BAKEFIX2: exact hydrogenic / Verner, gated ----------------------
-    if SIGMA_EXACT_HYD and cs_type in _SIGMA_STANDIN_FIT and zion is not None \
-            and nef is not None and zion > 0:
+    # ---- BAKEFIX2: exact hydrogenic / Verner, gated and fail-closed ------
+    if SIGMA_EXACT_HYD and cs_type in _SIGMA_STANDIN_FIT:
+        if zion is None or nef is None or not (zion > 0.0) or \
+                not np.isfinite(zion) or not (nef > 0.0) or not np.isfinite(nef):
+            raise ValueError(
+                f"CMFGEN exact fit type={cs_type} lacks valid ZION/NEF")
         m = _sigma_hydrogenic_exact(cs_type, params, nu_th, zion, nef)
-        if m is not None:
-            return m
-        # falls through to the legacy stand-in when the entry is malformed
-        # (n out of the HYD_L_DATA range, l > n-1, wrong parameter count, ...),
-        # which is what CMFGEN itself refuses to evaluate (it STOPs).
+        if m is None:
+            raise ValueError(
+                f"CMFGEN exact fit type={cs_type} rejected its parameters at "
+                f"nu_th={nu_th:.9e} Hz; stand-in fallback forbidden")
+        return m
 
     if cs_type in _SIGMA_STANDIN_FIT and params.size >= 1:
         # KNOWN-WRONG STAND-IN, kept deliberately (see head note): params[0] is
@@ -1465,7 +1966,9 @@ def _bin_average_sigma(fn, nodes: np.ndarray, edges: np.ndarray,
 
 
 def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
-                       levels_rows, level_lookup, path: Path) -> tuple[int, int]:
+                       levels_rows, level_lookup, path: Path,
+                       route_path: Path | None = None,
+                       policy_context=None) -> tuple[int, int]:
     """Pre-bake sigma_bf(nu) onto the fixed LUMINA bf opacity grid.
 
     Output binary layout (little-endian):
@@ -1480,6 +1983,13 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
 
     Levels without CMFGEN data have sigma_cm2 == 0 across the grid; the C-side
     bf opacity loop falls back to Kramers for those.
+
+    When route_path is supplied, selected Si/S stages use the actual linked
+    phot_data grids. Active upper-ion targets are grouped exactly by the
+    selected CMFGEN F_TO_S superlevels; missing Si/S VI atoms are represented
+    by the PHOT-declared scalar target.
+    Their total opacity row is the sum of weighted target channels, and a CSR
+    companion stores sigma, target, probability, energy, and statistical weight.
     """
     n_levels = len(levels_rows)
     nb = BF_N_FREQ_BIN
@@ -1494,6 +2004,8 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
 
     sigma_grid = np.zeros((n_levels, nb), dtype='f8')
     has_cmfgen = np.zeros(n_levels, dtype='i1')
+    routes_by_lower: list[list[dict]] = [[] for _ in range(n_levels)]
+    route_sources: dict[str, dict] = {}
     n_skip_type: dict[int, int] = {}
     skip_by_ion: dict[tuple[int, int], int] = {}
     n_exact_type: dict[int, int] = {}
@@ -1512,6 +2024,11 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
         # ZXzV = "Screened nuclear charge" (osc_data header); the phot file
         # repeats it and CMFGEN cross-checks the two, so do the same.
         zion = float(d['osc'].z_screen)
+        if route_path is not None and (Z, stage) in BF_CHANNEL_IONS:
+            n_baked += _bake_route_aware_ion(
+                ion_data, (Z, stage), level_lookup, nu_edges, d_nu,
+                sigma_grid, has_cmfgen, routes_by_lower, route_sources)
+            continue
         if SIGMA_EXACT_HYD and d['phot'] is not None \
                 and d['phot'].z_screen > 0 \
                 and abs(d['phot'].z_screen - zion) > 1e-9:
@@ -1530,10 +2047,13 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
 
         for entry in phot.entries:
             cfg_norm = _norm_cfg(entry.config)
-            if cfg_norm in cfg_to_lvl:
-                targets = [cfg_to_lvl[cfg_norm]]
+            if phot.split_J:
+                targets = [cfg_to_lvl[cfg_norm]] if cfg_norm in cfg_to_lvl else []
             else:
-                targets = term_to_lvls.get(_term_cfg(entry.config), [])
+                # RDPHOT_GEN_V2 strips [J] from every lower-level name when
+                # SPLIT_J is false. An unsplit level with the exact term name
+                # must not shadow the fine-structure members of the same term.
+                targets = term_to_lvls.get(cfg_norm, [])
             if not targets:
                 continue
 
@@ -1541,8 +2061,8 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
             #   - Tabulated (20-22)      : linear interpolation in nu.
             #   - Seaton (1)             : sub_phot_gen.f:412, edge at nu_th.
             #   - Modified Seaton (7)    : sub_phot_gen.f:505, edge at nu_th+A3.
-            #   - Hydrogenic/Verner (2,3,8,9): known-wrong params[0] stand-in,
-            #     kept and counted; see the head note.
+            #   - Hydrogenic/Verner (2,3,8,9): exact CMFGEN fit when
+            #     CMFGEN_EXACT_HYD=1; legacy stand-in only with the gate OFF.
             # Every baked curve is stored as the BIN AVERAGE of sigma, not a
             # point sample at the bin centre.
             for lvl_csv in targets:
@@ -1605,7 +2125,6 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
     # Write flat binary
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'wb') as f:
-        import struct
         f.write(struct.pack('<II', 0x434D4644, 1))           # magic, version
         f.write(struct.pack('<ii', n_levels, nb))
         f.write(struct.pack('<dd', BF_NU_MIN, BF_NU_MAX))
@@ -1614,6 +2133,63 @@ def bake_sigma_bf_grid(ion_data: dict, ion_data_index: dict,
         pad = (8 - (n_levels % 8)) % 8
         f.write(b'\x00' * pad)
         f.write(sigma_grid.tobytes(order='C'))
+
+    if route_path is not None:
+        offsets = [0]
+        targets, probabilities, phot_grids = [], [], []
+        target_energies, target_weights, edge_sigmas, channel_sigma = [], [], [], []
+        for row in routes_by_lower:
+            for route in row:
+                targets.append(route['target'])
+                probabilities.append(route['probability'])
+                phot_grids.append(route['phot_grid'])
+                target_energies.append(route['target_energy_eV'])
+                target_weights.append(route['target_g'])
+                edge_sigmas.append(route['sigma_edge_cm2'])
+                channel_sigma.append(route['sigma'])
+            offsets.append(len(targets))
+        if not targets:
+            raise ValueError("route channel output requested but no scoped Si/S channels were built")
+        route_path = Path(route_path)
+        route_path.parent.mkdir(parents=True, exist_ok=True)
+        policy = None
+        if policy_context is not None:
+            model_path, model_map, link_map = policy_context
+            policy = build_policy(model_path, model_map, link_map, route_sources, ion_data)
+        channel_version = 5 if policy is not None else BF_CHANNEL_VERSION
+        with open(route_path, 'wb') as f:
+            f.write(struct.pack('<IIiiidd', BF_CHANNEL_MAGIC, channel_version,
+                                n_levels, nb, len(targets), BF_NU_MIN, BF_NU_MAX))
+            f.write(struct.pack(f'<{n_levels + 1}i', *offsets))
+            f.write(struct.pack(f'<{len(targets)}i', *targets))
+            f.write(struct.pack(f'<{len(targets)}d', *probabilities))
+            f.write(struct.pack(f'<{len(targets)}i', *phot_grids))
+            f.write(struct.pack(f'<{len(target_energies)}d', *target_energies))
+            f.write(struct.pack(f'<{len(target_weights)}d', *target_weights))
+            f.write(struct.pack(f'<{len(edge_sigmas)}d', *edge_sigmas))
+            f.write(np.asarray(channel_sigma, dtype='f8').reshape(
+                len(targets), nb).tobytes(order='C'))
+            if policy is not None:
+                f.write(encode_policy(policy))
+
+        route_manifest = {
+            'schema': f'lumina-cmfgen-bf-channels-v{channel_version}',
+            'n_levels': n_levels,
+            'n_freq_bins': nb,
+            'nu_min_Hz': BF_NU_MIN,
+            'nu_max_Hz': BF_NU_MAX,
+            'n_channels': len(targets),
+            'ions': route_sources,
+            'sigma_bin_sha256': hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+            'channel_bin_sha256': hashlib.sha256(route_path.read_bytes()).hexdigest(),
+            'builder_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        }
+        if policy is not None:
+            route_manifest['recombination_policy'] = policy
+        manifest_path = route_path.with_name(route_path.stem + '_manifest.json')
+        manifest_path.write_text(json.dumps(route_manifest, indent=2, ensure_ascii=False) + '\n')
+        print(f"  route channels: {len(targets)} -> {route_path}")
+        print(f"  route manifest: {manifest_path}")
 
     return n_baked, int(has_cmfgen.sum())
 
@@ -1712,6 +2288,15 @@ def main() -> None:
     if not ion_data:
         print("No ions parsed; aborting.")
         sys.exit(1)
+    if CMFGEN_MODEL_SPEC_PATH is not None:
+        expected_ions = set(CMFGEN_MODEL_SPEC_MAP)
+        actual_ions = set(ion_data)
+        if actual_ions != expected_ions:
+            missing = sorted(expected_ions - actual_ions)
+            extra = sorted(actual_ions - expected_ions)
+            raise RuntimeError(
+                "parsed ion set does not exactly match MODEL_SPEC: "
+                f"missing={missing}, extra={extra}")
 
     print(f"\n=== Phase 2: build global tables ({len(ion_data)} ions) ===")
     levels_rows, level_lookup, per_ion_g = build_global_levels(ion_data)
@@ -1749,7 +2334,11 @@ def main() -> None:
 
     print("\n=== Phase 5: bake sigma_bf grid for C loader ===")
     n_baked, n_levels_with_data = bake_sigma_bf_grid(
-        ion_data, ion_data, levels_rows, level_lookup, OUT_SIGMA_BIN
+        ion_data, ion_data, levels_rows, level_lookup, OUT_SIGMA_BIN,
+        route_path=OUT_BF_CHANNEL_BIN,
+        policy_context=((CMFGEN_MODEL_SPEC_PATH.resolve().parent / 'MODEL',
+                         CMFGEN_MODEL_SPEC_MAP, CMFGEN_LINK_MAP)
+                        if CMFGEN_MODEL_SPEC_PATH is not None else None),
     )
     print(f"  baked {n_baked} curves -> {n_levels_with_data}/{len(levels_rows)} "
           f"levels covered ({100*n_levels_with_data/len(levels_rows):.1f}%)")

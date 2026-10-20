@@ -150,6 +150,19 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
+    char cmfgen_bf_channels_path[4096];
+    int bf_channels_path_len = snprintf(cmfgen_bf_channels_path,
+        sizeof(cmfgen_bf_channels_path), "%s/cmfgen_bf_channels.bin", ref_dir);
+    if (bf_channels_path_len < 0 ||
+        (size_t)bf_channels_path_len >= sizeof(cmfgen_bf_channels_path)) {
+        fprintf(stderr, "[SH-GRID][FATAL] reference directory path is too long for BF channels\n");
+        return 1;
+    }
+    if (load_cmfgen_bf_channels_from_env(
+            &atom_data, cmfgen_bf_channels_path) != 0) {
+        fprintf(stderr, "[SH-GRID][FATAL] requested CMFGEN BF channel asset is unavailable or invalid\n");
+        return 1;
+    }
     /* Top-stage continuum anchor: inject synthetic IV ground levels (gated,
      * default off). After cmfgen_sigma_bf load, before nlte_init (mirrors GPU). */
     inject_topstage_continuum_levels(&atom_data, &opacity);

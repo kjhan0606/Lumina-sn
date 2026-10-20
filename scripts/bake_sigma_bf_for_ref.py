@@ -85,8 +85,10 @@ def main():
 
     # Bake into a binary sized to the ref level count
     out_bin = ref_dir / 'cmfgen_sigma_bf.bin'
+    out_routes = ref_dir / 'cmfgen_bf_channels.bin'
     n_baked, n_covered = ex.bake_sigma_bf_grid(
-        ion_data, ion_data, levels_rows, level_lookup, out_bin
+        ion_data, ion_data, levels_rows, level_lookup, out_bin,
+        route_path=out_routes
     )
     print(f"\nbaked {n_baked} curves -> {n_covered}/{n_levels_ref} ref levels "
           f"covered ({100 * n_covered / n_levels_ref:.1f}%)")

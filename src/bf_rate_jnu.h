@@ -37,6 +37,10 @@ typedef struct {
                                 * commits, whose VALID bins carry count==0 */
 } BfRateResult;
 
+/* True only when a result carries a finite, nonnegative rate whose missing
+ * sigma-weighted contribution is within the declared R6 tolerance. */
+int bf_rate_result_is_consumable(const BfRateResult *result);
+
 /* sigma tabulation: photo cross-section points (nu ascending, cm^2), zero
  * below nu_threshold.  Matches the existing tabulated interpretation used by
  * the A2-02C builder bf kernel (4*pi*sigma/(h*nu), zero below threshold). */
@@ -53,6 +57,18 @@ typedef struct {
 int bf_rate_gamma_from_view(const RadiationFieldView *view, size_t shell,
                             const BfCrossSection *sigma, BfRateResult *out);
 
+/* Read one bin from the same published field used by the BF rate integral.
+ * Returns 0 for VALID/EXACT_ZERO, 1 for a non-consumable bin (out is zero),
+ * and -1 for malformed arguments or inconsistent values. */
+int bf_rate_view_jnu(const RadiationFieldView *view, size_t shell, size_t bin,
+                     double *out);
+
+/* 다른 격자의 번호를 쓰지 않고 활성 주파수 구간의 log-weighted J를 읽는다.
+ * 완전 coverage/유효성을 요구하며 실패 시 반환값을 소비해서는 안 된다.
+ * 반응은 기존 getter와 동일하다: 0=소비가능, 1=불가용, -1=잘못된 인자. */
+int bf_rate_view_log_band_jnu(const RadiationFieldView *view, size_t shell,
+                              double nu_lo, double nu_hi, double *out);
+
 /* Legacy-grid adapter shared by production (nlte_bf_gamma_canonical) and the
  * L-1bf gate fixture, so both run byte-identical arithmetic: the per-bin
  * sigma_row (or the Kramers sigma_0*(nu_th/nu_c)^3 evaluation at legacy bin
@@ -67,5 +83,12 @@ int bf_rate_gamma_legacy_grid(const RadiationFieldView *view, size_t shell,
                               double nu_thresh,
                               double *node_nu, double *node_sigma,
                               BfRateResult *out);
+
+/* Log-frequency kernel weight for a full-bin-average CMFGEN sigma row.
+ * If nu_thresh cuts the bin, the stored average is first renormalized onto
+ * [nu_thresh, nu_hi], exactly as bf_rate_gamma_legacy_grid does, then
+ * integrated against dnu/nu. Returns zero for an inactive/invalid bin. */
+double bf_rate_sigma_log_weight(double sigma_bin_average, double nu_lo,
+                                double nu_hi, double nu_thresh);
 
 #endif

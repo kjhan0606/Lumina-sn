@@ -39,7 +39,8 @@ DEFAULT_BASE = ROOT / "data/tardis_reference_toy06_19p48d_sivcaiv_links"
 
 REBUILT = {
     "atom_masses.csv", "atomic_data_cmfgen.h5", "atomic_vintage_manifest.csv",
-    "cmfgen_sigma_bf.bin", "coldata_cmfgen_manifest.csv", "ionization_energies.csv",
+    "cmfgen_sigma_bf.bin", "cmfgen_bf_channels.bin",
+    "cmfgen_bf_channels_manifest.json", "coldata_cmfgen_manifest.csv", "ionization_energies.csv",
     "level_multiplicity.csv", "levels.csv", "line2macro_level_upper.npy",
     "line_list.csv", "kshape_contract.txt", "ma_radrecomb_target.bin",
     "ma_radrecomb_target_manifest.csv", "macro_atom_data.csv",
@@ -114,6 +115,7 @@ def main() -> int:
     module.OUT_DIR = new
     module.OUT_H5 = new / "atomic_data_cmfgen.h5"
     module.OUT_SIGMA_BIN = new / "cmfgen_sigma_bf.bin"
+    module.OUT_BF_CHANNEL_BIN = new / "cmfgen_bf_channels.bin"
     print(f"=== expand: links={links}")
     module.main()
     copy_companions(base, new)

@@ -532,6 +532,28 @@ typedef struct {
     int     *cmfgen_has_sigma;        /* [n_levels] */
     double  *cmfgen_sigma_bf;         /* [n_levels * n_freq_bins] */
 
+    /* CMFGEN bound-free channel sidecar. Unlike cmfgen_sigma_bf, this CSR
+     * preserves the upper-ion target (v4: CMFGEN F_TO_S superlevel anchor;
+     * older versions: fine-level target; target=-1 for a sealed scalar
+     * terminal ion), per-grid statistical branching, target energy/weight, and
+     * channel-specific cross section needed by pair/EW NLTE rates. The opacity
+     * grid above is the sum over probability-weighted channels. */
+    int      cmfgen_bf_channels_loaded;
+    int      cmfgen_bf_channel_version;       /* v4 targets identify CMFGEN superlevels */
+    int      cmfgen_bf_channels_n_routes;
+    int     *cmfgen_bf_channel_offset;      /* [n_levels+1] */
+    int     *cmfgen_bf_channel_target;      /* [n_routes] global upper level */
+    double  *cmfgen_bf_channel_probability; /* [n_routes] within-phot-grid g fraction */
+    int     *cmfgen_bf_channel_phot_grid;   /* [n_routes] source phot_data grid ordinal */
+    double  *cmfgen_bf_channel_target_energy_eV; /* [n_routes] excitation above target ground */
+    double  *cmfgen_bf_channel_target_g;         /* [n_routes] target statistical weight */
+    double  *cmfgen_bf_channel_sigma_edge;       /* [n_routes] CMFGEN PHOT edge sigma, cm^2 */
+    double  *cmfgen_bf_channel_sigma;       /* [n_routes * n_freq_bins] cm^2 */
+    /* v5: lower-ion boundary policy for Si/S II--V. 0=unspecified,
+     * 1=source-selected PHOT/Milne, no unrelated external DR fit. */
+    int      cmfgen_bf_recombination_policy[2][4];
+    unsigned char cmfgen_bf_policy_model_sha256[32];
+
     /* Bound-free upper-ion photoionization TARGET map (B4/D1/M1 data gap).
      * The reverse of cmfgen_sigma_bf: for each level gl carrying a bf cross-
      * section, the GLOBAL index of the upper-ion level its photoionization lands
@@ -607,11 +629,11 @@ typedef struct {
  * runtime count is nlte->n_nlte_ions (= NLTE_BASE_IONS when the gate is off). */
 #define NLTE_STAGE4_IONS  38        /* 31 base + 7 stage-IV (Si,Fe,Co,Ni,Ti,Cr,Al IV) */
 #define NLTE_STAGE4_PAIRS 23        /* 16 base + 7 (III,IV) pairs */
-/* Wave-3 Stage-2A uses a CPU-only layout with Fe IV and S IV present even when
- * the legacy LUMINA_NLTE_STAGE4 experiment is off.  Keep the maxima large
- * enough for either layout; the default-OFF runtime count remains 31/16. */
-#define NLTE_EW_IONS      33        /* base layout plus Fe IV and S IV */
-#define NLTE_EW_PAIRS     18        /* base pairs plus Fe III-IV and S III-IV */
+/* Element-wide ownership uses a CPU layout with Si/S II-V and Fe IV even when
+ * the legacy LUMINA_NLTE_STAGE4 experiment is off.  Keep maxima large enough
+ * for either layout; the default-OFF runtime count remains 31/16. */
+#define NLTE_EW_IONS      36        /* base layout plus Si/S IV-V and Fe IV */
+#define NLTE_EW_PAIRS     21        /* EW chains: Si II-V, Fe II-IV, S II-V */
 #define NLTE_MAX_IONS     38
 #define NLTE_PAIR_COUNT   23        /* maximum pair-array capacity */
 
@@ -795,6 +817,7 @@ typedef struct {
 
 double dr_alpha_eval(const DRCoefficient *coef, double T_e);
 const DRCoefficient* dr_lookup(int Z, int ion_recomb);
+int nlte_external_dr_fit_enabled(const AtomicData *atom, int Z, int lower_ion);
 
 /* ============================================================ */
 /* Gamma-ray energy deposition from 56Ni/56Co decay             */
@@ -1105,6 +1128,8 @@ void bin_escaped_packet(Spectrum *spec, double nu, double energy);
 /* Task #072: Atomic data loading and plasma solver */
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells);
 int load_cmfgen_sigma_bf(AtomicData *atom, const char *path);
+int load_cmfgen_bf_channels(AtomicData *atom, const char *path);
+int load_cmfgen_bf_channels_from_env(AtomicData *atom, const char *default_path);
 int load_ma_radrecomb_target(AtomicData *atom, const char *path);
 int load_feiii_coldata(AtomicData *atom, const char *path);
 /* ARTIS-parity (A3): generic per-ion close-coupling Omega loader. Appends one
@@ -1227,6 +1252,30 @@ int  nlte_element_wide_run_status(NLTEConfig *nlte, AtomicData *atom,
                            int Z, int shell, double time_explosion,
                            GammaDeposition *gamma_dep, int commit_requested,
                            int *verdict_pass_out);
+int  nlte_element_wide_run_status_ce(NLTEConfig *nlte, AtomicData *atom,
+                           PlasmaState *plasma, OpacityState *opacity,
+                           int Z, int shell, double time_explosion,
+                           GammaDeposition *gamma_dep, int commit_requested,
+                           int ce_iteration, int *verdict_pass_out);
+/* Compact response from the same production solve, without matrix dumps.
+ * candidate_density is II--V followed by terminal VI for Si/S.  A rejected
+ * candidate is evidence only; it is never published as committed material. */
+typedef struct {
+    int completed, solve_attempted, candidate_available, candidate_valid, verdict_pass;
+    int commit_performed, topology_pass, numerical_pass, boundary_pass;
+    int dimension, raw_rank, graph_components;
+    double scaled_se_residual, conservation_residual, kappa_2;
+    int legacy_topology_pass, legacy_numerical_pass;
+    int certificate_attempted, certificate_status, certificate_pass;
+    long double certificate_probability_error, certificate_relative_error;
+    long double certificate_stage_lower[5],certificate_stage_upper[5];
+    double candidate_density[5];
+} NLTEEWResponse;
+int nlte_element_wide_run_response(NLTEConfig *nlte, AtomicData *atom,
+                           PlasmaState *plasma, OpacityState *opacity,
+                           int Z, int shell, int shell_label,
+                           double time_explosion, GammaDeposition *gamma_dep,
+                           int commit_requested, NLTEEWResponse *response);
 #ifdef LUMINA_FROZEN_ORACLE
 int  nlte_element_wide_run_labeled(NLTEConfig *nlte, AtomicData *atom,
                            PlasmaState *plasma, OpacityState *opacity,
@@ -1236,6 +1285,15 @@ int  nlte_element_wide_run_labeled(NLTEConfig *nlte, AtomicData *atom,
 
 int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
                int n_shells);
+/* Explicit full-model restart path. Register every represented bound ion;
+ * terminal continuum populations remain in AtomicData's ion ladder. */
+int  nlte_init_model_atom(NLTEConfig *nlte, AtomicData *atom,
+                          OpacityState *opacity, int n_shells);
+/* Optional explicit material seed, never a radiation/boundary temperature.
+ * Missing file preserves legacy initialization; present invalid data fail. */
+int load_material_temperature_profile(const char *ref_dir, int n_shells,
+                                      double boundary_temperature,
+                                      double **temperature_out);
 void nlte_free(NLTEConfig *nlte);
 void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
                           double *volume, int n_shells);

@@ -6989,6 +6989,21 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
     }
+    char cmfgen_bf_channels_path[4096];
+    int bf_channels_path_len = snprintf(cmfgen_bf_channels_path,
+        sizeof(cmfgen_bf_channels_path), "%s/cmfgen_bf_channels.bin", ref_dir);
+    if (bf_channels_path_len < 0 ||
+        (size_t)bf_channels_path_len >= sizeof(cmfgen_bf_channels_path)) {
+        fprintf(stderr,
+                "[SH-GRID][FATAL] reference directory path is too long for BF channels\n");
+        return EXIT_FAILURE;
+    }
+    if (load_cmfgen_bf_channels_from_env(
+            &atom_data, cmfgen_bf_channels_path) != 0) {
+        fprintf(stderr,
+                "[SH-GRID][FATAL] requested CMFGEN BF channel asset is unavailable or invalid\n");
+        return EXIT_FAILURE;
+    }
     /* [MA-RADRECOMB] Un-block the ion-changing macro-atom RADRECOMB continuum
      * (B4/D1/M1 data gap, dig_E1). ONE gate LUMINA_MA_RADRECOMB=1 loads the
      * upper-ion photoionization TARGET map (which upper-ion level each

@@ -23,7 +23,74 @@ static long double ref_partition(const double *e, const int *g, int lo, int hi,
     return sum;
 }
 
+static int stage_charge_closure_test(void)
+{
+    const double amu = 1.660539066e-24;
+    int ion_Z[] = {14, 14, 14};
+    int ion_stage[] = {0, 1, 2};
+    int element_Z[] = {14};
+    int elem_offset[] = {0, 3};
+    double element_mass[] = {28.0};
+    double abundance[] = {1.0};
+    double rho[] = {28.0 * amu * 10.0};
+    int nlte_Z[] = {14, 14};
+    int nlte_stage[] = {1, 2};
+    int level_offset[] = {0, 1, 2};
+    double levels[] = {2.0, 5.0};
+    double ions[] = {3.0, 4.0, 3.0};
+    double ne[] = {10.0};
+    double max_residual = NAN;
+    int worst_shell = -1;
+
+    CHECK(population_nlte_stage_charge_close(
+              3, ion_Z, ion_stage, 1, element_Z, elem_offset,
+              element_mass, abundance, rho, amu, 2, nlte_Z, nlte_stage,
+              level_offset, 2, 1, levels, ions, ne, 0.5,
+              &max_residual, &worst_shell) == POP_OK,
+          "NLTE stage/charge closure accepts conserved fixture");
+    CHECK(ions[0] == 3.0 && ions[1] == 2.0 && ions[2] == 5.0,
+          "NLTE stage sums become ion-density authority");
+    CHECK(fabs(ne[0] - 11.0) < 1.0e-14 && worst_shell == 0 &&
+          fabs(max_residual - 1.0 / 12.0) < 1.0e-14,
+          "damped electron density reports remaining charge residual");
+
+    CHECK(population_nlte_stage_charge_close(
+              3, ion_Z, ion_stage, 1, element_Z, elem_offset,
+              element_mass, abundance, rho, amu, 2, nlte_Z, nlte_stage,
+              level_offset, 2, 1, levels, ions, ne, 1.0,
+              &max_residual, &worst_shell) == POP_OK,
+          "undamped closure accepts conserved fixture");
+    CHECK(ne[0] == 12.0 && max_residual == 0.0 && worst_shell == -1,
+          "charge-neutral electron density closes exactly");
+
+    double ions_before[] = {ions[0], ions[1], ions[2]};
+    double ne_before = ne[0];
+    double nonconserving_levels[] = {2.0, 6.0};
+    CHECK(population_nlte_stage_charge_close(
+              3, ion_Z, ion_stage, 1, element_Z, elem_offset,
+              element_mass, abundance, rho, amu, 2, nlte_Z, nlte_stage,
+              level_offset, 2, 1, nonconserving_levels, ions, ne, 1.0,
+              &max_residual, &worst_shell) == POP_SOLVE_FAILED,
+          "stage synchronization rejects element-number loss");
+    CHECK(memcmp(ions, ions_before, sizeof(ions_before)) == 0 &&
+          ne[0] == ne_before,
+          "failed conservation publishes neither stage nor electron density");
+
+    double invalid_levels[] = {2.0, -1.0};
+    CHECK(population_nlte_stage_charge_close(
+              3, ion_Z, ion_stage, 1, element_Z, elem_offset,
+              element_mass, abundance, rho, amu, 2, nlte_Z, nlte_stage,
+              level_offset, 2, 1, invalid_levels, ions, ne, 1.0,
+              &max_residual, &worst_shell) == POP_NONFINITE,
+          "negative NLTE level density rejected");
+    CHECK(memcmp(ions, ions_before, sizeof(ions_before)) == 0 &&
+          ne[0] == ne_before,
+          "invalid stage data publishes no partial closure");
+    return 0;
+}
+
 int main(void) {
+    if (stage_charge_closure_test() != 0) return 1;
     int offset[] = {0, 2, 5};
     double energy[] = {10.0, 10.5, 4.0, 5.0, 35.0};
     int g[] = {2, 4, 1, 3, 9};

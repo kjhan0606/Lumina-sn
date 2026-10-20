@@ -35,7 +35,8 @@ typedef enum {
     NLTE_POP_DIAG_STAGE_PAIR_SOLVE,
     NLTE_POP_DIAG_STAGE_CE_NONCONVERGED,
     NLTE_POP_DIAG_STAGE_PUBLISH,
-    NLTE_POP_DIAG_STAGE_INTERNAL
+    NLTE_POP_DIAG_STAGE_INTERNAL,
+    NLTE_POP_DIAG_STAGE_CHARGE_CLOSURE
 } NLTEPopulationSolveStage;
 
 typedef enum {
@@ -65,6 +66,8 @@ typedef struct {
     int worst_shell;
     double max_rel_change;
     double ce_threshold;
+    double max_charge_residual;
+    int worst_charge_shell;
     int ion_lock_active;
     int solve_level_index;  /* pair-local super-level index */
     int super_level_index;  /* NLTE-global super-level index */

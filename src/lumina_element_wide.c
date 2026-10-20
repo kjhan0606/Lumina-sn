@@ -9,6 +9,7 @@
  */
 #include "lumina.h"
 #include "bf_rate_jnu.h" /* A2-05 canonical-view bf rate result type */
+#include "population_generator_interval.h"
 
 #include <errno.h>
 #include <float.h>
@@ -20,6 +21,11 @@
 #include <string.h>
 
 #define EW(A,n,i,j) ((A)[(size_t)(j) * (size_t)(n) + (size_t)(i)])
+
+_Static_assert(NLTE_EW_IONS <= NLTE_MAX_IONS,
+               "element-wide ion layout exceeds NLTE capacity");
+_Static_assert(NLTE_EW_PAIRS <= NLTE_PAIR_COUNT,
+               "element-wide pair layout exceeds NLTE capacity");
 
 /* See the CMFGEN full-bin-average contract in bf_rate_jnu.c. */
 static inline double ew_cmfgen_partial_bin_eval_nu(double log_nu_lo,
@@ -39,12 +45,19 @@ extern int nlte_bf_field_source(const NLTEConfig *nlte, double T_e, double nu,
                                 int *use_gpu_lookup, int *gpu_field_bypassed,
                                 double *J_selected);
 extern int nlte_bf_collisional_enabled(void);
+extern double nlte_bf_cmfgen_collisional_ionization_rate(
+    double T_e, double n_e, double threshold_eV,
+    double sigma_edge_cm2, int ion_number);
+extern int nlte_bf_cmfgen_ci_route_included(int phot_grid,
+                                             int upper_ion_present);
 extern double nlte_bf_kramers_sigma0(int Z, int stage);
 extern unsigned long nlte_bf_gpu_field_bypass_count(void);
 /* A2-05: canonical-view bf photoionization rate (owner in lumina_plasma.c). */
 extern int nlte_bf_gamma_canonical(NLTEConfig *nlte, int shell,
                                    const double *sigma_row, double sigma_0,
                                    double nu_thresh, BfRateResult *out);
+extern double bf_rate_sigma_log_weight(double sigma_bin_average, double nu_lo,
+                                       double nu_hi, double nu_thresh);
 extern int nlte_precompute_within_sl_frac_checked(
     NLTEConfig *, AtomicData *, PlasmaState *, int);
 extern int nlte_build_projection(NLTEConfig *nlte, AtomicData *atom,
@@ -130,9 +143,9 @@ static void ew_parse_gate(void) {
         while (*p) {
             char *end = NULL;
             long z = strtol(p, &end, 10);
-            if (end == p || (z != 16 && z != 26)) {
+            if (end == p || (z != 14 && z != 16 && z != 26)) {
                 snprintf(ew_gate.error, sizeof(ew_gate.error),
-                         "Z allow-list is restricted to 16,26");
+                         "Z allow-list is restricted to 14,16,26");
                 goto invalid;
             }
             ew_gate.zmask[z] = 1;
@@ -154,12 +167,25 @@ static void ew_parse_gate(void) {
     {
         char *end = NULL;
         long shell = strtol(ss, &end, 10);
-        if (end == ss || *end || (shell != 0 && shell != 8 && shell != 20)) {
+        if (end == ss || *end ||
+            (shell != -1 && shell != 0 && shell != 8 && shell != 20)) {
             snprintf(ew_gate.error, sizeof(ew_gate.error),
-                     "Stage-2A shell must be one of 0,8,20");
+                     "element-wide shell must be -1 (all), 0, 8, or 20");
             goto invalid;
         }
         ew_gate.shell = (int)shell;
+    }
+    if (ew_gate.shell == -1 &&
+        (ew_gate.zmask[26] || (!ew_gate.zmask[14] && !ew_gate.zmask[16]))) {
+        snprintf(ew_gate.error, sizeof(ew_gate.error),
+                 "all-shell ownership is restricted to Si and S (Z=14,16)");
+        goto invalid;
+    }
+    if ((ew_gate.shell == 0 && (ew_gate.zmask[14] || ew_gate.zmask[16])) ||
+        (ew_gate.shell == 20 && (ew_gate.zmask[14] || ew_gate.zmask[26]))) {
+        snprintf(ew_gate.error, sizeof(ew_gate.error),
+                 "shell 0 is Fe-only and shell 20 is S-only");
+        goto invalid;
     }
     ew_gate.commit = ew_env_true("LUMINA_NLTE_ELEMENT_WIDE_COMMIT");
     ew_gate.dump = ew_env_true("LUMINA_NLTE_ELEMENT_WIDE_DUMP");
@@ -168,9 +194,9 @@ static void ew_parse_gate(void) {
                  "C65 conflict: LUMINA_NLTE_STAGE4 must be off in the EW lane");
         goto invalid;
     }
-    if (ew_gate.commit && ew_gate.shell != 8) {
+    if (ew_gate.commit && ew_gate.shell != 8 && ew_gate.shell != -1) {
         snprintf(ew_gate.error, sizeof(ew_gate.error),
-                 "commit is restricted to the s8 pilot; s0/s20 are shadow-only");
+                 "commit is restricted to s8 or the Si/S all-shell lane");
         goto invalid;
     }
     {
@@ -179,9 +205,11 @@ static void ew_parse_gate(void) {
     }
     ew_gate.enabled = 1;
     fprintf(stderr,
-            "[EW] Stage-2A CPU path armed: Z=%s%s shell=%d commit=%d dump=%d\n",
-            ew_gate.zmask[16] ? "16" : "",
-            ew_gate.zmask[26] ? (ew_gate.zmask[16] ? ",26" : "26") : "",
+            "[EW] CPU element-wide path armed: Z=%s%s%s shell=%d commit=%d dump=%d\n",
+            ew_gate.zmask[14] ? "14" : "",
+            ew_gate.zmask[16] ? (ew_gate.zmask[14] ? ",16" : "16") : "",
+            ew_gate.zmask[26] ?
+                ((ew_gate.zmask[14] || ew_gate.zmask[16]) ? ",26" : "26") : "",
             ew_gate.shell, ew_gate.commit, ew_gate.dump);
     return;
 
@@ -217,8 +245,10 @@ int nlte_element_wide_layout_enabled(void) {
 
 int nlte_element_wide_matches(int Z, int shell) {
     ew_parse_gate();
-    if (!ew_gate.enabled || shell != ew_gate.shell || Z < 0 || Z >= 100 ||
+    if (!ew_gate.enabled || shell < 0 || Z < 0 || Z >= 100 ||
         !ew_gate.zmask[Z]) return 0;
+    if (ew_gate.shell != -1 && shell != ew_gate.shell) return 0;
+    if (ew_gate.shell == -1) return Z == 14 || Z == 16;
     if (shell == 0 && Z != 26) return 0;
     if (shell == 20 && Z != 16) return 0;
     return 1;
@@ -244,6 +274,13 @@ typedef struct {
 } EWCapture;
 
 static EWCapture ew_cap;
+
+/* In an adjacent-stage owner chain, each shared stage is the upper stage of
+ * one pair and the lower stage of the next.  Its BB rates belong to the first
+ * pair only. */
+static int ew_chain_pair_skips_lower_bb(int pair) {
+    return pair > 0;
+}
 
 /* Every counter reachable from the shell-parallel assembler enters through
  * this primitive.  Matrix/ledger arithmetic has separate ownership; this is
@@ -570,27 +607,48 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
                     a->cmfgen_sigma_bf &&
                     a->cmfgen_has_sigma[lower_global];
     int kramers = !has_sigma;
+    int channel_begin = 0, channel_end = 0;
+    int use_channels = 0;
+    if (a->cmfgen_bf_channels_loaded && a->cmfgen_bf_channel_offset &&
+        a->cmfgen_bf_channel_target && a->cmfgen_bf_channel_probability &&
+        a->cmfgen_bf_channel_target_g &&
+        a->cmfgen_bf_channel_sigma) {
+        channel_begin = a->cmfgen_bf_channel_offset[lower_global];
+        channel_end = a->cmfgen_bf_channel_offset[lower_global + 1];
+        use_channels = channel_begin >= 0 && channel_end > channel_begin &&
+                       channel_end <= a->cmfgen_bf_channels_n_routes;
+    }
+    if (use_channels && nlte_bf_collisional_enabled() &&
+        !a->cmfgen_bf_channel_sigma_edge) {
+        ew_atomic_inc_int(&ew_cap.target_fail);
+        ew_atomic_inc_int(&ew_cap.bad_rate);
+        return;
+    }
     if (kramers) {
         ew_atomic_inc_int(&ew_cap.kramers_fallback);
     }
-    if (!kramers &&
+    if (!kramers && !use_channels &&
         (!a->ma_rr_loaded || !a->ma_rr_target_offset || !a->ma_rr_targets ||
          !a->ma_rr_probability)) {
         ew_atomic_inc_int(&ew_cap.target_expected);
         ew_atomic_inc_int(&ew_cap.target_fail);
         return;
     }
-    int begin = kramers ? 0 : a->ma_rr_target_offset[lower_global];
-    int end = kramers ? 1 : a->ma_rr_target_offset[lower_global + 1];
+    int begin = kramers ? 0 : (use_channels ? channel_begin :
+                               a->ma_rr_target_offset[lower_global]);
+    int end = kramers ? 1 : (use_channels ? channel_end :
+                             a->ma_rr_target_offset[lower_global + 1]);
+    int route_limit = use_channels ? a->cmfgen_bf_channels_n_routes :
+                                     a->ma_rr_n_routes;
     if (!kramers &&
-        (begin < 0 || end < begin || end > a->ma_rr_n_routes || begin == end)) {
+        (begin < 0 || end <= begin || end > route_limit)) {
         ew_atomic_inc_int(&ew_cap.target_expected);
         ew_atomic_inc_int(&ew_cap.target_fail);
         return;
     }
     double chi_eV = ew_find_chi(a, a->level_Z[lower_global],
                                 a->level_ion[lower_global]);
-    const double *sigma_row = has_sigma ? &a->cmfgen_sigma_bf[
+    const double *total_sigma_row = has_sigma ? &a->cmfgen_sigma_bf[
         (size_t)lower_global * (size_t)a->cmfgen_n_freq_bins] : NULL;
     double sigma_0 = kramers ? nlte_bf_kramers_sigma0(
         a->level_Z[lower_global], a->level_ion[lower_global]) : 0.0;
@@ -600,8 +658,10 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
     for (int r = begin; r < end; r++) {
         ew_atomic_inc_int(&ew_cap.target_expected);
         int upper_global = kramers ? n->super_anchor_global[
-            ew_cap.pair_super_start + ew_cap.n_lo_super] : a->ma_rr_targets[r];
-        double p = kramers ? 1.0 : a->ma_rr_probability[r];
+            ew_cap.pair_super_start + ew_cap.n_lo_super] :
+            (use_channels ? a->cmfgen_bf_channel_target[r] : a->ma_rr_targets[r]);
+        double p = kramers ? 1.0 : (use_channels ?
+            a->cmfgen_bf_channel_probability[r] : a->ma_rr_probability[r]);
         if (upper_global < 0 || upper_global >= a->n_levels ||
             !(p > 0.0) || !isfinite(p) ||
             a->level_Z[upper_global] != a->level_Z[lower_global] ||
@@ -622,10 +682,14 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
             ew_atomic_inc_int(&ew_cap.target_fail);
             continue;
         }
-        double f_upper = n->within_sl_frac[(size_t)ng * ew_cap.n_shells +
-                                            ew_cap.shell];
+        double f_upper = use_channels &&
+                         a->cmfgen_bf_channel_version >= 4 ? 1.0 :
+            n->within_sl_frac[(size_t)ng * ew_cap.n_shells + ew_cap.shell];
         psum += p;
         ew_atomic_inc_int(&ew_cap.target_mapped);
+        const double *sigma_row = use_channels ?
+            &a->cmfgen_bf_channel_sigma[(size_t)r * (size_t)n->n_freq_bins] :
+            total_sigma_row;
         double threshold_eV = chi_eV - a->level_energy_eV[lower_global] +
                               a->level_energy_eV[upper_global];
         double nu_threshold = threshold_eV * EV_TO_ERG / H_PLANCK;
@@ -634,7 +698,9 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
             ew_atomic_inc_int(&ew_cap.bad_rate);
             continue;
         }
-        double rad_ion = 0.0, milne = 0.0, sigma_edge = 0.0;
+        double rad_ion = 0.0, milne = 0.0;
+        double sigma_edge = (use_channels && a->cmfgen_bf_channel_sigma_edge)
+            ? a->cmfgen_bf_channel_sigma_edge[r] : 0.0;
         const double kTe = K_BOLTZMANN * T_e;
         /* [A2-05] rad_ion for field sources 0/1 = canonical-view integral
          * (blocked => no field term, counted on the NLTEConfig R6 counters).
@@ -651,29 +717,49 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
         for (int bb = 0; bb < n->n_freq_bins; bb++) {
             double loglo = log(n->nu_min) + bb * n->d_log_nu;
             double nu = exp(loglo + 0.5 * n->d_log_nu);
-            if (!sigma_row && nu < nu_threshold) continue;
             double sigma = sigma_row ? sigma_row[bb] :
                 sigma_0 * pow(nu_threshold / nu, 3.0);
             if (!(sigma > 0.0) || !isfinite(sigma)) continue;
-            if (sigma_edge == 0.0) sigma_edge = sigma;
-            double dnu = exp(loglo + n->d_log_nu) - exp(loglo);
-            double pref = 4.0 * M_PI_VAL * sigma /
-                          (H_PLANCK * nu) * dnu;
+            double nu_milne = ew_cmfgen_partial_bin_eval_nu(
+                loglo, n->d_log_nu, nu_threshold);
+            double pref;
+            if (use_channels) {
+                double nu_lo = exp(loglo);
+                double nu_hi = exp(loglo + n->d_log_nu);
+                double sigma_log_weight = bf_rate_sigma_log_weight(
+                    sigma, nu_lo, nu_hi, nu_threshold);
+                if (!(sigma_log_weight > 0.0)) continue;
+                pref = 4.0 * M_PI_VAL / H_PLANCK * sigma_log_weight;
+            } else {
+                if (!sigma_row && nu < nu_threshold) continue;
+                double dnu = exp(loglo + n->d_log_nu) - exp(loglo);
+                pref = 4.0 * M_PI_VAL * sigma / (H_PLANCK * nu) * dnu;
+            }
+            if (!use_channels && sigma_edge == 0.0) sigma_edge = sigma;
+            double x = H_PLANCK * nu_milne / kTe;
             double J = 0.0;
+            double J_default = n->J_nu[
+                (size_t)ew_cap.shell * (size_t)n->n_freq_bins + (size_t)bb];
+            if (use_channels && field_source != 2 && x < 700.0) {
+                double band_lo = fmax(exp(loglo), nu_threshold);
+                double band_hi = bb+1 == n->n_freq_bins ? n->nu_max
+                    : exp(loglo+n->d_log_nu);
+                if (bf_rate_view_log_band_jnu(&n->radfield_view,
+                        (size_t)ew_cap.shell, band_lo, band_hi, &J_default) != 0) {
+                    ew_atomic_inc_int(&ew_cap.target_fail);
+                    return;
+                }
+            }
+            double nu_field = field_source == 2 ? nu_milne : nu;
             (void)nlte_bf_field_source(
-                n, T_e, nu,
-                n->J_nu[(size_t)ew_cap.shell * n->n_freq_bins + bb],
+                n, T_e, nu_field,
+                J_default,
                 0, NULL, NULL, &J);
             if (field_source == 2) {
                 rad_ion += pref * J;   /* J == B_nu(T_e) under JEQB */
                 ew_atomic_inc_int(&ew_cap.bf_pref_j_bins);
                 ew_atomic_inc_int(&ew_cap.bf_jeqb_bins);
             }
-            double nu_milne = sigma_row
-                ? ew_cmfgen_partial_bin_eval_nu(loglo, n->d_log_nu,
-                                                nu_threshold)
-                : nu;
-            double x = H_PLANCK * nu_milne / kTe;
             if (x < 700.0) {
                 double spont = 2.0 * H_PLANCK * nu_milne * nu_milne * nu_milne /
                                (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
@@ -681,10 +767,28 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
             }
         }
         int g_lower = a->level_g[lower_global] > 0 ? a->level_g[lower_global] : 1;
-        int g_upper = a->level_g[upper_global] > 0 ? a->level_g[upper_global] : 1;
+        double g_upper = (double)a->level_g[upper_global];
+        if (!(use_channels && a->cmfgen_bf_channel_version >= 4) &&
+            !(g_upper > 0.0)) g_upper = 1.0;
+        if (use_channels && a->cmfgen_bf_channel_version >= 4) {
+            /* The route arrives at the whole SL. Its inverse Saha factor
+             * uses G_SL(T; E_anchor), not the unweighted PHOT sum of g.
+             * f_anchor = g_anchor/G_SL is already built at this same T_e. */
+            double f_anchor = n->within_sl_frac[
+                (size_t)ng * ew_cap.n_shells + ew_cap.shell];
+            if (!(f_anchor > 0.0) || !isfinite(f_anchor)) {
+                ew_atomic_inc_int(&ew_cap.bad_rate);
+                continue;
+            }
+            g_upper /= f_anchor;
+        }
+        if (!(g_upper > 0.0) || !isfinite(g_upper)) {
+            ew_atomic_inc_int(&ew_cap.bad_rate);
+            continue;
+        }
         double log_nstar = log(n_e) + 1.5 * log(H_PLANCK * H_PLANCK /
             (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_e)) +
-            log((double)g_lower / (2.0 * (double)g_upper)) +
+            log((double)g_lower / (2.0 * g_upper)) +
             threshold_eV * EV_TO_ERG / kTe;
         if (!(log_nstar < log(DBL_MAX)) || !isfinite(log_nstar)) {
             ew_atomic_inc_int(&ew_cap.nstar_cap); /* measured rejection; never capped */
@@ -717,7 +821,11 @@ void nlte_ew_capture_bf_target_rates(int lower_global, int lower_sl,
         nlte_ew_capture_transition(NLTE_EW_COLL_BF, lower_sl, upper_sl,
                                    p * coll_rec * f_upper);
     }
-    if (fabs(psum - 1.0) > 1e-12)
+    /* Route probabilities normalize separately inside each phot_data grid;
+     * multiple grids (e.g. Si II A+B) are distinct continuum channels and their
+     * combined probability sum is intentionally greater than one. The loader
+     * validates each grid group before these rates can be assembled. */
+    if (!use_channels && fabs(psum - 1.0) > 1e-12)
         ew_atomic_inc_int(&ew_cap.target_fail);
 }
 
@@ -786,18 +894,19 @@ static double ew_find_chi(const AtomicData *a, int Z, int stage) {
     return -1.0;
 }
 
-/* R1 source invariant: shadow assembly owns this expanded index view.  It is a
+/* The private view owns a single adjacent II-V chain for Si/S and II-IV for Fe.
+ * R1 source invariant: shadow assembly owns this expanded index view.  It is a
  * private shallow clone for radiation/estimator inputs plus private copies of
  * every layout-derived array and population buffer.  Consequently arming
  * COMMIT=0 cannot change NLTEConfig.n_nlte_ions, super_mode, offsets, maps,
  * within_sl_frac, or production populations. */
 static const int ew_view_Z[NLTE_EW_IONS] = {
-    14,14, 20,20, 26,26,26, 16,16,16, 27,27, 28,28, 6,6, 12,12,
-    22,22, 24,24, 13,13, 21,21, 23,23, 25,25, 8,8,8
+    14,14,14,14, 20,20, 26,26,26, 16,16,16,16, 27,27, 28,28,
+    6,6, 12,12, 22,22, 24,24, 13,13, 21,21, 23,23, 25,25, 8,8,8
 };
 static const int ew_view_stage[NLTE_EW_IONS] = {
-     1, 2,  1, 2,  1, 2, 3,  1, 2, 3,  1, 2,  1, 2, 1,2,  1, 2,
-     1, 2,  1, 2,  1, 2,  1, 2,  1, 2,  1, 2, 0,1,2
+     1, 2, 3, 4,  1, 2,  1, 2, 3,  1, 2, 3, 4,  1, 2,  1, 2,
+     1, 2,  1, 2,  1, 2,  1, 2,  1, 2,  1, 2,  1, 2, 0,1,2
 };
 
 typedef struct {
@@ -855,11 +964,12 @@ static int ew_private_view_init(EWPrivateView *v, const NLTEConfig *src,
 }
 
 static void ew_projection_coverage(const NLTEConfig *n, const AtomicData *a,
-                                   int Z, int slots[3], EWCoverage *c) {
+                                   int Z, const int *slots, int n_stages,
+                                   EWCoverage *c) {
     memset(c, 0, sizeof(*c));
     c->first_bad_lower = c->first_bad_target = -1;
-    c->ions_expected = 3;
-    for (int q = 0; q < 3; q++) {
+    c->ions_expected = n_stages;
+    for (int q = 0; q < n_stages; q++) {
         int slot = slots[q];
         if (slot < 0) continue;
         c->ions_mapped++;
@@ -877,7 +987,7 @@ static void ew_projection_coverage(const NLTEConfig *n, const AtomicData *a,
     }
     for (int line = 0; line < a->n_lines; line++) {
         int st = a->line_ion_number[line];
-        if (a->line_atomic_number[line] != Z || st < 1 || st > 3) continue;
+        if (a->line_atomic_number[line] != Z || st < 1 || st > n_stages) continue;
         c->lines_expected++;
         int slot = slots[st-1];
         if (slot >= 0 && n->nlte_line_map[line] == slot) {
@@ -890,7 +1000,7 @@ static void ew_projection_coverage(const NLTEConfig *n, const AtomicData *a,
                 n->global_to_nlte_level[up] >= 0) c->lines_mapped++;
         }
     }
-    for (int q = 0; q < 2; q++) {
+    for (int q = 0; q + 1 < n_stages; q++) {
         int slot=slots[q], l0=n->nlte_ion_level_offset[slot], l1=n->nlte_ion_level_offset[slot+1];
         double chi=ew_find_chi(a,Z,q+1);
         for (int g=l0; g<l1; g++) {
@@ -914,6 +1024,27 @@ static void ew_projection_coverage(const NLTEConfig *n, const AtomicData *a,
                 } else if (c->first_bad_lower < 0) {
                     c->first_bad_lower=gl; c->first_bad_target=upper;
                 }
+                continue;
+            }
+            /* A channel-resolved BF row is consumed directly by the production
+             * pair and EW assemblers. Its target coverage must refer to that
+             * same CSR, not to an unrelated legacy macro-atom target file. */
+            if (a->cmfgen_bf_channels_loaded && a->cmfgen_bf_channel_offset &&
+                a->cmfgen_bf_channel_offset[gl+1] > a->cmfgen_bf_channel_offset[gl]) {
+                int b=a->cmfgen_bf_channel_offset[gl];
+                int e=a->cmfgen_bf_channel_offset[gl+1];
+                int ok=b>=0 && e<=a->cmfgen_bf_channels_n_routes;
+                if (ok) for (int r=b;r<e;r++) {
+                    int t=a->cmfgen_bf_channel_target[r];
+                    double p=a->cmfgen_bf_channel_probability[r];
+                    c->targets_expected++;
+                    if (t>=0 && t<a->n_levels && p>0.0 && isfinite(p) &&
+                        a->level_Z[t]==Z && a->level_ion[t]==q+2 &&
+                        n->global_to_nlte_level[t]>=0) c->targets_mapped++;
+                    else { ok=0; if(c->first_bad_lower<0){
+                        c->first_bad_lower=gl;c->first_bad_target=t;}}
+                }
+                if (ok) c->continua_mapped++;
                 continue;
             }
             int ok=1, nr=0; double psum=0.0;
@@ -969,15 +1100,18 @@ static uint64_t ew_fnv_bytes(uint64_t h, const void *ptr, size_t n) {
 
 typedef struct {
     int active;
-    int level_count, sigma_count, route_source_count;
+    int mode; /* 1=Fe projected ion, 2=PHOT-declared scalar terminal ion */
+    int Z, n_stages, terminal_charge;
+    int level_count, sigma_count, sigma_expected, route_source_count;
     int route_count, valid_route_count, bad_count;
     int data_pass, projection_pass, assembly_pass;
     int m_index;
     double *q_by_global;
+    double terminal_energy_eV, terminal_g;
     double q_sum, q_min, q_max;
     uint64_t q_checksum;
     double n_total, m_outside, m_before, m_after;
-    double sum_stage[3];
+    double sum_stage[4];
     double conservation_residual, row_residual, flux_residual;
     double phi_forward[2], phi_reverse[2];
     double *forward_rate[2];
@@ -1022,22 +1156,66 @@ int nlte_ew_test_q_projection(const double *q, int n, double *sum_out) {
  * clipped or repaired: malformed weights close the boundary stage. */
 static int ew_boundary_mass_prepare(EWBoundaryMass *bm, const AtomicData *a,
                                     const PlasmaState *p, int Z, int shell,
-                                    int N, double n_total) {
+                                    int N, double n_total, int n_stages,
+                                    int scalar_boundary) {
     memset(bm, 0, sizeof(*bm));
-    if (Z != 26) return 0;
+    int max_represented_stage = n_stages + (scalar_boundary ? 1 : 0);
+    for (int ip = 0; ip < a->n_ion_pops; ip++) {
+        if (a->ion_pop_Z[ip] != Z) continue;
+        double mass = a->ion_number_density[(size_t)ip*p->n_shells + shell];
+        if (!(mass >= 0.0) || !isfinite(mass)) return -1;
+        if (a->ion_pop_stage[ip] < 1 ||
+            a->ion_pop_stage[ip] > max_represented_stage)
+            bm->m_outside += mass;
+    }
+    if (!scalar_boundary) return 0;
+    int is_fe_projected = Z == 26 && n_stages == 3;
+    int is_terminal_scalar = (Z == 14 || Z == 16) && n_stages == 4;
+    if (!is_fe_projected && !is_terminal_scalar) return -1;
     bm->active = 1;
+    bm->mode = is_fe_projected ? 1 : 2;
+    bm->Z = Z;
+    bm->n_stages = n_stages;
+    bm->terminal_charge = n_stages + 1;
     bm->m_index = N - 1;
     bm->n_total = n_total;
     bm->q_min = INFINITY;
-    bm->q_by_global = (double *)calloc(
-        (size_t)(a->n_levels > 0 ? a->n_levels : 1), sizeof(double));
+    bm->terminal_energy_eV = NAN;
+    bm->terminal_g = NAN;
+    if (is_fe_projected)
+        bm->q_by_global = (double *)calloc(
+            (size_t)(a->n_levels > 0 ? a->n_levels : 1), sizeof(double));
     bm->forward_rate[0] = (double *)calloc((size_t)N, sizeof(double));
     bm->forward_rate[1] = (double *)calloc((size_t)N, sizeof(double));
     bm->reverse_rate[0] = (double *)calloc((size_t)N, sizeof(double));
     bm->reverse_rate[1] = (double *)calloc((size_t)N, sizeof(double));
-    if (!bm->q_by_global || !bm->forward_rate[0] || !bm->forward_rate[1] ||
+    if ((is_fe_projected && !bm->q_by_global) ||
+        !bm->forward_rate[0] || !bm->forward_rate[1] ||
         !bm->reverse_rate[0] || !bm->reverse_rate[1])
         return -1;
+    if (is_terminal_scalar) {
+        if (ew_find_ip(a, Z, bm->terminal_charge) < 0) return -1;
+        bm->level_count = 1; /* one effective terminal state, not a top-ion atom */
+        bm->projection_pass = 1;
+        bm->q_sum = 1.0;
+        bm->q_min = bm->q_max = 1.0;
+        for (int ip = 0; ip < a->n_ion_pops; ip++) {
+            if (a->ion_pop_Z[ip] != Z) continue;
+            double mass = a->ion_number_density[(size_t)ip*p->n_shells + shell];
+            if (!(mass >= 0.0) || !isfinite(mass)) { bm->bad_count++; continue; }
+            if (a->ion_pop_stage[ip] == bm->terminal_charge) bm->m_before += mass;
+        }
+        bm->data_pass = bm->bad_count == 0 &&
+            ew_find_chi(a, Z, n_stages) > 0.0 &&
+            a->cmfgen_loaded && a->cmfgen_bf_channels_loaded &&
+            a->cmfgen_bf_channel_offset && a->cmfgen_bf_channel_target &&
+            a->cmfgen_bf_channel_probability && a->cmfgen_bf_channel_phot_grid &&
+            a->cmfgen_bf_channel_target_energy_eV &&
+            a->cmfgen_bf_channel_target_g && a->cmfgen_bf_channel_sigma &&
+            (!nlte_bf_collisional_enabled() ||
+             a->cmfgen_bf_channel_sigma_edge);
+        return 0;
+    }
     double T_e = p->T_e[shell];
     if (!(T_e > 0.0) || !isfinite(T_e)) return 0;
     double E0 = INFINITY;
@@ -1086,15 +1264,13 @@ static int ew_boundary_mass_prepare(EWBoundaryMass *bm, const AtomicData *a,
     bm->q_min = recorded_min;
     bm->q_max = recorded_max;
     for (int ip = 0; ip < a->n_ion_pops; ip++) {
-        if (a->ion_pop_Z[ip] != 26) continue;
+        if (a->ion_pop_Z[ip] != Z) continue;
         double mass = a->ion_number_density[(size_t)ip*p->n_shells + shell];
         if (!(mass >= 0.0) || !isfinite(mass)) { bm->bad_count++; continue; }
-        if (a->ion_pop_stage[ip] == 4) bm->m_before += mass;
-        if (a->ion_pop_stage[ip] == 0 || a->ion_pop_stage[ip] >= 5)
-            bm->m_outside += mass;
+        if (a->ion_pop_stage[ip] == bm->terminal_charge) bm->m_before += mass;
     }
     bm->data_pass = bm->projection_pass && bm->level_count == 200 &&
-                    bm->bad_count == 0 && isfinite(ew_find_chi(a,26,4));
+                    bm->bad_count == 0 && isfinite(ew_find_chi(a,Z,n_stages+1));
     return 0;
 }
 
@@ -1111,8 +1287,276 @@ static void ew_boundary_transition(EWBoundaryMass *bm, double *plane,
     if (source == bm->m_index) bm->reverse_rate[channel_slot][target] += rate;
 }
 
-/* Assemble the available Fe IV 200/200 continuum routes into the scalar M_V
- * row/column.  Fe V->VI, Fe V bb and DR/autoionization are deliberately absent. */
+/* Assemble a CMFGEN-declared one-state terminal ion for Si V->VI or S V->VI.
+ * The target is virtual (global level -1): its excitation energy and GION are
+ * sealed in the BF-channel sidecar from the PHOT final-state header. */
+static void ew_boundary_terminal_assemble(
+        EWBoundaryMass *bm, NLTEConfig *n, AtomicData *a, PlasmaState *p,
+        int top_slot, int top_start, int shell,
+        double *plane[NLTE_EW_N_CHANNELS],
+        double *ledger[NLTE_EW_N_CHANNELS], EWFireCounts *fire, int N) {
+    if (!bm->active || bm->mode != 2 || !bm->data_pass) return;
+    double T_e = p->T_e[shell], n_e = p->n_electron[shell];
+    int nf = a->cmfgen_n_freq_bins;
+    if (!(T_e > 0.0) || !isfinite(T_e) || !(n_e > 0.0) || !isfinite(n_e) ||
+        !a->cmfgen_loaded || nf != n->n_freq_bins ||
+        !a->cmfgen_has_sigma || !a->cmfgen_sigma_bf ||
+        !a->cmfgen_bf_channels_loaded || !a->cmfgen_bf_channel_offset ||
+        !a->cmfgen_bf_channel_target || !a->cmfgen_bf_channel_probability ||
+        !a->cmfgen_bf_channel_phot_grid ||
+        !a->cmfgen_bf_channel_target_energy_eV ||
+        !a->cmfgen_bf_channel_target_g || !a->cmfgen_bf_channel_sigma ||
+        (nlte_bf_collisional_enabled() &&
+         !a->cmfgen_bf_channel_sigma_edge)) {
+        bm->bad_count++;
+        return;
+    }
+    const double chi_eV = ew_find_chi(a, bm->Z, bm->n_stages);
+    if (!(chi_eV > 0.0) || !isfinite(chi_eV)) {
+        bm->bad_count++;
+        return;
+    }
+    int field_source = nlte_bf_field_source(
+        n, T_e, 0.0, 0.0, 0, NULL, NULL, NULL);
+    int g0 = n->nlte_ion_level_offset[top_slot];
+    int g1 = n->nlte_ion_level_offset[top_slot + 1];
+    int sl0 = n->nlte_ion_super_offset[top_slot];
+    int expected_lower_levels = g1 - g0;
+    if (expected_lower_levels <= 0) {
+        bm->bad_count++;
+        return;
+    }
+    bm->sigma_expected = expected_lower_levels;
+    const double kT = K_BOLTZMANN * T_e;
+    for (int g = g0; g < g1; ++g) {
+        int lower = n->nlte_to_global_level[g];
+        if (lower < 0 || lower >= a->n_levels ||
+            a->level_Z[lower] != bm->Z ||
+            a->level_ion[lower] != bm->n_stages ||
+            !a->cmfgen_has_sigma[lower]) {
+            bm->bad_count++;
+            continue;
+        }
+        bm->sigma_count++;
+        int begin = a->cmfgen_bf_channel_offset[lower];
+        int end = a->cmfgen_bf_channel_offset[lower + 1];
+        if (begin < 0 || end <= begin || end > a->cmfgen_bf_channels_n_routes) {
+            bm->bad_count++;
+            continue;
+        }
+        int source = top_start + n->fl_to_super[g] - sl0;
+        double f_lower = n->within_sl_frac[(size_t)g * p->n_shells + shell];
+        if (source < 0 || source >= N || !(f_lower >= 0.0) ||
+            !isfinite(f_lower)) {
+            bm->bad_count++;
+            continue;
+        }
+        int current_grid = -1, previous_grid = -1;
+        double grid_probability_sum = 0.0;
+        int lower_routes_valid = 1;
+        for (int r = begin; r < end; ++r) {
+            bm->route_count++;
+            int target = a->cmfgen_bf_channel_target[r];
+            int grid = a->cmfgen_bf_channel_phot_grid[r];
+            double probability = a->cmfgen_bf_channel_probability[r];
+            double target_energy = a->cmfgen_bf_channel_target_energy_eV[r];
+            double target_g = a->cmfgen_bf_channel_target_g[r];
+            if (target != -1 || grid < 0 || !(probability > 0.0) ||
+                !isfinite(probability) || !(target_energy >= 0.0) ||
+                !isfinite(target_energy) || !(target_g > 0.0) ||
+                !isfinite(target_g)) {
+                bm->bad_count++;
+                lower_routes_valid = 0;
+                continue;
+            }
+            if (!isfinite(bm->terminal_g)) {
+                bm->terminal_energy_eV = target_energy;
+                bm->terminal_g = target_g;
+            } else {
+                double e_tol = 64.0 * DBL_EPSILON *
+                               fmax(1.0, fabs(bm->terminal_energy_eV));
+                double g_tol = 64.0 * DBL_EPSILON *
+                               fmax(1.0, fabs(bm->terminal_g));
+                if (fabs(target_energy - bm->terminal_energy_eV) > e_tol ||
+                    fabs(target_g - bm->terminal_g) > g_tol) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                    continue;
+                }
+            }
+            if (grid != current_grid) {
+                if (current_grid >= 0) {
+                    if (fabs(grid_probability_sum - 1.0) > 1e-12) {
+                        bm->bad_count++;
+                        lower_routes_valid = 0;
+                    }
+                    previous_grid = current_grid;
+                }
+                if (grid <= previous_grid) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                }
+                current_grid = grid;
+                grid_probability_sum = 0.0;
+            }
+            grid_probability_sum += probability;
+            bm->valid_route_count++;
+
+            double threshold = chi_eV - a->level_energy_eV[lower] + target_energy;
+            double nu0 = threshold * EV_TO_ERG / H_PLANCK;
+            if (!(threshold > 0.0) || !(nu0 < n->nu_max)) {
+                bm->bad_count++;
+                lower_routes_valid = 0;
+                continue;
+            }
+            const double *sigma_row = &a->cmfgen_bf_channel_sigma[
+                (size_t)r * (size_t)nf];
+            double rad_ion = 0.0, milne = 0.0;
+            double sigma_edge = a->cmfgen_bf_channel_sigma_edge
+                ? a->cmfgen_bf_channel_sigma_edge[r] : 0.0;
+            if (field_source != 2) {
+                BfRateResult br;
+                if (nlte_bf_gamma_canonical(n, shell, sigma_row, 0.0,
+                                             nu0, &br) != 0 ||
+                    (br.state != BF_RATE_VALID &&
+                     br.state != BF_RATE_EXACT_ZERO)) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                    continue;
+                }
+                rad_ion = br.gamma;
+            }
+            for (int bb = 0; bb < nf; ++bb) {
+                double loglo = log(n->nu_min) + bb * n->d_log_nu;
+                double nu_lo = exp(loglo);
+                double nu_hi = exp(loglo + n->d_log_nu);
+                double nu = exp(loglo + 0.5 * n->d_log_nu);
+                double sigma = sigma_row[bb];
+                if (!(sigma >= 0.0) || !isfinite(sigma)) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                    continue;
+                }
+                double sigma_log_weight = bf_rate_sigma_log_weight(
+                    sigma, nu_lo, nu_hi, nu0);
+                if (!(sigma_log_weight >= 0.0) || !isfinite(sigma_log_weight)) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                    continue;
+                }
+                if (!(sigma_log_weight > 0.0)) continue;
+                double nu_milne = ew_cmfgen_partial_bin_eval_nu(
+                    loglo, n->d_log_nu, nu0);
+                double nu_field = field_source == 2 ? nu_milne : nu;
+                double x = H_PLANCK * nu_milne / kT;
+                double J = 0.0;
+                if (field_source == 2) {
+                    (void)nlte_bf_field_source(n, T_e, nu_field, 0.0,
+                        0, NULL, NULL, &J);
+                    double pref = 4.0 * M_PI_VAL / H_PLANCK * sigma_log_weight;
+                    rad_ion += pref * J;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+                    fire->bf_pref_j_bins++;
+#ifdef _OPENMP
+#pragma omp atomic update
+#endif
+                    fire->bf_jeqb_bins++;
+                } else if (x < 700.0) {
+                    double J_view = 0.0;
+                    double band_hi = bb+1 == nf ? n->nu_max : nu_hi;
+                    int jrc = bf_rate_view_log_band_jnu(
+                        &n->radfield_view, (size_t)shell,
+                        fmax(nu_lo, nu0), band_hi, &J_view);
+                    if (jrc != 0) {
+                        bm->bad_count++;
+                        lower_routes_valid = 0;
+                        continue;
+                    }
+                    (void)nlte_bf_field_source(n, T_e, nu_field, J_view,
+                        0, NULL, NULL, &J);
+                }
+                if (!(J >= 0.0) || !isfinite(J)) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                    continue;
+                }
+                double pref = 4.0 * M_PI_VAL / H_PLANCK * sigma_log_weight;
+                double spont = 2.0 * H_PLANCK * nu_milne * nu_milne * nu_milne /
+                               (C_SPEED_OF_LIGHT * C_SPEED_OF_LIGHT);
+                if (x < 700.0) {
+                    double term = pref * (spont + J) * exp(-x);
+                    if (!isfinite(term)) {
+                        bm->bad_count++;
+                        lower_routes_valid = 0;
+                        continue;
+                    }
+                    milne += term;
+                }
+            }
+            int gl = a->level_g[lower];
+            if (gl <= 0) {
+                bm->bad_count++;
+                lower_routes_valid = 0;
+                continue;
+            }
+            double log_nstar = log(n_e) + 1.5 * log(H_PLANCK * H_PLANCK /
+                (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_e)) +
+                log((double)gl / (2.0 * target_g)) + threshold * EV_TO_ERG / kT;
+            if (!isfinite(log_nstar) || !(log_nstar < log(DBL_MAX))) {
+                bm->bad_count++;
+                lower_routes_valid = 0;
+                continue;
+            }
+            double nstar = exp(log_nstar);
+            double coll_ion = 0.0, coll_rec = 0.0;
+            int ci_route = nlte_bf_cmfgen_ci_route_included(grid, 0);
+            if (ci_route && nlte_bf_collisional_enabled() &&
+                sigma_edge > 0.0) {
+                coll_ion = ci_route * nlte_bf_cmfgen_collisional_ionization_rate(
+                    T_e, n_e, threshold, sigma_edge, bm->n_stages);
+                coll_rec = coll_ion * nstar;
+            }
+            double rates[4] = {probability * rad_ion * f_lower,
+                               probability * nstar * milne,
+                               probability * coll_ion * f_lower,
+                               probability * coll_rec};
+            for (int k = 0; k < 4; ++k) {
+                if (!isfinite(rates[k]) || rates[k] < 0.0) {
+                    bm->bad_count++;
+                    lower_routes_valid = 0;
+                }
+            }
+            ew_boundary_transition(bm, plane[NLTE_EW_RAD_BF],
+                ledger[NLTE_EW_RAD_BF], N, 0, bm->m_index, source, rates[0]);
+            ew_boundary_transition(bm, plane[NLTE_EW_RAD_BF],
+                ledger[NLTE_EW_RAD_BF], N, 0, source, bm->m_index, rates[1]);
+            ew_boundary_transition(bm, plane[NLTE_EW_COLL_BF],
+                ledger[NLTE_EW_COLL_BF], N, 1, bm->m_index, source, rates[2]);
+            ew_boundary_transition(bm, plane[NLTE_EW_COLL_BF],
+                ledger[NLTE_EW_COLL_BF], N, 1, source, bm->m_index, rates[3]);
+            fire->channel_events[NLTE_EW_RAD_BF] += 2;
+            if (rates[2] > 0.0 || rates[3] > 0.0)
+                fire->channel_events[NLTE_EW_COLL_BF] += 2;
+        }
+        if (current_grid >= 0 &&
+            fabs(grid_probability_sum - 1.0) > 1e-12) {
+            bm->bad_count++;
+            lower_routes_valid = 0;
+        }
+        if (lower_routes_valid) bm->route_source_count++;
+    }
+    bm->assembly_pass = bm->bad_count == 0 &&
+        bm->sigma_count == expected_lower_levels &&
+        bm->route_source_count == expected_lower_levels &&
+        bm->route_count == bm->valid_route_count &&
+        isfinite(bm->terminal_energy_eV) &&
+        isfinite(bm->terminal_g) && bm->terminal_g > 0.0;
+}
+
+/* Assemble the Fe projected M_V boundary or the PHOT-declared Si/S terminal
+ * scalar boundary. Fe V->VI, Fe V bb and DR/autoionization remain absent. */
 static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
                                       AtomicData *a, PlasmaState *p,
                                       int iv_slot, int iv_start, int shell,
@@ -1120,6 +1564,11 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
                                       double *ledger[NLTE_EW_N_CHANNELS],
                                       EWFireCounts *fire, int N) {
     if (!bm->active || !bm->data_pass) return;
+    if (bm->mode == 2) {
+        ew_boundary_terminal_assemble(bm, n, a, p, iv_slot, iv_start, shell,
+                                      plane, ledger, fire, N);
+        return;
+    }
     double T_e = p->T_e[shell], n_e = p->n_electron[shell];
     if (!(n_e > 0.0) || !isfinite(n_e) || !a->cmfgen_loaded ||
         a->cmfgen_n_freq_bins != n->n_freq_bins || !a->cmfgen_has_sigma ||
@@ -1238,13 +1687,18 @@ static void ew_boundary_mass_assemble(EWBoundaryMass *bm, NLTEConfig *n,
 }
 
 static uint64_t ew_atomic_checksum(const NLTEConfig *n, const AtomicData *a,
-                                   int slots[3]) {
+                                   const int *slots, int n_stages) {
     uint64_t h = UINT64_C(1469598103934665603);
     h = ew_fnv_bytes(h, &a->n_levels, sizeof(a->n_levels));
     h = ew_fnv_bytes(h, &a->n_lines, sizeof(a->n_lines));
     h = ew_fnv_bytes(h, &a->cmfgen_n_freq_bins,
                      sizeof(a->cmfgen_n_freq_bins));
-    for (int q = 0; q < 3; q++) {
+    if(a->cmfgen_bf_channel_version>=5) {
+        h=ew_fnv_bytes(h,&a->cmfgen_bf_channel_version,sizeof(int));
+        h=ew_fnv_bytes(h,a->cmfgen_bf_recombination_policy,sizeof(a->cmfgen_bf_recombination_policy));
+        h=ew_fnv_bytes(h,a->cmfgen_bf_policy_model_sha256,sizeof(a->cmfgen_bf_policy_model_sha256));
+    }
+    for (int q = 0; q < n_stages; q++) {
         int Z = n->nlte_Z[slots[q]], stage = n->nlte_ion[slots[q]];
         h = ew_fnv_bytes(h, &Z, sizeof(Z));
         h = ew_fnv_bytes(h, &stage, sizeof(stage));
@@ -1277,13 +1731,33 @@ static uint64_t ew_atomic_checksum(const NLTEConfig *n, const AtomicData *a,
                     h = ew_fnv_bytes(h, &a->ma_rr_probability[r], sizeof(double));
                 }
             }
+            if (a->cmfgen_bf_channels_loaded &&
+                a->cmfgen_bf_channel_offset) {
+                int b = a->cmfgen_bf_channel_offset[gl];
+                int e = a->cmfgen_bf_channel_offset[gl + 1];
+                h = ew_fnv_bytes(h, &b, sizeof(b));
+                h = ew_fnv_bytes(h, &e, sizeof(e));
+                for (int r = b; r < e; r++) {
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_target[r], sizeof(int));
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_probability[r], sizeof(double));
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_phot_grid[r], sizeof(int));
+                    if (a->cmfgen_bf_channel_sigma_edge)
+                        h = ew_fnv_bytes(h,
+                            &a->cmfgen_bf_channel_sigma_edge[r], sizeof(double));
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_target_energy_eV[r], sizeof(double));
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_target_g[r], sizeof(double));
+                    h = ew_fnv_bytes(h, &a->cmfgen_bf_channel_sigma[
+                        (size_t)r * a->cmfgen_n_freq_bins],
+                        (size_t)a->cmfgen_n_freq_bins * sizeof(double));
+                }
+            }
         }
     }
     for (int line = 0; line < a->n_lines; line++) {
         int Z = a->line_atomic_number[line];
         int stage = a->line_ion_number[line];
         int selected = 0;
-        for (int q = 0; q < 3; q++)
+        for (int q = 0; q < n_stages; q++)
             if (Z == n->nlte_Z[slots[q]] && stage == n->nlte_ion[slots[q]])
                 selected = 1;
         if (!selected) continue;
@@ -1658,6 +2132,292 @@ fail:
     free(rs); free(cs); free(piv); return -1;
 }
 
+#ifdef LUMINA_EW_SYNTHETIC_TEST
+int nlte_ew_test_solve_chain4(const double ion_rate[3],
+                              const double recombination_rate[3],
+                              double total, double population[4],
+                              double *closure_residual, int bb_owner_count[4]) {
+    if (!ion_rate || !recombination_rate || !population ||
+        !closure_residual || !bb_owner_count || !(total > 0.0) ||
+        !isfinite(total)) return -1;
+    double A[16] = {0.0}, b[4] = {0.0}, x[4] = {0.0};
+    for (int q = 0; q < 3; q++) {
+        double up = ion_rate[q], down = recombination_rate[q];
+        if (!(up >= 0.0) || !(down >= 0.0) ||
+            !isfinite(up) || !isfinite(down) || (up == 0.0 && down == 0.0))
+            return -1;
+        EW(A,4,q+1,q) += up;
+        EW(A,4,q,q) -= up;
+        EW(A,4,q,q+1) += down;
+        EW(A,4,q+1,q+1) -= down;
+    }
+    for (int q = 0; q < 4; q++) bb_owner_count[q] = 0;
+    for (int pair = 0; pair < 3; pair++) {
+        if (!ew_chain_pair_skips_lower_bb(pair)) bb_owner_count[pair]++;
+        bb_owner_count[pair+1]++;
+    }
+    double max_column_residual = 0.0;
+    for (int j = 0; j < 4; j++) {
+        double sum = 0.0;
+        for (int i = 0; i < 4; i++) sum += EW(A,4,i,j);
+        if (fabs(sum) > max_column_residual) max_column_residual = fabs(sum);
+    }
+    *closure_residual = max_column_residual;
+    for (int j = 0; j < 4; j++) EW(A,4,0,j) = 1.0;
+    b[0] = total;
+    EWSolveDiag diag;
+    if (ew_basic_solve(A,b,4,x,NULL,NULL,NULL,NULL,NULL,&diag,0) != 0)
+        return -1;
+    memcpy(population,x,sizeof(x));
+    return 0;
+}
+
+/* Exercise the production Si/S terminal BF assembler on a three-bin toy grid.
+ * Bin 0 lies wholly below threshold, bin 1 straddles it, and bin 2 is fully
+ * active. The test driver independently reconstructs both JEQB integrals. */
+int nlte_ew_test_terminal_scalar_rates(int Z, double terminal_g,
+                                       double rates_out[4]) {
+    if ((Z != 14 && Z != 16) || !(terminal_g > 0.0) || !rates_out) return -1;
+    const int nfreq = 3, N = 2;
+    const double nu_min = 1.0e15, dln = log(2.0), nu_threshold = 2.5e15;
+    const double T_e = 15000.0, n_e = 1.0e10;
+    const double sigma_row[3] = {2.0e-18, 4.0e-18, 1.0e-18};
+    const double chi_eV = H_PLANCK * nu_threshold / EV_TO_ERG;
+    int level_Z[1] = {Z}, level_ion[1] = {4}, level_g[1] = {2};
+    double level_energy[1] = {0.0}, ioniz_energy[1] = {chi_eV};
+    int ioniz_Z[1] = {Z}, ioniz_stage[1] = {4}, has_sigma[1] = {1};
+    int channel_offset[2] = {0, 1}, channel_target[1] = {-1};
+    int channel_grid[1] = {0};
+    double channel_probability[1] = {1.0};
+    double channel_energy[1] = {0.0}, channel_g[1] = {terminal_g};
+    double channel_sigma_edge[1] = {7.0e-18};
+    double channel_sigma[3];
+    memcpy(channel_sigma, sigma_row, sizeof(sigma_row));
+    AtomicData atom;
+    memset(&atom, 0, sizeof(atom));
+    atom.n_levels = 1;
+    atom.level_Z = level_Z;
+    atom.level_ion = level_ion;
+    atom.level_g = level_g;
+    atom.level_energy_eV = level_energy;
+    atom.n_ionization = 1;
+    atom.ioniz_Z = ioniz_Z;
+    atom.ioniz_ion = ioniz_stage;
+    atom.ioniz_energy_eV = ioniz_energy;
+    atom.cmfgen_loaded = 1;
+    atom.cmfgen_n_freq_bins = nfreq;
+    atom.cmfgen_has_sigma = has_sigma;
+    atom.cmfgen_sigma_bf = channel_sigma;
+    atom.cmfgen_bf_channels_loaded = 1;
+    atom.cmfgen_bf_channels_n_routes = 1;
+    atom.cmfgen_bf_channel_offset = channel_offset;
+    atom.cmfgen_bf_channel_target = channel_target;
+    atom.cmfgen_bf_channel_probability = channel_probability;
+    atom.cmfgen_bf_channel_phot_grid = channel_grid;
+    atom.cmfgen_bf_channel_target_energy_eV = channel_energy;
+    atom.cmfgen_bf_channel_target_g = channel_g;
+    atom.cmfgen_bf_channel_sigma_edge = channel_sigma_edge;
+    atom.cmfgen_bf_channel_sigma = channel_sigma;
+
+    int nlte_to_global[1] = {0}, fl_to_super[1] = {0};
+    double within_sl[1] = {1.0};
+    NLTEConfig nlte;
+    memset(&nlte, 0, sizeof(nlte));
+    nlte.n_freq_bins = nfreq;
+    nlte.nu_min = nu_min;
+    nlte.d_log_nu = dln;
+    nlte.nu_max = nu_min * exp(nfreq * dln);
+    nlte.nlte_ion_level_offset[0] = 0;
+    nlte.nlte_ion_level_offset[1] = 1;
+    nlte.nlte_ion_super_offset[0] = 0;
+    nlte.nlte_ion_super_offset[1] = 1;
+    nlte.nlte_to_global_level = nlte_to_global;
+    nlte.fl_to_super = fl_to_super;
+    nlte.within_sl_frac = within_sl;
+    double T[1] = {T_e}, ne[1] = {n_e};
+    PlasmaState plasma;
+    memset(&plasma, 0, sizeof(plasma));
+    plasma.n_shells = 1;
+    plasma.T_e = T;
+    plasma.n_electron = ne;
+
+    EWBoundaryMass boundary;
+    memset(&boundary, 0, sizeof(boundary));
+    boundary.active = 1;
+    boundary.mode = 2;
+    boundary.Z = Z;
+    boundary.n_stages = 4;
+    boundary.terminal_charge = 5;
+    boundary.m_index = 1;
+    boundary.data_pass = 1;
+    boundary.terminal_energy_eV = NAN;
+    boundary.terminal_g = NAN;
+    double forward_rad[2] = {0.0}, forward_col[2] = {0.0};
+    double reverse_rad[2] = {0.0}, reverse_col[2] = {0.0};
+    boundary.forward_rate[0] = forward_rad;
+    boundary.forward_rate[1] = forward_col;
+    boundary.reverse_rate[0] = reverse_rad;
+    boundary.reverse_rate[1] = reverse_col;
+    double planes_storage[NLTE_EW_N_CHANNELS][4] = {{0.0}};
+    double ledgers_storage[NLTE_EW_N_CHANNELS][2] = {{0.0}};
+    double *planes[NLTE_EW_N_CHANNELS], *ledgers[NLTE_EW_N_CHANNELS];
+    for (int c = 0; c < NLTE_EW_N_CHANNELS; ++c) {
+        planes[c] = planes_storage[c];
+        ledgers[c] = ledgers_storage[c];
+    }
+    EWFireCounts fire;
+    memset(&fire, 0, sizeof(fire));
+    ew_boundary_terminal_assemble(&boundary, &nlte, &atom, &plasma,
+                                  0, 0, 0, planes, ledgers, &fire, N);
+    double coll_ion_expected = nlte_bf_cmfgen_collisional_ionization_rate(
+        T_e, n_e, chi_eV, channel_sigma_edge[0], 4);
+    double log_nstar_expected = log(n_e) + 1.5 * log(
+        H_PLANCK * H_PLANCK /
+        (2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_e)) +
+        log((double)level_g[0] / (2.0 * terminal_g)) +
+        chi_eV * EV_TO_ERG / (K_BOLTZMANN * T_e);
+    double coll_rec_expected = coll_ion_expected * exp(log_nstar_expected);
+    if (!boundary.assembly_pass || boundary.bad_count != 0 ||
+        boundary.sigma_count != 1 || boundary.route_source_count != 1 ||
+        !(forward_rad[0] > 0.0) || !(reverse_rad[0] > 0.0) ||
+        fabs(forward_col[0] - coll_ion_expected) >
+            2.0e-12 * fmax(fabs(coll_ion_expected), 1.0e-300) ||
+        fabs(reverse_col[0] - coll_rec_expected) >
+            2.0e-12 * fmax(fabs(coll_rec_expected), 1.0e-300)) {
+        fprintf(stderr,
+                "[EW-TEST][TERMINAL] Z=%d pass=%d bad=%d sigma=%d/%d "
+                "routes=%d/%d rates=%.17g,%.17g coll=%.17g/%.17g "
+                "target=(%.17g,%.17g)\n",
+                Z, boundary.assembly_pass, boundary.bad_count,
+                boundary.sigma_count, boundary.sigma_expected,
+                boundary.route_source_count, boundary.route_count,
+                forward_rad[0], reverse_rad[0], forward_col[0],
+                reverse_col[0], boundary.terminal_energy_eV, boundary.terminal_g);
+        return -1;
+    }
+    rates_out[0] = forward_rad[0];
+    rates_out[1] = reverse_rad[0];
+    rates_out[2] = forward_col[0];
+    rates_out[3] = reverse_col[0];
+    return 0;
+}
+
+/* Probe the production element-wide BF assembler's thermal target partition. */
+int nlte_ew_test_grouped_superlevel_rates(
+        int version, double upper_delta_eV, double rates_out[4]) {
+    if ((version != 3 && version != 4) || !rates_out ||
+        !isfinite(upper_delta_eV) || upper_delta_eV < 0.0) return -1;
+    enum { NLEV = 3, NFREQ = 3, NPAIR = 2 };
+    int level_Z[NLEV] = {14,14,14};
+    int level_ion[NLEV] = {1,2,2};
+    int level_g[NLEV] = {2,2,4};
+    double level_energy[NLEV] = {0.0,0.0,upper_delta_eV};
+    int ioniz_Z[1] = {14}, ioniz_stage[1] = {1};
+    double ioniz_energy[1] = {10.0};
+    int has_sigma[NLEV] = {1,0,0};
+    int route_offset[NLEV + 1] = {0,1,1,1};
+    int route_target[1] = {1}, route_grid[1] = {0};
+    double route_probability[1] = {1.0};
+    double route_energy[1] = {0.0}, route_g[1] = {6.0};
+    double route_edge[1] = {7.0e-18};
+    double route_sigma[NFREQ] = {2.0e-18,4.0e-18,1.0e-18};
+    int global_to_nlte[NLEV] = {0,1,2};
+    int fl_to_super[NLEV] = {0,1,1};
+    int super_anchor[NPAIR] = {0,1};
+    double within_sl[NLEV] = {1.0,0.0,0.0};
+    double j_nu[NFREQ] = {0.0,0.0,0.0};
+    const double nu_min = 1.0e15, dln = log(2.0);
+    const double T_e = 15000.0, n_e = 1.0e10;
+    within_sl[1] = 2.0 / (2.0 + 4.0 * exp(
+        -upper_delta_eV * EV_TO_ERG / (K_BOLTZMANN * T_e)));
+    within_sl[2] = 1.0 - within_sl[1];
+    double temperature[1] = {T_e}, electron_density[1] = {n_e};
+    AtomicData atom;
+    NLTEConfig nlte;
+    PlasmaState plasma;
+    double sigma_bf[NLEV * NFREQ] = {0.0};
+    double planes_storage[NLTE_EW_N_CHANNELS][4] = {{0.0}};
+    double ledgers_storage[NLTE_EW_N_CHANNELS][NPAIR] = {{0.0}};
+    memset(&atom, 0, sizeof(atom));
+    memset(&nlte, 0, sizeof(nlte));
+    memset(&plasma, 0, sizeof(plasma));
+    memcpy(sigma_bf, route_sigma, sizeof(route_sigma));
+
+    atom.n_levels = NLEV;
+    atom.level_Z = level_Z;
+    atom.level_ion = level_ion;
+    atom.level_g = level_g;
+    atom.level_energy_eV = level_energy;
+    atom.n_ionization = 1;
+    atom.ioniz_Z = ioniz_Z;
+    atom.ioniz_ion = ioniz_stage;
+    atom.ioniz_energy_eV = ioniz_energy;
+    atom.cmfgen_loaded = 1;
+    atom.cmfgen_n_freq_bins = NFREQ;
+    atom.cmfgen_has_sigma = has_sigma;
+    atom.cmfgen_sigma_bf = sigma_bf;
+    atom.cmfgen_bf_channels_loaded = 1;
+    atom.cmfgen_bf_channel_version = version;
+    atom.cmfgen_bf_channels_n_routes = 1;
+    atom.cmfgen_bf_channel_offset = route_offset;
+    atom.cmfgen_bf_channel_target = route_target;
+    atom.cmfgen_bf_channel_probability = route_probability;
+    atom.cmfgen_bf_channel_phot_grid = route_grid;
+    atom.cmfgen_bf_channel_target_energy_eV = route_energy;
+    atom.cmfgen_bf_channel_target_g = route_g;
+    atom.cmfgen_bf_channel_sigma_edge = route_edge;
+    atom.cmfgen_bf_channel_sigma = route_sigma;
+
+    nlte.n_freq_bins = NFREQ;
+    nlte.nu_min = nu_min;
+    nlte.nu_max = nu_min * exp(NFREQ * dln);
+    nlte.d_log_nu = dln;
+    nlte.n_nlte_ions = 2;
+    nlte.n_nlte_levels_total = NLEV;
+    nlte.n_super_total = NPAIR;
+    nlte.nlte_ion_level_offset[0] = 0;
+    nlte.nlte_ion_level_offset[1] = 1;
+    nlte.nlte_ion_level_offset[2] = NLEV;
+    nlte.nlte_ion_super_offset[0] = 0;
+    nlte.nlte_ion_super_offset[1] = 1;
+    nlte.nlte_ion_super_offset[2] = NPAIR;
+    nlte.global_to_nlte_level = global_to_nlte;
+    nlte.fl_to_super = fl_to_super;
+    nlte.super_anchor_global = super_anchor;
+    nlte.within_sl_frac = within_sl;
+    nlte.J_nu = j_nu;
+    plasma.n_shells = 1;
+    plasma.T_e = temperature;
+    plasma.n_electron = electron_density;
+
+    memset(&ew_cap, 0, sizeof(ew_cap));
+    ew_cap.active = 1;
+    ew_cap.N_pair = NPAIR;
+    ew_cap.N_wide = NPAIR;
+    ew_cap.pair_super_start = 0;
+    ew_cap.n_lo_super = 1;
+    ew_cap.shell = 0;
+    ew_cap.n_shells = 1;
+    ew_cap.nlte = &nlte;
+    ew_cap.atom = &atom;
+    for (int c = 0; c < NLTE_EW_N_CHANNELS; ++c) {
+        ew_cap.plane[c] = planes_storage[c];
+        ew_cap.expected_outflow[c] = ledgers_storage[c];
+    }
+    nlte_ew_capture_bf_target_rates(0, 0, 1.0, T_e, n_e);
+    int failed = ew_cap.target_expected != 1 || ew_cap.target_mapped != 1 ||
+                 ew_cap.target_fail != 0 || ew_cap.bad_rate != 0;
+    rates_out[0] = EW(planes_storage[NLTE_EW_RAD_BF], NPAIR, 1, 0);
+    rates_out[1] = EW(planes_storage[NLTE_EW_RAD_BF], NPAIR, 0, 1);
+    rates_out[2] = EW(planes_storage[NLTE_EW_COLL_BF], NPAIR, 1, 0);
+    rates_out[3] = EW(planes_storage[NLTE_EW_COLL_BF], NPAIR, 0, 1);
+    memset(&ew_cap, 0, sizeof(ew_cap));
+    if (failed || !(rates_out[0] > 0.0) || !(rates_out[1] > 0.0) ||
+        !(rates_out[2] > 0.0) || !(rates_out[3] > 0.0)) return -1;
+    return 0;
+}
+#endif
+
 static double ew_channel_colsum(const double *A, int N) {
     if (!A || N <= 0) return INFINITY;
     double maxa = 0.0, maxsum = 0.0;
@@ -1882,9 +2642,9 @@ static int ew_guard_config_count(void) {
 }
 
 static FILE *ew_open_dump(char *path, size_t n, int iter, int Z, int shell,
-                          const char *role) {
-    snprintf(path, n, "%s/lumina_ew_iter%04d_z%02d_s%03d_%s.csv",
-             ew_gate.dump_dir, iter, Z, shell, role);
+                          int ce_iteration, const char *role) {
+    snprintf(path, n, "%s/lumina_ew_iter%04d_ce%02d_z%02d_s%03d_%s.csv",
+             ew_gate.dump_dir, iter, ce_iteration, Z, shell, role);
     FILE *fp = fopen(path, "w");
     if (!fp) {
         fprintf(stderr, "[EW][DUMP-FAIL] %s: %s\n", path, strerror(errno));
@@ -1894,13 +2654,15 @@ static FILE *ew_open_dump(char *path, size_t n, int iter, int Z, int shell,
 }
 
 static void ew_dump_identity(const NLTEConfig *n, const AtomicData *a,
-                             int slots[3], int N, int iter, int Z, int shell,
+                             const int *slots, int n_stages, int N, int iter,
+                             int ce_iteration, int Z, int shell,
                              uint64_t checksum) {
-    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell, "identity");
+    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell,
+                                           ce_iteration, "identity");
     if (!fp) return;
     fprintf(fp, "matrix_index,Z,spectroscopic_stage,internal_stage,sl_id,anchor_global_level,member_full_level_ids,energy_eV,g_or_SL_partition,source_atomic_checksum\n");
     int base = 0;
-    for (int q = 0; q < 3; q++) {
+    for (int q = 0; q < n_stages; q++) {
         int slot = slots[q], s0 = n->nlte_ion_super_offset[slot];
         int s1 = n->nlte_ion_super_offset[slot + 1];
         for (int sl = s0; sl < s1; sl++) {
@@ -1926,8 +2688,10 @@ static void ew_dump_identity(const NLTEConfig *n, const AtomicData *a,
 
 static void ew_dump_sparse_matrix(const char *role, const double *A, const double *b,
                                   const double *row_scale,const double *col_scale,
-                                  int N, int iter, int Z, int shell) {
-    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell, role);
+                                  int N, int iter, int Z, int shell,
+                                  int ce_iteration) {
+    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell,
+                                           ce_iteration, role);
     if (!fp) return;
     fprintf(fp, "row,column,value,rhs,row_scale,column_scale\n");
     for (int j = 0; j < N; j++) for (int i = 0; i < N; i++)
@@ -1939,8 +2703,9 @@ static void ew_dump_sparse_matrix(const char *role, const double *A, const doubl
 }
 
 static void ew_dump_raw(double *plane[NLTE_EW_N_CHANNELS], int N,
-                        int iter, int Z, int shell) {
-    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell, "matrix_raw");
+                        int iter, int Z, int shell, int ce_iteration) {
+    char path[768]; FILE *fp = ew_open_dump(path, sizeof(path), iter, Z, shell,
+                                           ce_iteration, "matrix_raw");
     if (!fp) return;
     fprintf(fp, "channel,row,column,value,rhs\n");
     for (int c = 0; c < NLTE_EW_N_CHANNELS; c++)
@@ -1970,8 +2735,9 @@ static double ew_scaled_residual(const double *Araw, const double *x, int N,
 }
 
 static double ew_permutation_check(const double *A, const double *b, int N,
-                                   const double *xref, int stage_start[4],
-                                   uint64_t seed) {
+                                   const double *xref, const int *stage_start,
+                                   int n_stages, uint64_t seed,
+                                   const double *generator, double total) {
     int *perm = (int *)malloc((size_t)N*sizeof(int));
     double *Ap = (double *)malloc((size_t)N*N*sizeof(double));
     double *bp = (double *)malloc((size_t)N*sizeof(double));
@@ -1982,10 +2748,10 @@ static double ew_permutation_check(const double *A, const double *b, int N,
     for (int mode = 0; mode < 2; mode++) {
         if (mode == 0) {
             int k = 0;
-            for (int q = 2; q >= 0; q--)
+            for (int q = n_stages - 1; q >= 0; q--)
                 for (int i = stage_start[q]; i < stage_start[q+1]; i++) perm[k++] = i;
-            /* Optional scalar boundary-mass unknown follows the three stages. */
-            for (int i = stage_start[3]; i < N; i++) perm[k++] = i;
+            /* Optional scalar boundary-mass unknown follows active stages. */
+            for (int i = stage_start[n_stages]; i < N; i++) perm[k++] = i;
         } else {
             for (int i = 0; i < N; i++) perm[i] = i;
             uint64_t x = seed ? seed : UINT64_C(0x9e3779b97f4a7c15);
@@ -1994,16 +2760,24 @@ static double ew_permutation_check(const double *A, const double *b, int N,
                 int j = (int)(x % (uint64_t)(i+1)); int t=perm[i];perm[i]=perm[j];perm[j]=t;
             }
         }
-        for (int i=0;i<N;i++) { bp[i]=b[perm[i]]; for(int j=0;j<N;j++) EW(Ap,N,i,j)=EW(A,N,perm[i],perm[j]); }
-        EWSolveDiag d;
-        if (ew_basic_solve(Ap,bp,N,xp,NULL,NULL,NULL,NULL,NULL,&d,0)) { worst=INFINITY; break; }
+        const double *source=generator?generator:A;
+        for (int i=0;i<N;i++) { bp[i]=b[perm[i]]; for(int j=0;j<N;j++) EW(Ap,N,i,j)=EW(source,N,perm[i],perm[j]); }
+        if (generator) {
+            PopulationGeneratorSolveDiagnostic gd;
+            if (population_generator_stationary_gth(Ap,(size_t)N,total,xp,&gd)!=POP_OK) {
+                worst=INFINITY;break;
+            }
+        } else {
+            EWSolveDiag d;
+            if (ew_basic_solve(Ap,bp,N,xp,NULL,NULL,NULL,NULL,NULL,&d,0)) { worst=INFINITY; break; }
+        }
         for (int i=0;i<N;i++) xu[perm[i]]=xp[i];
-        for (int q=0;q<3;q++) {
+        for (int q=0;q<n_stages;q++) {
             double a=0.0,c=0.0;
             for(int i=stage_start[q];i<stage_start[q+1];i++){a+=xref[i];c+=xu[i];}
             double dv=fabs(a-c); if(dv>worst)worst=dv;
         }
-        for(int i=stage_start[3];i<N;i++){
+        for(int i=stage_start[n_stages];i<N;i++){
             double dv=fabs(xref[i]-xu[i]); if(dv>worst)worst=dv;
         }
     }
@@ -2014,7 +2788,8 @@ static double ew_permutation_check(const double *A, const double *b, int N,
  * populations without solving or touching the production capture buffers. */
 static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
                              PlasmaState *plasma, OpacityState *opacity,
-                             int slots[3], int stage_start[4], int N, int shell,
+                             const int *slots, const int *stage_start,
+                             int n_stages, int N, int shell,
                              double time_explosion, GammaDeposition *gamma_dep,
                              double *out) {
     double *plane[NLTE_EW_N_CHANNELS]={0};
@@ -2026,7 +2801,7 @@ static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
         if(!plane[c]||!ledger[c])failed=1;
     }
     if(failed) goto done;
-    for(int pair=0;pair<2;pair++){
+    for(int pair=0;pair<n_stages-1;pair++){
         int lo=slots[pair],hi=slots[pair+1],base=stage_start[pair];
         int Np=nlte->nlte_ion_super_offset[hi+1]-
                nlte->nlte_ion_super_offset[lo];
@@ -2035,7 +2810,7 @@ static int ew_rebuild_matrix(NLTEConfig *nlte, AtomicData *atom,
         if(!tmpA||!tmpb){free(tmpA);free(tmpb);failed=1;break;}
         EWFireCounts ignored; memset(&ignored,0,sizeof(ignored));
         ew_capture_begin(nlte,atom,shell,plasma->n_shells,lo,Np,N,base,
-                         pair==1,plane,ledger);
+                         ew_chain_pair_skips_lower_bb(pair),plane,ledger);
         if(nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
                                     time_explosion,tmpA,tmpb,Np,gamma_dep,NULL,-1)!=0)
             failed=1;
@@ -2055,8 +2830,10 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                        PlasmaState *plasma, OpacityState *opacity,
                        int Z, int shell, int shell_label, double time_explosion,
                        GammaDeposition *gamma_dep, int commit_requested,
-                       int *verdict_pass_out) {
+                       int ce_iteration, int *verdict_pass_out,
+                       NLTEEWResponse *response) {
     if (verdict_pass_out) *verdict_pass_out = 0;
+    if (response) memset(response, 0, sizeof(*response));
     if (nlte_element_wide_config_status() != 0) return -1;
     if (!nlte_element_wide_matches(Z, shell_label)) return 0;
     const int artifacts_enabled = ew_gate.dump && nlte_solve_effect_allowed(
@@ -2085,25 +2862,44 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         }
         nlte = &private_view.cfg;
     }
-    int slots[3] = { ew_find_slot(nlte,Z,1), ew_find_slot(nlte,Z,2), ew_find_slot(nlte,Z,3) };
+    int n_stages = (Z == 14 || Z == 16) ? 4 : 3;
+    int slots[4] = { -1, -1, -1, -1 };
+    for (int q = 0; q < n_stages; q++)
+        slots[q] = ew_find_slot(nlte, Z, q + 1);
     int iter = nlte->current_iter;
     int topology_fail = 0, guard_config_count = ew_guard_config_count();
-    for (int q=0;q<3;q++) if (slots[q] < 0) topology_fail++;
+    for (int q=0;q<n_stages;q++) {
+        if (slots[q] < 0) topology_fail++;
+        if (q > 0 && slots[q] != slots[q-1] + 1) topology_fail++;
+    }
     if (topology_fail) {
-        fprintf(stderr,"[EW][TOPOLOGY-FAIL] Z=%d s=%d missing II/III/IV slot\n",Z,shell_label);
+        fprintf(stderr,"[EW][TOPOLOGY-FAIL] Z=%d s=%d missing active ion slot\n",Z,shell_label);
         ew_private_view_free(&private_view);
         return -1;
     }
-    int stage_start[4] = {0,0,0,0};
-    for(int q=0;q<3;q++) stage_start[q+1]=stage_start[q]+
+    int stage_start[5] = {0,0,0,0,0};
+    for(int q=0;q<n_stages;q++) stage_start[q+1]=stage_start[q]+
         nlte->nlte_ion_super_offset[slots[q]+1]-nlte->nlte_ion_super_offset[slots[q]];
-    int boundary_mass_active = (Z == 26);
-    int N=stage_start[3] + (boundary_mass_active ? 1 : 0);
+    int boundary_mass_active = (Z == 26) ||
+        ((Z == 14 || Z == 16) && n_stages == 4);
+    int N=stage_start[n_stages] + (boundary_mass_active ? 1 : 0);
     if(N<=0) { ew_private_view_free(&private_view); return -1; }
     double n_elem=ew_element_density(atom,plasma,Z,shell);
     EWBoundaryMass boundary;
-    if(ew_boundary_mass_prepare(&boundary,atom,plasma,Z,shell,N,n_elem)!=0){
-        fprintf(stderr,"[EW][OOM] Z=%d s=%d boundary-mass projection\n",Z,shell_label);
+    if(ew_boundary_mass_prepare(&boundary,atom,plasma,Z,shell,N,n_elem,
+                                n_stages,boundary_mass_active)!=0){
+        fprintf(stderr,"[EW][BOUNDARY-FAIL] Z=%d s=%d external-stage population or projection invalid\n",
+                Z,shell_label);
+        ew_boundary_mass_free(&boundary);
+        ew_private_view_free(&private_view);
+        return -1;
+    }
+    double active_mass=n_elem-boundary.m_outside;
+    if (!(n_elem > 0.0) || !isfinite(n_elem) ||
+        !(active_mass > 0.0) || !isfinite(active_mass)) {
+        fprintf(stderr,
+                "[EW][BOUNDARY-FAIL] Z=%d s=%d n_element=%.17g outside=%.17g\n",
+                Z,shell_label,n_elem,boundary.m_outside);
         ew_boundary_mass_free(&boundary);
         ew_private_view_free(&private_view);
         return -1;
@@ -2112,7 +2908,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     {
         const char *cut=getenv("LUMINA_SUPER_CUTOFF");
         int K=cut?atoi(cut):0;
-        if(K>0)for(int q=0;q<3;q++)
+        if(K>0)for(int q=0;q<n_stages;q++)
             for(int g=nlte->nlte_ion_level_offset[slots[q]];
                 g<nlte->nlte_ion_level_offset[slots[q]+1];g++){
                 int gl=nlte->nlte_to_global_level[g];
@@ -2121,8 +2917,8 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
             }
     }
     EWCoverage coverage;
-    ew_projection_coverage(nlte,atom,Z,slots,&coverage);
-    uint64_t checksum_before=ew_atomic_checksum(nlte,atom,slots);
+    ew_projection_coverage(nlte,atom,Z,slots,n_stages,&coverage);
+    uint64_t checksum_before=ew_atomic_checksum(nlte,atom,slots,n_stages);
     double *plane[NLTE_EW_N_CHANNELS]={0};
     double *expected_outflow[NLTE_EW_N_CHANNELS]={0};
     double *Araw=(double*)calloc((size_t)N*N,sizeof(double));
@@ -2145,15 +2941,16 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
 
     int target_expected=0,target_mapped=0,target_fail=0,bad_rate=0;
     EWFireCounts fire; memset(&fire,0,sizeof(fire));
-    for(int pair=0;pair<2;pair++) {
+    for(int pair=0;pair<n_stages-1;pair++) {
         int lo=slots[pair],hi=slots[pair+1];
         int base=stage_start[pair];
         int Np=nlte->nlte_ion_super_offset[hi+1]-nlte->nlte_ion_super_offset[lo];
         double *tmpA=(double*)calloc((size_t)Np*Np,sizeof(double));
         double *tmpb=(double*)calloc((size_t)Np,sizeof(double));
         if(!tmpA||!tmpb){free(tmpA);free(tmpb);goto cleanup_fail;}
-        ew_capture_begin(nlte,atom,shell,plasma->n_shells,lo,Np,N,base,pair==1,
-                         plane,expected_outflow);
+        ew_capture_begin(nlte,atom,shell,plasma->n_shells,lo,Np,N,base,
+                         ew_chain_pair_skips_lower_bb(pair),plane,
+                         expected_outflow);
         unsigned long calls_before[3], calls_after[3];
         nlte_ew_runtime_counts_snapshot_for(nlte, calls_before);
         if(nlte_assemble_rate_matrix(nlte,atom,plasma,opacity,lo,hi,shell,
@@ -2167,8 +2964,8 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         fire.topstage_IV_calls += (int)(calls_after[2] - calls_before[2]);
         free(tmpA);free(tmpb);
     }
-    ew_boundary_mass_assemble(&boundary,nlte,atom,plasma,slots[2],
-                              stage_start[2],shell,plane,expected_outflow,
+    ew_boundary_mass_assemble(&boundary,nlte,atom,plasma,slots[n_stages-1],
+                              stage_start[n_stages-1],shell,plane,expected_outflow,
                               &fire,N);
     for(int c=0;c<NLTE_EW_N_CHANNELS;c++)
         for(size_t k=0;k<(size_t)N*N;k++) Araw[k]+=plane[c][k];
@@ -2183,7 +2980,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     }
     if(hot_cold_required){
         int g0=nlte->nlte_ion_level_offset[slots[0]];
-        int g1=nlte->nlte_ion_level_offset[slots[2]+1];
+        int g1=nlte->nlte_ion_level_offset[slots[n_stages-1]+1];
         int ng=g1-g0;
         double *saved=(double*)malloc((size_t)ng*sizeof(double));
         double *cold=(double*)calloc((size_t)N*N,sizeof(double));
@@ -2196,17 +2993,17 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                     (size_t)g*plasma->n_shells+shell]=0.0;
             }
             nlte->nlte_level_populations[
-                (size_t)g0*plasma->n_shells+shell]=n_elem;
-            if(!ew_rebuild_matrix(nlte,atom,plasma,opacity,slots,stage_start,N,
+                (size_t)g0*plasma->n_shells+shell]=active_mass;
+            if(!ew_rebuild_matrix(nlte,atom,plasma,opacity,slots,stage_start,n_stages,N,
                                   shell,time_explosion,gamma_dep,cold))
                 hot_cold_rebuilds++;
             for(int g=g0;g<g1;g++)
                 nlte->nlte_level_populations[
                     (size_t)g*plasma->n_shells+shell]=0.0;
-            int gh=nlte->nlte_ion_level_offset[slots[2]];
+            int gh=nlte->nlte_ion_level_offset[slots[n_stages-1]];
             nlte->nlte_level_populations[
-                (size_t)gh*plasma->n_shells+shell]=n_elem;
-            if(!ew_rebuild_matrix(nlte,atom,plasma,opacity,slots,stage_start,N,
+                (size_t)gh*plasma->n_shells+shell]=active_mass;
+            if(!ew_rebuild_matrix(nlte,atom,plasma,opacity,slots,stage_start,n_stages,N,
                                   shell,time_explosion,gamma_dep,hot))
                 hot_cold_rebuilds++;
             hot_cold_max_abs=0.0;
@@ -2222,13 +3019,11 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         }
         free(saved);free(cold);free(hot);
     }
-    double active_mass=n_elem-boundary.m_outside;
-    if(!boundary.active)active_mass=n_elem;
     if(!(active_mass>=0.0)||!isfinite(active_mass))boundary.bad_count++;
     for(int j=0;j<N;j++) EW(Anorm,N,0,j)=1.0;
     b[0]=active_mass;
 
-    uint64_t checksum_after=ew_atomic_checksum(nlte,atom,slots);
+    uint64_t checksum_after=ew_atomic_checksum(nlte,atom,slots,n_stages);
     coverage.checksum_mismatch = checksum_after != checksum_before;
     int raw_rank=ew_rank_only(Araw,N),zero_rows=0,zero_cols=0;
     int components=ew_components(Araw,N,&zero_rows,&zero_cols);
@@ -2248,6 +3043,26 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     int solve_attempted = projection_ok ? 1 : 0;
     int solve_fail = projection_ok ?
         ew_basic_solve(Anorm,b,N,x,Aeq,beq,rs,cs,solve_piv,&sd,1) : 1;
+    /* Keep dense-system diagnostics, but certify the actual Si/S candidate
+     * by strict fixed-rate forward-error bounds below. Solve the actual
+     * positive rate generator using the same GTH owner already used by the
+     * general population contract. Dense diagonal cancellation must not
+     * determine populations or their permutation check. No rates, graph
+     * connections or normalization total are changed. Physical residual,
+     * conservation, boundary, and all original atomic checks remain required. */
+    int generator_solve_used=0;
+    PopulationGeneratorSolveDiagnostic generator_diag;
+    memset(&generator_diag,0,sizeof(generator_diag));
+    if(!solve_fail && (Z==14 || Z==16)) {
+        PopulationStatus status=population_generator_stationary_gth(
+            Araw,(size_t)N,active_mass,x,&generator_diag);
+        if(status!=POP_OK) {
+            solve_fail=1;
+            fprintf(stderr,"[EW][GENERATOR-FAIL] Z=%d s=%d reason=%s recognized=%d\n",
+                    Z,shell_label,population_status_name(status),
+                    generator_diag.generator_recognized);
+        } else generator_solve_used=1;
+    }
     double raw_smax=0.0,raw_smin=0.0;
     int raw_svd_fail=projection_ok ?
         ew_singular_extrema(Anorm,N,&raw_smax,&raw_smin) : 1;
@@ -2272,15 +3087,41 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
     int negative=ew_negative_audit(x,N,sd.rcond,&raw_solution_min,
                                    &negative_error_bound);
     double conservation=(n_elem>0.0)?fabs(sumx-active_mass)/n_elem:INFINITY;
-    double se_res=solve_fail?INFINITY:ew_scaled_residual(Araw,x,N,n_elem,
+    double se_res=solve_fail?INFINITY:ew_scaled_residual(Araw,x,N,active_mass,
                                                          time_explosion);
     uint64_t checksum=checksum_after;
-    double perm_abs=solve_fail?INFINITY:ew_permutation_check(Anorm,b,N,x,stage_start,checksum);
+    double perm_abs=solve_fail?INFINITY:ew_permutation_check(
+        Anorm,b,N,x,stage_start,n_stages,checksum,
+        generator_solve_used?Araw:NULL,active_mass);
     double perm_frac=(n_elem>0.0)?perm_abs/n_elem:INFINITY;
+
+    /* An explicit nominal numerical certificate, not a rate-sensitivity or
+     * physical-equivalence certificate. All levels, including terminal/tiny
+     * populations, participate. Never repair or renormalize x here. */
+    int certificate_required=(Z==14 || Z==16);
+    int certificate_attempted=0,certificate_status=-1,certificate_pass=0;
+    long double certificate_probability_error=INFINITY,certificate_relative_error=INFINITY;
+    long double certificate_stage_lower[5]={0},certificate_stage_upper[5]={0};
+    if(certificate_required && generator_solve_used && !solve_fail) {
+        certificate_attempted=1;
+        int *groups=(int*)malloc((size_t)N*sizeof(int));
+        if(!groups)certificate_status=2;
+        else {
+            for(int q=0;q<n_stages;q++)
+                for(int i=stage_start[q];i<stage_start[q+1];i++)groups[i]=q;
+            if(boundary.active)groups[boundary.m_index]=n_stages;
+            certificate_status=pgi_certify_candidate(Araw,(size_t)N,x,active_mass,
+                groups,(size_t)(n_stages+(boundary.active?1:0)),
+                certificate_stage_lower,certificate_stage_upper,
+                &certificate_probability_error,&certificate_relative_error);
+            free(groups);
+        }
+        certificate_pass=(certificate_status==0);
+    }
 
     boundary.m_after=boundary.active&&!solve_fail?x[boundary.m_index]:0.0;
     if(boundary.active){
-        for(int q=0;q<3;q++)
+        for(int q=0;q<n_stages;q++)
             for(int i=stage_start[q];i<stage_start[q+1];i++)
                 boundary.sum_stage[q]+=x[i];
         boundary.conservation_residual=conservation;
@@ -2289,7 +3130,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         for(int k=0;k<2;k++){
             double ledger_forward=0.0;
             double ledger_reverse=0.0;
-            for(int j=stage_start[2];j<stage_start[3];j++) {
+            for(int j=stage_start[n_stages-1];j<stage_start[n_stages];j++) {
                 ledger_forward+=boundary.forward_rate[k][j]*x[j];
                 ledger_reverse+=boundary.reverse_rate[k][j]*x[boundary.m_index];
             }
@@ -2297,26 +3138,18 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
             boundary.phi_reverse[k]=ledger_reverse;
         }
         boundary.flux_residual=ew_boundary_flux_audit(
-            Araw,x,N,boundary.m_index,stage_start[2],stage_start[3],
+            Araw,x,N,boundary.m_index,stage_start[n_stages-1],stage_start[n_stages],
             boundary.forward_rate[0],boundary.forward_rate[1],
             boundary.reverse_rate[0],boundary.reverse_rate[1]);
     }
 
-    double boundary_max=0.0;
-    for(int st_i=0;st_i<2;st_i++){
-        int st=st_i?(boundary.active?5:4):0,ip=ew_find_ip(atom,Z,st);
-        double density=ip>=0 ?
-            atom->ion_number_density[(size_t)ip*plasma->n_shells+shell] : 0.0;
-        double f=ew_boundary_population_fraction(ip>=0,density,n_elem);
-        if(!isfinite(f))boundary_max=INFINITY;
-        else if(f>boundary_max)boundary_max=f;
-    }
+    double boundary_max=(n_elem>0.0)?boundary.m_outside/n_elem:INFINITY;
+    int max_represented_stage=n_stages+(boundary.active?1:0);
     double tau_all=0.0,tau_boundary=0.0;
     if(opacity && opacity->tau_sobolev){
         for(int line=0;line<atom->n_lines;line++) if(atom->line_atomic_number[line]==Z){
             int st=atom->line_ion_number[line];
-            int is_boundary=st==0||(!boundary.active&&st==4)||
-                            (boundary.active&&st>=5);
+            int is_boundary=st<1||st>max_represented_stage;
             size_t tau_index=(size_t)line*plasma->n_shells+shell;
             double tau=opacity->tau_sobolev[tau_index];
             if(opacity->tau_validity &&
@@ -2334,8 +3167,6 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
      * assembler.  A non-zero adjacent-stage reservoir is therefore not
      * measurable from this lane and must fail closed rather than be inferred
      * negligible from opacity alone. */
-    if(boundary.active)
-        boundary_max=(n_elem>0.0)?boundary.m_outside/n_elem:INFINITY;
     int boundary_process_coverage=boundary.active ? boundary.assembly_pass :
         (boundary_max==0.0 && tau_boundary==0.0);
     /* Kramers is the authority lane's declared continuum, not a clamp/repair
@@ -2362,20 +3193,26 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         coverage.lines_mapped==coverage.lines_expected &&
         coverage.continua_mapped==coverage.continua_expected &&
         coverage.targets_expected>0 && coverage.targets_mapped==coverage.targets_expected &&
-        coverage.checksum_mismatch==0 && raw_rank==N-1 &&
+        coverage.checksum_mismatch==0 &&
         components==1 && zero_rows==0 && zero_cols==0 &&
         max_assembly_residual<=1e-12 &&
         (!boundary.active || (boundary.row_residual<=1e-12 &&
                               boundary.flux_residual<=1e-12));
-    int numerical_gate_pass=!solve_fail && sd.rank==N &&
-        max_assembly_residual<=1e-12 && sd.kappa<=1e12 && sd.pivot_growth<=1e8 &&
+    int legacy_topology_gate_pass=topology_gate_pass && raw_rank==N-1;
+    topology_gate_pass=topology_gate_pass && (raw_rank==N-1 || certificate_pass);
+    int numerical_gate_pass=!solve_fail &&
+        max_assembly_residual<=1e-12 && sd.pivot_growth<=1e8 &&
         se_res<=1e-10 && conservation<=1e-12 && nonfinite==0 && negative==0 &&
         perm_frac<=1e-10 &&
         (!boundary.active || (boundary.row_residual<=1e-12 &&
                               boundary.flux_residual<=1e-12));
+    int legacy_numerical_gate_pass=numerical_gate_pass && sd.rank==N && sd.kappa<=1e12;
+    numerical_gate_pass=numerical_gate_pass && (sd.rank==N || certificate_pass) &&
+        (sd.kappa<=1e12 || certificate_pass) && (!certificate_required || certificate_pass);
     int boundary_gate_pass=boundary_max<=1e-8 && boundary_opacity<=1e-4 &&
                            boundary_process_coverage;
     int pass=topology_gate_pass&&numerical_gate_pass&&boundary_gate_pass;
+    int legacy_pass=legacy_topology_gate_pass&&legacy_numerical_gate_pass&&boundary_gate_pass;
     if (verdict_pass_out) *verdict_pass_out = pass;
     int commit_performed = pass && commit_requested;
     const char *commit_blocked_by = !commit_requested ? "not_requested" :
@@ -2388,17 +3225,51 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
          (commit_requested?"EW_FAIL_FALLBACK_BASELINE":"EW_FAIL_SHADOW"));
 
     if(artifacts_enabled){
-        ew_dump_identity(nlte,atom,slots,N,iter,Z,shell_label,checksum);
-        ew_dump_raw(plane,N,iter,Z,shell_label);
-        ew_dump_sparse_matrix("matrix_normalized",Anorm,b,NULL,NULL,N,iter,Z,shell_label);
-        ew_dump_sparse_matrix("matrix_equilibrated",Aeq,beq,rs,cs,N,iter,Z,shell_label);
-        char path[768]; FILE *fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"solution");
-        if(fp){fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");for(int q=0;q<3;q++){double tot=0;for(int i=stage_start[q];i<stage_start[q+1];i++)tot+=x[i];for(int i=stage_start[q];i<stage_start[q+1];i++)fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",i,q+1,i-stage_start[q],x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],tot);int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];for(int g=nlte->nlte_ion_level_offset[slot];g<nlte->nlte_ion_level_offset[slot+1];g++){int gl=nlte->nlte_to_global_level[g],local=stage_start[q]+nlte->fl_to_super[g]-ss0;double frac=nlte->within_sl_frac[(size_t)g*plasma->n_shells+shell];fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",local,q+1,nlte->fl_to_super[g]-ss0,gl,x[local]/(cs[local]!=0.0?cs[local]:1.0),x[local]*frac,tot);}}if(boundary.active)fprintf(fp,"BOUNDARY_MASS,%d,4,0,-1,%.17g,%.17g,%.17g\n",boundary.m_index,x[boundary.m_index]/(cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),x[boundary.m_index],x[boundary.m_index]);ew_close_dump(fp,path);}
-        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"diagnostics");
-        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nraw_solution_min,%.17g\nnegative_error_bound,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,raw_solution_min,negative_error_bound,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);ew_close_dump(fp,path);}
-        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"provenance");
-        if(fp){fprintf(fp,"channel,row,column,source_identity,target_identity,aggregated_rate,units,producer,field_generation,target_route,probability_applied,full_to_sl_weight,aggregation\n");for(int c=0;c<NLTE_EW_N_CHANNELS;c++)for(int j=0;j<N;j++)for(int i=0;i<N;i++)if(i!=j&&EW(plane[c],N,i,j)>0.0)fprintf(fp,"%s,%d,%d,SL:%d,SL:%d,%.17g,s^-1,nlte_assemble_rate_matrix,frozen_cell_field,%s,%s,applied_at_capture,sum_of_transition_routes\n",ew_channel_name[c],i,j,j,i,EW(plane[c],N,i,j),(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"ma_rr_CSR":"direct_level_pair",(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF)?"outside_once":"not_applicable");ew_close_dump(fp,path);}
-        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"manifest");
+        ew_dump_identity(nlte,atom,slots,n_stages,N,iter,ce_iteration,Z,
+                         shell_label,checksum);
+        ew_dump_raw(plane,N,iter,Z,shell_label,ce_iteration);
+        ew_dump_sparse_matrix("matrix_normalized",Anorm,b,NULL,NULL,N,iter,Z,
+                              shell_label,ce_iteration);
+        ew_dump_sparse_matrix("matrix_equilibrated",Aeq,beq,rs,cs,N,iter,Z,
+                              shell_label,ce_iteration);
+        char path[768]; FILE *fp=ew_open_dump(path,sizeof(path),iter,Z,
+                                              shell_label,ce_iteration,"solution");
+        if(fp){
+            fprintf(fp,"record_type,matrix_index,internal_stage,sl_id,global_level,raw_solution,restored_population,ion_total\n");
+            for(int q=0;q<n_stages;q++){
+                double total=0.0;
+                for(int i=stage_start[q];i<stage_start[q+1];i++) total+=x[i];
+                for(int i=stage_start[q];i<stage_start[q+1];i++)
+                    fprintf(fp,"SL,%d,%d,%d,-1,%.17g,%.17g,%.17g\n",
+                            i,q+1,i-stage_start[q],
+                            x[i]/(cs[i]!=0.0?cs[i]:1.0),x[i],total);
+                int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];
+                for(int g=nlte->nlte_ion_level_offset[slot];
+                    g<nlte->nlte_ion_level_offset[slot+1];g++){
+                    int gl=nlte->nlte_to_global_level[g];
+                    int local=stage_start[q]+nlte->fl_to_super[g]-ss0;
+                    double frac=nlte->within_sl_frac[(size_t)g*
+                                                       plasma->n_shells+shell];
+                    fprintf(fp,"FL,%d,%d,%d,%d,%.17g,%.17g,%.17g\n",
+                            local,q+1,nlte->fl_to_super[g]-ss0,gl,
+                            x[local]/(cs[local]!=0.0?cs[local]:1.0),
+                            x[local]*frac,total);
+                }
+            }
+            if(boundary.active)
+                fprintf(fp,"BOUNDARY_MASS,%d,%d,0,-1,%.17g,%.17g,%.17g\n",
+                        boundary.m_index,
+                        boundary.terminal_charge,
+                        x[boundary.m_index]/
+                            (cs[boundary.m_index]!=0.0?cs[boundary.m_index]:1.0),
+                        x[boundary.m_index],x[boundary.m_index]);
+            ew_close_dump(fp,path);
+        }
+        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,ce_iteration,"diagnostics");
+        if(fp){fprintf(fp,"key,value\nN,%d\nion_coverage,%d/%d\nsl_coverage,%d/%d\nfull_level_coverage,%d/%d\nline_coverage,%d/%d\ncontinuum_coverage,%d/%d\nkramers_continuum_count,%d\ntarget_coverage,%d/%d\nfirst_bad_lower_global,%d\nfirst_bad_target_global,%d\nchecksum_mismatch,%d\nraw_rank,%d\nsolve_attempted,%d\np_elem_valid,%d\nnormalized_rank,%d\ngraph_components,%d\nzero_rows,%d\nzero_columns,%d\nassembled_target_expected,%d\nassembled_target_mapped,%d\nassembled_target_fail,%d\nbad_rate,%d\nchannel_inventory_fail,%d\nlegacy_guard_configured_count,%d\nlegacy_guard_firing_count,%d\nC48_projected_identity_level_count,%d\nkramers_fallback_firing_count,%d\ncontinuum_deletion_firing_count,%d\ntarget_fallback_firing_count,%d\nnstar_cap_firing_count,%d\nnonfinite_guard_firing_count,%d\nbf_estimator_bin_consumptions,%d\nbf_pref_J_bin_consumptions,%d\nbf_JEQB_bin_consumptions,%d\nindependent_assembly_residual_max,%.17g\nraw_singular_value_max,%.17g\nraw_singular_value_min,%.17g\nraw_kappa_2,%.17g\nequilibrated_singular_value_max,%.17g\nequilibrated_singular_value_min,%.17g\nkappa_2,%.17g\nrcond_1_solver_estimate,%.17g\npivot_growth,%.17g\nequilibration_iterations,%d\nrefinement_iterations,%d\nscaled_se_residual,%.17g\nscaled_se_t_ref_seconds,%.17g\nconservation_residual,%.17g\nraw_solution_min,%.17g\nnegative_error_bound,%.17g\nnegative_count,%d\nnonfinite_count,%d\npermutation_ion_fraction_max_abs,%.17g\nboundary_fraction_max,%.17g\nboundary_opacity_fraction,%.17g\nboundary_process_coverage,%d\nclamp_floor_freeze_anchor_repair_fallback_count,%d\nverdict,%s\n",N,coverage.ions_mapped,coverage.ions_expected,coverage.sl_mapped,coverage.sl_expected,coverage.full_mapped,coverage.full_expected,coverage.lines_mapped,coverage.lines_expected,coverage.continua_mapped,coverage.continua_expected,coverage.continua_kramers,coverage.targets_mapped,coverage.targets_expected,coverage.first_bad_lower,coverage.first_bad_target,coverage.checksum_mismatch,raw_rank,solve_attempted,p_elem_valid,sd.rank,components,zero_rows,zero_cols,target_expected,target_mapped,target_fail,bad_rate,channel_inventory_fail,guard_config_count,guard_firing_count,c48_projected_levels,fire.kramers_fallback,fire.continuum_deleted,fire.target_fallback,fire.nstar_cap,fire.nonfinite_guard,fire.bf_estimator_bins,fire.bf_pref_j_bins,fire.bf_jeqb_bins,max_assembly_residual,raw_smax,raw_smin,raw_kappa,sd.smax,sd.smin,sd.kappa,sd.rcond,sd.pivot_growth,sd.equil_iters,sd.refinement_iters,se_res,time_explosion,conservation,raw_solution_min,negative_error_bound,negative,nonfinite,perm_frac,boundary_max,boundary_opacity,boundary_process_coverage,guard_firing_count,verdict);fprintf(fp,"candidate_assembler_calls,%d\ncandidate_pair_owner_calls,%d\nsave_restore_calls,%d\nper_ion_pin_calls,%d\ntopstage_IV_calls,%d\nhot_cold_required,%d\nhot_cold_rebuilds,%d\nhot_cold_matrix_byte_identical,%d\nhot_cold_matrix_max_abs,%.17g\ncommit_requested,%d\ncommit_performed,%d\ncommit_blocked_by,%s\n",fire.candidate_assembler_calls,fire.candidate_pair_owner_calls,fire.save_restore_calls,fire.per_ion_pin_calls,fire.topstage_IV_calls,hot_cold_required,hot_cold_rebuilds,hot_cold_identical,hot_cold_max_abs,commit_requested,commit_performed,commit_blocked_by);fprintf(fp,"topology_gate_pass,%d\nnumerical_gate_pass,%d\nboundary_gate_pass,%d\n",topology_gate_pass,numerical_gate_pass,boundary_gate_pass);for(int c=0;c<NLTE_EW_N_CHANNELS;c++){fprintf(fp,"channel_colsum_%s,%.17g\n",ew_channel_name[c],colsum[c]);fprintf(fp,"channel_independent_assembly_residual_%s,%.17g\n",ew_channel_name[c],assembly_residual[c]);fprintf(fp,"channel_event_count_%s,%d\n",ew_channel_name[c],fire.channel_events[c]);}if(!solve_attempted)fprintf(fp,"pivot_status,not_attempted\nrefinement_status,not_attempted\n");for(int i=0;solve_attempted&&i<N;i++)fprintf(fp,"pivot_%d,%d\n",i,solve_piv[i]);for(int i=0;solve_attempted&&i<=sd.refinement_iters;i++)fprintf(fp,"refinement_residual_%d,%.17g\n",i,sd.refinement[i]);fprintf(fp,"legacy_topology_gate_pass,%d\nlegacy_numerical_gate_pass,%d\nlegacy_pass,%d\nadoption_path,%s\ncertificate_attempted,%d\ncertificate_status,%d\ncertificate_pass,%d\ncertificate_probability_error_display,%.21Le\ncertificate_relative_error_display,%.21Le\n",legacy_topology_gate_pass,legacy_numerical_gate_pass,legacy_pass,certificate_required?"CERTIFIED_NUMERICAL":"LEGACY_DENSE",certificate_attempted,certificate_status,certificate_pass,certificate_probability_error,certificate_relative_error);ew_close_dump(fp,path);}
+        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,ce_iteration,"provenance");
+        if(fp){fprintf(fp,"channel,row,column,source_identity,target_identity,aggregated_rate,units,producer,field_generation,target_route,probability_applied,full_to_sl_weight,aggregation\n");for(int c=0;c<NLTE_EW_N_CHANNELS;c++)for(int j=0;j<N;j++)for(int i=0;i<N;i++)if(i!=j&&EW(plane[c],N,i,j)>0.0){int bf=(c==NLTE_EW_RAD_BF||c==NLTE_EW_COLL_BF);int terminal_edge=boundary.active&&boundary.mode==2&&(i==boundary.m_index||j==boundary.m_index);const char *route=terminal_edge?"CMFGEN_terminal_BF_CSR":(bf?"ma_rr_CSR":"direct_level_pair");const char *prob=terminal_edge?"PHOT_header_GION":(bf?"outside_once":"not_applicable");fprintf(fp,"%s,%d,%d,%s,%s,%.17g,s^-1,nlte_assemble_rate_matrix,frozen_cell_field,%s,%s,applied_at_capture,sum_of_transition_routes\n",ew_channel_name[c],i,j,terminal_edge?"SL_or_terminal":"SL",terminal_edge?"terminal_scalar_or_SL":"SL",EW(plane[c],N,i,j),route,prob);}ew_close_dump(fp,path);}
+        fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,ce_iteration,"manifest");
         if(fp){fprintf(fp,"key,value\nschema,A2_17_MATERIAL_STATE_V1\nrun_id,iter%04d\nZ,%d\nshell,%d\nassembler,lumina_element_wide_cpu\nN,%d\nT_e,%.17g\nn_e,%.17g\nn_element,%.17g\nverdict,%s\n",iter,Z,shell_label,N,plasma->T_e[shell],plasma->n_electron[shell],n_elem,verdict);ew_close_dump(fp,path);}
         /* path still names the manifest created immediately above.  Append the
          * process-wide production meter rather than the frozen-only observer. */
@@ -2406,7 +3277,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         if (fp) {
             fprintf(fp, "production_bf_gpu_field_bypass_levels,%lu\n",
                     nlte_bf_gpu_field_bypass_count());
-            if (boundary.active) {
+            if (boundary.active && boundary.mode == 1) {
                 fprintf(fp,
                         "boundary_mass_stage,FeV_boundary_mass\n"
                         "boundary_mass_unknown_index,%d\n"
@@ -2419,6 +3290,22 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                         boundary.m_index,boundary.sigma_count,
                         boundary.route_source_count,boundary.projection_pass,
                         boundary.assembly_pass);
+            } else if (boundary.active && boundary.mode == 2) {
+                fprintf(fp,
+                        "boundary_mass_stage,SiS_terminal_scalar\n"
+                        "boundary_mass_unknown_index,%d\n"
+                        "boundary_mass_terminal_charge,%d\n"
+                        "boundary_mass_terminal_energy_eV,%.17g\n"
+                        "boundary_mass_terminal_g,%.17g\n"
+                        "boundary_mass_lower_sigma_coverage,%d/%d\n"
+                        "boundary_mass_route_source_coverage,%d/%d\n"
+                        "boundary_mass_projection_pass,%d\n"
+                        "boundary_mass_assembly_pass,%d\n",
+                        boundary.m_index,boundary.terminal_charge,
+                        boundary.terminal_energy_eV,boundary.terminal_g,
+                        boundary.sigma_count,boundary.sigma_count,
+                        boundary.route_source_count,boundary.sigma_count,
+                        boundary.projection_pass,boundary.assembly_pass);
             }
             ew_close_dump(fp, path);
         } else {
@@ -2427,10 +3314,29 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
             ew_dump_failed = 1;
         }
         if(boundary.active){
-            fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,"boundary_mass");
+            fp=ew_open_dump(path,sizeof(path),iter,Z,shell_label,ce_iteration,
+                            "boundary_mass");
             if(fp){
                 double phi_forward=boundary.phi_forward[0]+boundary.phi_forward[1];
                 double phi_reverse=boundary.phi_reverse[0]+boundary.phi_reverse[1];
+                if(boundary.mode==2){
+                    fprintf(fp,"iter,shell,Z,active_stages,terminal_charge,terminal_energy_eV,terminal_g,atomic_checksum,route_count,valid_route_count,n_element,M_outside,M_terminal_before,M_terminal_after,sum_II,sum_III,sum_IV,sum_V,conservation_residual,sigma_level_coverage,route_source_coverage,Phi_V_to_VI_rad,Phi_VI_to_V_rad,Phi_V_to_VI_coll,Phi_VI_to_V_coll,Phi_forward,Phi_reverse,Phi_net,matrix_event_flux_residual,boundary_row_residual,verdict\n");
+                    fprintf(fp,"iter%04d,%d,%d,%d,%d,%.17g,%.17g,%016llx,%d,%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%d/%d,%d/%d,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%.17g,%s\n",
+                        iter,shell_label,Z,boundary.n_stages,boundary.terminal_charge,
+                        boundary.terminal_energy_eV,boundary.terminal_g,
+                        (unsigned long long)checksum,boundary.route_count,
+                        boundary.valid_route_count,n_elem,boundary.m_outside,
+                        boundary.m_before,boundary.m_after,boundary.sum_stage[0],
+                        boundary.sum_stage[1],boundary.sum_stage[2],boundary.sum_stage[3],
+                        boundary.conservation_residual,boundary.sigma_count,
+                        boundary.sigma_expected,boundary.route_source_count,
+                        boundary.sigma_expected,boundary.phi_forward[0],
+                        boundary.phi_reverse[0],boundary.phi_forward[1],
+                        boundary.phi_reverse[1],phi_forward,phi_reverse,
+                        phi_forward-phi_reverse,boundary.flux_residual,
+                        boundary.row_residual,pass?"PASS":"FAIL");
+                    ew_close_dump(fp,path);
+                } else {
                 fprintf(fp,"run,iter,shell,Z,stage,atomic_checksum,route_count,valid_route_count,n_Fe_total,M_outside,M_V_before,M_V_after,sum_II,sum_III,sum_IV,conservation_residual,raw_solution_min,negative_error_bound,q_count,sum_q,q_min,q_max,q_checksum,Phi_IV_to_V_rad,Phi_V_to_IV_rad,Phi_IV_to_V_coll,Phi_V_to_IV_coll,Phi_IV_to_V_nonthermal,Phi_V_to_IV_nonthermal,Phi_DR_autoion,Phi_forward,Phi_reverse,Phi_net,matrix_event_flux_residual,boundary_row_residual,FeI_fraction,FeVIplus_fraction,right_boundary_producer_coverage,V_to_VI_contract,DR_contract,verdict\n");
                 double fe1=0.0,fe6=0.0;
                 int ip1=ew_find_ip(atom,26,0);
@@ -2451,6 +3357,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
                     boundary.flux_residual,boundary.row_residual,fe1,fe6,
                     pass?"PASS":"FAIL");
                 ew_close_dump(fp, path);
+                }
             }
         }
     }
@@ -2462,9 +3369,44 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
         goto cleanup_fail;
     }
 
-    fprintf(stderr,"[EW] Z=%d s=%d N=%d verdict=%s rank=%d/%d kappa=%.3e residual=%.3e targets=%d/%d\n",Z,shell_label,N,verdict,sd.rank,N,sd.kappa,se_res,coverage.targets_mapped,coverage.targets_expected);
+    fprintf(stderr,"[EW] Z=%d s=%d N=%d verdict=%s rank=%d/%d kappa=%.3e residual=%.3e targets=%d/%d candidate_solver=%s condition_diagnostics=dense_LU generator_residual=%.3e adoption_path=%s legacy_pass=%d certificate_status=%d certificate_probability_error=%.21Le certificate_relative_error=%.21Le\n",Z,shell_label,N,verdict,sd.rank,N,sd.kappa,se_res,coverage.targets_mapped,coverage.targets_expected,generator_solve_used?"positive_generator_GTH":"dense_LU",generator_solve_used?generator_diag.exact_generator_componentwise_residual:INFINITY,certificate_required?"CERTIFIED_NUMERICAL":"LEGACY_DENSE",legacy_pass,certificate_status,certificate_probability_error,certificate_relative_error);
+    if (response) {
+        response->completed = 1;
+        response->solve_attempted = solve_attempted;
+        response->candidate_valid = p_elem_valid;
+        response->verdict_pass = pass;
+        response->commit_performed = commit_performed;
+        response->topology_pass = topology_gate_pass;
+        response->numerical_pass = numerical_gate_pass;
+        response->boundary_pass = boundary_gate_pass;
+        response->dimension = N;
+        response->raw_rank = raw_rank;
+        response->graph_components = components;
+        response->scaled_se_residual = se_res;
+        response->conservation_residual = conservation;
+        response->kappa_2 = sd.kappa;
+        response->legacy_topology_pass=legacy_topology_gate_pass;
+        response->legacy_numerical_pass=legacy_numerical_gate_pass;
+        response->certificate_attempted=certificate_attempted;
+        response->certificate_status=certificate_status;
+        response->certificate_pass=certificate_pass;
+        response->certificate_probability_error=certificate_probability_error;
+        response->certificate_relative_error=certificate_relative_error;
+        for(int q=0;q<5;q++) {
+            response->certificate_stage_lower[q]=certificate_stage_lower[q];
+            response->certificate_stage_upper[q]=certificate_stage_upper[q];
+        }
+        if (solve_attempted && !solve_fail) {
+            response->candidate_available = 1;
+            for (int q=0; q<n_stages && q<4; q++)
+                for (int i=stage_start[q]; i<stage_start[q+1]; i++)
+                    response->candidate_density[q] += x[i];
+            if (boundary.active)
+                response->candidate_density[4] = x[boundary.m_index];
+        }
+    }
     if(commit_performed){
-        for(int q=0;q<3;q++){
+        for(int q=0;q<n_stages;q++){
             int slot=slots[q],ss0=nlte->nlte_ion_super_offset[slot];
             int l0=nlte->nlte_ion_level_offset[slot],l1=nlte->nlte_ion_level_offset[slot+1];
             for(int g=l0;g<l1;g++){
@@ -2474,7 +3416,7 @@ static int ew_run_impl(NLTEConfig *nlte, AtomicData *atom,
             }
         }
         if(boundary.active){
-            int ip=ew_find_ip(atom,26,4);
+            int ip=ew_find_ip(atom,boundary.Z,boundary.terminal_charge);
             if(ip>=0)
                 atom->ion_number_density[(size_t)ip*plasma->n_shells+shell]=
                     x[boundary.m_index];
@@ -2515,8 +3457,29 @@ int nlte_element_wide_run_status(NLTEConfig *nlte, AtomicData *atom,
                            int Z, int shell, double time_explosion,
                            GammaDeposition *gamma_dep, int commit_requested,
                            int *verdict_pass_out) {
+    return nlte_element_wide_run_status_ce(
+        nlte,atom,plasma,opacity,Z,shell,time_explosion,gamma_dep,
+        commit_requested,0,verdict_pass_out);
+}
+
+int nlte_element_wide_run_status_ce(NLTEConfig *nlte, AtomicData *atom,
+                           PlasmaState *plasma, OpacityState *opacity,
+                           int Z, int shell, double time_explosion,
+                           GammaDeposition *gamma_dep, int commit_requested,
+                           int ce_iteration, int *verdict_pass_out) {
     return ew_run_impl(nlte,atom,plasma,opacity,Z,shell,shell,time_explosion,
-                       gamma_dep,commit_requested,verdict_pass_out);
+                       gamma_dep,commit_requested,ce_iteration,
+                       verdict_pass_out,NULL);
+}
+
+int nlte_element_wide_run_response(NLTEConfig *nlte, AtomicData *atom,
+                           PlasmaState *plasma, OpacityState *opacity,
+                           int Z, int shell, int shell_label,
+                           double time_explosion, GammaDeposition *gamma_dep,
+                           int commit_requested, NLTEEWResponse *response) {
+    if (!response || (Z != 14 && Z != 16)) return -1;
+    return ew_run_impl(nlte,atom,plasma,opacity,Z,shell,shell_label,
+                       time_explosion,gamma_dep,commit_requested,0,NULL,response);
 }
 
 #ifdef LUMINA_FROZEN_ORACLE
@@ -2535,6 +3498,6 @@ int nlte_element_wide_run_labeled(NLTEConfig *nlte, AtomicData *atom,
         frozen_commit = 1;
     }
     return ew_run_impl(nlte,atom,plasma,opacity,Z,shell_index,shell_label,
-                       time_explosion,gamma_dep,frozen_commit,NULL);
+                       time_explosion,gamma_dep,frozen_commit,0,NULL,NULL);
 }
 #endif

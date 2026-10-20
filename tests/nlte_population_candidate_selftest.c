@@ -22,6 +22,8 @@ int main(void)
         diagnostic.Z != -1 || diagnostic.ion_lo != -1 ||
         diagnostic.ion_hi != -1 || diagnostic.shell != -1 ||
         diagnostic.worst_ion_slot != -1 || diagnostic.worst_shell != -1 ||
+        !isnan(diagnostic.max_charge_residual) ||
+        diagnostic.worst_charge_shell != -1 ||
         diagnostic.ion_lock_active != -1 ||
         diagnostic.solve_level_index != -1 ||
         diagnostic.super_level_index != -1 ||
@@ -42,6 +44,8 @@ int main(void)
                    NLTE_POP_DIAG_STAGE_PAIR_SOLVE), "PAIR_SOLVE") != 0 ||
         strcmp(nlte_population_solve_stage_name(
                    NLTE_POP_DIAG_STAGE_IONIZATION), "IONIZATION") != 0 ||
+        strcmp(nlte_population_solve_stage_name(
+                   NLTE_POP_DIAG_STAGE_CHARGE_CLOSURE), "CHARGE_CLOSURE") != 0 ||
         strcmp(nlte_ion_solve_status_name(
                    NLTE_ION_SOLVE_RANK_INCOMPLETE), "RANK_INCOMPLETE") != 0)
         return fail("population solve diagnostic positive names mismatch");
