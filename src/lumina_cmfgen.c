@@ -2321,6 +2321,68 @@ static void cmfgen_assemble_impl(CMFGENState *cs, const Geometry *geo,
     }
 }
 
+int cmfgen_sum_raw_coefficients(size_t n,const double *chi_es,
+    const double *chi_bf_net,const double *eta_bf_spont,
+    const double *chi_ff,const double *eta_ff,
+    const double *chi_bb_net,const double *eta_bb_spont,
+    double *chi_total,double *eta_true)
+{
+    if(!n||n>SIZE_MAX/sizeof(double)/2||!chi_es||!chi_bf_net||!eta_bf_spont||
+       !chi_ff||!eta_ff||!chi_bb_net||!eta_bb_spont||!chi_total||!eta_true||
+       chi_total==eta_true)return -1;
+    double *work=malloc(2*n*sizeof(double));if(!work)return -1;
+    for(size_t i=0;i<n;i++){
+        double total=(chi_es[i]+(chi_bf_net[i]+chi_ff[i]))+chi_bb_net[i];
+        double eta=(eta_bf_spont[i]+eta_ff[i])+eta_bb_spont[i];
+        if(!isfinite(chi_es[i])||chi_es[i]<0||!isfinite(chi_bf_net[i])||
+           !isfinite(chi_ff[i])||chi_ff[i]<0||!isfinite(chi_bb_net[i])||
+           !isfinite(eta_bf_spont[i])||eta_bf_spont[i]<0||
+           !isfinite(eta_ff[i])||eta_ff[i]<0||!isfinite(eta_bb_spont[i])||eta_bb_spont[i]<0||
+           !isfinite(total)||!isfinite(eta)){free(work);return -1;}
+        work[i]=total;work[n+i]=eta;
+    }
+    memcpy(chi_total,work,n*sizeof(double));memcpy(eta_true,work+n,n*sizeof(double));
+    free(work);return 0;
+}
+
+int cmfgen_assemble_physical_coefficients(
+    CMFGENState *cs, const double *chi_es,
+    const double *chi_bf_net, const double *eta_bf_spont,
+    const double *chi_ff, const double *eta_ff,
+    const double *chi_bb_net, const double *eta_bb_spont)
+{
+    if (!cs || cs->n_shells<=0 || cs->n_bins<=0 || !chi_es || !chi_bf_net ||
+        !eta_bf_spont || !chi_ff || !eta_ff || !chi_bb_net || !eta_bb_spont ||
+        !cs->chi_es || !cs->chi_abs || !cs->chi_line || !cs->chi_tot || !cs->S_fixed ||
+        (size_t)cs->n_shells>SIZE_MAX/(size_t)cs->n_bins/sizeof(double)/2)
+        return -1;
+    size_t n=(size_t)cs->n_shells*cs->n_bins;
+    double *work=malloc(2*n*sizeof(double));if (!work) return -1;
+    double *total=work,*source=work+n;
+    for (size_t i=0;i<n;i++) {
+        double ca=chi_bf_net[i]+chi_ff[i];
+        double ct=(chi_es[i]+ca)+chi_bb_net[i];
+        double eta=(eta_bf_spont[i]+eta_ff[i])+eta_bb_spont[i];
+        if (!isfinite(chi_es[i]) || chi_es[i]<0 ||
+            !isfinite(chi_bf_net[i]) || !isfinite(chi_bb_net[i]) ||
+            !isfinite(chi_ff[i]) || chi_ff[i]<0 ||
+            !isfinite(eta_bf_spont[i]) || eta_bf_spont[i]<0 ||
+            !isfinite(eta_ff[i]) || eta_ff[i]<0 ||
+            !isfinite(eta_bb_spont[i]) || eta_bb_spont[i]<0 ||
+            !isfinite(ca) || !isfinite(ct) || ct<0 || !isfinite(eta) ||
+            (ct==0 && eta!=0)) { free(work);return -1; }
+        total[i]=ct;source[i]=ct==0 ? 0 : eta/ct;
+        if (!isfinite(source[i])) { free(work);return -1; }
+    }
+    for (size_t i=0;i<n;i++) {
+        cs->chi_es[i]=chi_es[i];cs->chi_abs[i]=chi_bf_net[i]+chi_ff[i];
+        cs->chi_line[i]=chi_bb_net[i];
+        if (cs->chi_line_th) cs->chi_line_th[i]=chi_bb_net[i];
+    }
+    memcpy(cs->chi_tot,total,n*sizeof(double));memcpy(cs->S_fixed,source,n*sizeof(double));
+    free(work);return 0;
+}
+
 void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
                      const PlasmaState *plasma) {

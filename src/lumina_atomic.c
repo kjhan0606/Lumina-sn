@@ -1375,6 +1375,72 @@ void free_spectrum(Spectrum *spec) { /* Phase 2 - Step 11 */
 /* Task #072: Load atomic data for plasma solver                 */
 /* ============================================================ */
 
+int load_element_number_density_profile(AtomicData *atom,
+                                        const char *ref_dir, int n_shells) {
+    if (!atom || !ref_dir || n_shells <= 0 || atom->n_elements <= 0 ||
+        !atom->element_Z || atom->element_density.number_density ||
+        (size_t)atom->n_elements > SIZE_MAX/(size_t)n_shells/sizeof(double))
+        return -1;
+    char path[4096], line[256];
+    int len=snprintf(path,sizeof(path),"%s/element_number_densities.csv",ref_dir);
+    if (len<0 || (size_t)len>=sizeof(path)) return -1;
+    errno=0;
+    FILE *fp=fopen(path,"r");
+    if (!fp) return errno==ENOENT ? 0:-1;
+    size_t size=(size_t)atom->n_elements*(size_t)n_shells, count=0;
+    double *values=malloc(size*sizeof(*values));
+    unsigned char *seen=calloc(size,1);
+    int status=-1;
+    if (!values || !seen) goto done;
+    if (!fgets(line,sizeof(line),fp)) goto done;
+    line[strcspn(line,"\r\n")]='\0';
+    if (strcmp(line,"atomic_number,shell_id,N_element_cm3")) goto done;
+    while (fgets(line,sizeof(line),fp)) {
+        char *end=NULL;
+        errno=0;
+        long z=strtol(line,&end,10);
+        if (errno || end==line || *end!=',') goto done;
+        const char *start=end+1;
+        errno=0;
+        long shell=strtol(start,&end,10);
+        if (errno || end==start || *end!=',' || shell<0 || shell>=n_shells)
+            goto done;
+        start=end+1;
+        errno=0;
+        double value=strtod(start,&end);
+        if (errno || end==start || !isfinite(value) || value<0.0) goto done;
+        while (*end==' ' || *end=='\t' || *end=='\r' || *end=='\n') end++;
+        if (*end) goto done;
+        int element=-1;
+        for (int e=0;e<atom->n_elements;e++)
+            if (atom->element_Z[e]==z) {
+                if (element>=0) goto done;
+                element=e;
+            }
+        if (element<0) goto done;
+        size_t at=(size_t)element*(size_t)n_shells+(size_t)shell;
+        if (seen[at]) goto done;
+        values[at]=value;seen[at]=1;count++;
+    }
+    if (ferror(fp) || count!=size) goto done;
+    status=0;
+done:
+    if (fclose(fp)) status=-1;
+    free(seen);
+    if (status) {
+        fprintf(stderr,"[MATERIAL-RESTART][FATAL] incomplete/invalid N_element profile %s rows=%zu/%zu\n",
+                path,count,size);
+        free(values);
+        return -1;
+    }
+    atom->element_density=(PopulationElementDensityView){
+        POP_ELEMENT_TOTAL_EXPLICIT_NUMBER,(size_t)atom->n_elements,
+        (size_t)n_shells,values};
+    printf("  [MATERIAL-RESTART] fixed nuclei inventory: %d elements x %d shells, cm^-3; rho/X unchanged\n",
+           atom->n_elements,n_shells);
+    return 0;
+}
+
 int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
     char path[512];
     int n;
@@ -2111,6 +2177,9 @@ int load_atomic_data(AtomicData *atom, const char *ref_dir, int n_shells) {
         #undef D_READ_LINE
         #undef D_IS_SPACE
     }
+
+    if (load_element_number_density_profile(atom,ref_dir,n_shells)!=0)
+        return -1;
 
     /* --- Build ion population table --- */
     /* For each element, ion stages go from 0 to n_ionization_entries_for_element */
@@ -3379,6 +3448,8 @@ void free_atomic_data(AtomicData *atom) {
     free(atom->element_Z);
     free(atom->element_mass_amu);
     free(atom->abundances);
+    free(atom->element_density.number_density);
+    free(atom->model_level_occupation);
     free(atom->elem_ion_offset);
     free(atom->ion_pop_Z);
     free(atom->ion_pop_stage);

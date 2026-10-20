@@ -66,6 +66,8 @@ class OscIon:
     #   lam_A(f8)
     #   trans_id(i4)
     transitions: np.ndarray = field(default_factory=lambda: np.empty(0))
+    # 기존 best-effort 판독 수와 원본 헤더의 선언 수를 구분한다.
+    declared_n_transitions: int = 0
 
 
 _LEVEL_DTYPE = np.dtype([
@@ -84,8 +86,8 @@ _TRANS_DTYPE = np.dtype([
 _CM2EV = 1.239841984e-4
 
 
-def parse_osc(path: Path) -> OscIon:
-    """Parse a CMFGEN osc_data file."""
+def parse_osc(path: Path, *, include_transitions: bool = True) -> OscIon:
+    """Parse a CMFGEN osc_data file; 준위만 필요한 입력은 선 배열을 만들지 않는다."""
     lines = _read_text(path)
     out = OscIon()
 
@@ -110,6 +112,7 @@ def parse_osc(path: Path) -> OscIon:
             break
     out.n_levels = n_lev
     out.n_transitions = n_trn
+    out.declared_n_transitions = n_trn
     out.ionization_eV = ion_cm * _CM2EV
     out.z_screen = z_scr
 
@@ -194,6 +197,10 @@ def parse_osc(path: Path) -> OscIon:
         levels = levels[:n_loaded]
         out.n_levels = n_loaded
     out.levels = levels
+
+    if not include_transitions:
+        out.transitions = np.empty(0, dtype=_TRANS_DTYPE)
+        return out
 
     # ---- Pass 3: parse transition rows ----
     # Each transition row looks like:

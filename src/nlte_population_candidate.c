@@ -141,6 +141,8 @@ static PopulationAtomicView candidate_atomic_view(const AtomicData *atom)
     view.topion_ion_index = atom->topion_ion_index;
     view.topion_E_cm = atom->topion_E_cm;
     view.topion_g = atom->topion_g;
+    view.occupation = atom->model_level_occupation;
+    view.occupation_n_shells = atom->model_occupation_n_shells;
     return view;
 }
 
@@ -206,6 +208,14 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
     for (size_t s = 0; s < n_shells; ++s)
         if (!isfinite(trial_te[s]) || trial_te[s] <= 0.0)
             return candidate->status = NLTE_CANDIDATE_INVALID_TEMPERATURE;
+
+    /* 옛 generic trial은 T/ne/양이온수에 따른 점유확률을 갱신하지 않는다.
+     * 현재 새 모형은 고정 물질 복원/수송만 지원한다. 이전 프로필을 빌려
+     * 새 물질 해로 게시하지 않고 model-aware 갱신 구현까지 명시적으로 거부한다. */
+    if (public_atom->model_level_occupation) {
+        candidate->population_status = POP_FORBIDDEN_FALLBACK;
+        return candidate->status = NLTE_CANDIDATE_THERMODYNAMIC_FAILED;
+    }
 
     candidate->trial_te = copy_values(trial_te, n_shells);
     candidate->ion_population = copy_values(

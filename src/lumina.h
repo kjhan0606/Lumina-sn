@@ -492,6 +492,9 @@ typedef struct {
     int    *element_Z;                /* [n_elements] */
     double *element_mass_amu;         /* [n_elements] */
     double *abundances;               /* [n_elements * n_shells] mass fractions */
+    PopulationElementDensityView element_density; /* independent fixed nuclei inventory */
+    double *model_level_occupation; /* material-owned [global level * shell] */
+    size_t model_occupation_n_shells;
 
     /* Lookup: ion_offset[elem_idx] = first ion index for element elem_idx */
     /* n_ion_pops_per_elem[elem_idx] = number of ion populations */
@@ -614,6 +617,19 @@ typedef struct {
     double  *col_ion_omega[LUMINA_MAX_COL_IONS]; /* [n_trans * n_temp] */
 } AtomicData;
 
+static inline double lumina_element_number_density(
+    const AtomicData *atom, const PlasmaState *plasma,
+    int element, int shell, int n_shells) {
+    double value = NAN;
+    if (!atom || !plasma || element < 0 || shell < 0 || n_shells <= 0 ||
+        plasma->n_shells != n_shells) return NAN;
+    PopulationStatus status = population_element_density_get(
+        &atom->element_density,(size_t)atom->n_elements,(size_t)n_shells,
+        (size_t)element,(size_t)shell,atom->element_mass_amu,
+        atom->abundances,plasma->rho,AMU,&value);
+    return status == POP_OK || status == POP_EXACT_ZERO ? value : NAN;
+}
+
 /* ============================================================ */
 /* NLTE: Configuration and data structures                      */
 /* ============================================================ */
@@ -663,6 +679,8 @@ typedef struct {
 
     /* Target ions: (Z, ion_stage) pairs */
     int    n_nlte_ions;                        /* 8 */
+    int    model_atom_projection; /* explicit complete bound-ion layout */
+    uint64_t full_model_population_generation; /* zero until all model ions are owned */
     int    nlte_Z[NLTE_MAX_IONS];              /* atomic numbers */
     int    nlte_ion[NLTE_MAX_IONS];            /* ion stages */
 
@@ -1289,11 +1307,24 @@ int  nlte_init(NLTEConfig *nlte, AtomicData *atom, OpacityState *opacity,
  * terminal continuum populations remain in AtomicData's ion ladder. */
 int  nlte_init_model_atom(NLTEConfig *nlte, AtomicData *atom,
                           OpacityState *opacity, int n_shells);
+/* Import every SL plus each level-less terminal once. Input populations are
+ * depth-major; coordinates and temperature are supplied separately. This is
+ * a generation-one material seed, never a solved SE/RE state. */
+PopulationStatus lumina_import_superlevel_material(
+    NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+    int n_columns, const int32_t *columns_Z_charge_super,
+    const double *depth_major_population);
+PopulationStatus lumina_import_superlevel_material_with_occupation(
+    NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+    int n_columns, const int32_t *columns, const double *population,
+    const double *occupation);
 /* Optional explicit material seed, never a radiation/boundary temperature.
  * Missing file preserves legacy initialization; present invalid data fail. */
 int load_material_temperature_profile(const char *ref_dir, int n_shells,
                                       double boundary_temperature,
                                       double **temperature_out);
+int load_element_number_density_profile(AtomicData *atom,
+                                        const char *ref_dir, int n_shells);
 void nlte_free(NLTEConfig *nlte);
 void nlte_normalize_j_nu(NLTEConfig *nlte, double time_simulation,
                           double *volume, int n_shells);

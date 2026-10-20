@@ -174,6 +174,24 @@ void cmfgen_assemble(CMFGENState *cs, const Geometry *geo,
                      const OpacityState *opac, BFOpacity *bf,
                      const PlasmaState *plasma);
 
+/* 명시적 전 모델 χ/η를 수송 source에 연결한다. BF·BB 순소광은 부호를
+ * 보존하고 자발η는 χB로 재구성하지 않는다. 모든 성분은 같은 실제 주파수
+ * 표본/물질 배열이어야 한다. J는 읽거나 변경하지 않으며 산란은 solver가
+ * chi_es*J로 한 번 더한다. 실패 시 기존 cs 계수는 전부 보존한다. */
+int cmfgen_assemble_physical_coefficients(
+    CMFGENState *cs, const double *chi_es,
+    const double *chi_bf_net, const double *eta_bf_spont,
+    const double *chi_ff, const double *eta_ff,
+    const double *chi_bb_net, const double *eta_bb_spont);
+
+/* signed 총χ와 실제 양의 자발η를 유지한다. S=η/χ를 만들지 않는다.
+ * 실패 때 두 출력 모두 보존한다. 산란 방출 χ_es J는 solver가 더한다. */
+int cmfgen_sum_raw_coefficients(size_t n,const double *chi_es,
+    const double *chi_bf_net,const double *eta_bf_spont,
+    const double *chi_ff,const double *eta_ff,
+    const double *chi_bb_net,const double *eta_bb_spont,
+    double *chi_total,double *eta_true);
+
 /* Assemble an E4/E5 direct-Aul lane.  retain_undefined_a=0 is the original B
  * lane (undefined direct emissivity is zero); retain_undefined_a=1 is B2 and
  * preserves the exact production A-lane contribution for undefined cells.

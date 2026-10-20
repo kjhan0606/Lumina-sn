@@ -50,7 +50,66 @@ typedef struct {
     double componentwise_residual_upper_max;
     double componentwise_error_upper_min;
     double componentwise_error_upper_max;
+    /* 실제 할당한 방향별 광선 표본 슬롯. segment_slots는 전체 기하다. */
+    size_t ray_buffer_slots;
 } CMFExactReport;
+
+typedef enum {
+    CMF_EXACT_INNER_BLACKBODY = 1,
+    CMF_EXACT_INNER_DIFFUSION = 2
+} CMFExactInnerKind;
+
+/* 실제 내부 반경에서 정의하는 comoving 경계. DIFFUSION은
+ * I+(mu,nu)=source_fixed + scattering_ratio*J_inner + mu*gradient_over_chi.
+ * J_inner는 첫 셀 중심 J로 이산화한다. 외부 CMFGEN J를 주입하지 않는다.
+ * source_fixed와 scattering_ratio는 실제 경계 물질의 eta_true/chi,
+ * chi_es/chi다. BB로 대체하거나 첫 셀 온도로 경계 온도를 바꾸지 않는다. */
+typedef struct {
+    CMFExactInnerKind kind;
+    double temperature;
+    double blackbody_scale;
+    const double *source_fixed;       /* [n_bins], DIFFUSION */
+    const double *scattering_ratio;   /* [n_bins], DIFFUSION */
+    const double *gradient_over_chi;  /* [n_bins], positive -dB/dr / chi */
+} CMFExactInnerBoundary;
+
+/* CMFGEN cmfgen_sub.f의 광도 지정 확산식:
+ * G=-dT/dr = [3 L/(16 pi^2 r^2)] / Int[(dBnu/dT)/chi_nu]dnu.
+ * 결과는 G*(dBnu/dT)/chi_nu다. 전체 선+연속 소광과 적분 격자를
+ * 호출자가 공급한다. 이 함수 자체는 주파수/공간 이산화 오차를 증명하지 않는다. */
+CMFExactStatus cmf_exact_diffusion_gradient(
+    int n_bins, const double *nu, const double *dnu,
+    double temperature, double luminosity, double radius,
+    const double *chi, double *gradient_over_chi);
+
+/* 새 물질 셀 경로. 모든 실제 r_inner/r_outer 구간을 통과하고 J는 산술
+ * 반경 중심의 각도 평균이다(체적 평균 아님). 진공 외부 경계는 실제
+ * r_outer[last], 내부 경계는 실제 r_inner[0]에 놓는다. 기존 nodal-like
+ * characteristic API의 이산화와 별도로 보존한다. */
+CMFExactStatus cmf_exact_cell_solve(
+    int n_shells, int n_bins, double dlognu, const double *nu,
+    const double *r_inner, const double *r_outer, double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot, const double *chi_es, const double *S_fixed,
+    double *J, double *componentwise_error_upper,
+    size_t envelope_refinement_iterations,
+    int iteration_cap, double tolerance, CMFExactMode mode,
+    CMFExactReport *report);
+
+/* signed χ와 비음수 η_true를 직접 받는 실제 셀 경로. η/χ를 만들지
+ * 않으므로 χ=0 극한과 χ<0 증폭을 보존한다. 광선의 유한 증폭과 실제
+ * 산란 K(1)의 상한을 사용하며 기존 max(χ_es/χ) 논리를 적용하지 않는다.
+ * report.max_scattering_ratio는 이 경로에서 실제 K(1)의 최대 상한이다.
+ * componentwise 인증은 같은 이산 연산의 반올림/반복 오차 인증이지,
+ * 상대론·공간·주파수 이산화 오차 또는 CMFGEN 동등성 증명이 아니다. */
+CMFExactStatus cmf_exact_cell_solve_raw_sources(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,
+    size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report);
 
 /* Exact homologous drifting-characteristic formal solution.
  *

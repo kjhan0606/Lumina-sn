@@ -26,6 +26,8 @@ static PopulationAtomicView atomic_energy_view(const AtomicData *atom)
     view.topion_ion_index = atom->topion_ion_index;
     view.topion_E_cm = atom->topion_E_cm;
     view.topion_g = atom->topion_g;
+    view.occupation = atom->model_level_occupation;
+    view.occupation_n_shells = atom->model_occupation_n_shells;
     return view;
 }
 

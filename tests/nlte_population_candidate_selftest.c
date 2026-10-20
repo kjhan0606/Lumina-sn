@@ -87,6 +87,9 @@ int main(void)
     atom.level_energy_eV = level_energy_eV;
     atom.level_g = level_g;
     atom.population_committed_generation = 7;
+    double fixed_element_totals[NS] = {9.0,12.0};
+    atom.element_density=(PopulationElementDensityView){
+        POP_ELEMENT_TOTAL_EXPLICIT_NUMBER,1,NS,fixed_element_totals};
     nlte.n_nlte_levels_total = NL;
     nlte.super_mode = 1;
     nlte.n_super_total = 3;
@@ -161,6 +164,8 @@ int main(void)
         NLTE_CANDIDATE_OK)
         return fail("valid candidate begin rejected");
     if (!candidate.active || candidate.plasma.T_e != candidate.trial_te ||
+        candidate.atom.element_density.source != POP_ELEMENT_TOTAL_EXPLICIT_NUMBER ||
+        candidate.atom.element_density.number_density != fixed_element_totals ||
         candidate.plasma.n_electron != candidate.electron_density ||
         candidate.atom.ion_number_density != candidate.ion_population ||
         candidate.atom.partition_functions != candidate.partition ||
@@ -316,6 +321,9 @@ int main(void)
     nlte_population_candidate_free(&candidate);
     if (candidate.active)
         return fail("candidate free did not clear lifecycle state");
+    if (fixed_element_totals[0]!=9.0 || fixed_element_totals[1]!=12.0 ||
+        atom.element_density.number_density!=fixed_element_totals)
+        return fail("candidate changed/freed the immutable nuclei inventory");
     if (opacity.cpu_opacity.frequency_edges == NULL ||
         opacity.cpu_opacity.frequency_edges[0] != 123.0 ||
         opacity.cpu_emissivity.nu_edge == NULL ||
@@ -331,6 +339,16 @@ int main(void)
         memcmp(&atom, &atom_before, sizeof(atom)) != 0 ||
         memcmp(&plasma, &plasma_before, sizeof(plasma)) != 0)
         return fail("failed begin changed a public object");
+
+    double occupation[NL*NS];
+    for (int i=0;i<NL*NS;i++) occupation[i]=.9;
+    atom.model_level_occupation=occupation;atom.model_occupation_n_shells=NS;
+    if (nlte_population_candidate_begin(&candidate,&nlte,&atom,&plasma,
+            trial_te,NS,5,8)!=NLTE_CANDIDATE_THERMODYNAMIC_FAILED ||
+        candidate.active || candidate.population_status!=POP_FORBIDDEN_FALLBACK)
+        return fail("generic trial reused a stale occupation profile");
+    atom.model_level_occupation=NULL;atom.model_occupation_n_shells=0;
+    puts("[NLTE-CANDIDATE][MODEL-OCCUPATION] stale_profile_trial=REJECTED public_mutations=0");
 
     a209_publication_free(&opacity.cpu_emissivity);
     a208_publication_free(&opacity.cpu_opacity);

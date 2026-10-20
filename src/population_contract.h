@@ -29,6 +29,25 @@ typedef enum {
     POP_FORBIDDEN_FALLBACK
 } PopulationStatus;
 
+typedef enum {
+    POP_ELEMENT_TOTAL_FROM_MASS = 0,
+    POP_ELEMENT_TOTAL_EXPLICIT_NUMBER = 1
+} PopulationElementDensitySource;
+
+/* Immutable nuclei inventory, not the current solved ion sum. An explicit
+ * profile never falls back to rho*X/(A*amu), including on missing input. */
+typedef struct {
+    PopulationElementDensitySource source;
+    size_t n_elements, n_shells;
+    double *number_density; /* element-major, cm^-3 */
+} PopulationElementDensityView;
+
+PopulationStatus population_element_density_get(
+    const PopulationElementDensityView *view,
+    size_t n_elements, size_t n_shells, size_t element, size_t shell,
+    const double *element_mass_amu, const double *abundances,
+    const double *rho, double atomic_mass_unit_g, double *out);
+
 typedef struct {
     uint64_t required_population_generation;
     uint64_t computed_population_generation;
@@ -81,6 +100,8 @@ typedef struct {
     const int *topion_ion_index;   /* topion_n — **ion-pop 인덱스**(level_offset 과 같은 키) */
     const double *topion_E_cm;     /* topion_n, cm^-1 */
     const double *topion_g;        /* topion_n */
+    const double *occupation;     /* 물질 소유 global level-major profile */
+    size_t occupation_n_shells;
 } PopulationAtomicView;
 
 typedef struct {
@@ -149,6 +170,19 @@ PopulationStatus population_nlte_stage_charge_close(
     double *ion_number_density, double *electron_density,
     double electron_density_damping,
     double *max_charge_residual, int *worst_charge_shell);
+
+PopulationStatus population_nlte_stage_charge_close_with_density(
+    size_t n_ion_pops, const int *ion_pop_Z, const int *ion_pop_stage,
+    size_t n_elements, const int *element_Z, const int *elem_ion_offset,
+    const double *element_mass_amu, const double *abundances,
+    const double *rho, double atomic_mass_unit_g,
+    size_t n_nlte_ions, const int *nlte_Z, const int *nlte_ion,
+    const int *nlte_level_offset, size_t n_nlte_levels,
+    size_t n_shells, const double *nlte_level_populations,
+    double *ion_number_density, double *electron_density,
+    double electron_density_damping,
+    double *max_charge_residual, int *worst_charge_shell,
+    const PopulationElementDensityView *element_density);
 
 PopulationStatus population_te_manifest_sha256(const double *te,
                                                 size_t n_shells,

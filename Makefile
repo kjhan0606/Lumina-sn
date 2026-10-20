@@ -62,6 +62,14 @@ all: $(TARGET)
 $(TARGET): $(SOURCES) $(HEADERS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
 
+# 독립 후보 driver의 최소 공유 코어. 기존 main을 새 물리 실행으로 표시하지 않는다.
+lumina_cell_candidate.so: src/lumina_cell_candidate.c src/lumina_cmfgen.c \
+		src/cmf_exact_sliding.c src/cmf_error_envelope.c $(HEADERS)
+	$(CC) -O2 -std=c11 -fPIC -shared -fvisibility=hidden \
+		-ffunction-sections -fdata-sections -fopenmp -Wl,--gc-sections -Wl,-z,defs \
+		-Isrc -o $@ src/lumina_cell_candidate.c src/lumina_cmfgen.c \
+		src/cmf_exact_sliding.c src/cmf_error_envelope.c -lm
+
 # CUDA build target (compile C sources alongside .cu)
 CUDA_BF_GEMM    = src/lumina_bf_gemm.cu
 CUDA_NLTE_GEMM  = src/lumina_nlte_gemm.cu

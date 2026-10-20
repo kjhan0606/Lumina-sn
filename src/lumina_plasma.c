@@ -2023,10 +2023,7 @@ double nlte_pair_total_density(NLTEConfig *nlte, AtomicData *atom,
     if (nlte_no_ml_lock_enabled) {
         for (int e = 0; e < atom->n_elements; e++) {
             if (atom->element_Z[e] != Z_nl) continue;
-            double mass_amu = atom->element_mass_amu[e];
-            double rho = plasma->rho[shell];
-            double abund = atom->abundances[e * n_shells + shell];
-            return (abund * rho) / (mass_amu * AMU);
+            return lumina_element_number_density(atom,plasma,e,shell,n_shells);
         }
         return 0.0;
     }
@@ -2041,9 +2038,20 @@ double nlte_pair_total_density(NLTEConfig *nlte, AtomicData *atom,
 
 int lumina_zinert_element_inactive(const AtomicData *atom, int element,
                                    int n_shells) {
-    if (!atom || !atom->abundances || element < 0 ||
+    if (!atom || element < 0 ||
         element >= atom->n_elements || n_shells <= 0)
         return 0;
+    if (atom->element_density.source == POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {
+        for (int s=0;s<n_shells;s++) {
+            double value=NAN;
+            if (population_element_density_get(&atom->element_density,
+                    (size_t)atom->n_elements,(size_t)n_shells,
+                    (size_t)element,(size_t)s,NULL,NULL,NULL,AMU,&value)
+                    != POP_EXACT_ZERO) return 0;
+        }
+        return 1;
+    }
+    if (!atom->abundances) return 0;
     for (int s = 0; s < n_shells; s++)
         if (atom->abundances[(size_t)element * n_shells + s] != 0.0)
             return 0;
@@ -2401,6 +2409,8 @@ static PopulationAtomicView population_atomic_view(const AtomicData *atom) {
     view.topion_ion_index = atom ? atom->topion_ion_index : NULL;
     view.topion_E_cm = atom ? atom->topion_E_cm : NULL;
     view.topion_g = atom ? atom->topion_g : NULL;
+    view.occupation = atom ? atom->model_level_occupation : NULL;
+    view.occupation_n_shells = atom ? atom->model_occupation_n_shells : 0;
     return view;
 }
 
@@ -2826,8 +2836,7 @@ static PopulationStatus compute_ion_populations_shell(
     if (ion_nt && g_nt_ioniz_rate && s < g_nt_ioniz_n) {
         double natom = 0.0;
         for (int e = 0; e < atom->n_elements; e++)
-            natom += atom->abundances[e * n_shells + s] * plasma->rho[s] /
-                     (atom->element_mass_amu[e] * AMU);
+            natom += lumina_element_number_density(atom,plasma,e,s,n_shells);
         if (natom > 0.0) gamma_nt_atom = g_nt_ioniz_rate[s] / natom;
     }
     /* [ARTIS-PARITY R1] rate-SE closure decision for this shell (once): active
@@ -2837,7 +2846,6 @@ static PopulationStatus compute_ion_populations_shell(
     int r1_use  = r1_on && parity_field_built(rate_nlte, s);
     for (int e = 0; e < atom->n_elements; e++) {
         int Z_elem = atom->element_Z[e];
-        double mass_amu = atom->element_mass_amu[e];
         int ip_start = atom->elem_ion_offset[e];
         int ip_end   = atom->elem_ion_offset[e + 1];
         int n_pops   = ip_end - ip_start;
@@ -2861,10 +2869,8 @@ static PopulationStatus compute_ion_populations_shell(
             double T_rad = T_e;
             double W = 1.0;
             double n_e   = plasma->n_electron[s];
-            double rho   = plasma->rho[s];
-            double abund = atom->abundances[e * n_shells + s];
-
-            double n_element = (abund * rho) / (mass_amu * AMU);
+            double n_element = lumina_element_number_density(
+                atom,plasma,e,s,n_shells);
 
             /* g_electron = (2*pi*m_e*kB*T_rad/h^2)^1.5 */
             double g_electron = pow(2.0 * M_PI_VAL * M_ELECTRON * K_BOLTZMANN * T_rad
@@ -6850,9 +6856,7 @@ static void apply_frozenin_freezeout(AtomicData *atom, PlasmaState *plasma,
         /* element number densities at t_exp + per-(element,stage) Milne alpha */
         double n_atom_tot = 0.0;
         for (int e = 0; e < nelem; e++) {
-            double abund = atom->abundances[e * n_shells + s];
-            double mass_amu = atom->element_mass_amu[e];
-            n_elem0[e] = (abund * rho) / (mass_amu * AMU);
+            n_elem0[e] = lumina_element_number_density(atom,plasma,e,s,n_shells);
             n_atom_tot += n_elem0[e];
 
             int ip0 = atom->elem_ion_offset[e];
@@ -8946,7 +8950,7 @@ static int a209_resolve_global_level(const AtomicData *atom,int ip,int level){
 
 typedef struct {
  int line,Z,ion_idx,ip,lower_global,upper_global,nlte_lo,nlte_up;
- int mapped,candidate_only_slot,skip_tau;
+ int mapped,candidate_only_slot,skip_tau,full_model_owned;
 } NLTETauLineAuthority;
 
 static void nlte_tau_build_pair_ownership(
@@ -8986,7 +8990,13 @@ static NLTETauLineAuthority nlte_tau_line_authority(
  a.nlte_lo=nlte->global_to_nlte_level[a.lower_global];
  a.nlte_up=nlte->global_to_nlte_level[a.upper_global];
  if(a.nlte_lo<0||a.nlte_up<0)return a;
- a.candidate_only_slot=!pair_owned[a.ion_idx];
+ /* Legacy pair indices have no ownership meaning in a model-driven layout.
+  * A complete imported/solved generation owns all its mapped bound ions. */
+ a.candidate_only_slot=nlte->model_atom_projection?1:!pair_owned[a.ion_idx];
+ a.full_model_owned=nlte->model_atom_projection&&
+     nlte->full_model_population_generation!=0&&
+     nlte->full_model_population_generation==nlte->population_committed_generation&&
+     nlte->full_model_population_generation==atom->population_committed_generation;
  a.mapped=1;
  return a;
 }
@@ -8995,6 +9005,7 @@ static int nlte_tau_line_shell_authorized_by(
  const NLTETauLineAuthority*a,size_t shell,size_t n_shells,
  const int *ew_tau_authority,int ew_tau_authority_nshells){
  if(!a||!a->mapped||shell>=n_shells)return 0;
+ if(a->full_model_owned)return 1;
  if(!a->candidate_only_slot)return 1;
  int zi=nlte_ew_element_index(a->Z);
  return nlte_element_wide_commit_enabled()&&zi>=0&&
@@ -9062,6 +9073,11 @@ EmissivityStatus lumina_line_upper_population_for_tau(
  int line,size_t shell,size_t n_shells,double *n_upper){
  if(!atom||!plasma||!nlte||!n_upper||line<0||line>=atom->n_lines||
     shell>=n_shells)return EMISS_ATOMIC_MISSING;
+ if(nlte->model_atom_projection&&
+    (!nlte->full_model_population_generation||
+     nlte->full_model_population_generation!=nlte->population_committed_generation||
+     nlte->full_model_population_generation!=atom->population_committed_generation))
+  return EMISS_STALE_POP;
  unsigned char pair_owned[NLTE_MAX_IONS]={0};
  nlte_tau_build_pair_ownership(pair_owned);
  NLTETauLineAuthority authority=nlte_tau_line_authority(
@@ -12285,8 +12301,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         for (int e = 0; e < atom->n_elements; e++) {
             int ip0 = atom->elem_ion_offset[e], ip1 = atom->elem_ion_offset[e + 1];
             int npop = ip1 - ip0;
-            double nel = atom->abundances[e * n_shells + s] * plasma->rho[s] /
-                         (atom->element_mass_amu[e] * AMU);
+            double nel = lumina_element_number_density(atom,plasma,e,s,n_shells);
             if (nel <= 0.0) continue;
             sh.natom += nel;
             if (npop < 2) { sh.nion[ip0] = nel; continue; }
@@ -12765,8 +12780,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
             double nel_k = 0.0;
             for (int e2 = 0; e2 < atom->n_elements; e2++)
                 if (atom->element_Z[e2] == Ze) {
-                    nel_k = atom->abundances[e2 * n_shells + s] * plasma->rho[s] /
-                            (atom->element_mass_amu[e2] * AMU);
+                    nel_k = lumina_element_number_density(atom,plasma,e2,s,n_shells);
                     break;
                 }
             if (nel_k <= 0.0) continue;
@@ -12998,8 +13012,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
         double ne_mix = 0.0;
         for (int e2 = 0; e2 < atom->n_elements; e2++) {
             int ip0 = atom->elem_ion_offset[e2], ip1 = atom->elem_ion_offset[e2 + 1];
-            double nel2 = atom->abundances[e2 * n_shells + s] * plasma->rho[s] /
-                          (atom->element_mass_amu[e2] * AMU);
+            double nel2 = lumina_element_number_density(atom,plasma,e2,s,n_shells);
             for (int ip = ip0; ip < ip1; ip++) {
                 double prev = atom->ion_number_density[(size_t)ip * n_shells + s];
                 /* PHYSICAL BOUND on the blend memory: the ion-damp blend was
@@ -16698,7 +16711,153 @@ int nlte_init_model_atom(NLTEConfig *nlte, AtomicData *atom,
         }
         Z[j] = z; ion[j] = stage;
     }
-    return nlte_init_layout(nlte, atom, opacity, n_shells, Z, ion, count);
+    int rc=nlte_init_layout(nlte, atom, opacity, n_shells, Z, ion, count);
+    if (rc==0) nlte->model_atom_projection=1;
+    return rc;
+}
+
+PopulationStatus lumina_import_superlevel_material_with_occupation(
+    NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+    int n_columns, const int32_t *columns, const double *population,
+    const double *occupation) {
+    if (!nlte || !atom || !plasma || !columns || !population ||
+        !nlte->model_atom_projection || n_columns<=0 || plasma->n_shells<=0 ||
+        atom->n_ion_pops<=0 || nlte->n_super_total<=0 ||
+        nlte->n_nlte_levels_total!=atom->n_levels ||
+        atom->population_committed_generation || nlte->population_committed_generation ||
+        plasma->T_e_generation!=1 || !plasma->T_e || !plasma->n_electron ||
+        !atom->ion_number_density || !atom->partition_functions ||
+        !atom->ion_pop_Z || !atom->ion_pop_stage || !atom->level_offset ||
+        !nlte->nlte_level_populations || !nlte->within_sl_frac ||
+        !nlte->nlte_to_global_level || !nlte->fl_to_super || !nlte->super_anchor_global ||
+        atom->element_density.source!=POP_ELEMENT_TOTAL_EXPLICIT_NUMBER)
+        return POP_ATOMIC_MISSING;
+    size_t ns=(size_t)plasma->n_shells;
+    if ((size_t)atom->n_ion_pops>SIZE_MAX/ns/sizeof(double) ||
+        (size_t)atom->n_levels>SIZE_MAX/ns/sizeof(double) ||
+        (size_t)nlte->n_super_total>SIZE_MAX/ns/sizeof(double))
+        return POP_ATOMIC_MISSING;
+    int terminals=0;
+    for (int ip=0;ip<atom->n_ion_pops;ip++)
+        if (atom->level_offset[ip]==atom->level_offset[ip+1]) terminals++;
+    if (n_columns!=nlte->n_super_total+terminals) return POP_ATOMIC_MISSING;
+    char te_manifest[65];
+    if (population_te_manifest_sha256(plasma->T_e,ns,te_manifest)!=POP_OK ||
+        plasma->te_publication.committed_te_generation!=1 ||
+        strcmp(te_manifest,plasma->te_publication.te_manifest_sha256))
+        return POP_STALE_DERIVED_TEMPERATURE;
+    size_t ni=(size_t)atom->n_ion_pops*ns,nl=(size_t)atom->n_levels*ns;
+    double *ions=calloc(ni,sizeof(double)),*partition=malloc(ni*sizeof(double));
+    double *levels=malloc(nl*sizeof(double)),*within=malloc(nl*sizeof(double));
+    double *super=malloc((size_t)nlte->n_super_total*ns*sizeof(double));
+    double *occupation_work=occupation ? malloc(nl*sizeof(double)) : NULL;
+    unsigned char *seen=calloc((size_t)nlte->n_super_total+(size_t)atom->n_ion_pops,1);
+    PopulationStatus status=POP_SOLVE_FAILED;
+    PopulationAtomicView av;
+    PopulationDerivedStamp part_stamp,within_stamp;
+    if (!ions || !partition || !levels || !within || !super || !seen ||
+        (occupation && !occupation_work)) goto done;
+    if (occupation) {
+        for (size_t i=0;i<nl;i++) {
+            if (!isfinite(occupation[i]) || occupation[i]<0 || occupation[i]>1) {
+                status=POP_INVALID_PARTITION;goto done;
+            }
+            occupation_work[i]=occupation[i];
+        }
+    }
+    for (int c=0;c<n_columns;c++) {
+        int Z=columns[3*c],charge=columns[3*c+1],sl=columns[3*c+2],ip=-1,slot=-1;
+        for (int i=0;i<atom->n_ion_pops;i++)
+            if (atom->ion_pop_Z[i]==Z && atom->ion_pop_stage[i]==charge) {
+                if (ip>=0) { status=POP_ATOMIC_MISSING;goto done; }
+                ip=i;
+            }
+        if (ip<0) { status=POP_ATOMIC_MISSING;goto done; }
+        if (sl==-1) {
+            if (atom->level_offset[ip]!=atom->level_offset[ip+1]) {
+                status=POP_ATOMIC_MISSING;goto done;
+            }
+            slot=nlte->n_super_total+ip;
+        } else {
+            for (int i=0;i<nlte->n_nlte_ions;i++)
+                if (nlte->nlte_Z[i]==Z && nlte->nlte_ion[i]==charge && sl>=0 &&
+                    sl<nlte->nlte_ion_super_offset[i+1]-nlte->nlte_ion_super_offset[i])
+                    slot=nlte->nlte_ion_super_offset[i]+sl;
+        }
+        if (slot<0 || seen[slot]) { status=POP_ATOMIC_MISSING;goto done; }
+        seen[slot]=1;
+        for (size_t s=0;s<ns;s++) {
+            double value=population[s*(size_t)n_columns+(size_t)c];
+            if (!isfinite(value) || value<0.0) { status=POP_NONFINITE;goto done; }
+            ions[(size_t)ip*ns+s]+=value;
+            if (sl>=0) super[(size_t)slot*ns+s]=value;
+        }
+    }
+    for (int i=0;i<nlte->n_super_total;i++)
+        if (!seen[i]) { status=POP_ATOMIC_MISSING;goto done; }
+    for (size_t s=0;s<ns;s++) {
+        long double charge=0;
+        for (int e=0;e<atom->n_elements;e++) {
+            long double sum=0;
+            for (int ip=atom->elem_ion_offset[e];ip<atom->elem_ion_offset[e+1];ip++)
+                sum+=ions[(size_t)ip*ns+s];
+            double expected=lumina_element_number_density(atom,plasma,e,(int)s,(int)ns);
+            if (!isfinite(expected) || expected<0 ||
+                fabsl(sum-expected)>1e-12L*fmaxl(fabsl(sum),fabsl(expected))) {
+                status=POP_SOLVE_FAILED;goto done;
+            }
+        }
+        for (int ip=0;ip<atom->n_ion_pops;ip++)
+            charge+=(long double)atom->ion_pop_stage[ip]*ions[(size_t)ip*ns+s];
+        double ne=plasma->n_electron[s];
+        if (!isfinite(ne) || ne<=0 || fabsl(charge-ne)>1e-10L*fmaxl(fabsl(charge),ne)) {
+            status=POP_NE_NOT_CONVERGED;goto done;
+        }
+    }
+    av=population_atomic_view(atom);
+    if (occupation) {
+        av.occupation=occupation_work;
+        av.occupation_n_shells=ns;
+    }
+    status=population_partition_build(&av,plasma->T_e,ns,1,1,partition,&part_stamp);
+    if (status!=POP_OK) goto done;
+    status=population_within_superlevel_build(&part_stamp,&av,plasma->T_e,ns,1,1,
+        (size_t)atom->n_levels,nlte->super_mode,(size_t)nlte->n_super_total,
+        nlte->nlte_to_global_level,nlte->fl_to_super,nlte->super_anchor_global,
+        within,&within_stamp);
+    if (status!=POP_OK) goto done;
+    for (int g=0;g<nlte->n_nlte_levels_total;g++)
+        for (size_t s=0;s<ns;s++) {
+            int sl=nlte->fl_to_super[g];
+            levels[(size_t)g*ns+s]=super[(size_t)sl*ns+s]*within[(size_t)g*ns+s];
+            if (!isfinite(levels[(size_t)g*ns+s]) || levels[(size_t)g*ns+s]<0) {
+                status=POP_NONFINITE;goto done;
+            }
+        }
+    memcpy(atom->ion_number_density,ions,ni*sizeof(double));
+    memcpy(atom->partition_functions,partition,ni*sizeof(double));
+    memcpy(nlte->nlte_level_populations,levels,nl*sizeof(double));
+    memcpy(nlte->within_sl_frac,within,nl*sizeof(double));
+    atom->partition_stamp=part_stamp;nlte->within_sl_stamp=within_stamp;
+    atom->population_committed_generation=1;
+    nlte->population_required_generation=1;nlte->population_committed_generation=1;
+    nlte->full_model_population_generation=1;
+    if (occupation) {
+        free(atom->model_level_occupation);
+        atom->model_level_occupation=occupation_work;occupation_work=NULL;
+        atom->model_occupation_n_shells=ns;
+    }
+    status=POP_OK;
+done:
+    free(ions);free(partition);free(levels);free(within);free(super);free(seen);free(occupation_work);
+    return status;
+}
+
+PopulationStatus lumina_import_superlevel_material(
+    NLTEConfig *nlte, AtomicData *atom, PlasmaState *plasma,
+    int n_columns, const int32_t *columns, const double *population) {
+    return lumina_import_superlevel_material_with_occupation(
+        nlte,atom,plasma,n_columns,columns,population,NULL);
 }
 
 void nlte_free(NLTEConfig *nlte) {
@@ -19002,10 +19161,11 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         /* Compute total atom number density in shell from all elements */
         double n_total_atoms = 0.0;
         for (int e = 0; e < atom->n_elements; e++) {
-            double X_e = atom->abundances[e * n_shells + shell];
-            double A_e = atom->element_mass_amu[e];
-            n_total_atoms += X_e * plasma->rho[shell] / (A_e * AMU);
+            n_total_atoms += lumina_element_number_density(
+                atom,plasma,e,shell,n_shells);
         }
+        if (!isfinite(n_total_atoms) || n_total_atoms < 0.0)
+            return -1;
 
         /* Per-particle ionization rate (distributed equally per atom) */
         if (n_total_atoms > 0.0 && ground_hi < N) {
@@ -19886,6 +20046,13 @@ static void nlte_update_tau_sobolev_with_authority(
                               const int *ew_tau_authority,
                               int ew_tau_authority_nshells) {
     tau_sobolev_require_refresh(opacity, "nlte_update_tau_sobolev");
+    if (nlte->model_atom_projection &&
+        (!nlte->full_model_population_generation ||
+         nlte->full_model_population_generation!=nlte->population_committed_generation ||
+         nlte->full_model_population_generation!=atom->population_committed_generation)) {
+        fprintf(stderr,"[MATERIAL-RESTART][FATAL] complete model population not owned; tau left stale\n");
+        return;
+    }
     int n_lines = opacity->n_lines;
     nlte_skip_z_load();
     unsigned char pair_owned[NLTE_MAX_IONS] = {0};
@@ -20640,7 +20807,7 @@ static int nlte_solve_all_impl(
         }
 
         if (private_population_core) {
-            PopulationStatus close_status = population_nlte_stage_charge_close(
+            PopulationStatus close_status = population_nlte_stage_charge_close_with_density(
                 (size_t)atom->n_ion_pops, atom->ion_pop_Z,
                 atom->ion_pop_stage, (size_t)atom->n_elements,
                 atom->element_Z, atom->elem_ion_offset,
@@ -20650,7 +20817,7 @@ static int nlte_solve_all_impl(
                 (size_t)nlte->n_nlte_levels_total, (size_t)n_shells,
                 nlte->nlte_level_populations, atom->ion_number_density,
                 plasma->n_electron, ce_damping, &last_charge_residual,
-                &last_charge_shell);
+                &last_charge_shell,&atom->element_density);
             if (close_status != POP_OK) {
                 if (solve_diagnostic) {
                     solve_diagnostic->stage =
@@ -21072,16 +21239,16 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
         int ip_end = atom->elem_ion_offset[e + 1];
         if (ip_start < 0 || ip_end <= ip_start ||
             ip_end > atom->n_ion_pops ||
-            !isfinite(atom->element_mass_amu[e]) ||
-            atom->element_mass_amu[e] <= 0.0) {
+            (atom->element_density.source != POP_ELEMENT_TOTAL_EXPLICIT_NUMBER &&
+             (!isfinite(atom->element_mass_amu[e]) ||
+              atom->element_mass_amu[e] <= 0.0))) {
             free(ne_before);
             free(ion_before);
             return candidate_ionization_fail(candidate, POP_ATOMIC_MISSING);
         }
         for (int s = 0; s < n_shells; ++s) {
-            double expected = atom->abundances[
-                (size_t)e * candidate->n_shells + (size_t)s] *
-                plasma->rho[s] / (atom->element_mass_amu[e] * AMU);
+            double expected = lumina_element_number_density(
+                atom,plasma,e,s,n_shells);
             double solved = 0.0;
             for (int ip = ip_start; ip < ip_end; ++ip)
                 solved += candidate->ion_population[

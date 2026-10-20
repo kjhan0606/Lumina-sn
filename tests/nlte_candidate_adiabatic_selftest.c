@@ -74,7 +74,7 @@ int main(void)
 
     PopulationAtomicView view = {
         NI, NL, level_offset, level_energy_eV, level_g, NULL,
-        level_Z, level_ion, 1, topion_index, topion_energy_cm, topion_g
+        level_Z, level_ion, 1, topion_index, topion_energy_cm, topion_g, NULL, 0
     };
     if (population_partition_build(
             &view, te, NS, 5, 4, partition, &atom.partition_stamp) != POP_OK)

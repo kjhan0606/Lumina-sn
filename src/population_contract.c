@@ -73,7 +73,38 @@ const char *population_status_name(PopulationStatus s){
     return (s>=POP_OK&&s<=POP_FORBIDDEN_FALLBACK)?n[s]:"POP_UNKNOWN";
 }
 
-PopulationStatus population_nlte_stage_charge_close(
+PopulationStatus population_element_density_get(
+    const PopulationElementDensityView *view,
+    size_t n_elements, size_t n_shells, size_t element, size_t shell,
+    const double *element_mass_amu, const double *abundances,
+    const double *rho, double atomic_mass_unit_g, double *out)
+{
+    if (!out || !n_elements || !n_shells || element >= n_elements ||
+        shell >= n_shells || n_elements > SIZE_MAX/n_shells)
+        return POP_ATOMIC_MISSING;
+    double value;
+    if (view && view->source == POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {
+        if (!view->number_density || view->n_elements != n_elements ||
+            view->n_shells != n_shells) return POP_ATOMIC_MISSING;
+        value = view->number_density[element*n_shells+shell];
+    } else {
+        if ((view && view->source != POP_ELEMENT_TOTAL_FROM_MASS) ||
+            !element_mass_amu || !abundances || !rho)
+            return POP_ATOMIC_MISSING;
+        double mass = element_mass_amu[element];
+        double x = abundances[element*n_shells+shell];
+        if (!isfinite(mass) || mass <= 0.0 || !isfinite(x) || x < 0.0 ||
+            !isfinite(rho[shell]) || rho[shell] < 0.0 ||
+            !isfinite(atomic_mass_unit_g) || atomic_mass_unit_g <= 0.0)
+            return POP_NONFINITE;
+        value = x*rho[shell]/(mass*atomic_mass_unit_g);
+    }
+    if (!isfinite(value) || value < 0.0) return POP_NONFINITE;
+    *out = value;
+    return value == 0.0 ? POP_EXACT_ZERO : POP_OK;
+}
+
+PopulationStatus population_nlte_stage_charge_close_with_density(
     size_t n_ion_pops, const int *ion_pop_Z, const int *ion_pop_stage,
     size_t n_elements, const int *element_Z, const int *elem_ion_offset,
     const double *element_mass_amu, const double *abundances,
@@ -83,14 +114,17 @@ PopulationStatus population_nlte_stage_charge_close(
     size_t n_shells, const double *nlte_level_populations,
     double *ion_number_density, double *electron_density,
     double electron_density_damping,
-    double *max_charge_residual, int *worst_charge_shell)
+    double *max_charge_residual, int *worst_charge_shell,
+    const PopulationElementDensityView *element_density)
 {
+    int explicit_number = element_density &&
+        element_density->source == POP_ELEMENT_TOTAL_EXPLICIT_NUMBER;
     if (max_charge_residual) *max_charge_residual = NAN;
     if (worst_charge_shell) *worst_charge_shell = -1;
     if (n_ion_pops == 0 || n_elements == 0 || n_nlte_ions == 0 ||
         n_nlte_levels == 0 || n_shells == 0 || !ion_pop_Z ||
         !ion_pop_stage || !element_Z || !elem_ion_offset ||
-        !element_mass_amu || !abundances || !rho || !nlte_Z ||
+        (!explicit_number && (!element_mass_amu || !abundances || !rho)) || !nlte_Z ||
         !nlte_ion || !nlte_level_offset || !nlte_level_populations ||
         !ion_number_density || !electron_density || !max_charge_residual ||
         !worst_charge_shell || !(atomic_mass_unit_g > 0.0) ||
@@ -122,8 +156,8 @@ PopulationStatus population_nlte_stage_charge_close(
     for (size_t e = 0; e < n_elements; ++e) {
         int begin = elem_ion_offset[e], end = elem_ion_offset[e + 1];
         if (begin < 0 || end < begin || (size_t)end > n_ion_pops ||
-            !(element_mass_amu[e] > 0.0) ||
-            !isfinite(element_mass_amu[e])) {
+            (!explicit_number && (!(element_mass_amu[e] > 0.0) ||
+            !isfinite(element_mass_amu[e])))) {
             free(ion_work);
             free(ne_work);
             return POP_ATOMIC_MISSING;
@@ -192,13 +226,14 @@ PopulationStatus population_nlte_stage_charge_close(
     for (size_t e = 0; e < n_elements; ++e) {
         int begin = elem_ion_offset[e], end = elem_ion_offset[e + 1];
         for (size_t shell = 0; shell < n_shells; ++shell) {
-            double rho_shell = rho[shell];
-            double abundance = abundances[e * n_shells + shell];
-            if (!isfinite(rho_shell) || rho_shell < 0.0 ||
-                !isfinite(abundance) || abundance < 0.0) {
+            double total = NAN;
+            PopulationStatus total_status = population_element_density_get(
+                element_density,n_elements,n_shells,e,shell,
+                element_mass_amu,abundances,rho,atomic_mass_unit_g,&total);
+            if (total_status != POP_OK && total_status != POP_EXACT_ZERO) {
                 free(ion_work);
                 free(ne_work);
-                return POP_NONFINITE;
+                return total_status;
             }
             long double solved = 0.0L;
             for (int ip = begin; ip < end; ++ip) {
@@ -210,7 +245,8 @@ PopulationStatus population_nlte_stage_charge_close(
                 }
                 solved += (long double)value;
             }
-            long double expected = (long double)abundance * rho_shell /
+            long double expected = explicit_number ? (long double)total :
+                (long double)abundances[e*n_shells+shell] * rho[shell] /
                 ((long double)element_mass_amu[e] * atomic_mass_unit_g);
             long double scale = fmaxl(fabsl(expected), fabsl(solved));
             long double rel = scale > 0.0L
@@ -275,6 +311,19 @@ PopulationStatus population_nlte_stage_charge_close(
     return POP_OK;
 }
 
+PopulationStatus population_nlte_stage_charge_close(
+    size_t ni, const int *iz, const int *iq,
+    size_t ne, const int *ez, const int *eo,
+    const double *mass, const double *x, const double *rho, double amu,
+    size_t nn, const int *nz, const int *nq, const int *lo, size_t nl,
+    size_t ns, const double *levels, double *ions, double *electrons,
+    double damping, double *residual, int *worst)
+{
+    return population_nlte_stage_charge_close_with_density(
+        ni,iz,iq,ne,ez,eo,mass,x,rho,amu,nn,nz,nq,lo,nl,ns,levels,
+        ions,electrons,damping,residual,worst,NULL);
+}
+
 PopulationStatus population_te_manifest_sha256(const double *te,size_t n,char out[65]){
     if (!te || !out || n == 0) return POP_INVALID_TE;
     PopSha256 s;
@@ -306,7 +355,7 @@ PopulationStatus population_atomic_model_sha256(const PopulationAtomicView *a,ch
     }
     pop_sha_final(&s,out);return POP_OK;
 }
-PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t ion,double te,double *out){
+static PopulationStatus population_partition_ion_unweighted(const PopulationAtomicView *a,size_t ion,double te,double *out){
     if(!out||!a||!a->level_offset||!a->energy_eV||!a->g||ion>=a->n_ions)
         return POP_ATOMIC_MISSING;
     if(!isfinite(te)||te<=0.0)return POP_INVALID_TE;
@@ -358,11 +407,44 @@ PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t i
     if(!isfinite(e0))return POP_INVALID_PARTITION;
     double sum=0.0,c=0.0;for(int l=lo;l<hi;l++){if((a->runtime_membership&&a->runtime_membership[l]<0)||!isfinite(a->energy_eV[l])||a->g[l]<=0)continue;double x=(a->energy_eV[l]-e0)*POP_EV_TO_ERG/(POP_K_BOLTZMANN*te);double term=(x<745.0)?(double)a->g[l]*exp(-x):0.0;double t=sum+term;if(fabs(sum)>=fabs(term))c+=(sum-t)+term;else c+=(term-t)+sum;sum=t;}sum+=c;if(!isfinite(sum)||sum<=0.0)return POP_INVALID_PARTITION;*out=sum;return POP_OK;
 }
+PopulationStatus population_partition_ion(const PopulationAtomicView *a,size_t ion,double te,double *out){
+    /* 점유확률은 쉘에 의존한다. 쉘을 지정하지 않은 옛 scalar 호출로 조용히
+     * 무점유확률 모형을 쓰지 않는다. */
+    if (a && a->occupation) return POP_ATOMIC_MISSING;
+    return population_partition_ion_unweighted(a,ion,te,out);
+}
+
+static PopulationStatus population_partition_at_shell(
+    const PopulationAtomicView *a,size_t ion,double te,size_t shell,double *out) {
+    if (!a->occupation) return population_partition_ion_unweighted(a,ion,te,out);
+    if (!out || shell>=a->occupation_n_shells || !isfinite(te) || te<=0)
+        return POP_INVALID_PARTITION;
+    int lo=a->level_offset[ion],hi=a->level_offset[ion+1];
+    if (lo==hi) return population_partition_ion_unweighted(a,ion,te,out);
+    if (lo<0 || hi<lo || (size_t)hi>a->n_levels) return POP_ATOMIC_MISSING;
+    double e0=INFINITY,sum=0,correction=0;
+    for (int l=lo;l<hi;l++)
+        if ((!a->runtime_membership || a->runtime_membership[l]>=0) &&
+            isfinite(a->energy_eV[l]) && a->g[l]>0 && a->energy_eV[l]<e0) e0=a->energy_eV[l];
+    if (!isfinite(e0)) return POP_INVALID_PARTITION;
+    for (int l=lo;l<hi;l++) {
+        if (a->runtime_membership && a->runtime_membership[l]<0) continue;
+        double occupation=a->occupation[(size_t)l*a->occupation_n_shells+shell];
+        if (!isfinite(occupation) || occupation<0 || occupation>1 || a->g[l]<=0 ||
+            !isfinite(a->energy_eV[l])) return POP_INVALID_PARTITION;
+        double term=occupation*a->g[l]*exp(-(a->energy_eV[l]-e0)*POP_EV_TO_ERG/(POP_K_BOLTZMANN*te));
+        double y=term-correction,updated=sum+y;correction=(updated-sum)-y;sum=updated;
+    }
+    if (!isfinite(sum) || sum<=0) return POP_INVALID_PARTITION;
+    *out=sum;return POP_OK;
+}
+
 PopulationStatus population_partition_build(const PopulationAtomicView *a,const double *te,size_t ns,uint64_t req,uint64_t teg,double *pub,PopulationDerivedStamp *stamp){
     if(!pub||!stamp||req==0||teg==0)
         return POP_STALE_DERIVED_TEMPERATURE;
     char th[65],ah[65];PopulationStatus st=population_te_manifest_sha256(te,ns,th);if(st!=POP_OK)return st;st=population_atomic_model_sha256(a,ah);if(st!=POP_OK)return st;size_t n=a->n_ions*ns;double *work=(double*)malloc(n*sizeof(double));if(!work)return POP_SOLVE_FAILED;
-    for(size_t i=0;i<a->n_ions;i++)for(size_t s=0;s<ns;s++){st=population_partition_ion(a,i,te[s],&work[i*ns+s]);if(st!=POP_OK){free(work);return st;}}
+    if(a->occupation && a->occupation_n_shells!=ns){free(work);return POP_ATOMIC_MISSING;}
+    for(size_t i=0;i<a->n_ions;i++)for(size_t s=0;s<ns;s++){st=population_partition_at_shell(a,i,te[s],s,&work[i*ns+s]);if(st!=POP_OK){free(work);return st;}}
     memcpy(pub,work,n*sizeof(double));free(work);memset(stamp,0,sizeof(*stamp));stamp->required_population_generation=req;stamp->computed_population_generation=req;stamp->te_generation=teg;memcpy(stamp->te_manifest_sha256,th,65);memcpy(stamp->atomic_model_sha256,ah,65);stamp->n_shells=ns;stamp->n_items=a->n_ions;stamp->status=POP_OK;return POP_OK;
 }
 PopulationStatus population_partition_view_check(const PopulationDerivedStamp *st,const PopulationAtomicView *a,const double *te,size_t ns,uint64_t req,uint64_t teg){
@@ -450,6 +532,16 @@ PopulationStatus population_within_superlevel_build(
                 double weight = (double)atomic->g[global_level] *
                     exp(-relative_energy /
                         (POP_K_BOLTZMANN * temperature));
+                if (atomic->occupation) {
+                    if (atomic->occupation_n_shells!=n_shells) {
+                        status=POP_ATOMIC_MISSING;break;
+                    }
+                    double occupation=atomic->occupation[(size_t)global_level*n_shells+shell];
+                    if (!isfinite(occupation) || occupation<0 || occupation>1) {
+                        status=POP_INVALID_PARTITION;break;
+                    }
+                    weight*=occupation;
+                }
                 if (!isfinite(weight) || weight < 0.0) {
                     status = POP_NONFINITE;
                     break;
@@ -485,6 +577,7 @@ PopulationStatus population_within_superlevel_build(
 }
 
 PopulationStatus population_lte_level_fraction(const PopulationAtomicView *a,size_t ion,size_t level,double te,double z,double *f){
+    if(a && a->occupation)return POP_FORBIDDEN_FALLBACK;
     if(!f||!a||ion>=a->n_ions||level>=a->n_levels)
         return POP_ATOMIC_MISSING;
     if(!isfinite(te)||te<=0.0)return POP_INVALID_TE;

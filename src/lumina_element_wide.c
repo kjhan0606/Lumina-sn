@@ -1080,11 +1080,14 @@ static void ew_projection_coverage(const NLTEConfig *n, const AtomicData *a,
 static double ew_element_density(const AtomicData *a, const PlasmaState *p,
                                  int Z, int shell) {
     for (int e = 0; e < a->n_elements; e++) {
-        if (a->element_Z[e] != Z || !(a->element_mass_amu[e] > 0.0)) continue;
-        double X = a->abundances[(size_t)e * p->n_shells + shell];
-        double v = X * p->rho[shell] / (a->element_mass_amu[e] * AMU);
+        if (a->element_Z[e] != Z) continue;
+        double v = lumina_element_number_density(a,p,e,shell,p->n_shells);
+        if (a->element_density.source == POP_ELEMENT_TOTAL_EXPLICIT_NUMBER)
+            return v;
         if (v > 0.0 && isfinite(v)) return v;
     }
+    if (a->element_density.source == POP_ELEMENT_TOTAL_EXPLICIT_NUMBER)
+        return NAN;
     double sum = 0.0;
     for (int i = 0; i < a->n_ion_pops; i++)
         if (a->ion_pop_Z[i] == Z)
