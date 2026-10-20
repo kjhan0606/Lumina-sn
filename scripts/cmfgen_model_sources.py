@@ -208,17 +208,20 @@ def write_binary(path,nu,state,components):
             stream.write(np.asarray(value,dtype='<f8').tobytes())
 
 
-def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out):
+def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None):
     if out.exists():raise ValueError('기존 물리 계수 산출물 보존')
     out.mkdir()
     fixed=[run/n for n in ('MODEL','MODEL_SPEC','LEVEL_SL_STEQ_LINKS','atomic_links.txt','TWO_PHOT_DATA')]
     fixed += [material,atomic_dir/'levels.csv',phot_library,kernel_library,c_full,Path(__file__).resolve()]
+    if frequency_grid is not None:fixed.append(Path(frequency_grid))
     fixed += [Path(__file__).with_name(n) for n in ('cmfgen_model_continuum.py','cmfgen_parser.py',
         'expand_atomic_data_cmfgen.py','cmfgen_phot_smoothing.py')]
     for link in B.atomic.load_cmfgen_links(run/'atomic_links.txt').values():
         fixed.extend(Path(link[k]) for k in ('osc','f_to_s'))
     fixed.extend(p for p in B.atomic.HYD_BF_DATA_FILES if p.is_file())
     before={str(p):B.sha(p) for p in fixed}
+    if frequency_grid is not None and not np.array_equal(np.load(frequency_grid,allow_pickle=False),nu):
+        raise ValueError('선택한 주파수 격자 파일과 실제 생산 주파수 불일치')
     rows,models,routes,policy,smoothing,route_counts=B.load_model(run,atomic_dir,phot_library)
     inactive=inactive_processes(run,models,policy);profile=fixed_profile(run/'MODEL')
     state=B.read_material(material,rows,models)
@@ -274,10 +277,12 @@ if __name__=='__main__':
         parser.add_argument('--'+name,type=Path,required=True)
     grid=parser.add_mutually_exclusive_group(required=True)
     grid.add_argument('--frequency-Hz',nargs='+',type=float);grid.add_argument('--bf-grid',action='store_true')
+    grid.add_argument('--frequency-grid',type=Path,help='Hz 단위 오름차순 .npy 전체 격자')
     args=parser.parse_args()
     nu=(B.atomic.BF_NU_MIN*np.exp((np.arange(B.atomic.BF_N_FREQ_BIN)+.5)*
         np.log(B.atomic.BF_NU_MAX/B.atomic.BF_NU_MIN)/B.atomic.BF_N_FREQ_BIN)
-        if args.bf_grid else np.asarray(args.frequency_Hz,dtype='f8'))
+        if args.bf_grid else np.load(args.frequency_grid,allow_pickle=False)
+        if args.frequency_grid is not None else np.asarray(args.frequency_Hz,dtype='f8'))
     print(json.dumps(prepare(args.run.resolve(),args.material.resolve(),args.atomic.resolve(),
         args.phot_library.resolve(),args.kernel_library.resolve(),args.C_full_population.resolve(),
-        nu,args.out.resolve()),ensure_ascii=False))
+        nu,args.out.resolve(),args.frequency_grid.resolve() if args.frequency_grid else None),ensure_ascii=False))

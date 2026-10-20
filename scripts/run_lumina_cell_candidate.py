@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """같은 물질/주파수의 실제 계수를 셀 수송 후보 실행기에 연결한다.
 
-기본은 입력/메모리 사전 확인이다. 구현된 방정식은 정상 homologous Iν·3a이며,
-native 상대론/이류 MODEL을 이 방정식으로 대체 실행할 수 없다. 후보 출력은
+기본은 입력/메모리 사전 확인이다. 정상 homologous 비상대론/상대론 Iν를
+구분하고 후자는 실제 속도장·시간미분 비활성을 확인한 경우에만 선택한다. 후보 출력은
 CMFGEN 동등성·전 모델 공동수렴·최종 스펙트럼 합격으로 표시하지 않는다.
 """
 from __future__ import annotations
@@ -16,9 +16,18 @@ import struct
 import numpy as np
 
 from cmfgen_model_sources import control
+from analyze_cmfgen_material_inventory import block
 
 FRAME='STATIONARY_HOMOLOGOUS_I_NU_3A'
+REL_FRAME='STATIONARY_HOMOLOGOUS_FULL_SR_I_NU'
 COMPONENTS=('bf_chi','bf_eta','ff_chi','ff_eta','bb_chi','bb_eta','es_chi')
+
+
+class CandidateFailure(ValueError):
+    def __init__(self,status,j,error,counts,diagnostics):
+        super().__init__(f'후보 셀 수송 실패: status={status}')
+        self.status=status
+        self.partial=dict(J=j,error_upper=error,counts=counts,diagnostics=diagnostics)
 
 
 def sha(path):
@@ -87,20 +96,28 @@ def read_sources(folder,material,model):
     return dict(folder=folder,binary=binary,report=report,ns=ns,nf=nf,nu=nu,dlog=dlog,component=component)
 
 
-def memory_inventory(material,sources,boundary_material,boundary_sources):
-    ns,nf=sources['ns'],sources['nf'];nr=ns+17;stride=ns+1;n=ns*nf
+def memory_inventory(material,sources,boundary_material,boundary_sources,relativistic=False):
+    return memory_inventory_sizes(material,sources['ns'],sources['nf'],sources['dlog'],
+        boundary_material,sources['binary'].stat().st_size,
+        boundary_sources['binary'].stat().st_size,relativistic)
+
+
+def memory_inventory_sizes(material,ns,nf,dlog,boundary_material,source_bytes,boundary_bytes,relativistic=False):
+    nr=ns+17;stride=ns+1;n=ns*nf
     batch=max(1,min(16,nr,(8*1024**3)//8//2//nf//stride))
-    beta=2*float(material['physical'][-1,1])/(2.99792458e10*material['epoch']*sources['dlog'])
+    outer_beta=float(material['physical'][-1,1])/(2.99792458e10*material['epoch'])
+    if relativistic and not 0<outer_beta<1:raise ValueError('상대론 속도 표현 범위 초과')
+    beta=(2*np.arctanh(outer_beta) if relativistic else 2*outer_beta)/dlog
     if not np.isfinite(beta) or beta>=2**31-2:raise ValueError('주파수 이동 인덱스 표현 범위 초과')
     # 동시 보유를 보수적으로 합한다. 배열 크기 계산이지 실제 peak RSS 측정이 아니다.
-    parts=dict(source_maps=sources['binary'].stat().st_size+boundary_sources['binary'].stat().st_size,
+    parts=dict(source_maps=source_bytes+boundary_bytes,
         material_maps=material['path'].stat().st_size+boundary_material['path'].stat().st_size,
         J_and_error=2*n*8,raw_assembly_with_private_workspace=4*n*8,
-        solver_cell_work=5*n*8,previous_angular_samples=n*8,
+        solver_cell_work=5*n*8,previous_angular_samples=(2 if relativistic else 1)*n*8,
         envelope_verification_and_refinement=3*n*8,
         directional_ray_buffers=2*batch*stride*nf*8,inner_ray_boundary=nr*nf*8,
-        segment_temporaries=batch*(nf*8+64*(int(beta)+2)),
-        boundary_work_and_quadrature=8*nf*8,geometry_reserve=64*nr*stride+64*(ns+nr),
+        segment_temporaries=batch*((5 if relativistic else 1)*nf*8+64*(int(beta)+2)),
+        boundary_work_and_quadrature=8*nf*8,geometry_reserve=(128 if relativistic else 64)*nr*stride+64*(ns+nr),
         validation_chunk_reserve=8*1024**2,runtime_reserve=256*1024**2)
     return dict(known_allocation_bound_bytes=sum(parts.values()),parts=parts,ray_batch=batch,
         whole_process_peak_RSS_verified=False,includes_full_readonly_maps=True,
@@ -127,21 +144,42 @@ def prepare(cells,sources,seed,boundary_sources,model,memory_gib=32):
     flags={key:control(model,key) for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS','COH_ES')}
     if any(value not in ('T','F') for value in flags.values()):raise ValueError('MODEL 논리값 손상')
     reasons=[]
-    if any(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS')):
-        reasons.append('FRAME_NOT_IMPLEMENTED: native 상대론/이류 MODEL과 정상 homologous 3a 후보는 다름')
+    relativistic=all(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
+    requested=any(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
+    velocity=None;rvtj=model.parent/'RVTJ'
+    if requested:
+        flags['INCL_DJDT']=control(model,'INCL_DJDT','UNSPECIFIED')
+        if not relativistic or flags['INCL_DJDT']!='F':
+            reasons.append('FRAME_NOT_IMPLEMENTED: 부분 상대론 설정/시간미분/미지정 모드')
+        if not rvtj.is_file():
+            reasons.append('FRAME_NOT_IMPLEMENTED: 실제 homologous RVTJ 속도장 미확인')
+        else:
+            r=block(rvtj,'Radius (10^10 cm)',native['ns'])*1e10
+            v=block(rvtj,'Velocity (km/s)',native['ns'])*1e5
+            sigma=block(rvtj,'dlnV/dlnr-1',native['ns'])
+            error=float(np.max(np.abs(v-r/material['epoch'])/(r/material['epoch'])))
+            velocity=dict(path=str(rvtj),sha256=sha(rvtj),max_relative_v_vs_r_over_t=error,
+                sigma_exact_zero=bool(np.all(sigma==0)),max_beta=float(np.max(v)/2.99792458e10),
+                serialized_velocity_relative_tolerance=2e-10)
+            if not np.array_equal(r,native['physical'][:,0]) or not np.all(sigma==0) or error>2e-10:
+                reasons.append('FRAME_NOT_IMPLEMENTED: 원래 반경/epoch와 homologous 속도장 불일치')
     if flags['COH_ES']!='T':reasons.append('NONCOHERENT_SCATTERING_NOT_IMPLEMENTED')
-    memory=memory_inventory(material,cell_source,native,inner_source)
+    memory=memory_inventory(material,cell_source,native,inner_source,relativistic)
     if not np.isfinite(memory_gib) or memory_gib<=0 or memory_gib>32:
         raise ValueError('봉인32GiB 이내의 양의 메모리 한도 필요')
     if memory['known_allocation_bound_bytes']>memory_gib*1024**3:reasons.append('MEMORY_BUDGET_EXCEEDED')
     input_paths=[model,material['path'],native['path'],cells/'material-cells.json',
         cell_source['folder']/'sources.json',cell_source['binary'],
         inner_source['folder']/'sources.json',inner_source['binary']]
-    report=dict(schema='lumina-cell-candidate-preflight-v1',implemented_frame=FRAME,model_flags=flags,
+    if requested and rvtj.is_file():input_paths.append(rvtj)
+    report=dict(schema='lumina-cell-candidate-preflight-v1',implemented_frame=REL_FRAME if relativistic else FRAME,
+        model_flags=flags,velocity_contract=velocity,
         cells=material['ns'],frequencies=cell_source['nf'],epoch_seconds=material['epoch'],
         radius_domain_cm=[float(material['physical'][0,0]),float(material['physical'][-1,1])],
         boundary_temperature_K=temperature,boundary_luminosity_erg_s=luminosity,
         boundary_sample='original innermost native node; not first-cell averaged material',
+        boundary_intensity='B_nu(T_inner)+mu_cmf*dBdtau' if relativistic else 'source_fixed+scattering_ratio*J_inner+mu*dBdtau',
+        blue_frequency_boundary='zero log-frequency derivative; retains 3b dilution',
         memory=memory,execution_eligible=not reasons,reasons=reasons,
         frequency_resolution_certified=False,physical_equivalence='NOT_JUDGED',final_goal='NOT_JUDGED',
         input_sha256={str(p):sha(p) for p in input_paths},authoritative_fields_executed=0)
@@ -162,7 +200,9 @@ def execute_candidate(prepared,library,iteration_cap=200,tolerance=1e-10):
     ri=np.ascontiguousarray(material['physical'][:,0]);ro=np.ascontiguousarray(material['physical'][:,1])
     j=np.zeros((ns,nf));error=np.zeros_like(j);counts=np.zeros(4,dtype='u8');diagnostics=np.zeros(4)
     dll=ct.CDLL(str(Path(library).resolve(strict=True)))
-    f=dll.lumina_cell_stationary_candidate;p=ct.POINTER(ct.c_double)
+    rel=prepared['report']['implemented_frame']==REL_FRAME
+    f=dll.lumina_cell_relativistic_candidate if rel else dll.lumina_cell_stationary_candidate
+    p=ct.POINTER(ct.c_double)
     f.argtypes=[ct.c_int,ct.c_int,ct.c_double,p,p,p,ct.c_double,ct.c_double,ct.c_double]+[p]*12+[
         ct.c_int,ct.c_double,ct.POINTER(ct.c_uint64),p]
     f.restype=ct.c_int
@@ -171,13 +211,13 @@ def execute_candidate(prepared,library,iteration_cap=200,tolerance=1e-10):
         material['epoch'],prepared['temperature'],prepared['luminosity'],pointer(chi),pointer(eta),
         pointer(component[6]),*[pointer(a) for a in sources['component']],pointer(j),pointer(error),
         iteration_cap,tolerance,counts.ctypes.data_as(ct.POINTER(ct.c_uint64)),pointer(diagnostics))
-    if status:raise ValueError(f'후보 셀 수송 실패: status={status}')
-    result=dict(frame=FRAME,iterations=int(counts[0]),rays=int(counts[1]),ray_buffer_slots=int(counts[2]),
+    if status:raise CandidateFailure(status,j,error,counts,diagnostics)
+    result=dict(frame=REL_FRAME if rel else FRAME,iterations=int(counts[0]),rays=int(counts[1]),ray_buffer_slots=int(counts[2]),
         candidate_solver_calls=1,authoritative_field_role=False,
         componentwise_verified=bool(counts[3]),relative_change=float(diagnostics[0]),
         actual_K_norm_upper=float(diagnostics[1]),residual_upper=float(diagnostics[2]),
         error_upper_max=float(diagnostics[3]),library_sha256=sha(library),
-        output_role='stationary candidate; not native relativistic field/equivalence proof')
+        output_role='stationary candidate; not native discrete formal/physical equivalence proof')
     return j,error,result
 
 
@@ -203,6 +243,11 @@ def main():
             np.savez(a.out/'candidate_field.npz',nu_Hz=prepared['sources']['nu'],J=j,error_upper=error)
             result.update(status='CANDIDATE_COMPLETED',candidate=run,
                 output_sha256={'candidate_field.npz':sha(a.out/'candidate_field.npz')})
+    except CandidateFailure as exc:
+        np.savez(a.out/'incomplete_field.npz',**exc.partial)
+        result.update(status='NOT_EXECUTED_OR_FAILED',failure=str(exc),core_status=exc.status,
+            partial_output_role='incomplete/unverified; not an accepted physical field',
+            output_sha256={'incomplete_field.npz':sha(a.out/'incomplete_field.npz')});code=2
     except (ValueError,OSError,KeyError,struct.error) as exc:
         result.update(status='NOT_EXECUTED_OR_FAILED',failure=str(exc));code=2
     with (a.out/'preflight.json').open('x') as stream:

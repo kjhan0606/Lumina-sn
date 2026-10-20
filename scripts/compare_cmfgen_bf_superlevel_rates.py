@@ -792,54 +792,9 @@ def scrtemp_positive_ion_population(state: np.ndarray, variables: list) -> np.nd
 def parse_f_to_s_int_seq(
         path: Path, n_full: int
         ) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray]:
-    """Read F_TO_S/INT_SEQ from CMFGEN row-order or explicit-ID layouts.
-
-    RD_F_TO_S_IDS_V4 consumes level rows in file order. Older split files do
-    not carry an FL-ID column; newer diagnostic layouts may include a
-    contiguous 1-based ID in column eight.
-    """
-    rows = []
-    row_layout = None
-    with path.open(errors="replace") as handle:
-        for line in handle:
-            fields = line.split()
-            if len(fields) < 7:
-                continue
-            try:
-                float(fields[1])  # g
-                float(fields[2])  # E(cm^-1)
-                float(fields[3])  # edge frequency in 1e15 Hz
-                int(fields[5])    # F_TO_S
-                int(fields[6])    # INT_SEQ
-            except ValueError:
-                continue
-            layout = "explicit_id" if len(fields) >= 8 else "row_order"
-            if row_layout is not None and layout != row_layout:
-                raise ValueError(f"{path}: mixed F_TO_S row layouts")
-            row_layout = layout
-            if layout == "explicit_id":
-                try:
-                    row_number = int(fields[7])
-                except ValueError:
-                    continue
-            else:
-                row_number = len(rows) + 1
-            if row_number != len(rows) + 1:
-                if rows:
-                    raise ValueError(
-                        f"{path}: non-contiguous F_TO_S row {row_number}; "
-                        f"expected {len(rows) + 1}")
-                continue
-            rows.append((fields[0], int(fields[5]), int(fields[6]),
-                         float(fields[3])))
-            if len(rows) == n_full:
-                break
-    if len(rows) != n_full:
-        raise ValueError(f"{path}: incomplete/invalid F_TO_S INT_SEQ prefix")
-    return (np.asarray([row[1] for row in rows], dtype=int),
-            [row[0] for row in rows],
-            np.asarray([row[2] for row in rows], dtype=int),
-            np.asarray([row[3] for row in rows], dtype=float))
+    """기존 비교 도구 API. 생산 파서를 사용하되 과거 호출 형식을 유지한다."""
+    from cmfgen_parser import parse_f_to_s_int_seq as parse
+    return parse(path,n_full)
 
 
 def parse_model_do_lev_dissolution(path: Path) -> bool:

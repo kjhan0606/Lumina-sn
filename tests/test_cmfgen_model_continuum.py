@@ -7,6 +7,26 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+
+@pytest.mark.parametrize('explicit',[False,True])
+def test_int_seq_parser_has_no_audit_import_dependency(tmp_path,monkeypatch,explicit):
+    from cmfgen_parser import parse_f_to_s_int_seq
+    monkeypatch.setitem(sys.modules,'compare_cmfgen_bf_superlevel_rates',None)
+    path=tmp_path/'f_to_s';path.write_text('header\n'+
+        'a 2 0 1.0 ignored 1 0'+(' 1' if explicit else '')+'\n'+
+        'b 4 12 .9 ignored 2 7'+(' 2' if explicit else '')+'\n')
+    mapping,names,sequence,frequency=parse_f_to_s_int_seq(path,2)
+    assert names==['a','b']
+    np.testing.assert_array_equal(mapping,[1,2]);np.testing.assert_array_equal(sequence,[0,7])
+    np.testing.assert_array_equal(frequency,[1.,.9])
+
+
+@pytest.mark.parametrize('second',['b 4 12 .9 x 2 7 3','b 4 12 .9 x 2 7','invalid'])
+def test_int_seq_parser_preserves_prefix_and_layout_rejections(tmp_path,second):
+    from cmfgen_parser import parse_f_to_s_int_seq
+    path=tmp_path/'f_to_s';path.write_text('a 2 0 1.0 x 1 0 1\n'+second+'\n')
+    with pytest.raises(ValueError):parse_f_to_s_int_seq(path,2)
+
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import cmfgen_model_continuum as M
 from cmfgen_parser import parse_osc

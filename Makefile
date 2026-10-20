@@ -10,7 +10,7 @@ LDFLAGS += -fopenmp
 endif
 
 # Source files (in src/)
-SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/atomic_internal_energy.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/line_net_rate.c src/cmfgen_adiabatic.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/nlte_population_candidate.c src/physics_comparison.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c src/cmfgen_final_writer.c
+SOURCES = src/lumina_main.c src/lumina_transport.c src/a2_02c_segment_capture.c src/radiation_field.c src/bf_rate_jnu.c src/line_jbar.c src/seed_capability.c src/jnu_seed.c src/population_contract.c src/atomic_internal_energy.c src/opacity_publication.c src/emissivity_publication.c src/radeq_publication.c src/line_net_rate.c src/cmfgen_adiabatic.c src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c src/nlte_population_candidate.c src/physics_comparison.c src/gpu_physics_contract.c src/lumina_plasma.c src/lumina_element_wide.c src/lumina_atomic.c src/lumina_cmfgen.c src/cmfgen_final_writer.c
 # ★2026-08-07: 이 목록이 12개였고, src 가 실제로 #include 하는 헤더는 21개였다.
 #   빠진 9개는 바뀌어도 리빌드가 일어나지 않는다 — 그 중에 **계약 헤더**들이 있었다
 #   (gpu_radiation_field_contract · gpu_physics_kernels · lumina_cmfgen).
@@ -24,7 +24,7 @@ HEADERS = src/lumina.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf
           src/atomic_internal_energy.h src/line_net_rate.h \
           src/opacity_publication.h src/emissivity_publication.h src/radeq_publication.h \
           src/cmfgen_adiabatic.h \
-          src/cmf_exact_sliding.h \
+          src/cmf_exact_sliding.h src/cmf_relativistic_characteristic.h \
           src/cmf_exact_multigpu.h \
           src/cmf_error_envelope.h \
           src/nlte_population_candidate.h \
@@ -64,11 +64,11 @@ $(TARGET): $(SOURCES) $(HEADERS)
 
 # 독립 후보 driver의 최소 공유 코어. 기존 main을 새 물리 실행으로 표시하지 않는다.
 lumina_cell_candidate.so: src/lumina_cell_candidate.c src/lumina_cmfgen.c \
-		src/cmf_exact_sliding.c src/cmf_error_envelope.c $(HEADERS)
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c $(HEADERS)
 	$(CC) -O2 -std=c11 -fPIC -shared -fvisibility=hidden \
 		-ffunction-sections -fdata-sections -fopenmp -Wl,--gc-sections -Wl,-z,defs \
 		-Isrc -o $@ src/lumina_cell_candidate.c src/lumina_cmfgen.c \
-		src/cmf_exact_sliding.c src/cmf_error_envelope.c -lm
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c -lm
 
 # CUDA build target (compile C sources alongside .cu)
 CUDA_BF_GEMM    = src/lumina_bf_gemm.cu
@@ -84,8 +84,8 @@ GPU_OPACITY_KERNELS = src/gpu_opacity_kernels.cu
 GPU_EMISSIVITY_KERNELS = src/gpu_emissivity_kernels.cu
 
 cuda: lumina_cuda
-lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(HEADERS)
-	$(NVCC) $(NVFLAGS) -o $(LUMINA_CUDA_OUTPUT) $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(NVLDFLAGS)
+lumina_cuda: $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(HEADERS)
+	$(NVCC) $(NVFLAGS) -o $(LUMINA_CUDA_OUTPUT) $(CUDA_SRC) $(CUDA_BF_GEMM) $(CUDA_NLTE_GEMM) $(CUDA_NLTE_ASM) $(CUDA_CMF_SOLVE) $(CUDA_CMF_EXACT) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) $(GPU_PHYSICS_CONTRACT) $(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) $(ATOMIC_INTERNAL_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) src/physics_comparison.c src/bf_rate_jnu.c src/radiation_field.c src/line_jbar.c src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c src/seed_capability.c src/lumina_element_wide.c src/lumina_cmfgen.c src/cmfgen_final_writer.c $(NVLDFLAGS)
 
 selftest_cmfgen_final_writer: tests/cmfgen_final_writer_selftest.c src/cmfgen_final_writer.c src/cmfgen_final_writer.h
 	$(CC) -O2 -Wall -Wextra -Werror -std=c11 -Isrc -o $@ tests/cmfgen_final_writer_selftest.c src/cmfgen_final_writer.c -lm
@@ -95,10 +95,10 @@ selftest-cmfgen-writer-consumer: selftest_cmfgen_final_writer
 	python3 -B tests/cmfgen_writer_consumer_selftest.py --writer ./selftest_cmfgen_writer_valid
 
 selftest_cmf_exact_sliding: tests/cmf_exact_sliding_selftest.c \
-		src/cmf_exact_sliding.c src/cmf_exact_sliding.h \
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_exact_sliding.h src/cmf_relativistic_characteristic.h \
 		src/cmf_error_envelope.c src/cmf_error_envelope.h
 	$(CC) -O2 -Wall -Wextra -std=c11 -fopenmp -Isrc -o $@ \
-		tests/cmf_exact_sliding_selftest.c src/cmf_exact_sliding.c \
+		tests/cmf_exact_sliding_selftest.c src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c \
 		src/cmf_error_envelope.c -lm -fopenmp
 
 selftest_cmf_error_envelope: tests/cmf_error_envelope_selftest.c \
@@ -108,11 +108,11 @@ selftest_cmf_error_envelope: tests/cmf_error_envelope_selftest.c \
 
 selftest_cmf_exact_multigpu: tests/cmf_exact_multigpu_selftest.cu \
 		src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h \
-		src/cmf_exact_sliding.c src/cmf_exact_sliding.h \
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_exact_sliding.h src/cmf_relativistic_characteristic.h \
 		src/cmf_error_envelope.c src/cmf_error_envelope.h
 	$(NVCC) $(NVFLAGS) -Isrc -o $@ \
 		tests/cmf_exact_multigpu_selftest.cu src/cmf_exact_multigpu.cu \
-		src/cmf_exact_sliding.c src/cmf_error_envelope.c $(NVLDFLAGS)
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c $(NVLDFLAGS)
 
 selftest_cmf_exact_epoch_scan: tests/cmf_exact_epoch_scan_selftest.cu
 	$(NVCC) $(NVFLAGS) -Isrc -o $@ \
@@ -120,11 +120,11 @@ selftest_cmf_exact_epoch_scan: tests/cmf_exact_epoch_scan_selftest.cu
 
 bench_cmf_exact_multigpu_reduced: tests/cmf_exact_multigpu_reduced_bench.cu \
 		src/cmf_exact_multigpu.cu src/cmf_exact_multigpu.h \
-		src/cmf_exact_sliding.c src/cmf_exact_sliding.h \
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_exact_sliding.h src/cmf_relativistic_characteristic.h \
 		src/cmf_error_envelope.c src/cmf_error_envelope.h
 	$(NVCC) $(NVFLAGS) -Isrc -o $@ \
 		tests/cmf_exact_multigpu_reduced_bench.cu src/cmf_exact_multigpu.cu \
-		src/cmf_exact_sliding.c src/cmf_error_envelope.c $(NVLDFLAGS)
+		src/cmf_exact_sliding.c src/cmf_relativistic_characteristic.c src/cmf_error_envelope.c $(NVLDFLAGS)
 
 # Task #39 validation harness
 bench_bf_gemm: bench_bf_gemm.c $(CUDA_BF_GEMM) src/lumina_atomic.c src/lumina_plasma.c $(POPULATION_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c $(HEADERS)

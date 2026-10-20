@@ -26,6 +26,8 @@ install -m 0750 "$binary" "$run_root/input/selftest_cmf_exact_multigpu"
 install -m 0640 "$repo_root/src/cmf_exact_multigpu.cu" \
   "$repo_root/src/cmf_exact_multigpu.h" \
   "$repo_root/src/cmf_exact_sliding.c" \
+  "$repo_root/src/cmf_relativistic_characteristic.c" \
+  "$repo_root/src/cmf_relativistic_characteristic.h" \
   "$repo_root/src/cmf_exact_sliding.h" \
   "$repo_root/src/cmf_error_envelope.c" \
   "$repo_root/src/cmf_error_envelope.h" \
@@ -37,6 +39,7 @@ install -m 0750 "$driver" "$run_root/input/job.slurm"
   sha256sum cmf_error_envelope.c cmf_error_envelope.h \
     cmf_exact_multigpu.cu cmf_exact_multigpu.h \
     cmf_exact_sliding.c cmf_exact_sliding.h \
+    cmf_relativistic_characteristic.c cmf_relativistic_characteristic.h \
     cmf_exact_multigpu_selftest.cu selftest_cmf_exact_multigpu job.slurm \
     > manifest.sha256
 )

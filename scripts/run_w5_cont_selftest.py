@@ -35,7 +35,7 @@ CHANGED = ("lumina_cmfgen.c", "lumina_cmfgen.h", "env_universe.h")
 CPU_SRCS = ("lumina_transport.c a2_02c_segment_capture.c radiation_field.c bf_rate_jnu.c "
             "line_jbar.c seed_capability.c jnu_seed.c population_contract.c "
             "atomic_internal_energy.c opacity_publication.c emissivity_publication.c "
-            "radeq_publication.c line_net_rate.c cmfgen_adiabatic.c cmf_exact_sliding.c "
+            "radeq_publication.c line_net_rate.c cmfgen_adiabatic.c cmf_exact_sliding.c cmf_relativistic_characteristic.c "
             "cmf_error_envelope.c nlte_population_candidate.c physics_comparison.c "
             "gpu_physics_contract.c lumina_plasma.c lumina_element_wide.c lumina_atomic.c "
             "lumina_cmfgen.c cmfgen_final_writer.c").split()

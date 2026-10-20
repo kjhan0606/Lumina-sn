@@ -11,6 +11,7 @@ def test_physical_cell_and_diffusion_boundary(tmp_path):
         '-std=c11','-fopenmp','-I'+str(root/'src'),
         str(root/'tests/cmf_exact_cell_selftest.c'),
         str(root/'src/cmf_exact_sliding.c'),str(root/'src/cmf_error_envelope.c'),
+        str(root/'src/cmf_relativistic_characteristic.c'),
         '-lm','-fopenmp','-o',str(binary)],check=True,timeout=60)
     result=subprocess.run([str(binary)],check=True,text=True,capture_output=True,
         env={**os.environ,'OMP_NUM_THREADS':'1'},timeout=60)
@@ -28,6 +29,7 @@ def test_cell_streaming_matches_full_buffer_all_outputs(tmp_path):
         if reference:command+=['-DCMF_EXACT_TEST_FULL_CELL_BUFFER']
         subprocess.run(command+[str(root/'tests/cmf_cell_streaming_selftest.c'),
             str(root/'src/cmf_exact_sliding.c'),str(root/'src/cmf_error_envelope.c'),
+            str(root/'src/cmf_relativistic_characteristic.c'),
             '-lm','-fopenmp','-o',str(binary)],check=True,timeout=60,capture_output=True)
         subprocess.run([str(binary),str(output)],check=True,timeout=60,
             env={**os.environ,'OMP_NUM_THREADS':'1'},capture_output=True)

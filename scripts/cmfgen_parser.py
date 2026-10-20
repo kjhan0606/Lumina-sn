@@ -31,6 +31,40 @@ def _read_text(path: Path) -> list[str]:
         return f.read().decode('latin-1', errors='replace').splitlines()
 
 
+def parse_f_to_s_int_seq(path: Path,n_full: int) -> tuple[np.ndarray,list[str],np.ndarray,np.ndarray]:
+    """원래 행 순서/명시적 FL-ID 형식의 F_TO_S와 INT_SEQ를 읽는다.
+
+    과거 비교 도구의 동일한 파서를 생산 데이터 모듈로 옮겼다.
+    감사/인증 모듈을 불러오지 않으며 기존 판독·거부 의미를 유지한다.
+    """
+    rows=[];row_layout=None
+    with path.open(errors='replace') as handle:
+        for line in handle:
+            fields=line.split()
+            if len(fields)<7:continue
+            try:
+                float(fields[1]);float(fields[2]);float(fields[3])
+                int(fields[5]);int(fields[6])
+            except ValueError:continue
+            layout='explicit_id' if len(fields)>=8 else 'row_order'
+            if row_layout is not None and layout!=row_layout:
+                raise ValueError(f'{path}: mixed F_TO_S row layouts')
+            row_layout=layout
+            if layout=='explicit_id':
+                try:row_number=int(fields[7])
+                except ValueError:continue
+            else:row_number=len(rows)+1
+            if row_number!=len(rows)+1:
+                if rows:
+                    raise ValueError(f'{path}: non-contiguous F_TO_S row {row_number}; expected {len(rows)+1}')
+                continue
+            rows.append((fields[0],int(fields[5]),int(fields[6]),float(fields[3])))
+            if len(rows)==n_full:break
+    if len(rows)!=n_full:raise ValueError(f'{path}: incomplete/invalid F_TO_S INT_SEQ prefix')
+    return (np.asarray([r[1] for r in rows],dtype=int),[r[0] for r in rows],
+            np.asarray([r[2] for r in rows],dtype=int),np.asarray([r[3] for r in rows],dtype=float))
+
+
 def _parse_header_value(line: str) -> tuple[str | None, str]:
     """Match '<value>   !<key>' lines. Return (value_str, key)."""
     m = _TAG_RE.match(line)

@@ -20,7 +20,7 @@ import numpy as np
 
 from analyze_cmfgen_material_inventory import sha
 import expand_atomic_data_cmfgen as atomic
-from cmfgen_parser import parse_osc
+from cmfgen_parser import parse_osc, parse_f_to_s_int_seq
 from cmfgen_phot_smoothing import PhotSmoother
 
 H=6.62607015e-27
@@ -178,7 +178,6 @@ def load_model(run,atomic_dir,smoothing_library):
     # 실제 물질 사다리의 terminal은 입력 변수에서 다시 확인한다.
     terminals={(Z,stage) for Z,stage in models if (Z,stage+1) not in models}
     routes,sources,counts=compile_routes(ions,lookup,terminals,smoother.read)
-    from compare_cmfgen_bf_superlevel_rates import parse_f_to_s_int_seq
     for key,model in models.items():
         mapping,_,sequence,_=parse_f_to_s_int_seq(links[key]['f_to_s'],model['n_full'])
         for identifier in set(sequence)-{0}:

@@ -3,14 +3,13 @@
 #include "lumina_cmfgen.h"
 #include "cmf_exact_sliding.h"
 
-__attribute__((visibility("default")))
-int lumina_cell_stationary_candidate(int ns,int nf,double dlog,const double *nu,
+static int cell_candidate(int ns,int nf,double dlog,const double *nu,
     const double *ri,const double *ro,double epoch,double boundary_temperature,
     double luminosity,const double *boundary_chi,const double *boundary_eta,
     const double *boundary_es,const double *bf_chi,const double *bf_eta,
     const double *ff_chi,const double *ff_eta,const double *bb_chi,
     const double *bb_eta,const double *es,double *j,double *error,
-    int iteration_cap,double tolerance,uint64_t *counts,double *diagnostics)
+    int iteration_cap,double tolerance,uint64_t *counts,double *diagnostics,int relativistic)
 {
     if(ns<1||nf<2||!nu||!ri||!ro||!boundary_chi||!boundary_eta||!boundary_es||
        !j||!error||!counts||!diagnostics||
@@ -35,8 +34,10 @@ int lumina_cell_stationary_candidate(int ns,int nf,double dlog,const double *nu,
         ri[0],boundary_chi,gradient);
     if(status!=CMF_EXACT_OK)goto done;
     CMFExactInnerBoundary bc={CMF_EXACT_INNER_DIFFUSION,NAN,NAN,sf,ratio,gradient};
+    if(relativistic){bc.kind=CMF_EXACT_INNER_PLANCK_DIFFUSION;bc.temperature=boundary_temperature;}
     CMFExactReport report;
-    status=cmf_exact_cell_solve_raw_sources(ns,nf,dlog,nu,ri,ro,epoch,&bc,
+    status=(relativistic ? cmf_exact_cell_solve_relativistic_raw_sources :
+        cmf_exact_cell_solve_raw_sources)(ns,nf,dlog,nu,ri,ro,epoch,&bc,
         chi,es,eta,j,error,3,iteration_cap,tolerance,CMF_EXACT_MODE_POSITIVE_SLIDING,&report);
     counts[0]=(uint64_t)report.iterations_used;counts[1]=(uint64_t)report.n_rays;
     counts[2]=(uint64_t)report.ray_buffer_slots;
@@ -47,4 +48,27 @@ int lumina_cell_stationary_candidate(int ns,int nf,double dlog,const double *nu,
     diagnostics[3]=report.componentwise_error_upper_max;
 done:
     free(material);free(boundary);return status;
+}
+
+/* 기존 ABI와 이산화를 보존한다. full-SR 선택은 별도 심볼로 명시한다. */
+__attribute__((visibility("default")))
+int lumina_cell_stationary_candidate(int ns,int nf,double dlog,const double *nu,
+    const double *ri,const double *ro,double epoch,double temperature,double luminosity,
+    const double *bchi,const double *beta,const double *bes,const double *bfchi,const double *bfeta,
+    const double *ffchi,const double *ffeta,const double *bbchi,const double *bbeta,const double *es,
+    double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics)
+{
+    return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,0);
+}
+
+__attribute__((visibility("default")))
+int lumina_cell_relativistic_candidate(int ns,int nf,double dlog,const double *nu,
+    const double *ri,const double *ro,double epoch,double temperature,double luminosity,
+    const double *bchi,const double *beta,const double *bes,const double *bfchi,const double *bfeta,
+    const double *ffchi,const double *ffeta,const double *bbchi,const double *bbeta,const double *es,
+    double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics)
+{
+    return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,1);
 }

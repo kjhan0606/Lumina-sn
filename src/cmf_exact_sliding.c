@@ -1,5 +1,6 @@
 #include "cmf_exact_sliding.h"
 #include "cmf_error_envelope.h"
+#include "cmf_relativistic_characteristic.h"
 
 #include <float.h>
 #include <limits.h>
@@ -47,13 +48,15 @@ typedef struct {
     double *half_inner;
     double *core_mu;
     int raw_emissivity;
+    int relativistic;
+    double *rel_length;
+    double *rel_drift;
 } ExactProblem;
 
 static int exact_cell_streams(const ExactProblem *p)
 {
 #ifdef CMF_EXACT_TEST_FULL_CELL_BUFFER
-    (void)p;
-    return 0; /* 작은 직접시험의 기존 전체 버퍼 대조군 전용. */
+    return p->relativistic; /* full-SR는 방향별 stream 적분만 지원한다. */
 #else
     return p->physical_cells;
 #endif
@@ -164,7 +167,40 @@ static void exact_problem_free(ExactProblem *p)
     free(p->rcore); free(p->rzin); free(p->shell_off); free(p->shell_k);
     free(p->shell_seg); free(p->shell_mu);
     free(p->half_outer); free(p->half_inner); free(p->core_mu);
+    free(p->rel_length); free(p->rel_drift);
     memset(p, 0, sizeof(*p));
+}
+
+/* lab 직선의 양방향 두 반셀을 전처리한다. 전 주파수 광선 cube를 만들지
+ * 않으며 이 기하를 nearest/상하향/K(1)가 함께 소비한다. */
+static CMFExactStatus exact_rel_problem_init(ExactProblem *p,double epoch,double rinner)
+{
+    if(p->segment_slots>SIZE_MAX/sizeof(double)/4)return CMF_EXACT_INVALID_INPUT;
+    p->rel_length=calloc(4*p->segment_slots,sizeof(double));
+    p->rel_drift=calloc(4*p->segment_slots,sizeof(double));
+    if(!p->rel_length||!p->rel_drift)return CMF_EXACT_ALLOCATION_FAILED;
+    p->relativistic=1;
+    for(int k=0;k<p->nr;k++){
+        double u=p->core_mu[k],beta=rinner*p->a_lam;
+        if(!(beta<1))return CMF_EXACT_INVALID_INPUT;
+        p->core_mu[k]=(u-beta)/(1-beta*u);
+        size_t base=(size_t)k*p->ray_stride;
+        for(int i=0;i<p->rn[k];i++){
+            size_t slot=base+(size_t)i;
+            double zm=p->rz[slot],zhi=zm+p->half_outer[slot],zlo=zm-p->half_inner[slot];
+            double z[6]={-zhi,-zm,-zlo,zlo,zm,zhi};
+            for(int d=0;d<2;d++)for(int h=0;h<2;h++){
+                CMFRelHomologousSegment v;
+                int a=3*d+h;
+                if(cmf_rel_homologous_segment(p->p[k],z[a],z[a+1],epoch,&v)!=CMF_REL_OK||
+                   v.delta_log_nu<0)return CMF_EXACT_INVALID_INPUT;
+                size_t at=4*slot+2*(size_t)d+(size_t)h;
+                p->rel_length[at]=v.comoving_length_cm;
+                p->rel_drift[at]=v.delta_log_nu;
+            }
+        }
+    }
+    return CMF_EXACT_OK;
 }
 
 static CMFExactStatus exact_problem_build(
@@ -812,7 +848,22 @@ static int exact_fill_inner(
     for (int k = 0; k < copies; ++k) {
         for (int b = 0; b < p->nb; ++b) {
             size_t at = (size_t)k*p->inner_stride+(size_t)b;
-            if (!p->boundary || p->boundary->kind == CMF_EXACT_INNER_BLACKBODY) {
+            if(p->boundary&&p->boundary->kind==CMF_EXACT_INNER_PLANCK_DIFFUSION){
+                /* comoving mu는 grazing core에서 음수일 수 있다. 양의 곱
+                 * helper로 mu를 잘라내지 않고 실제 경계 상수부터 평가한다. */
+                double constant=homogeneous||!p->rcore[k] ? 0.0 :
+                    exact_planck(p->nu[b],p->boundary->temperature)+
+                    p->core_mu[k]*p->boundary->gradient_over_chi[b];
+                inner[at]=constant;
+            }else if(p->relativistic&&p->boundary&&
+                     p->boundary->kind==CMF_EXACT_INNER_DIFFUSION){
+                double scatter;
+                double constant=homogeneous ? 0.0 : p->boundary->source_fixed[b]+
+                    p->core_mu[k]*p->boundary->gradient_over_chi[b];
+                if(!(constant>=0)||!isfinite(constant)||
+                   positive_multiply_bound(p->boundary->scattering_ratio[b],J[b],rounding,&scatter)||
+                   positive_add_bound(constant,scatter,rounding,&inner[at]))return -1;
+            }else if (!p->boundary || p->boundary->kind == CMF_EXACT_INNER_BLACKBODY) {
                 inner[at] = homogeneous ? 0.0 : scale*exact_planck(p->nu[b],temperature);
             } else {
                 const CMFExactInnerBoundary *bc = p->boundary;
@@ -833,6 +884,61 @@ static int exact_fill_inner(
     return 0;
 }
 
+/* 같은 sliding 주파수 적분에 방향/반셀 고유의 ds와 b_eff를 넣는다.
+ * native implicit +a_nu 및 blue source를 다시 더하면 이중 계상이 된다.
+ * blue 범위 밖은 기존 clip_bin의 상수 연장(dI/dlognu=0)이며 3b는 남는다. */
+static int exact_rel_segment(const ExactProblem *p,size_t geometry,size_t cell,
+    const double *eta,const double *upstream,int zero,double *output,
+    CMFExactMode mode,PositiveRounding rounding,double *negative,double *scratch)
+{
+    int nb=p->nb;
+    double ds=p->rel_length[geometry],drift=p->rel_drift[geometry];
+    if(ds==0){
+        if(zero)memset(output,0,(size_t)nb*sizeof(double));
+        else memcpy(output,upstream,(size_t)nb*sizeof(double));
+        return 0;
+    }
+    double beta=drift/p->dlognu,b=drift/ds,a=b/p->dlognu;
+    if(!isfinite(beta)||beta<0||beta>(double)(INT_MAX-nb-2))return -3;
+    if(drift==0){
+        for(int f=0;f<nb;f++){
+            double depth=p->chi_tot[cell+f],t=exp(-depth*ds);
+            double emission=exact_emission_factor(depth,t,ds,1);
+            if(!isfinite(t)||!isfinite(emission))return -3;
+            if(rounding==POSITIVE_ROUND_NEAREST)
+                output[f]=t*(zero ? 0.0 : upstream[f])+emission*eta[f];
+            else if(positive_two_product_sum_bound(t,zero ? 0.0 : upstream[f],
+                        emission,eta[f],rounding,&output[f]))return -3;
+            if(!(output[f]>=0)||!isfinite(output[f]))return -3;
+        }
+        return 0;
+    }
+    if(!(a>0)||!isfinite(a))return -3;
+    double *depth=scratch,*transmission=depth+nb,*density=transmission+nb,*full=density+nb;
+    for(int f=0;f<nb;f++){
+        depth[f]=(p->chi_tot[cell+f]+3*b)/a;
+        /* eta 자체는 이미 상/하향 산란 source다. 고정된 양의 단위 변환도
+         * 동일 방향으로 반올림해 nearest 결과를 감싼다. */
+        if(positive_multiply_bound(1/a,eta[f],rounding,&density[f]))return -3;
+        if(!isfinite(depth[f]))return -3;
+        if(beta<=.5){
+            /* 이 분기는 full-bin 항을 읽지 않는다. 사용하지 않을
+             * exp(-chi/a)의 overflow를 물리적 부분구간 실패로 오인하지 않는다. */
+            transmission[f]=1;full[f]=0;
+        }else{
+            transmission[f]=exp(-depth[f]);
+            double e=exact_emission_factor(depth[f],transmission[f],1,1);
+            if(!isfinite(transmission[f])||!isfinite(e)||
+               positive_multiply_bound(e,density[f],rounding,&full[f]))return -3;
+        }
+    }
+    if(rounding==POSITIVE_ROUND_NEAREST)
+        return exact_segment(nb,depth,transmission,density,full,beta,upstream,
+                             zero,output,mode,negative,1);
+    return exact_segment_positive_bound(nb,depth,transmission,density,full,
+                                       beta,upstream,zero,output,rounding,1) ? -3 : 0;
+}
+
 /* 한 실제 셀의 두 절반을 별도로 통과한다. in/out은 중심에서 저장하고
  * edge는 실제 경계의 강도다. turning cell이 중심 안쪽까지 도달하지 않으면
  * 그 셀은 수송에는 참여하지만 해당 중심의 각도 적분에서는 제외한다. */
@@ -846,7 +952,8 @@ static int exact_cell_ray_sweep(
     int nb = p->nb, n = p->rn[ray];
     size_t base = (size_t)ray*p->ray_stride;
     double *edge = malloc((size_t)nb*sizeof(double));
-    if (!edge) return -2;
+    double *scratch=p->relativistic ? malloc(4*(size_t)nb*sizeof(double)) : NULL;
+    if (!edge||(p->relativistic&&!scratch)){free(edge);free(scratch);return -2;}
     int rc = 0;
     for (int direction = 0; direction < 2 && rc == 0; ++direction) {
         if (direction && p->rcore[ray])
@@ -859,7 +966,13 @@ static int exact_cell_ray_sweep(
             double first = direction ? p->half_inner[slot] : p->half_outer[slot];
             double second = direction ? p->half_outer[slot] : p->half_inner[slot];
             int zero = !direction && !step;
-            if (rounding == POSITIVE_ROUND_NEAREST) {
+            if(p->relativistic){
+                size_t geometry=4*slot+2*(size_t)direction;
+                rc=exact_rel_segment(p,geometry,cell,source+cell,zero ? NULL : edge,
+                    zero,sample,mode,rounding,negative,scratch);
+                if(!rc)rc=exact_rel_segment(p,geometry+1,cell,source+cell,sample,
+                    0,edge,mode,rounding,negative,scratch);
+            }else if (rounding == POSITIVE_ROUND_NEAREST) {
                 rc = exact_segment(nb,dt1+cell,t1+cell,source+cell,source_cell+cell,
                     p->a_drift*first,zero ? NULL : edge,zero,sample,mode,negative,p->raw_emissivity);
                 if (!rc) rc = exact_segment(nb,dt1+cell,t1+cell,source+cell,source_cell+cell,
@@ -873,7 +986,7 @@ static int exact_cell_ray_sweep(
             }
         }
     }
-    free(edge);
+    free(edge);free(scratch);
     return rc;
 }
 
@@ -887,8 +1000,8 @@ static ExactSweepStatus exact_cell_stream_sweep(
     PositiveRounding rounding,uint64_t *negative_count_out,double *first_negative_out)
 {
     size_t cells=(size_t)p->ns*p->nb,batch=exact_buffer_rays(p);
-    double *previous=malloc(cells*sizeof(double));
-    double *previous_mu=calloc((size_t)p->ns,sizeof(double));
+    double *previous=malloc(cells*sizeof(double)*(p->relativistic ? 2U : 1U));
+    double *previous_mu=calloc((size_t)p->ns*(p->relativistic ? 2U : 1U),sizeof(double));
     int *seen=calloc((size_t)p->ns,sizeof(int));
     if(!previous||!previous_mu||!seen){
         free(previous);free(previous_mu);free(seen);return EXACT_SWEEP_ALLOCATION_FAILED;
@@ -913,10 +1026,10 @@ static ExactSweepStatus exact_cell_stream_sweep(
 #pragma omp critical(cmf_exact_negative)
 #endif
                 {if(!negatives)first_negative=negative;negatives++;}
-            }else if(rc)failed=1;
+            }else if(rc)failed|=rc==-3 ? 2 : 1;
         }
         if(negatives){status=EXACT_SWEEP_NEGATIVE;break;}
-        if(failed){status=EXACT_SWEEP_ALLOCATION_FAILED;break;}
+        if(failed){status=(failed&2) ? EXACT_SWEEP_NONFINITE : EXACT_SWEEP_ALLOCATION_FAILED;break;}
         for(int k=high;k>=low;k--){
             size_t base=(size_t)k*p->ray_stride;
             int invalid=0;
@@ -927,6 +1040,37 @@ static ExactSweepStatus exact_cell_stream_sweep(
                 int s=p->rsh[base+(size_t)i];
                 if(p->p[k]>p->rmid[s])continue;
                 double mu=p->rz[base+(size_t)i]/p->rmid[s];
+                if(p->relativistic){
+                    double beta=p->rmid[s]*p->a_lam;
+                    double plus=(mu-beta)/(1-beta*mu),minus=(-mu-beta)/(1+beta*mu);
+                    double wp=seen[s] ? .25*(plus-previous_mu[s]) : 0.0;
+                    double wm=seen[s] ? .25*(previous_mu[p->ns+s]-minus) : 0.0;
+                    if(!(wp>=0)||!(wm>=0)){invalid=1;continue;}
+                    size_t at=(base+(size_t)i-buffer_base)*(size_t)p->nb;
+                    size_t cell=(size_t)s*p->nb;
+                    for(int b=0;b<p->nb;b++){
+                        size_t idx=cell+(size_t)b;
+                        double a=out[at+b],d=in[at+b];
+                        double prevp=seen[s] ? previous[idx] : a;
+                        double prevm=seen[s] ? previous[cells+idx] : d;
+                        if(rounding==POSITIVE_ROUND_NEAREST)
+                            j_result[idx]+=wp*(prevp+a)+wm*(prevm+d);
+                        else{
+                            double sum_p,sum_m,weighted,sum;
+                            if(positive_add_bound(prevp,a,rounding,&sum_p)||
+                               positive_add_bound(prevm,d,rounding,&sum_m)||
+                               positive_two_product_sum_bound(wp,sum_p,wm,sum_m,rounding,&weighted)||
+                               positive_add_bound(j_result[idx],weighted,rounding,&sum)){
+                                invalid=1;break;
+                            }
+                            j_result[idx]=sum;
+                        }
+                        previous[idx]=a;previous[cells+idx]=d;
+                        if(!(j_result[idx]>=0)||!isfinite(j_result[idx]))invalid=1;
+                    }
+                    previous_mu[s]=plus;previous_mu[p->ns+s]=minus;seen[s]=1;
+                    continue;
+                }
                 if(mu<previous_mu[s]){invalid=1;continue;}
                 size_t at=(base+(size_t)i-buffer_base)*(size_t)p->nb;
                 size_t cell=(size_t)s*p->nb;
@@ -1374,6 +1518,7 @@ static double exact_source_weight(const ExactProblem *p, size_t idx)
     /* J와 경계의 단위는 I_nu다. homologous characteristic에서는
      * dI_nu/ds=eta_nu-(chi_nu+3/(ct))*I_nu이므로 source도 같은 총
      * 소광으로 나눈다. 기존 API의 4/(ct) 이산화는 소급 변경하지 않는다. */
+    if(p->relativistic)return 1.0;
     if(p->raw_emissivity)return 1.0/p->a_drift;
     if (!p->physical_cells) return 1.0;
     return p->chi_tot[idx]/(p->chi_tot[idx]+3.0*p->a_lam);
@@ -1457,7 +1602,7 @@ static int exact_componentwise_error_envelope(
         PositiveRounding rounding = pass < 0
                                   ? POSITIVE_ROUND_LOWER
                                   : POSITIVE_ROUND_UPPER;
-        if (p->boundary && p->boundary->kind == CMF_EXACT_INNER_DIFFUSION &&
+        if (p->boundary && p->boundary->kind != CMF_EXACT_INNER_BLACKBODY &&
             exact_fill_inner(p,0.0,0.0,J,0,rounding,inner_physical) != 0)
             return -1;
         for (size_t idx = 0; idx < cells; ++idx) {
@@ -1561,7 +1706,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     size_t envelope_refinement_iterations,
     int iteration_cap, double tolerance, CMFExactMode mode,
     CMFExactReport *report, int physical_cells,
-    const CMFExactInnerBoundary *boundary,int raw_emissivity)
+    const CMFExactInnerBoundary *boundary,int raw_emissivity,int relativistic)
 {
     CMFExactReport local;
     memset(&local, 0, sizeof(local));
@@ -1585,16 +1730,21 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
           !(inner_boundary_scale >= 0.0) || !isfinite(inner_boundary_scale))) ||
         (physical_cells && (!boundary ||
          (boundary->kind != CMF_EXACT_INNER_BLACKBODY &&
-          boundary->kind != CMF_EXACT_INNER_DIFFUSION))) ||
+          boundary->kind != CMF_EXACT_INNER_DIFFUSION &&
+          boundary->kind != CMF_EXACT_INNER_PLANCK_DIFFUSION))) ||
         (boundary && boundary->kind == CMF_EXACT_INNER_DIFFUSION &&
          (!boundary->source_fixed || !boundary->scattering_ratio ||
           !boundary->gradient_over_chi)) ||
+        (boundary&&boundary->kind==CMF_EXACT_INNER_PLANCK_DIFFUSION&&
+         (!boundary->gradient_over_chi||!(boundary->temperature>0)||
+          !isfinite(boundary->temperature))) ||
         (mode != CMF_EXACT_MODE_SLIDING &&
          mode != CMF_EXACT_MODE_DIRECT_REFERENCE &&
          mode != CMF_EXACT_MODE_POSITIVE_SLIDING) ||
         (componentwise_error_upper &&
          mode != CMF_EXACT_MODE_POSITIVE_SLIDING) ||
-        (raw_emissivity && (!physical_cells || mode==CMF_EXACT_MODE_SLIDING)))
+        (raw_emissivity && (!physical_cells || mode==CMF_EXACT_MODE_SLIDING)) ||
+        (relativistic&&!raw_emissivity))
         return CMF_EXACT_INVALID_INPUT;
 
     ExactProblem p;
@@ -1607,6 +1757,14 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         return status;
     }
     p.raw_emissivity=raw_emissivity;
+    if(relativistic){
+        status=exact_rel_problem_init(&p,time_explosion,r_inner[0]);
+        if(status!=CMF_EXACT_OK){
+            exact_problem_free(&p);local.status=status;
+            if(report)*report=local;
+            return status;
+        }
+    }
     local.n_rays = (size_t)p.nr;
     local.segment_slots = p.segment_slots;
 
@@ -1617,7 +1775,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
                          &segment_cells) != 0 ||
         checked_mul_size(physical_cells ? (size_t)p.nr : 1U,
                          (size_t)n_bins,&inner_cells) != 0 ||
-        cells > SIZE_MAX / sizeof(double) ||
+        cells > SIZE_MAX / sizeof(double) / (relativistic ? 2U : 1U) ||
         segment_cells > SIZE_MAX / sizeof(double) ||
         inner_cells > SIZE_MAX / sizeof(double)) {
         exact_problem_free(&p);
@@ -1666,7 +1824,9 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             double ratio = raw_emissivity ? 0 : (ct > 0.0 ? ce / ct : 0.0);
             if (ratio > max_scattering_ratio)
                 max_scattering_ratio = ratio;
-            double depth = (ct + p.a_lam * (physical_cells ? 3.0 : 4.0)) / p.a_drift;
+            /* full-SR는 반셀마다 b_eff/a_nu가 달라 전역 full-bin 항을 쓰지 않는다. */
+            double depth = relativistic ? 0.0 :
+                (ct + p.a_lam * (physical_cells ? 3.0 : 4.0)) / p.a_drift;
             if ((!raw_emissivity && !(depth >= 0.0)) || !isfinite(depth)) invalid = 1;
             dt1[idx] = depth;
             t1[idx] = exp(-depth);
@@ -1678,6 +1838,11 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         status = CMF_EXACT_NONFINITE;
         goto cleanup;
     }
+    if(boundary&&boundary->kind==CMF_EXACT_INNER_PLANCK_DIFFUSION)
+        for(int b=0;b<n_bins;b++)if(!(boundary->gradient_over_chi[b]>=0)||
+            !isfinite(boundary->gradient_over_chi[b])){
+            status=CMF_EXACT_INVALID_INPUT;goto cleanup;
+        }
     if (boundary && boundary->kind == CMF_EXACT_INNER_DIFFUSION) {
         for (int b = 0; b < n_bins; ++b) {
             double ratio = boundary->scattering_ratio[b];
@@ -1716,7 +1881,8 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
                 : (i + 1 < p.rn[k]
                     ? p.rz[base + i] - p.rz[base + i + 1]
                     : p.rz[base + i] - p.rzin[k]);
-            drift += p.a_drift * ds;
+            drift += relativistic ? (p.rel_drift[4*(base+i)]+p.rel_drift[4*(base+i)+1])/
+                p.dlognu : p.a_drift * ds;
         }
         if (drift > local.max_characteristic_drift_bins)
             local.max_characteristic_drift_bins = drift;
@@ -1818,7 +1984,7 @@ CMFExactStatus cmf_exact_characteristic_solve(
     return cmf_exact_characteristic_solve_impl(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
-        NULL, 0, iteration_cap, tolerance, mode, report, 0, NULL,0);
+        NULL, 0, iteration_cap, tolerance, mode, report, 0, NULL,0,0);
 }
 
 CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
@@ -1836,7 +2002,7 @@ CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
         componentwise_error_upper, envelope_refinement_iterations,
-        iteration_cap, tolerance, mode, report, 0, NULL,0);
+        iteration_cap, tolerance, mode, report, 0, NULL,0,0);
 }
 
 CMFExactStatus cmf_exact_cell_solve(
@@ -1854,7 +2020,7 @@ CMFExactStatus cmf_exact_cell_solve(
         n_shells,n_bins,dlognu,nu,r_inner,r_outer,time_explosion,
         boundary->temperature,boundary->blackbody_scale,chi_tot,chi_es,S_fixed,J,
         componentwise_error_upper,envelope_refinement_iterations,
-        iteration_cap,tolerance,mode,report,1,boundary,0);
+        iteration_cap,tolerance,mode,report,1,boundary,0,0);
 }
 
 CMFExactStatus cmf_exact_cell_solve_raw_sources(
@@ -1870,5 +2036,20 @@ CMFExactStatus cmf_exact_cell_solve_raw_sources(
     return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
         r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
         chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
-        iteration_cap,tolerance,mode,report,1,boundary,1);
+        iteration_cap,tolerance,mode,report,1,boundary,1,0);
+}
+
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report)
+{
+    if(!boundary)return CMF_EXACT_INVALID_INPUT;
+    return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
+        r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
+        chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
+        iteration_cap,tolerance,mode,report,1,boundary,1,1);
 }

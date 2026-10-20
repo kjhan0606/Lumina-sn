@@ -25,6 +25,8 @@ install -m 0640 \
   "$repo_root/src/cmf_exact_multigpu.cu" \
   "$repo_root/src/cmf_exact_multigpu.h" \
   "$repo_root/src/cmf_exact_sliding.c" \
+  "$repo_root/src/cmf_relativistic_characteristic.c" \
+  "$repo_root/src/cmf_relativistic_characteristic.h" \
   "$repo_root/src/cmf_exact_sliding.h" \
   "$repo_root/src/cmf_error_envelope.c" \
   "$repo_root/src/cmf_error_envelope.h" \

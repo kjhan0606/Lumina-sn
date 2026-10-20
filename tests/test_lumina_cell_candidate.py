@@ -21,7 +21,7 @@ def library(tmp_path_factory):
         '-fvisibility=hidden','-ffunction-sections','-fdata-sections','-fopenmp',
         '-Wl,--gc-sections','-Wl,-z,defs','-I'+str(ROOT/'src'),'-o',str(out),
         *[str(ROOT/'src'/name) for name in ('lumina_cell_candidate.c','lumina_cmfgen.c',
-          'cmf_exact_sliding.c','cmf_error_envelope.c')],'-lm'],
+          'cmf_exact_sliding.c','cmf_error_envelope.c','cmf_relativistic_characteristic.c')],'-lm'],
         check=True,timeout=90,capture_output=True)
     return out
 
@@ -66,6 +66,22 @@ def rehash(folder):
     path.write_text(json.dumps(report))
 
 
+def verified_rel_fixture(tmp_path):
+    args=fixture(tmp_path,rel=True);model=args['model']
+    model.write_text('T [USE_J_REL]\nT [INCL_REL]\nT [INCL_ADV_TRANS]\nT [COH_ES]\nF [INCL_DJDT]\n')
+    refresh_model_identity(args)
+    (tmp_path/'RVTJ').write_text(' Radius (10^10 cm)\n 40000 30000 20000\n\n'
+        ' Velocity (km/s)\n 4000 3000 2000\n\n dlnV/dlnr-1\n 0 0 0\n')
+    return args
+
+
+def refresh_model_identity(args):
+    for key in ('sources','boundary_sources'):
+        path=args[key]/'sources.json';report=json.loads(path.read_text())
+        report['input_sha256'][str(args['model'].resolve())]=D.sha(args['model'])
+        path.write_text(json.dumps(report))
+
+
 def test_same_material_raw_source_candidate_reaches_solver(tmp_path,library):
     args=fixture(tmp_path);prepared=D.prepare(**args)
     before={p:D.sha(p) for p in (args['sources']/'sources.bin',args['cells']/'material_cells.bin')}
@@ -89,6 +105,48 @@ def test_native_frame_cannot_start_candidate_or_load_library(tmp_path,monkeypatc
     with pytest.raises(ValueError,match='FRAME_NOT_IMPLEMENTED'):
         D.execute_candidate(prepared,tmp_path/'not-loaded.so')
     assert prepared['report']['authoritative_fields_executed']==0
+
+
+def test_verified_full_sr_frame_reaches_same_raw_candidate_core(tmp_path,library):
+    prepared=D.prepare(**verified_rel_fixture(tmp_path))
+    assert prepared['report']['execution_eligible']
+    assert prepared['report']['implemented_frame']==D.REL_FRAME
+    assert prepared['report']['velocity_contract']['sigma_exact_zero']
+    assert prepared['report']['boundary_intensity']=='B_nu(T_inner)+mu_cmf*dBdtau'
+    memory=prepared['report']['memory']['parts']
+    assert memory['previous_angular_samples']==2*2*32*8
+    j,error,report=D.execute_candidate(prepared,library)
+    assert report['frame']==D.REL_FRAME and report['componentwise_verified']
+    assert 0<report['actual_K_norm_upper']<1
+    assert np.isfinite(j).all() and np.all(j>0) and np.all(error>=0)
+    assert not report['authoritative_field_role']
+
+
+def test_failed_iteration_preserves_actual_partial_arrays(tmp_path,library):
+    prepared=D.prepare(**verified_rel_fixture(tmp_path))
+    with pytest.raises(D.CandidateFailure) as error:
+        D.execute_candidate(prepared,library,iteration_cap=2,tolerance=1e-30)
+    assert error.value.status==5
+    assert error.value.partial['J'].shape==(2,32)
+    assert np.any(error.value.partial['J']>0)
+    assert error.value.partial['counts'][0]==2
+
+
+@pytest.mark.parametrize('kind',['time','sigma','velocity','radius'])
+def test_unverified_relativistic_physics_cannot_load_kernel(tmp_path,monkeypatch,kind):
+    args=verified_rel_fixture(tmp_path);rvtj=tmp_path/'RVTJ'
+    if kind=='time':
+        args['model'].write_text(args['model'].read_text().replace('F [INCL_DJDT]','T [INCL_DJDT]'))
+        refresh_model_identity(args)
+    elif kind=='sigma':rvtj.write_text(rvtj.read_text().replace('0 0 0','0 0.1 0'))
+    elif kind=='velocity':rvtj.write_text(rvtj.read_text().replace('4000 3000 2000','4001 3000 2000'))
+    else:rvtj.write_text(rvtj.read_text().replace('40000 30000 20000','40001 30000 20000'))
+    prepared=D.prepare(**args)
+    assert not prepared['report']['execution_eligible']
+    def forbidden(*args):raise AssertionError('지원하지 않는 물리 실행 금지')
+    monkeypatch.setattr(D.ct,'CDLL',forbidden)
+    with pytest.raises(ValueError,match='FRAME_NOT_IMPLEMENTED'):
+        D.execute_candidate(prepared,tmp_path/'not-loaded.so')
 
 
 @pytest.mark.parametrize('kind',['hash','temperature','frequency','negative_eta'])

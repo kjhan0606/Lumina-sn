@@ -56,7 +56,10 @@ typedef struct {
 
 typedef enum {
     CMF_EXACT_INNER_BLACKBODY = 1,
-    CMF_EXACT_INNER_DIFFUSION = 2
+    CMF_EXACT_INNER_DIFFUSION = 2,
+    /* 실제 CMF_FORMAL_REL_V4: I+=B_nu(T_inner)+mu_cmf*(-dB/dr)/chi.
+     * 기존 source+scattering*J 경계와 별개이며 외부 J 주입은 없다. */
+    CMF_EXACT_INNER_PLANCK_DIFFUSION = 3
 } CMFExactInnerKind;
 
 /* 실제 내부 반경에서 정의하는 comoving 경계. DIFFUSION은
@@ -103,6 +106,20 @@ CMFExactStatus cmf_exact_cell_solve(
  * componentwise 인증은 같은 이산 연산의 반올림/반복 오차 인증이지,
  * 상대론·공간·주파수 이산화 오차 또는 CMFGEN 동등성 증명이 아니다. */
 CMFExactStatus cmf_exact_cell_solve_raw_sources(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,
+    size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report);
+
+/* 정상 homologous full-SR의 lab p,z 재매개화. 각 반셀의 정확한 ds와
+ * Doppler 이동, 방향별 comoving mu 적분을 같은 formal/K/오차 연산에 쓴다.
+ * 반셀 안의 물질과 b_eff는 P0 이산화다. blue 끝은 dI/dlognu=0 연장이고
+ * 3b 소광은 유지한다. native implicit-upwind와 이산적으로 같다는 뜻이나
+ * 시간미분/observer/전역 물질 수렴의 구현을 뜻하지 않는다. */
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources(
     int n_shells,int n_bins,double dlognu,const double *nu,
     const double *r_inner,const double *r_outer,double time_explosion,
     const CMFExactInnerBoundary *boundary,
