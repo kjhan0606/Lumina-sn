@@ -1,0 +1,135 @@
+{
+  "schema": "lumina-gpu-resource-ledger-v1",
+  "as_of_KST": "2026-10-22 00:02",
+  "total_GPUh": 144,
+  "baseline": {
+    "source": "docs/HANDOVER_2026-10-18.md:30",
+    "used_upper_GPUh": 70.3001111111,
+    "reserved_GPUh": 0,
+    "remaining_GPUh": 73.6998888889
+  },
+  "subsequent_slurm": {
+    "query_start_KST": "2026-10-18 22:03:00",
+    "scope": "current Lumina-sn exact WorkDir GPU allocation records; other projects not charged",
+    "allocated_gpu_seconds": 61,
+    "allocated_GPUh": 0.016944444444444446,
+    "records": [
+      {
+        "job_id": "427674",
+        "job_name": "cmf-ptf-ophys",
+        "state": "FAILED",
+        "start": "2026-10-19T00:07:26",
+        "end": "2026-10-19T00:07:27",
+        "elapsed_seconds": 1,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427675",
+        "job_name": "hostname",
+        "state": "COMPLETED",
+        "start": "2026-10-19T00:08:25",
+        "end": "2026-10-19T00:08:25",
+        "elapsed_seconds": 0,
+        "alloc_tres": "billing=2,cpu=1,gres/gpu=1,mem=2G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427676",
+        "job_name": "bash",
+        "state": "FAILED",
+        "start": "2026-10-19T00:08:37",
+        "end": "2026-10-19T00:08:38",
+        "elapsed_seconds": 1,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427678",
+        "job_name": "bash",
+        "state": "FAILED",
+        "start": "2026-10-19T00:10:25",
+        "end": "2026-10-19T00:10:36",
+        "elapsed_seconds": 11,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427679",
+        "job_name": "bash",
+        "state": "FAILED",
+        "start": "2026-10-19T00:11:08",
+        "end": "2026-10-19T00:11:19",
+        "elapsed_seconds": 11,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427682",
+        "job_name": "bash",
+        "state": "COMPLETED",
+        "start": "2026-10-19T00:15:28",
+        "end": "2026-10-19T00:15:43",
+        "elapsed_seconds": 15,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427685",
+        "job_name": "bash",
+        "state": "COMPLETED",
+        "start": "2026-10-19T00:22:41",
+        "end": "2026-10-19T00:22:56",
+        "elapsed_seconds": 15,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      },
+      {
+        "job_id": "427686",
+        "job_name": "bash",
+        "state": "COMPLETED",
+        "start": "2026-10-19T00:23:29",
+        "end": "2026-10-19T00:23:36",
+        "elapsed_seconds": 7,
+        "alloc_tres": "billing=3,cpu=2,gres/gpu=1,mem=16G,node=1",
+        "workdir": "/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn"
+      }
+    ]
+  },
+  "used_upper_GPUh": 70.38177777776666,
+  "remaining_before_new_reservations_GPUh": 73.61822222223334,
+  "current_reserved_GPUh": 0,
+  "settled_batch_C_run": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_gpu_batch_local_20261021-xSx3Z2",
+    "plan_sha256": "1865fdfdba8226c267b47a80d902b7a4a7bb2656308cb65b463f09f5f7b81748",
+    "state": "SETTLED_BATCH_C_REJECTED_COST_AND_ACCURACY",
+    "started_KST": "2026-10-21T23:55:07+09:00",
+    "ended_KST": "2026-10-21T23:56:38+09:00",
+    "allocated_gpu_seconds": 91,
+    "allocated_GPUh": 0.025277777777777777,
+    "terminal_exit_code": 1,
+    "exec_session": 30239,
+    "preparation_max_GPUh": 0.5,
+    "conditional_field_max_GPUh": 3.5,
+    "settlement": "allocation.started/ended의91초를 한 번 차감하고 실패4GPUh 예약은 전부 해제했다. 조건부 전체장은0이다."
+  },
+  "settled_C_run": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_gpu_C_local_20261021-BRDZTA",
+    "plan_sha256": "a6adbeeae8f2f80e4e7cd09eb516d8c84658d0940afc0c2dae4ef3d83d9aed02",
+    "state": "SETTLED_GPU_LOCAL_NOT_MET_NO_NATIVE_FIELD",
+    "started_KST": "2026-10-21T23:20:53+09:00",
+    "ended_KST": "2026-10-21T23:23:15+09:00",
+    "allocated_gpu_seconds": 142,
+    "allocated_GPUh": 0.03944444444444444,
+    "terminal_exit_code": 1,
+    "exec_session": 90295,
+    "preparation_max_GPUh": 0.5,
+    "conditional_field_max_GPUh": 3.5,
+    "settlement": "allocation.started/ended의142초를 한 번 차감했다. 국소 비용 미달로 조건부 전체장0이며4GPUh 예약은 전부 해제했다."
+  },
+  "planned_C_max_GPUh": 4,
+  "remaining_if_C_fully_reserved_GPUh": 69.61822222223334,
+  "reservation_rule": "GPU 실행 시작 시에만 예약하고 종료 후 실제 GPU 할당시간으로 한 번 정산한다",
+  "manual_scope": "직렬 C142초와 batch-C91초는 각각 한 번 정산 완료다. 둘 다 생산 기각이며 GPU/조건부 native 전체장/예약0이다. B 설계 평가 중이고 과거 미기록 수동 활동을 새로 재구성한 것은 아니다.",
+  "originals_preserved": true
+}
