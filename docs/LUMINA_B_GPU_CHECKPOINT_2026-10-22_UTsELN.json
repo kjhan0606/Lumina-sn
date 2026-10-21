@@ -1,0 +1,66 @@
+{
+  "schema": "lumina-B-gpu-operator-checkpoint-v1",
+  "final_goal": "ACTIVE_NOT_MET",
+  "checkpoint_scope": "B GPU 구현·직접시험·실제0 및 비교대상 오류 분리. 실제13003/전체장/생산율은 미완이다.",
+  "execution_root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_build_20261022-UTsELN",
+  "plan_sha256": "2a7f43d11fcdc22f14acf5215b1551cf7caaaf04992d8487c2548ae9661c7dbe",
+  "gpu_library_sha256": "0e98210e043e6a20c878008d687f2247e8c5af6ce40cf386d3a4d39a9926168d",
+  "cpu_tests": {
+    "passed": 109,
+    "seconds": 4.49,
+    "log_sha256": "0cbbb3ed08693cec473277808546c805f71af9781ac59b4c16f9e8ce39c81768"
+  },
+  "device_tests": {
+    "passed": 9,
+    "seconds": 257.1,
+    "log_sha256": "990adfb9a13c06302594d56e67b9caa32856218fa3dc2bc809f1cd65b5af1b39",
+    "coverage": "native CPU 맵 대조5사례·scaled 순서 보존·일반 양의 가중합·소형24x8 전체JHK 2F와 실제J1 재결합·sticky 오류",
+    "scope_limit": "33주파수 맵 대조 assert는3e-10이다. 전ν3e-12 코드 동등성 증거로 확대하지 않는다."
+  },
+  "actual_interval0": {
+    "terminal_status": "GPU_LOCAL_NOT_MET",
+    "original_exit": 1,
+    "result_sha256": "e513dc7ec548b8159d949f1969470f32b3eb1e14ddd2e2f519bd7bfc7840fd7f",
+    "completion_seconds": 0.3745771776884794,
+    "old_C_baseline_max_norm_difference": 2.021241099191804e-7,
+    "inherited_old_C_criterion": 3e-12,
+    "maximum_per_frequency_error_ratio": 0.018931904127362578,
+    "active_workspace_bytes": 861033608,
+    "parallel_work": 9208835,
+    "output_sha256": "dff03589fb4f07fe7d8be35488c863ec0a25ac9cea106d2bf5262c2899b68939",
+    "historical_failure_preserved": true,
+    "interpretation": "상이한 이산화의 C 기준을 같은 연산자 검사에 사용한 비교대상 오류. 원 exit1을 소급PASS로 고치지 않았다."
+  },
+  "CPU_cause_separation": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu0_diagnostic_20261022-cscqO4",
+    "result_sha256": "ee9580bf2c1827ef26d54163d7a9c90a193cd28dfc688e5aacbe2dcd9b5c3e80",
+    "columns": [569903, 569904, 569905],
+    "GPU_B_CPU_B_relative_difference": [0, 0, 0],
+    "fine512_1024_self_relative_difference_max": 1.480806428406055e-11,
+    "GPU_B_fine_relative_difference_max": 1.4910936929624086e-9,
+    "scope_limit": "최대 차 열과 양옆3점만. 전ν CPU-B 또는 전ν 독립 미세해를 계산한 것이 아니다."
+  },
+  "Astra_assessment": {
+    "submission": "01a15f8b-b65d-7423-a7b5-4b9fe0c59400",
+    "read_verified": true,
+    "agent_closed": true,
+    "decision": "비교대상 교정 근거 충분. 동일 수치 경로의 저장0 재사용·미실행13003 한 번만 원 기준으로 완성. 자동 실행 승인 표시는 아님.",
+    "remaining_requirements": "원1e-4·D2H포함10초·전ν오차비<=1·512xNF에서9208835 이월 차감·생산PHOT 오차1e-4 이후에만 완성장"
+  },
+  "accounting": {
+    "allocated_seconds": 270,
+    "allocated_GPUh": 0.075,
+    "settled_once": true,
+    "last_recorded_remaining_GPUh": 73.54322222223334,
+    "operator_current_reserved_GPUh": 0
+  },
+  "handoff_hold": {
+    "reason": "scripts/lumina_gpu_linear_remaining.py가 작성 후 다른 내용으로 교체되고02:53에도 다시 변경됐다. 덮어쓰기·중복GPU 실행을 피하려고 해당 파일 수정/실행은 보류했다.",
+    "conflicting_runner_excluded_from_checkpoint": true,
+    "operator_additional_13003_GPU_calls": 0,
+    "operator_real_native_fields": 0,
+    "operator_production_rates": 0,
+    "next": "단일 운전자를 확인한다. 다른 세션의 현재 실행 및 원 준비 창02:52:08 종료 제약을 확인하고 임의로 창/작업예산을 리셋하지 않는다."
+  },
+  "unmet_physics": "CMFGEN SiII/III·S 이온분포·자기일관 SE/RE·스펙트럼 동질성은 미확보다. 일반 가중합 시험은 생산PHOT 연결 완료가 아니다."
+}
