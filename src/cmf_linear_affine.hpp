@@ -48,7 +48,7 @@ struct Map {
         return sum(b,rounding,uncertainty);
     }
 };
-LUMINA_AFFINE bool decode(const CMFLinearNativeMap &raw,Map &out){
+template<class Raw> LUMINA_AFFINE bool decode(const Raw &raw,Map &out){
     Map m;if(!decode(raw.transmission,m.t)||!decode(raw.source,m.source)||!decode(raw.source_error,m.error)||
        !finite(raw.tau_error)||raw.tau_error<0||raw.tau_error>.25)return false;
     m.tau_error=raw.tau_error;out=m;return true;
@@ -62,7 +62,7 @@ LUMINA_AFFINE bool compose(const Map &left,const Map &right,Map &out){
     out=m;return true;
 }
 struct Local {Positive value,geometry,numerical,response;};
-LUMINA_AFFINE bool leaf(const CMFLinearNativeMap *raw,int stride,int column,Positive incident,Local &out){
+template<class Raw> LUMINA_AFFINE bool leaf(const Raw *raw,int stride,int column,Positive incident,Local &out){
     if(!raw||stride<1||column<0||column>=stride)return false;
     Map coarse,left,right,fine;Positive cv,ce,fv,fe,a,b,delta;
     if(!decode(raw[column],coarse)||!decode(raw[stride+column],left)||!decode(raw[2*stride+column],right)||

@@ -8,7 +8,8 @@ extern "C" {
 typedef struct {
     CMFNodalDenseView view;CMFNodalLocation locations[2];
     double length,h,da,db,offset,span;
-    int begin,count,base,nf,block,leaves,bins;
+    /* source_leaves는 종전192B 구조의 끝 padding을 사용한다. 기존 변형은 같은 leaves다. */
+    int begin,count,base,nf,block,leaves,bins,source_leaves;
 } CMFLinearCudaPiece;
 size_t lumina_linear_cuda_node_bytes(void);
 size_t lumina_linear_cuda_map_bytes(void);

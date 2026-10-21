@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 08:06",
+  "as_of_KST": "2026-10-22 08:38",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -99,6 +99,21 @@
   "used_upper_GPUh": 70.53316666665555,
   "remaining_before_new_reservations_GPUh": 73.46683333334445,
   "current_reserved_GPUh": 0,
+  "compact_source_measure_direct": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_measure_build_20261022-QvPfT0",
+    "state": "RESOURCE_PRECHECK_NOT_MET_GPU_NOT_STARTED",
+    "plan_sha256": "958b4e0b764eb6ff15bf6ad0c3bf25e1f0929473468862767f915a5582d9172b",
+    "library_sha256": "0843dd44e311a8d40588d5312c48a01884c16358b0141af4a598f9112e02ff29",
+    "max_allocation_seconds": 180,
+    "reserved_GPUh": 0,
+    "allocated_gpu_seconds": 0,
+    "allocation_marker_present": false,
+    "first_precheck": "free26188MiB/util14%로 문맥/시험 전에 종료, 사용0초/첫 예약 해제. 원 precheck는 device-precheck-first.log에 보존한다. CPU 고정 사례 작업 후 free26188MiB/util5%로 회복되어 아직 시작하지 않은 단회 장치시험을 다시 예약한다. 수치 재시도가 아니다.",
+    "settlement": "회복 관측 뒤 실제 시작 직전 util6%로 다시 조건을 넘었다. 두 번 모두 allocation.started/시험 로그/장치 문맥 없이 시작 전 종료했다. 사용0초·예약0·원천 후보 누적77초·잔여73.4668333333GPUh를 유지한다. 시작 조건은 완화하지 않았고 다른 작업도 건드리지 않았다.",
+    "source_measure_gpu_seconds_before": 77,
+    "remaining_preparation_seconds_before": 1723,
+    "scope": "새 축약/분리 트리의 합성 장치8사례만 단회 확인한다. 실제13003/전체장/SE·RE는0이며 기존 실패 후보를 재시작하지 않는다. 시작 free24GiB/util5% 조건과 CPU1·host/device16GiB·활성1GiB를 유지한다."
+  },
   "source_measure_native_actual": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_measure_actual_20261022-ihYw9d",
     "state": "SETTLED_SOURCE_MEASURE_NATIVE_EXTERNAL_TIMEOUT_NO_VECTOR",

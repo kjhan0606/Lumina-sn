@@ -20,11 +20,11 @@ POSITIVE_DTYPE = np.dtype([('m', '<f8'), ('e', '<i8')])
 class Piece(ct.Structure):
     _fields_ = [('view', DenseView), ('locations', Location*2)]+[
         (k, D) for k in ('length', 'h', 'da', 'db', 'offset', 'span')]+[
-        (k, I) for k in ('begin', 'count', 'base', 'nf', 'block', 'leaves', 'bins')]
+        (k, I) for k in ('begin', 'count', 'base', 'nf', 'block', 'leaves', 'bins', 'source_leaves')]
 
 
 class Runtime(BaseRuntime):
-    def __init__(self, library, baseline_free, *, _node_bytes=NODE_BYTES):
+    def __init__(self, library, baseline_free, *, _node_bytes=NODE_BYTES, _map_bytes=MAP_BYTES):
         functions = {
             'lumina_linear_cuda_node_bytes': ([], S), 'lumina_linear_cuda_map_bytes': ([], S),
             'lumina_linear_cuda_local_bytes': ([], S),
@@ -36,7 +36,7 @@ class Runtime(BaseRuntime):
             'lumina_history_cuda_reconstruct': ([I, D]+[P]*4, I),
             'lumina_history_cuda_boundary': ([I, P, P, D, P, P], I),
             'lumina_history_cuda_accumulate': ([I]*3+[P]*5, I)}
-        abis = (('lumina_linear_cuda_node_bytes', _node_bytes), ('lumina_linear_cuda_map_bytes', MAP_BYTES),
+        abis = (('lumina_linear_cuda_node_bytes', _node_bytes), ('lumina_linear_cuda_map_bytes', _map_bytes),
                 ('lumina_linear_cuda_local_bytes', LOCAL_BYTES))
         super().__init__(library, baseline_free, _functions=functions, _abis=abis)
 
@@ -60,12 +60,23 @@ def memory_layout(nf, width, *, node_bytes=NODE_BYTES, extra_bytes=0):
 
 class LinearDriver(GpuDriver):
     node_bytes=NODE_BYTES
+    map_bytes=MAP_BYTES
+    chi_block=32
+    source_block=None
     projection_bytes=0
     engine='SPATIAL_LINEAR_B'
+    def layout_for(self,nf,width):
+        return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
+
+    def tree_bytes(self,piece):
+        return 2*piece.leaves*self.node_bytes
+
     def __init__(self, runtime, provider, cpu_library, *, block_width=256):
-        layout = memory_layout(provider.nf, block_width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
+        layout = self.layout_for(provider.nf,block_width)
         if runtime.lib.lumina_linear_cuda_node_bytes()!=self.node_bytes:
             raise ValueError('GPU driver와 바이너리의 모멘트 저장 구조가 다르다')
+        if runtime.lib.lumina_linear_cuda_map_bytes()!=self.map_bytes:
+            raise ValueError('GPU driver와 바이너리의 맵 저장 구조가 다르다')
         if Path(cpu_library).resolve() != provider._binary or provider.identity.get('field', {}).get('role', '').startswith('REFERENCE'):
             raise ValueError('같은 native context와 자체 J 입력 필요')
         self.rt, self.provider, self.nf, self.ns, self.width = runtime, provider, provider.nf, provider.ns, block_width
@@ -88,21 +99,26 @@ class LinearDriver(GpuDriver):
             loc, length, da, db = self.piece(lengths, deltas, locations, row, k)
             endpoints = (Location*2)(loc[0], loc[2]); p = Piece()
             check(self.lib.lumina_linear_cuda_plan(ct.byref(self.view), endpoints, length,
-                self.provider._source.dlognu, da, db, begin, width, 32, ct.byref(p)))
-            if 2*p.leaves*self.node_bytes > self.tree.size: raise MemoryError('B 모멘트 tree 작업공간')
-            built = min(p.nf-1, ((p.bins+31)//32)*32)
+                self.provider._source.dlognu, da, db, begin, width, self.chi_block, ct.byref(p)))
+            if self.tree_bytes(p) > self.tree.size: raise MemoryError('B 모멘트 tree 작업공간')
+            blocks=(p.bins+self.chi_block-1)//self.chi_block
+            built = min(p.nf-1, blocks*self.chi_block)
             work.take('bin_maps', built); work.take('tree_compositions', p.leaves-1)
-            work.take('padding_leaves', p.leaves-((p.bins+31)//32))
+            work.take('padding_leaves', p.leaves-blocks)
             if self.projection_bytes:
-                blocks=(p.bins+31)//32
+                source_block=self.source_block or self.chi_block
+                blocks=(p.bins+source_block-1)//source_block
+                source_built=min(p.nf-1,blocks*source_block)
+                # 과거 바이너리는 이 위치를 padding으로 썼다. 새 분리 변형에서만 읽는다.
+                source_leaves=p.source_leaves if self.source_block is not None else p.leaves
                 # 고수준 구조 작업 단위다. scalar FLOP/CPU formal 수와 혼용하지 않는다.
-                for kind,count in (('source_projected_vertices',built+blocks),('source_projection_nodes',blocks),
-                    ('source_tree_compositions',p.leaves-1),('source_padding_nodes',p.leaves-blocks)):
+                for kind,count in (('source_projected_vertices',source_built+blocks),('source_projection_nodes',blocks),
+                    ('source_tree_compositions',source_leaves-1),('source_padding_nodes',source_leaves-blocks)):
                     work.counts.setdefault(kind,0);work.take(kind,count)
             check(self.lib.lumina_linear_cuda_build(ct.byref(p), self.tree.address, self.rt.status))
             work.take('map_queries', width)
             check(self.lib.lumina_linear_cuda_query(ct.byref(p), self.tree.address, 1e-8, 100000,
-                target.part(k*width*MAP_BYTES, width*MAP_BYTES).address, self.rt.status))
+                target.part(k*width*self.map_bytes, width*self.map_bytes).address, self.rt.status))
 
     def replay(self, current, begin, width, work):
         if len(current)*width*LOCAL_BYTES > self.results.size or len(current)*width > 2097152:
@@ -129,7 +145,7 @@ class LinearDriver(GpuDriver):
             work.take('reconstructed_columns', self.nf)
             check(self.lib.lumina_history_cuda_reconstruct(self.nf, geometry[3], self.ray.address,
                 self.characteristic.address, self.limited.address, self.rt.status))
-            allocation = self.arena.take(3*self.nf*MAP_BYTES)
+            allocation = self.arena.take(3*self.nf*self.map_bytes)
             if allocation is None: raise MemoryError('B 초기 전ν 맵 작업공간')
             offset, maps = allocation
             try:
@@ -159,13 +175,13 @@ class LinearDriver(GpuDriver):
                 missing = [x for x in current if x.cache is None]
                 geometry = self.geometry(plan, index, missing)
                 for row, leaf in enumerate(missing):
-                    allocation = self.arena.take(3*width*MAP_BYTES)
+                    allocation = self.arena.take(3*width*self.map_bytes)
                     while allocation is None and cached:
                         other = cached.pop(0)
                         if other == active: continue
                         for x in leaves[other]:
                             if x.cache is not None: self.arena.release(x.cache[0]); x.cache = None
-                        evictions += 1; allocation = self.arena.take(3*width*MAP_BYTES)
+                        evictions += 1; allocation = self.arena.take(3*width*self.map_bytes)
                     if allocation is None: raise MemoryError('B 활성 맵 cache 한도')
                     offset, maps = allocation
                     try: self.group(geometry, row, begin, width, maps, work)

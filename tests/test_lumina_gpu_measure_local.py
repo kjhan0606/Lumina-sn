@@ -52,7 +52,7 @@ def test_measure_adapter_selects_only_13003_and_preserves_limits(local,monkeypat
 def test_measure_group_counts_both_source_and_chi_under_same_work_cap():
     class Fake:
         def lumina_linear_cuda_plan(self,*args):
-            p=args[-1]._obj;p.leaves=2;p.bins=33;p.nf=35
+            p=args[-1]._obj;p.leaves=2;p.bins=33;p.nf=35;p.source_leaves=-999
             return 0
         def lumina_linear_cuda_build(self,*args):return 0
         def lumina_linear_cuda_query(self,*args):return 0

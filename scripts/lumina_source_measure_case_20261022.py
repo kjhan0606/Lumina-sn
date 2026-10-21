@@ -42,7 +42,9 @@ def independent_reference(values,parameters,order):
 
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--output-root',required=True,type=Path);args=ap.parse_args()
+    ap=argparse.ArgumentParser();ap.add_argument('--output-root',required=True,type=Path)
+    ap.add_argument('--independent-source-block32',action='store_true',help='같은737열에서 χ2/32·η32의 경계 비용만 대조')
+    args=ap.parse_args()
     if socket.gethostname().lower()!='lageunha':
         raise RuntimeError('이 CPU 시험은 확인된 Lageunha에서만 실행한다')
     root=args.output_root.resolve()
@@ -60,12 +62,13 @@ def main():
              '-fPIC','-shared','-I'+str(ROOT/'src'),str(ROOT/'tests/source_measure_probe.cpp'),'-o',str(root/'measure.so')]
     subprocess.run(command,check=True,timeout=60)
     record['library_sha256']=digest(root/'measure.so')
-    lib=ct.CDLL(str(root/'measure.so'));fun=lib.source_measure_cost
+    lib=ct.CDLL(str(root/'measure.so'))
+    fun=lib.source_measure_split_cost if args.independent_source_block32 else lib.source_measure_cost
     p=np.ctypeslib.ndpointer(dtype='f8',flags='C_CONTIGUOUS')
     e=np.ctypeslib.ndpointer(dtype='i8',flags='C_CONTIGUOUS')
     i=np.ctypeslib.ndpointer(dtype='i4',flags='C_CONTIGUOUS')
     u=np.ctypeslib.ndpointer(dtype='u8',flags='C_CONTIGUOUS')
-    fun.argtypes=[ct.c_int,ct.c_int,p,p,ct.c_int,p,e,i,p,u];fun.restype=ct.c_int
+    fun.argtypes=[ct.c_int]*(3 if args.independent_source_block32 else 2)+[p,p,ct.c_int,p,e,i,p,u];fun.restype=ct.c_int
     with np.load(PROFILE) as data:
         values=np.ascontiguousarray(data['values']);parameters=np.ascontiguousarray(data['parameters'])
     record['parameters']=parameters.tolist()
@@ -75,11 +78,13 @@ def main():
     record['reference_self_relative_gap']=abs(refs[0]/refs[1]-1)
     record['reference_seconds']=time.perf_counter()-started
     good=record['reference_self_relative_gap']<1e-12
-    for block in (1,4,16,32):
+    for block in ((2,32) if args.independent_source_block32 else (1,4,16,32)):
         m=np.full(7,-17.);ex=np.full(7,-17,dtype='i8');counts=np.full(5,-17,dtype='i4')
         timings=np.zeros(2);stats=np.zeros(4,dtype='u8')
-        code=fun(values.shape[1],block,values,parameters,100000,m,ex,counts,timings,stats)
+        blocks=(block,32) if args.independent_source_block32 else (block,)
+        code=fun(values.shape[1],*blocks,values,parameters,100000,m,ex,counts,timings,stats)
         row={'block':block,'status':code}
+        if args.independent_source_block32:row['source_block']=32
         if code==0:
             decoded=np.ldexp(m,ex.astype('i4'));value,error=decoded[0],decoded[3]
             row.update(value=float(value),error=float(error),relative_gap=abs(float(value/refs[1]-1)),

@@ -3,6 +3,15 @@
 #include "cmf_linear_provider.hpp"
 #include "cmf_characteristic_linear.hpp"
 #include "cmf_linear_affine.hpp"
+#ifdef CMF_GPU_COMPACT_MEASURE
+#ifndef CMF_GPU_SOURCE_MEASURE
+#error CMF_GPU_COMPACT_MEASURE_requires_CMF_GPU_SOURCE_MEASURE
+#endif
+#include "cmf_linear_compact.hpp"
+using StoredMap=lumina_linear_compact::Map;
+#else
+using StoredMap=CMFLinearNativeMap;
+#endif
 #ifdef CMF_GPU_SOURCE_MEASURE
 #include "cmf_source_projection.hpp"
 #endif
@@ -22,18 +31,35 @@ static constexpr size_t node_bytes=sizeof(Node)+sizeof(lumina_source_measure::No
     256;
 static constexpr size_t node_bytes=sizeof(Node);
 #endif
+static int source_block(const CMFLinearCudaPiece &p){
+#ifdef CMF_GPU_COMPACT_MEASURE
+    (void)p;return 32;
+#else
+    return p.block;
+#endif
+}
+static uint64_t tree_bytes(const CMFLinearCudaPiece &p){
+    uint64_t bytes=(uint64_t)2*p.leaves*sizeof(Node);
+#ifdef CMF_GPU_SOURCE_MEASURE
+    bytes+=(uint64_t)2*p.source_leaves*sizeof(lumina_source_measure::Node);
+#endif
+    return bytes;
+}
 static bool valid_piece(const CMFLinearCudaPiece *p){
     using lumina_ordered::finite;
     return p&&lumina_native_linear::valid(p->view,p->locations)&&finite(p->length)&&p->length>0&&
         finite(p->h)&&p->h>0&&finite(p->da)&&finite(p->db)&&p->db>=0&&p->da>=p->db&&
         p->begin>=0&&p->count>=1&&p->begin<=p->view.nf-p->count&&p->base>=0&&p->base<=p->view.nf-2&&
         p->nf==p->view.nf-p->base&&p->block>=1&&p->block<=maximum_block&&p->leaves>=1&&p->leaves<=2097152&&
-        !(p->leaves&(p->leaves-1))&&p->bins>=0&&p->bins<=p->nf-1&&
+        !(p->leaves&(p->leaves-1))&&p->source_leaves>=1&&p->source_leaves<=2097152&&
+        !(p->source_leaves&(p->source_leaves-1))&&
+        (uint64_t)p->bins<=(uint64_t)p->source_leaves*source_block(*p)&&
+        p->bins>=0&&p->bins<=p->nf-1&&
         (uint64_t)p->bins<=(uint64_t)p->leaves*p->block&&finite(p->offset)&&p->offset>=0&&
         finite(p->span)&&p->span>=0&&p->span<=2000000000.&&p->offset<=2000000000.;
 }
 extern "C" size_t lumina_linear_cuda_node_bytes(void){return node_bytes;}
-extern "C" size_t lumina_linear_cuda_map_bytes(void){return sizeof(CMFLinearNativeMap);}
+extern "C" size_t lumina_linear_cuda_map_bytes(void){return sizeof(StoredMap);}
 extern "C" size_t lumina_linear_cuda_local_bytes(void){return sizeof(Local);}
 extern "C" int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNodalLocation *locations,
     double length,double h,double da,double db,int begin,int count,int block,CMFLinearCudaPiece *out)
@@ -48,8 +74,10 @@ extern "C" int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNo
     double offset=shift-whole+double(begin+whole-base);
     int bins=span==0||offset>=nf-1?0:(int)::ceil(::fmin(nf-1.,offset+(count-1)+span));
     int blocks=bins?(bins-1)/block+1:0,leaves=1;while(leaves<blocks)leaves*=2;
-    if((uint64_t)2*leaves*node_bytes>(UINT64_C(1)<<30))return 3;
-    CMFLinearCudaPiece p={*view,{locations[0],locations[1]},length,h,da,db,offset,span,begin,count,base,nf,block,leaves,bins};
+    CMFLinearCudaPiece p={*view,{locations[0],locations[1]},length,h,da,db,offset,span,begin,count,base,nf,block,leaves,bins,leaves};
+    int sb=source_block(p),source_blocks=bins?(bins-1)/sb+1:0;
+    p.source_leaves=1;while(p.source_leaves<source_blocks)p.source_leaves*=2;
+    if(tree_bytes(p)>(UINT64_C(1)<<30))return 3;
     if(!valid_piece(&p))return 1;
     *out=p;return 0;
 }
@@ -84,8 +112,8 @@ static constexpr int projection_capacity=(maximum_block+1)*(source_degree+1);
 __device__ static double projection_coefficients[2*projection_capacity];
 static int prepare_projection(const CMFLinearCudaPiece &p){
     try{
-        int tail=(p.nf-1)%p.block;if(tail==0)tail=p.block;
-        const auto &full=lumina_source_projection::matrix(p.block);
+        int block=source_block(p),tail=(p.nf-1)%block;if(tail==0)tail=block;
+        const auto &full=lumina_source_projection::matrix(block);
         const auto &last=lumina_source_projection::matrix(tail);
         if(cudaMemcpyToSymbol(projection_coefficients,full.weights.data(),full.weights.size()*sizeof(double),0,
             cudaMemcpyHostToDevice)!=cudaSuccess||
@@ -98,8 +126,13 @@ __global__ static void source_blocks(CMFLinearCudaPiece p,SourceNode *nodes,int 
     int i=blockIdx.x,lane=threadIdx.x;
     __shared__ Positive eta[2][maximum_block+1];__shared__ int failed;
     if(lane==0)failed=*status;__syncthreads();if(failed)return;
-    int blocks=p.bins?(p.bins-1)/p.block+1:0;
-    int first=i*p.block,width=i<blocks?min(p.block,p.nf-1-first):0;
+#ifdef CMF_GPU_COMPACT_MEASURE
+    constexpr int block=32;
+#else
+    int block=p.block;
+#endif
+    int blocks=p.bins?(p.bins-1)/block+1:0;
+    int first=i*block,width=i<blocks?min(block,p.nf-1-first):0;
     if(width>0&&lane<=width){
         Reader reader={p.view,{p.locations[0],p.locations[1]},p.base};
         for(int c=0;c<2;c++){
@@ -112,16 +145,16 @@ __global__ static void source_blocks(CMFLinearCudaPiece p,SourceNode *nodes,int 
     __syncthreads();if(failed)return;
     if(lane<=source_degree){
         Positive total[2]={Positive::zero(),Positive::zero()},term;
-        int offset=width==p.block?0:projection_capacity;
+        int offset=width==block?0:projection_capacity;
         for(int j=0;width>0&&j<=width;j++){
             double weight=projection_coefficients[offset+j*(source_degree+1)+lane];
             for(int c=0;c<2;c++)if(!lumina_characteristic::scaled(eta[c][j],weight,term)||!sum(total[c],term,total[c])){
                 atomicCAS(status,0,48);return;
             }
         }
-        nodes[p.leaves+i].m[0][lane]=total[0];nodes[p.leaves+i].m[1][lane]=total[1];
+        nodes[p.source_leaves+i].m[0][lane]=total[0];nodes[p.source_leaves+i].m[1][lane]=total[1];
     }
-    if(lane==0){auto &n=nodes[p.leaves+i];n.width=width;n.first=width?first:0;
+    if(lane==0){auto &n=nodes[p.source_leaves+i];n.width=width;n.first=width?first:0;
         n.last=width?first+width:0;n.depth=width?width-1:0;}
 }
 __global__ static void source_tree_level(int base,SourceNode *nodes,int *status){
@@ -158,7 +191,7 @@ extern "C" int lumina_linear_cuda_build(const CMFLinearCudaPiece *p,void *raw,in
 #ifdef CMF_GPU_SOURCE_MEASURE
     int rc=prepare_projection(*p);if(rc)return rc;
     SourceNode *source=reinterpret_cast<SourceNode *>(nodes+2*p->leaves);
-    source_blocks<<<p->leaves,64>>>(*p,source,status);
+    source_blocks<<<p->source_leaves,64>>>(*p,source,status);
     if(cudaGetLastError()!=cudaSuccess)return 2;
 #endif
     build_blocks<<<(p->leaves+threads-1)/threads,threads>>>(*p,nodes,status);
@@ -166,15 +199,17 @@ extern "C" int lumina_linear_cuda_build(const CMFLinearCudaPiece *p,void *raw,in
     for(int base=p->leaves/2;base;base/=2){
         tree_level<<<(base+threads-1)/threads,threads>>>(base,nodes,status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
+    }
 #ifdef CMF_GPU_SOURCE_MEASURE
+    for(int base=p->source_leaves/2;base;base/=2){
         source_tree_level<<<base,32>>>(base,source,status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
-#endif
     }
+#endif
     return 0;
 }
 __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double relative,int maximum,
-    int first,int count,CMFLinearNativeMap *maps,int *status)
+    int first,int count,StoredMap *maps,int *status)
 {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=count||*status)return;i+=first;
     Reader reader={p.view,{p.locations[0],p.locations[1]},p.base};
@@ -185,7 +220,11 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     lumina_characteristic::Result result;
 #ifdef CMF_GPU_SOURCE_MEASURE
     const SourceNode *source=reinterpret_cast<const SourceNode *>(nodes+2*p.leaves);
-    lumina_source_measure::Tree measure={source,p.leaves,p.block,p.nf};
+#ifdef CMF_GPU_COMPACT_MEASURE
+    lumina_source_measure::Tree measure={source,p.source_leaves,32,p.nf};
+#else
+    lumina_source_measure::Tree measure={source,p.source_leaves,p.block,p.nf};
+#endif
     int code=lumina_source_measure::integrate(profile,measure,Positive::zero(),relative,maximum,result);
 #else
     int code=lumina_characteristic::integrate(profile,Positive::zero(),relative,maximum,result);
@@ -194,9 +233,13 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     lumina_linear::Integral tau;Positive t;
     if(!profile.tau(1.,tau)||!Positive::from_log(-tau.value,t)){atomicCAS(status,0,43);return;}
     using lumina_linear_affine::encode;
-    CMFLinearNativeMap m={encode(t),encode(result.source),encode(result.error),encode(result.roundoff),
+#ifdef CMF_GPU_COMPACT_MEASURE
+    StoredMap m={encode(t),encode(result.source),encode(result.error),tau.error};
+#else
+    StoredMap m={encode(t),encode(result.source),encode(result.error),encode(result.roundoff),
         encode(result.frequency),encode(result.omitted),tau.error,0,0,
         result.panels,result.accepted,result.split,result.pruned,result.max_depth};
+#endif
     maps[i]=m;
 }
 extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *nodes,double relative,
@@ -207,7 +250,7 @@ extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *
     for(int first=0;first<p->count;first+=chunk){
         int count=std::min(chunk,p->count-first);
         source_maps<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
-            first,count,static_cast<CMFLinearNativeMap *>(maps),status);
+            first,count,static_cast<StoredMap *>(maps),status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
     }
     return 0;
@@ -223,7 +266,7 @@ __global__ static void forward(int n,int width,int stride,int first,int count,co
     if(!Positive::from_double(initial[f],current)){atomicCAS(status,0,44);return;}
     for(int row=0;row<n;row++){
         Local r;Positive a;
-        if(!lumina_linear_affine::leaf(static_cast<const CMFLinearNativeMap *>(maps[row]),stride,f,current,r)||
+        if(!lumina_linear_affine::leaf(static_cast<const StoredMap *>(maps[row]),stride,f,current,r)||
            !product(r.response,numerical,a)||!sum(a,r.numerical,numerical)){atomicCAS(status,0,45);return;}
         r.numerical=numerical;results[(size_t)row*width+f]=r;current=r.value;
     }

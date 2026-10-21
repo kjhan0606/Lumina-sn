@@ -1,7 +1,8 @@
 #include "cmf_linear_affine.hpp"
+#include "cmf_linear_compact.hpp"
 #include <vector>
 #include <cstring>
-extern "C" int lumina_linear_affine_probe(int n,int width,const CMFLinearNativeMap *maps,const double *initial,
+template<class Raw> static int probe(int n,int width,const Raw *maps,const double *initial,
     double relative,double *output,double *errors,double *ratios,double *scores)
 {
     using namespace lumina_linear_affine;
@@ -32,4 +33,12 @@ extern "C" int lumina_linear_affine_probe(int n,int width,const CMFLinearNativeM
         std::memcpy(output,o.data(),width*sizeof(double));std::memcpy(errors,e.data(),width*sizeof(double));
         std::memcpy(ratios,r.data(),width*sizeof(double));std::memcpy(scores,s.data(),s.size()*sizeof(double));return 0;
     }catch(...){return 3;}
+}
+extern "C" int lumina_linear_affine_probe(int n,int width,const CMFLinearNativeMap *maps,const double *initial,
+    double relative,double *output,double *errors,double *ratios,double *scores){
+    return probe(n,width,maps,initial,relative,output,errors,ratios,scores);
+}
+extern "C" int lumina_compact_affine_probe(int n,int width,const lumina_linear_compact::Map *maps,const double *initial,
+    double relative,double *output,double *errors,double *ratios,double *scores){
+    return probe(n,width,maps,initial,relative,output,errors,ratios,scores);
 }
