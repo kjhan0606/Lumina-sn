@@ -1,0 +1,80 @@
+{
+  "schema": "lumina-isolated-positive-source-proof-v1",
+  "objective": "원래 비음수 선형 원천의 꺾임을 다시 근사하지 않고 일반 cubic 감쇠를 적분하는 수학 경로를 검증한다. native90 실제 자체장·생산 Si/S율·CMFGEN 이온분포와 스펙트럼 동질성의 완료를 뜻하지 않는다.",
+  "final_goal": "NOT_MET",
+  "ownership": {
+    "implementation_and_direct_test": "현재 운전자(Codex)",
+    "scope": "이름이 분리된 CPU 수학 원형·직접 시험·이 기록만 새로 작성한다. 생산 수송 코드와 다른 운전자 작업을 덮어쓰지 않는다.",
+    "shared_production_hold": "다른 운전자도 같은 저장소와 goal을 사용한 사실을 확인했다. docs/LUMINA_SOURCE_MEASURE_PLAN_2026-10-22_QyTli2.json의 단일 운전자 확인 대기를 유지한다. 이 시험은 그 충돌을 우회한 생산 구현이나 실행이 아니다.",
+    "observed_goal_status": "2026-10-22 03:30경 get_goal은 blocked를 반환했다. 이 원형의 통과만으로 active 또는 complete로 바꾸지 않는다."
+  },
+  "scope_and_exclusions": {
+    "included": [
+      "차감 없는 Bernstein 원천 모멘트 leaf·양의 병합·잘린 native query·양의 저차 projection",
+      "정방향·역방향·정지 주파수 경로와 공간선형 원천 가중",
+      "Bernstein 계수 최솟값으로 shift한 일반 cubic 감쇠의 양의 Taylor contraction",
+      "호출자가 보증한 위상 잔차와 Taylor 나머지의 수학적 모델 구간",
+      "원래 bin 교점에서 나눈 독립 고정밀 Gauss 적분·직접 기저 적분",
+      "정확한 영원천·변하는 subnormal 원천·큰 길이와 gain의 고정밀 회복"
+    ],
+    "excluded": [
+      "생산 binary64/device 산술과 인증된 반올림·underflow 상계",
+      "실제737열의 일반 χ 근사 및 실제13003 전ν·native90 자체장 실행",
+      "GPU 구현·성능·활성 메모리 계약 충족 판정",
+      "외부 대기와 native 반경 ES/J 조립·PHOT 생산율 연결",
+      "CMFGEN과의 Si/S 이온분포·스펙트럼 물리적 일치 판정"
+    ]
+  },
+  "astra_public_mathematics_advice": {
+    "model": "gpt-6-astra",
+    "agent": "01a15fb8-b446-7ff3-9255-32647d2c4555",
+    "state": "COMPLETED_AND_CLOSED",
+    "payload_scope": "공개 수송 적분 수학 문제만 질문했다. 로컬 문서·공유 문맥·소스·경로·실험 수치 자료를 전달하거나 열람시키지 않았다. 이전에 거부된 원문 전달을 재시도하지 않았다.",
+    "conclusions": [
+      "native 양의 모멘트 재귀와 공간선형 가중 contraction은 수학적으로 타당하다.",
+      "혼합 원천의 비음수성만으로 endpoint 성분별 비음수성을 가정하면 안 된다.",
+      "함수 최솟값이 아니라 Bernstein 제어계수 최솟값을 빼야 양의 급수를 보장한다.",
+      "N=25·Taylor8차·제어계수 폭1/8은 Taylor 상대 누락 상계 약2.06e-14의 후보이며 총오차나 비용의 합격 판정이 아니다.",
+      "subnormal과 gain 회복에는 scale 분리 또는 확장 지수와 실제 반올림 상계가 필요하다. 고정밀 수학 원형만으로 생산 보증이 되지 않는다."
+    ],
+    "authority": "수학 설계 자문이며 운전자 독립 시험이나 생산 물리·비용 수용 판정을 대체하지 않는다."
+  },
+  "test_contract": {
+    "source": "scripts/lumina_source_measure_proof_20261022.py",
+    "tests": "tests/test_lumina_source_measure_proof_20261022.py",
+    "arithmetic": "mpmath1.3.0·70자리; 이 수학 증명용 원형은 생산 코드에 import되지 않는다.",
+    "acceptance": "양의 모멘트 항등식과 방향/정지 극한, 일반 비상수 cubic 감쇠의 독립 native-bin 적분 대조, 알려진 위상 잔차의 반영, 영원천 보존과 약한 원천 회복을 시험한다. roundoff_certified=False를 명시한다.",
+    "resource_envelope": "확인된 LagEunha·CPU1·가상4GiB·외부180초·GPU0·MPI0",
+    "root": "/tmp/lumina_source_measure_proof_20261022.NJD3ly",
+    "preservation": "기존 실패와 원본을 수정하지 않는다. 생성한 최초 시험 root와 고정 소스는 보존하며 기존 work 디렉터리를 재사용하지 않는다.",
+    "source_sha256": "df1be65445ed1a02490b872d3f005321540c6ae979568627f35a7be797e91aee",
+    "tests_sha256": "3ce3e276eeee0886f95247fdd2c29b4381b5bbe651335d65cf36e850e6a8eda9",
+    "result": "11 passed in2.25s; exec34651 exit0",
+    "test_log_sha256": "6985be981a9e00a2146dc717c1f8f0416b0d34a793b623833d4732b0a8a89032",
+    "durable_evidence_root": "/gpfs/kjhan/cmfgen_runs/lumina_source_measure_proof_20261022-Pb3dvN",
+    "local_decision": "수학 원형의 직접 시험만 통과했다. 일반 실제χ의 위상 잔차를 이 원형이 산출하지 않으며, 반올림 인증·GPU 성능·생산 물리 수용은 미검증이다. 전체 묶음이나 최종 목표 완료가 아니다."
+  },
+  "existing_evidence_not_new_executions": {
+    "production_failure": "lumina_B_gpu_unused_20261022-VhX0dX는 exit124로 종료했다. 13003 전ν 완성 파일이 없고 10초 조건도 미달이다. 원 JSON의 STARTED는 마지막 중간 기록이며 재시작하지 않는다.",
+    "same_B_CPU_GPU": "구간0의 전ν 완료0.374577초, 최대 C 대비 차이 세 열에서 같은 B CPU/GPU는 비트 동일하고 B 대 독립 미세해 상대차 최대1.49e-9였다. C와 다른 수치 연산자를 같은 연산자3e-12 기준에 넣은 문제와 원 실패를 구분한다.",
+    "device_tests": "원 GPU 창의9시험과 원래 미실행13003 창의 큰 트리2시험은 완료했다. 장치 시험11개를 실제13003 완료나 CMFGEN 동질성으로 대신하지 않는다.",
+    "final_host_tests": {
+      "result": "109 passed in6.60s",
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_final_host_20261022-BEEwGz",
+      "log_sha256": "76c36b99e00589fb59d1169016a1386f5322a2088d5c755cf9d7c91838fcdb24",
+      "scope": "기존 수치 시험과 DenseView 순수 ABI import 분리 변경을 직접 확인했다. GPU 재실행은 없다."
+    },
+    "CPU_cache_cost": {
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_cache_cost_20261022-KcepNs",
+      "result_sha256": "9a2b0dc64cd2fd0c3d9b32ca2da9d3c766f7cbcdc73d188c338c933c98bd5c43",
+      "scope": "실제737열 고정 사례만의 CPU 비용 분리이며 GPU 가속률/전체장 ETA가 아니다.",
+      "block32": "11791패널·query reader2426176회·중앙값0.108691초",
+      "block2": "11791패널·query reader334688회·중앙값0.027946초",
+      "interpretation": "경계 native 재평가를 줄일 여지는 있지만 source패널 수는 그대로다. 원천 재근사의 별도 비용을 해결한 것은 아니다."
+    },
+    "other_operator_transparent_diagnostic": "docs/LUMINA_B_SOURCE_COST_2026-10-22_QyTli2.json의 투명 극한8317패널·정확한 원천 모멘트 대 Gauss8 차7.78e-16을 별도 작성자/시험으로 보존한다. 현재 원형의 시험으로 재명명하지 않는다.",
+    "GPU_resources": "실제 B 할당270+198=468초=0.13GPUh는 이미 대장에 한 번 정산됐다. 총잔여73.4882222222GPUh·예약0이며 이 기록의 새 GPU 사용은0이다. 미사용 예산은 실패 B 재시도 권한이 아니다."
+  },
+  "next_decision": "현재 세션 또는 병행 세션 중 단일 생산 운전자를 확인한다. 그 후 일반 χ의 위상 잔차·scale/roundoff 보증·실제737열을 포함한 원형을 생산 가능한 산술로 연결한다. 단일 소유자와 새 후보 계약이 확정되기 전 같은 B 전ν 재실행이나 경쟁 GPU 작업을 추가하지 않는다.",
+  "reproduction": "확인된 Lageunha의 새 격리 디렉터리에서 CPU1·4GiB·timeout180을 설정하고 PYTHONPATH=<저장소>/scripts python3 -B -m pytest -q -p no:cacheprovider --basetemp <새디렉터리>/work tests/test_lumina_source_measure_proof_20261022.py 를 수행한다. 기존 root/work는 덮어쓰지 않는다. 원형·시험 SHA를 먼저 대조한다."
+}
