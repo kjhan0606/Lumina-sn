@@ -33,7 +33,15 @@ Astra 평가 `01a15efa-0b06-7e32-8335-f6b179faaf64`는 batch-C 생산 기각과 
 
 이 방법도 최악에는 bin별 작업으로 퇴화할 수 있다. 생산 속도/전체 F 실용성은 아직 확보하지 못했으며 이 예산은 지출 상한이지 완성 예측이 아니다. 새 B의 구간 적분을 구현하는 동안 기존 실패/완료 출력과 기준은 보존한다.
 
-## 00:39 구현/직접 증거와 남은 범위
+## 01:06 구현·직접 증거와 남은 범위
+
+`cmf_characteristic_linear.hpp`가 한 공간선형 조각에서 모멘트 τ+해석적3Δδ, 양의 원천 적응 적분, 주파수 secant/급수·반올림/생략 원천의 오차 소비를 연결했다. 자기 출력별 상대오차로 수용하고 실패 때 부분 출력을 발행하지 않는다. η를 먼저 정규화해 일정한 subnormal/Lη/gain을 보존한다. 일반적인 비상수 subnormal η는 아직 범위 보증을 지원하지 않아 명시적 실패로 처리한다.
+
+처음 좁은 선의 선두 미소 구간에서 예산 정밀도 실패가 있었고, 전체 η 모멘트·최대 감쇠의 source 하한을 써서 수정했다. 실패 기록을 보존했으며 오차 기준은 그대로다. 최종 `lumina_B_characteristic_20261022-fk4rEi/verify.sh`는 grammar-debug CPU1·4GiB·300초 내 **71통과/2.72초/exit0**, 같은 root의 compile_cuda.sh는 CUDA device 적응 적분 인스턴스까지 **컴파일 exit0**이다. GPU 수치 계산은0이다. 정확한 시험·스냅숏/해시·재현은 [22일 인계서01:06절](HANDOVER_2026-10-22.md)에 있다.
+
+남은 것은 기존 native provider·비선형 기하 연결/공간 조각화 오차, GPU 구현과 PHOT 가중 오차의 실제 소비다. 새 B 실제13003 전ν/10초 또는 완성 J/생산율 증거는 아직 없다. 선택/원 기준/예산은 바뀌지 않았으며 중간 시험을 묶음 완료로 표시하지 않는다.
+
+## 00:39 당시 구현/직접 증거와 남은 범위
 
 좌/우 barycentric 평균의 χ/η 모멘트·범위·기울기 block 트리(`cmf_linear_moments.hpp`)와 quadratic η×cubic exponent의 양의 원천 급수(`cmf_positive_cubic.hpp`)를 구현했다. 실제 광학깊이의3Δδ fullSR 항은 아직 연결 전이다. source 급수의 phase범위 조건0.5는 소구간 재분할 조건이며 optical-depth 절단/floor가 아니다. signedχ, 정확한0η, subnormal 반올림 불확실성과 양의 원천의 개별 scale을 유지한다.
 

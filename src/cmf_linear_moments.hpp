@@ -69,7 +69,7 @@ template<class Reader> LUMINA_LINEAR_READER bool at(const Reader &r,int nf,Posit
     if(!r.at(0,j,a[0],a[2])||!r.at(2,j,a[1],a[3]))return false;
     if(f>0){if(!r.at(0,j+1,b[0],b[2])||!r.at(2,j+1,b[1],b[3]))return false;}
     for(int k=0;k<4;k++){
-        out[k]=f==0?a[k]:(1.-f)*a[k]+f*b[k];
+        out[k]=f==0||a[k]==b[k]?a[k]:(1.-f)*a[k]+f*b[k];
         if(!finite(out[k])||(k>=2&&out[k]<0))return false;
     }
     return true;
@@ -81,7 +81,9 @@ template<class Reader> LUMINA_LINEAR_READER bool partial(const Reader &r,int nf,
     if(!r.at(0,bin,a[0],a[2])||!r.at(2,bin,a[1],a[3])||
        !r.at(0,bin+1,b[0],b[2])||!r.at(2,bin+1,b[1],b[3]))return false;
     for(int k=0;k<4;k++){
-        slopes[k]=b[k]-a[k];v0[k]=(1.-first)*a[k]+first*b[k];v1[k]=(1.-last)*a[k]+last*b[k];
+        slopes[k]=b[k]-a[k];
+        v0[k]=a[k]==b[k]?a[k]:(1.-first)*a[k]+first*b[k];
+        v1[k]=a[k]==b[k]?a[k]:(1.-last)*a[k]+last*b[k];
     }
     return leaf(last-first,v0,v1,slopes,out);
 }

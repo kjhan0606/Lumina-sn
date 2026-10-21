@@ -1,6 +1,7 @@
 /* GPU 수치 실행 없이 B 코어의 device reader/정적 수학 인스턴스를 확인한다. */
 #include "cmf_linear_moments.hpp"
 #include "cmf_positive_cubic.hpp"
+#include "cmf_characteristic_linear.hpp"
 struct DeviceReader {
     const double *values;int nf;
     __device__ bool at(int point,int column,double &chi,double &eta) const {
@@ -21,4 +22,12 @@ __global__ void lumina_linear_core_compile(const double *values,int nf,const lum
     double source[3]={1.,2.,1.},phase[4]={0.,-.1,-.2,-.25};lumina_cubic::Integral integral;
     if(!lumina_cubic::integrate(1.,source,phase,-depth.value,1e-10,integral)){*status=2;return;}
     output[0]=depth.value;output[1]=integral.value.value();*status=0;
+}
+__global__ void lumina_characteristic_compile(const double *values,int nf,const lumina_linear::Node *nodes,
+    lumina_characteristic::Result *output,int *status)
+{
+    if(blockIdx.x||threadIdx.x)return;
+    DeviceReader reader={values,nf};lumina_linear::Tree tree={nodes,1,32,nf};
+    lumina_characteristic::Profile<DeviceReader> profile={reader,tree,0,.25,1.5,2.,.01};
+    *status=lumina_characteristic::integrate(profile,lumina_ordered::Positive::zero(),1e-6,10000,*output);
 }
