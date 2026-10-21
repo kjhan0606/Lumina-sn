@@ -154,27 +154,52 @@ struct Result {
     Positive value,transmitted,source,error,roundoff,frequency,omitted;
     int panels,accepted,split,pruned,max_depth;
 };
-enum Status { OK=0, BAD_INPUT=1, NUMERIC_RANGE=2, WORK_LIMIT=3, PRECISION_LIMIT=4 };
+enum Status { OK=0, BAD_INPUT=1, NUMERIC_RANGE=2, WORK_LIMIT=3, PRECISION_LIMIT=4,
+    SUBDIVISION_PRECISION_LIMIT=5, ACCUMULATION_PRECISION_LIMIT=6, TRANSMISSION_PRECISION_LIMIT=7 };
 
-/* 첫 방출선의 극소 가장자리가 전체 예산을 독점하지 않게 한다. η 모멘트
- * 질량의 보수적인 절반과 경로 전체의 최대 감쇠로 얻는 양의 원천 하한이다.
- * 하한을 보증하지 못하는 표현 범위에서는0을 써도 최종 오차 검사는 유지된다. */
-template<class Reader> LUMINA_CHAR bool source_lower(const Profile<Reader> &p,Positive &out)
+/* 물리 원천을 자르지 않고 오차 배분에 쓸 하한만 계산한다. 깊은 흡수선의
+ * 최대χ를 전체 길이에 곱해 출구 쪽 방출선 예산까지 없애지 않는다. */
+template<class Reader> LUMINA_CHAR bool source_lower_panel(const Profile<Reader> &p,double u0,double u1,Positive &out)
 {
-    Node n;if(!p.range(0.,1.,n))return false;
+    Node n;lumina_linear::Integral start;
+    if(!p.range(u0,u1,n)||!p.tau(u0,start))return false;
     Positive a,b,m,error,quarter,absolute;
-    if(!mass(p.length,n.trace[2].q,a)||!mass(p.length,n.trace[3].p,b)||!sum(a,b,m))return false;
-    double operations=128.*(n.depth+2);
-    if(!scaled(m,operations*DBL_EPSILON,error)||!mass(p.length,operations*DBL_TRUE_MIN,absolute)||
+    double du=u1-u0,weights[4]={u0,u1,1.-u0,1.-u1};m=Positive::zero();
+    for(int k=0;k<4;k++){
+        const auto &t=n.trace[2+k/2];double value=k%2?t.q:t.p;
+        if(!mass(p.length,value,a)||!scaled(a,du*weights[k],b)||!sum(m,b,m))return false;
+    }
+    double operations=128.*(n.depth+2),source_slope=::fmax(
+        ::fmax(::fabs(n.trace[2].slo),::fabs(n.trace[2].shi)),
+        ::fmax(::fabs(n.trace[3].slo),::fabs(n.trace[3].shi)));
+    double coordinate=p.span==0?0.:p.coordinate_error(u1);
+    if(!scaled(m,operations*DBL_EPSILON,error)||!mass(p.length,du*operations*DBL_TRUE_MIN,absolute)||
        !sum(error,absolute,error)||!scaled(m,.25,quarter))return false;
-    out=Positive::zero();if(!less_equal(error,quarter))return true;
-    double chi=::fmax(0.,::fmax(n.trace[0].hi,n.trace[1].hi));
+    out=Positive::zero();
+    if(!finite(source_slope*coordinate))return true;
+    if(!mass(p.length,du*source_slope*coordinate,absolute)||!sum(error,absolute,error))return false;
+    if(m.mantissa==0||!less_equal(error,quarter))return true;
     double slope=::fmax(::fmax(::fabs(n.trace[0].slo),::fabs(n.trace[0].shi)),
         ::fmax(::fabs(n.trace[1].slo),::fabs(n.trace[1].shi)));
-    double upper=p.length*(chi+slope*p.coordinate_error(1.))+::fmax(0.,3.*p.delta);
-    upper+=128.*DBL_EPSILON*(::fabs(upper)+1.);
-    if(!finite(upper)||!Positive::from_log(-upper,a)||!scaled(m,.5,b)||!product(a,b,out))return false;
+    double mag=u0*n.trace[0].mag_p+u1*n.trace[0].mag_q+
+        (1.-u0)*n.trace[1].mag_p+(1.-u1)*n.trace[1].mag_q;
+    double depth=p.length*du*(mag*(1.+operations*DBL_EPSILON)+slope*coordinate+operations*DBL_TRUE_MIN);
+    double relative=::fmax(0.,3.*p.delta*du),upper=start.value+start.error+depth+relative;
+    upper+=128.*DBL_EPSILON*(::fabs(start.value)+start.error+depth+relative+1.);
+    // 0은 여기서 안전한 하한이다. 실제 T/원천의 표현 범위 오류를 숨기는0은 아니다.
+    if(!finite(upper)||!Positive::from_log(-upper,a))return true;
+    if(!scaled(m,.5,b)||!product(a,b,out))return false;
     return true;
+}
+
+template<class Reader> LUMINA_CHAR bool source_lower(const Profile<Reader> &p,Positive &out)
+{
+    Positive total=Positive::zero(),part;
+    // 공통 주파수 crossing mesh가 아닌, 하한만을 위한8개 서로 겹치지 않는 u 구간.
+    for(int k=0;k<8;k++){
+        if(!source_lower_panel(p,k/8.,(k+1)/8.,part)||!sum(total,part,total))return false;
+    }
+    out=total;return true;
 }
 
 /* 깊이 우선으로 출구 쪽부터 진행한다. η의 양수성으로 이미 얻은 원천을
@@ -193,7 +218,7 @@ template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Pos
     Result r={};
     if(!product(transmission,incident,r.transmitted))return NUMERIC_RANGE;
     if(r.transmitted.mantissa!=0){
-        if(tau.error>.25||!scaled(r.transmitted,::expm1(tau.error),r.roundoff))return PRECISION_LIMIT;
+        if(tau.error>.25||!scaled(r.transmitted,::expm1(tau.error),r.roundoff))return TRANSMISSION_PRECISION_LIMIT;
     }
     Positive seed;if(!source_lower(p,seed))return NUMERIC_RANGE;
     struct Pending {double u0,u1;int depth;};
@@ -214,27 +239,30 @@ template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Pos
             r.pruned++;continue;
         }
         if(status==READY){
-            if(!sum(a.value,scale,first)||!scaled(first,local_relative*(q.u1-q.u0),budget)||
-               !scaled(a.value,local_relative,second)||!sum(budget,second,budget)||
-               !sum(a.roundoff,a.frequency,errors))return NUMERIC_RANGE;
-            if(less_equal(errors,budget)){
+            // 줄일 수 있는 주파수 근사는 국소 예산으로 제어한다. 누적 τ의
+            // 반올림은 du를 줄여도 상대적으로 줄지 않으므로 같은 출력ν의
+            // 전체 수치 예산에서 소비한다. 다른ν의 밝기는 사용하지 않는다.
+            if(!scaled(scale,q.u1-q.u0,first)||!sum(a.value,first,first)||
+               !scaled(first,local_relative,budget)||!sum(r.roundoff,a.roundoff,errors)||
+               !sum(a.value,scale,first)||!scaled(first,relative/4.,second))return NUMERIC_RANGE;
+            if(less_equal(a.frequency,budget)&&less_equal(errors,second)){
                 if(!sum(r.source,a.value,r.source)||!sum(r.roundoff,a.roundoff,r.roundoff)||
                    !sum(r.frequency,a.frequency,r.frequency))return NUMERIC_RANGE;
                 r.accepted++;continue;
             }
         }
         double mid=.5*(q.u0+q.u1);
-        if(q.depth>=60||count+2>64||mid<=q.u0||mid>=q.u1)return PRECISION_LIMIT;
+        if(q.depth>=60||count+2>64||mid<=q.u0||mid>=q.u1)return SUBDIVISION_PRECISION_LIMIT;
         stack[count++]={mid,q.u1,q.depth+1};stack[count++]={q.u0,mid,q.depth+1};r.split++;
     }
     if(!sum(r.transmitted,r.source,r.value))return NUMERIC_RANGE;
     // 양의 합의 누적 반올림도 따로 반환한다. 오차 예산 미달이면 성공하지 않는다.
     double operations=32.*(double(r.panels)+2.),gamma=operations*DBL_EPSILON;
-    if(gamma>=.01)return PRECISION_LIMIT;
+    if(gamma>=.01)return ACCUMULATION_PRECISION_LIMIT;
     if(!scaled(r.value,gamma/(1.-gamma),first)||!sum(r.roundoff,first,r.roundoff)||
        !sum(r.roundoff,r.frequency,first)||!sum(first,r.omitted,r.error)||
        !scaled(r.value,relative,second))return NUMERIC_RANGE;
-    if(!less_equal(r.error,second))return PRECISION_LIMIT;
+    if(!less_equal(r.error,second))return ACCUMULATION_PRECISION_LIMIT;
     out=r;return OK;
 }
 }

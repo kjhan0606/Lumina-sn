@@ -40,14 +40,14 @@ def decoded(result):
     return np.ldexp(m, e.astype('i4'))
 
 
-def reference(values, *, length=1., shift=0., span=0., delta=0., incident=0.):
+def reference(values, *, length=1., shift=0., span=0., delta=0., incident=0., order=96):
     """네이티브 bin마다 χ quadratic을 독립 구성하고 Gauss96으로 ηexp(-τ)를 적분한다."""
     nf = values.shape[1]
     edges = [0., 1.]
     if span:
         edges += [float(u) for u in (np.arange(nf)-shift)/span if 0. < u < 1.]
     edges = np.unique(edges)
-    xg, wg = np.polynomial.legendre.leggauss(96); t = .5*(1+xg); wg = .5*wg
+    xg, wg = np.polynomial.legendre.leggauss(order); t = .5*(1+xg); wg = .5*wg
     def field(u, k):
         x = shift+span*np.asarray(u)
         a = np.interp(x, np.arange(nf), values[k]); b = np.interp(x, np.arange(nf), values[k+1])
@@ -101,6 +101,25 @@ def test_narrow_emission_is_not_lost_when_whole_panel_endpoints_are_zero(charact
     assert fields[0] > 0 and abs(fields[0]-expected) <= fields[3]+2e-14*expected
     assert abs(fields[0]/expected-1.) < .01
     assert result[3][1] > 0 and result[3][2] > 0
+
+
+def test_deep_absorber_does_not_destroy_exit_side_narrow_emission_budget(characteristic):
+    values = np.zeros((4, 129)); values[2:, 79] = [3., 7.]; values[:2, 110] = 1e6
+    # backward u에서 방출선 뒤의 더 깊은 흡수선은 이 원천을 감쇠시키지 않는다.
+    result = run(characteristic, values, shift=.125, span=126.5, length=2.1, relative=1e-6)
+    fields = decoded(result)
+    values[:2] = 0.; expected = reference(values, shift=.125, span=126.5, length=2.1)
+    assert fields[0] > 0 and abs(fields[0]-expected) <= fields[3]+2e-14*expected
+    assert fields[3] <= 1e-6*fields[0]
+
+
+def test_cumulative_tau_roundoff_uses_output_budget_not_an_infinitesimal_panel_budget(characteristic):
+    values = np.ones((4, 129)); values[:2] = 4000.*(-1.)**np.arange(129)
+    args = dict(shift=.125, span=126.5, length=1.3)
+    result = run(characteristic, values, relative=1e-8, **args); fields = decoded(result)
+    expected = reference(values, **args)
+    assert abs(fields[0]-expected) <= fields[3]+2e-12*expected
+    assert fields[3] <= 1e-8*fields[0] and result[3][4] < 50
 
 
 def test_narrow_absorption_in_front_of_constant_source(characteristic):
