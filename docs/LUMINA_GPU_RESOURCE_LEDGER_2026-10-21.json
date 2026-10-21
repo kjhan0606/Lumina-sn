@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 08:38",
+  "as_of_KST": "2026-10-22 08:51",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,26 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.53316666665555,
-  "remaining_before_new_reservations_GPUh": 73.46683333334445,
+  "used_upper_GPUh": 70.53344444443333,
+  "remaining_before_new_reservations_GPUh": 73.46655555556667,
   "current_reserved_GPUh": 0,
+  "compact_shared_correctness_direct": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_shared_direct_20261022-r6DPXa",
+    "state": "SETTLED_8_DEVICE_TESTS_PASSED_NOT_PERFORMANCE_ACCEPTANCE",
+    "max_allocation_seconds": 180,
+    "reserved_GPUh": 0,
+    "allocation_started_epoch": 1792626544,
+    "allocation_ended_epoch": 1792626545,
+    "allocated_gpu_seconds": 1,
+    "allocated_GPUh": 0.0002777777777777778,
+    "terminal_exit": 0,
+    "cumulative_source_measure_gpu_seconds": 78,
+    "remaining_preparation_seconds_not_retry_authority": 1722,
+    "settlement": "1초 창을 한 번 정산하고 예약0.05GPUh를 해제했다. 공유 장치13%에서 합성8통과는 정확도 증거일 뿐 성능 수용이 아니다. 실제13003/전체장은0이다.",
+    "source_measure_gpu_seconds_before": 77,
+    "remaining_preparation_seconds_before": 1723,
+    "scope": "공유 정확도 개정의 원 미시작 합성8사례 단회만. free24GiB·host/device16GiB·활성1GiB·GPU0 한 장/CPU1/180초는 유지한다. 시간으로 성능을 수용하지 않고 실제13003/전체장은0이다."
+  },
   "compact_source_measure_direct": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_measure_build_20261022-QvPfT0",
     "state": "RESOURCE_PRECHECK_NOT_MET_GPU_NOT_STARTED",
@@ -227,6 +244,6 @@
   "planned_C_max_GPUh": 4,
   "remaining_if_C_fully_reserved_GPUh": 69.61822222223334,
   "reservation_rule": "GPU 실행 시작 시에만 예약하고 종료 후 실제 GPU 할당시간으로 한 번 정산한다",
-  "manual_scope": "직렬 C142초/batch-C91초·B 첫할당270초·원래 미실행13003 후속198초는 모두 종료·정산 완료다. 원천 측도 후보는 작은 시험6초와 실제13003 한 번71초를 정산해 누적77초다. 현재 예약0이며 같은 실패 후보 자동 재시작 권한은 없다. 다른 프로젝트의 GPU 작업은 손대거나 비용에 넣지 않았다. CPU·소수 열·컴파일은 GPU 사용0이고 원본/실패는 모두 보존한다.",
+  "manual_scope": "직렬 C142초/batch-C91초·B 첫할당270초·원래 미실행13003 후속198초는 모두 종료·정산 완료다. 원천 측도는 앞선77초와 새 축약의 공유 합성8사례1초를 정산해 누적78초다. 현재 예약0이며 같은 실패 후보 자동 재시작 권한은 없다. 축약 실제13003/전체장은 아직0이다. 다른 프로젝트 GPU 작업은 변경하거나 비용에 넣지 않았다. 기각한 하한 분리 실험은 CPU/컴파일만이며 GPU0초다. 원본/실패를 모두 보존한다.",
   "originals_preserved": true
 }

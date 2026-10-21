@@ -27,12 +27,15 @@ def gpu():
     row=subprocess.run(['nvidia-smi','--id=0','--query-gpu=memory.free,utilization.gpu','--format=csv,noheader,nounits'],
         check=True,capture_output=True,text=True,timeout=15).stdout.strip().split(',')
     free,util=[int(v.strip()) for v in row]
-    assert free>=24*1024 and util<=5
+    shared=os.environ.get('LUMINA_COMPACT_SHARED_CORRECTNESS')=='1'
+    assert free>=24*1024
+    if not shared:assert util<=5
     with Runtime(path,free*1024**2) as runtime:
         try:yield runtime
         finally:
             with (Path(os.environ['LUMINA_COMPACT_GPU_RECORD_ROOT'])/'memory.json').open('x') as f:
-                json.dump(runtime.report(),f,indent=2,allow_nan=False)
+                json.dump(dict(runtime.report(),shared_correctness=shared,precheck_utilization=util,
+                               timing_acceptance=False),f,indent=2,allow_nan=False)
 
 
 @pytest.mark.parametrize('nf',[35,70])

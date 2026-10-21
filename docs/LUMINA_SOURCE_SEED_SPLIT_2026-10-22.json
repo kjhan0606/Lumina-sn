@@ -1,0 +1,32 @@
+{
+  "schema": "lumina-source-seed-split-prototype-v1",
+  "status": "REJECTED_NO_MEANINGFUL_RESOURCE_GAIN_PROTOTYPE_NOT_ADOPTED",
+  "objective": "원 native 수송의 정확도를 바꾸지 않고 큰 단일 커널의 레지스터/스택 압박을 줄일 수 있는지 판정한다. CPU/GPU 구현 확인은 CMFGEN 분포·스펙트럼 동질성 완료가 아니다.",
+  "baseline": "dd4e75ac91e1cb525cd7f3139b4cd944e56bca99",
+  "owner": "운전자",
+  "planning": "Astra01a160d7에는 독립 하한 선계산의 공개 수학만 질문했다. 원문/공유문맥/소스/실험값은 전달하거나 읽게 하지 않았다. 실제 소스 감사나 실행 승인 판정은 아니다.",
+  "planning_result": "Astra01a160d7 완료/종료. 같은 표현 하한·DFS/누적/비교 순서·불변 입력/generation·scratch 수명·실행 오류 포함 성공 sync를 보존하는 조건에서 타당하다. 실패 시 부분 출력 폐기가 원자성 경계이며 오류 발견 우선순위는 달라질 수 있다. 레지스터/스택과 합계 수행시간의 개선은 보장하지 않는다. 현재 소비 계약은 nonzero 실패 전체 폐기이며 오류 우선순위를 성공으로 바꾸지 않는다.",
+  "scope": "기존 같은 원천 하한을 선행 커널에서 계산하고 비공개 출력 맵의 나중에 덮어쓰는16B 필드를 임시로 쓴다. 같은 stream/입력/generation/프로필을 유지하고 DFS/누적/오차 배분은 변경하지 않는다. 실패 status는 sticky이며 성공 sync/status0 전에 소비하지 않는다.",
+  "criteria": [
+    "같은 입력에서 선계산과 기존 경로의7개 scaled 값·모든 적응 count·수용 결정을 CPU 비트 단위로 대조한다. 잘못된 하한 표현과 원 입력 실패는 결과 canary를 보존해야 한다.",
+    "기존 경로는 기본값으로 유지한다. 새 변형은 명시적 컴파일 선택이고 ABI/활성 작업공간을 늘리지 않는다.",
+    "같은 strict CUDA 조건에서 주 커널 및 선행 커널의 register/stack/spill을 비교한다. 이득이 없으면 새 변형을 실제 실행하지 않고 보존할 가치가 없는 실험 코드는 정리한다.",
+    "GPU 수치 확인 전에는 장치 정확도/성능/물리 수용을 주장하지 않는다. 실제13003/전체장은 이 구현 기록으로 실행하지 않는다."
+  ],
+  "resources": "Lageunha CPU1·직접시험4GiB/300초·CUDA 개별16GiB/240초. GPU0초/예약0. 기존 원천 후보77초·잔여73.4668333333GPUh를 유지한다.",
+  "preservation": "새 격리 root와 파일 해시로 고정한다. 기존 실패·작은 GPU 미시작·사용자 다른 변경은 보존한다. 이번 실험을 기본 경로에 강제로 적용하지 않는다.",
+  "reproduction": "격리 root의 고정 소스와 host-test.sh/fixed-host-test.sh/compile.sh로 재현한다. candidate.patch와 새 시험 소스도 격리 root에 보존했다. 실험 코드는 저장소 기본 경로에서 제거했고 원본 파일은 HEAD와 같게 복원했다.",
+  "result": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_seed_split_build_20261022-tB351L",
+    "CPU": "188 passed,20 skipped in14.63s. 같은 입력의7개 scaled 값·적응 count를 비트 단위 대조했다. skipped에는 명시하지 않은CUDA host 계획5개가 포함된다.",
+    "first_failure": "120 passed,20 skipped,68 setup errors. 시험 공통 probe의 Result 초기화 경고가 -Werror로 거부됐다. 시험 Result 초기화만 수정해 재검증했고 원 test.log/소스를 보존했다.",
+    "CPU_log_sha256": "aa3830c9713349c70ca6c30754db64710bd882c10e488fa1ec7111d169ba3a4e",
+    "first_log_sha256": "034f649952282687c5e1832bd9b1966a1335d93bd86743702e96f2a4fcc84b4f",
+    "library_sha256": "471d36d9d458bc3b19ce6635a6fe3405989ac9e9e384f26f4105415784ea98e6",
+    "original_main": "255register/stack8464B/spill6400store·7412load",
+    "new_main": "255register/stack8432B/spill6624store·7480load",
+    "new_seed_kernel": "255register/stack2520B/spill43838store·29896load",
+    "decision": "주 스택32B 감소뿐이고 register는 그대로이며 spill/추가 커널 비용이 남는다. 유의한 자원 개선 근거가 없어 채택/장치 실행하지 않는다. CPU 동등성을 GPU 성능이나 최종 물리 성공으로 바꾸지 않는다.",
+    "GPU_seconds": 0
+  }
+}

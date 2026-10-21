@@ -1,6 +1,6 @@
 {
   "schema": "lumina-compact-source-measure-implementation-v1",
-  "status": "CPU_FIXED737_AND_HOST_PLAN_MET_CUDA_COMPILED_DEVICE_RESOURCE_WAIT_NOT_ACCEPTED",
+  "status": "CPU_FIXED737_AND_SMALL_DEVICE_ACCURACY_MET_NATIVE_FULL_NU_NOT_YET_ACCEPTED",
   "objective": "원 native 수송의 정확도와 오차 소비를 유지하면서 전ν 완료를 막는 자료구조 비용을 줄인다. 최종 목표는 CMFGEN 물리량/스펙트럼 동질성이며 이 구현만으로 목표 달성을 선언하지 않는다.",
   "owner": "운전자",
   "baseline": "5a7864b1c7785f66af43872ef2b779d2238bc451",
@@ -64,5 +64,36 @@
     "resources": "Lageunha GPU0 한 장·CPU1·host/device16GiB·활성1GiB·외부180초 단회. 직전 후보77초를 차감한 원래 준비1723초 안에서 사용한다. 자동 재시도/실제 수송 없음. CPU 시험과 달리 CUDA 실행에 RLIMIT_AS를 걸지 않는다.",
     "precheck": "같은 프로젝트/고정 파일·장치free24GiB 이상/util5% 이하를 시작 직전에 확인한다. 다른 프로젝트 작업을 중단하거나 변경하지 않는다.",
     "reproduction": "고정한 tests/test_lumina_gpu_compact_device.py를 LUMINA_COMPACT_GPU_LIBRARY/COMPACT_NATIVE_LIBRARY/COMPACT_GPU_RECORD_ROOT와 CUDA_MODULE_LOADING=EAGER로 단회 pytest한다. plan/source/binary 해시 및 allocation.started/ended를 남기고 사용 창을 한 번 정산한다."
+  },
+  "shared_correctness_amendment": {
+    "status": "TERMINAL_8_PASSED_ACCURACY_ONLY",
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_shared_direct_20261022-r6DPXa",
+    "authority": "사용자의 추가진행 사전승인 안에서 운전자가 실행 조건의 용도를 분리한다. GPU 수·메모리·시간·누적 준비 한도는 늘리지 않는다. Astra의 원문/성능 감사나 이 개정에 대한 승인으로 꾸미지 않는다.",
+    "reason": "작은 합성 정확도 시험은 원래10초 성능 수용이 아니다. 공유 장치util5% 조건이 이 시험까지 막아 실제 구현을 검증하지 못했으므로, 그 조건은 성능 판정에 남기고 작은 정확도에만 사용하지 않는다. 다른 프로젝트는 중단/변경하지 않는다.",
+    "scope": "이미 미시작인 축약 원천의 합성8사례만 단회 실행. 실제13003/전체장/SE·RE는0이다. 하한 분리 실험은 채택하지 않고 검증할 바이너리는 기존0843dd44…로 유지한다.",
+    "preserved_criteria": "원천 모멘트 독립 Gauss16 상대3e-12·각 맵 CPU 상대3e-10 및 양쪽 총오차 합 이내·자기 원천 오차1e-8·재생 순서/underflow 회복/약한 열 실패 판별",
+    "resources": "GPU0 한 장/CPU1/host·device16GiB/활성1GiB/외부180초 단회. free24GiB 이상은 유지하고 사용률/공존 상태는 기록한다. 원 준비1723초에서 실제 사용 창을 한 번 차감한다. 재시도 없음.",
+    "isolation": "명시적 LUMINA_COMPACT_SHARED_CORRECTNESS=1에서만 공유 정확도 모드다. 기본 시험의util5% 조건은 유지한다. 시간은 수용/성능 우위/전체장 ETA에 사용하지 않는다.",
+    "reproduction": "새 격리 root의 direct-test.sh와 봉인 direct-inputs.sha256. 성공 sync/status와 각 수치 기준을 확인하며 비용/물리 수용으로 등급을 올리지 않는다.",
+    "frozen_plan_sha256": "e2f5299689521bf2cd21ef86d7dce07f9c43d49490954574ceb52d48a97bfba6",
+    "device_result": "8 passed in0.75s/exit0. 전후 같은 다른 프로젝트4개가 계속 존재하며 변경하지 않았다. 시작free26188MiB/util13%로 관측했다. 장치 문맥은 닫혔고 이 시간으로 성능을 수용하지 않는다.",
+    "device_log_sha256": "1558b4d8f56605cb75539366aacdb2b0fb3a49bc2fc2d93cef48055fc5408786",
+    "memory_sha256": "0f6258bac385a3edc7bf60014402c870b3bf5966cfc456ad7b7cdf1af7ad3ad6",
+    "memory": "live4B·소형 입력 peak54604B·예약6781763584B·관측peak2698772480B·주커널local8464B. native 전ν 활성량/계산 peak 측정이 아니다.",
+    "CPU_regression": "181 passed,15 GPU-only skipped in17.60s. host-test.log SHA256 6d74752ee92b8c9059fe59cec236989a78474f5205284e02dcc25aa2af87bfe3. 공유 선택과 기본util5%·free24GiB 보존도 직접 시험했다.",
+    "settlement": "1792626544→1792626545의1초를 한 번 차감했다. 원천 후보 누적78초·준비1722초 남음·잔여73.4665555556GPUh·예약0이다."
+  },
+  "native_once_preparation": {
+    "status": "SEALED_READY_GPU_NOT_STARTED_RESOURCE_WAIT",
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_native_actual_20261022-kXWAjG",
+    "sealed_plan_sha256": "25eb77de3dac6786ff6160b8a28a2dedc6ff9dff066934b649b3bfc2f71b58da",
+    "readiness": "prepare exit0. 원 입력/구간/기준과 파일·증거를 봉인했다. allocation.started/gpu-local.started/실제 수송 결과는 없다. 현재free26188MiB/util9%이므로 원util5% 시작 조건을 충족하지 않아 실제 호출은 하지 않았다.",
+    "objective": "원 입력/기준을 유지한 native13003 전ν에서 새 축약/분리 구조의 정확도와 비용을 함께 판정한다. 실패한 이전 구조를 재시작하지 않는다.",
+    "scope": "원M70/native90/NF1115020/epoch1683072·J0=I0=0·fullSR·13003 한 번만. 실제0/전체장/SE·RE/생산율은0이다.",
+    "criteria": "독립8192분할 세 점 각각과 최대정규화 상대차1e-4·원천1e-8·공간1e-5·주파수별 오차비1 이하·D2H포함10초·활성 작업공간1GiB·총 구조 작업512NF",
+    "resources": "Lageunha GPU0 한 장/CPU최대4(OMP1)/host·device16GiB/외부75초·내부70초·구간60초 단회. 원 준비1722초 안에서 실제 창을 정산한다. 실행 직전만75초를 예약하며 현재 예약0이다.",
+    "precheck": "원free24GiB/util5% 이하 조건을 유지한다. 공유 정확도 개정을 성능 판정에 상속하지 않는다. 다른 프로젝트 작업을 중단/변경하지 않는다.",
+    "adapter_tests": "4 passed in0.45s. adapter-test.log SHA256 31968af04ef6cc90c6c2a0ada9f46ec649acb0f83f50f9de695acd5d8223c7d1. 선택 구간/원 정확도·10초·누적78초 보존을 직접 확인했다.",
+    "preservation": "새 root에 검증한 바이너리/정확한 소스/명령/기존 증거를 고정한다. 이전 실패를 보존하고 완성값 없이는 비교나 수용을 주장하지 않는다. 실패 시 자동 재시작/시간 연장/허용오차 완화는 하지 않는다."
   }
 }
