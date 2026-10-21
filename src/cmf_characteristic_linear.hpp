@@ -205,8 +205,8 @@ template<class Reader> LUMINA_CHAR bool source_lower(const Profile<Reader> &p,Po
 /* 깊이 우선으로 출구 쪽부터 진행한다. η의 양수성으로 이미 얻은 원천을
  * 나머지 꼬리의 절대오차 예산에 쓸 수 있다. 전ν 공통 crossing mesh는 없다.
  * 성공 때만 out을 쓴다. 오차는 이 공간선형 문제에 대한 주파수별 상계다. */
-template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Positive incident,double relative,
-    int max_panels,Result &out)
+template<class Reader,class PanelFunction> LUMINA_CHAR Status integrate_using(const Profile<Reader> &p,Positive incident,double relative,
+    int max_panels,Result &out,const PanelFunction &evaluate)
 {
     if(!finite(relative)||relative<=0||relative>.01||max_panels<1||p.tree.nf<2||p.tree.nf>2000000||
        p.column<0||p.column>=p.tree.nf||
@@ -229,7 +229,7 @@ template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Pos
         if(r.panels>=max_panels)return WORK_LIMIT;
         ++r.panels;
         if(q.depth>r.max_depth)r.max_depth=q.depth;
-        Panel a;PanelStatus status=panel(p,q.u0,q.u1,relative/32.,a);
+        Panel a;PanelStatus status=evaluate(p,q.u0,q.u1,relative/32.,a);
         if(status==INVALID)return NUMERIC_RANGE;
         Positive scale,budget,errors;
         if(!sum(r.transmitted,r.source,scale)||!sum(scale,seed,scale)||
@@ -264,6 +264,17 @@ template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Pos
        !scaled(r.value,relative,second))return NUMERIC_RANGE;
     if(!less_equal(r.error,second))return ACCUMULATION_PRECISION_LIMIT;
     out=r;return OK;
+}
+
+struct SecantPanel {
+    template<class Reader> LUMINA_CHAR PanelStatus operator()(const Profile<Reader> &p,double u0,double u1,
+        double relative,Panel &out) const {return panel(p,u0,u1,relative,out);}
+};
+// 기존 B의 기본 경로와 판정 기준은 그대로 보존한다.
+template<class Reader> LUMINA_CHAR Status integrate(const Profile<Reader> &p,Positive incident,double relative,
+    int max_panels,Result &out)
+{
+    return integrate_using(p,incident,relative,max_panels,out,SecantPanel{});
 }
 }
 #undef LUMINA_CHAR

@@ -20,14 +20,15 @@ class View(ct.Structure):
         (name, ct.POINTER(ct.c_double)) for name in ('canonical', 'outer', 'j', 'radius', 'external_radius')]
 
 
-@pytest.fixture(scope='module')
-def native(tmp_path_factory):
+@pytest.fixture(scope='module',params=['B','SOURCE_MEASURE'])
+def native(tmp_path_factory,request):
     path = tmp_path_factory.mktemp('linear-native')/'native.so'
+    source='cmf_measure_native.cpp' if request.param=='SOURCE_MEASURE' else 'cmf_linear_native.cpp'
     proc = subprocess.run([os.environ.get('CXX', 'c++'), '-O2', '-std=c++17', '-ffp-contract=off',
-        '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared', '-I'+str(ROOT/'src'), str(ROOT/'src/cmf_linear_native.cpp'),
+        '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared', '-I'+str(ROOT/'src'), str(ROOT/'src'/source),
         str(ROOT/'tests/linear_native_probe.cpp'), '-o', str(path)], capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
-    kernel = NativeKernel(path)
+    kernel = NativeKernel(path,source_measure=request.param=='SOURCE_MEASURE')
     kernel.lib.lumina_linear_provider_probe.argtypes = [ct.POINTER(View), ct.POINTER(Location), ct.c_int,
         ct.c_int, ct.POINTER(ct.c_double)]
     kernel.lib.lumina_linear_provider_probe.restype = ct.c_int

@@ -98,6 +98,12 @@ class Location(ct.Structure):
     _fields_ = [('mode', ct.c_int), ('first', ct.c_int), ('last', ct.c_int), ('weight', ct.c_double)]
 
 
+class DenseView(ct.Structure):
+    """순수 C ABI. 입력 parser나 CUDA 문맥 없이도 이 구조체만 가져올 수 있다."""
+    _fields_ = [(name, ct.c_int) for name in ('ns', 'nf', 'ne', 'jmode')]+[('generation', ct.c_uint64)]+[
+        (name, ct.POINTER(ct.c_double)) for name in ('canonical', 'outer', 'j', 'radius', 'external_radius')]
+
+
 class CPositive(ct.Structure):
     _fields_ = [('m', ct.c_double), ('e', ct.c_int64)]
     def positive(self):
@@ -114,11 +120,13 @@ class NativeMap(ct.Structure):
 
 
 class NativeKernel:
-    def __init__(self, library):
+    def __init__(self, library, *, source_measure=False):
         self.path = Path(library).resolve(); self.lib = ct.CDLL(str(self.path))
-        size = self.lib.cmf_linear_native_map_bytes; size.argtypes = []; size.restype = ct.c_size_t
+        prefix='cmf_measure_native' if source_measure else 'cmf_linear_native'
+        self.engine='NATIVE_SOURCE_MEASURE' if source_measure else 'SOURCE_SECANT_B'
+        size = getattr(self.lib,prefix+'_map_bytes'); size.argtypes = []; size.restype = ct.c_size_t
         if size() != ct.sizeof(NativeMap): raise ValueError('native B 맵 ABI 크기 불일치')
-        self.fun = self.lib.cmf_linear_native_map
+        self.fun = getattr(self.lib,prefix+'_map')
         self.fun.argtypes = [ct.c_void_p, ct.c_uint64, ct.POINTER(Location)]+[ct.c_double]*4+[
             ct.c_int, ct.c_int, ct.c_double, ct.c_int, ct.POINTER(NativeMap)]
         self.fun.restype = ct.c_int
@@ -129,7 +137,7 @@ class NativeKernel:
         code = self.fun(ct.byref(view), int(view.generation), loc, length, h, da, db, column, 32,
             relative, max_panels, ct.byref(result))
         if code:
-            piece = dict(code=code, column=column, length=length, h=h, da=da, db=db, relative=relative,
+            piece = dict(code=code, engine=self.engine, column=column, length=length, h=h, da=da, db=db, relative=relative,
                 locations=[dict(mode=p.mode, first=p.first, last=p.last, weight=p.weight) for p in locations])
             raise NativePieceFailure(piece)
         return Map(result.transmission.positive(), result.source.positive(), result.source_error.positive(),

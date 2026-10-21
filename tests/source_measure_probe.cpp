@@ -1,0 +1,72 @@
+#include "cmf_source_measure.hpp"
+#include <vector>
+#include <chrono>
+#include <algorithm>
+
+namespace {
+struct Reader {
+    int nf;const double *v;uint64_t *reads;
+    bool at(int point,int column,double &chi,double &eta) const {
+        ++*reads;
+        if((point!=0&&point!=2)||column<0||column>=nf)return false;
+        int k=point/2;chi=v[(size_t)k*nf+column];eta=v[(size_t)(k+2)*nf+column];
+        return lumina_ordered::finite(chi)&&lumina_ordered::finite(eta)&&eta>=0;
+    }
+};
+int execute(int nf,int block,const double *values,const double *params,int limit,
+    double *mantissa,int64_t *exponent,int *counts,double *timings,uint64_t *stats){
+    using Clock=std::chrono::steady_clock;
+    auto start=Clock::now();
+    if(nf<2||nf>2000000||block<1||block>256||!values||!params||!mantissa||!exponent||!counts)return 1;
+    try{
+        int blocks=(nf-2)/block+1,leaves=1;while(leaves<blocks)leaves*=2;
+        uint64_t bytes=uint64_t(2)*leaves*(sizeof(lumina_linear::Node)+sizeof(lumina_source_measure::Node));
+        if(bytes>(UINT64_C(1)<<30))return 1;
+        uint64_t reads=0;Reader reader={nf,values,&reads};
+        std::vector<lumina_linear::Node> nodes((size_t)2*leaves,lumina_linear::empty());
+        std::vector<lumina_source_measure::Node> sources((size_t)2*leaves,lumina_source_measure::empty());
+        for(int i=0;i<blocks;i++){
+            auto chi=lumina_linear::empty();auto eta=lumina_source_measure::empty();
+            for(int bin=i*block;bin<std::min(nf-1,(i+1)*block);bin++){
+                lumina_linear::Node p,n;lumina_source_measure::Node q,r;
+                if(!lumina_linear::partial(reader,nf,bin,0.,1.,p)||!lumina_linear::combine(chi,p,n)||
+                   !lumina_source_measure::partial(reader,nf,bin,0.,1.,q)||!lumina_source_measure::combine(eta,q,r))return 2;
+                chi=n;eta=r;
+            }
+            nodes[leaves+i]=chi;sources[leaves+i]=eta;
+        }
+        for(int i=leaves-1;i>0;i--){
+            if(!lumina_linear::combine(nodes[2*i],nodes[2*i+1],nodes[i])||
+               !lumina_source_measure::combine(sources[2*i],sources[2*i+1],sources[i]))return 2;
+        }
+        uint64_t build_reads=reads;auto built=Clock::now();
+        lumina_linear::Tree tree={nodes.data(),leaves,block,nf};
+        lumina_source_measure::Tree source={sources.data(),leaves,block,nf};
+        lumina_characteristic::Profile<Reader> p={reader,tree,0,params[1],params[2],params[0],params[3]};
+        lumina_ordered::Positive incident;
+        if(!lumina_ordered::Positive::from_double(params[4],incident))return 1;
+        lumina_characteristic::Result result;
+        int status=lumina_source_measure::integrate(p,source,incident,params[5],limit,result);
+        if(status)return 100+status;
+        auto done=Clock::now();
+        lumina_ordered::Positive output[7]={result.value,result.transmitted,result.source,result.error,
+            result.roundoff,result.frequency,result.omitted};
+        for(int k=0;k<7;k++){mantissa[k]=output[k].mantissa;exponent[k]=output[k].exponent;}
+        counts[0]=result.panels;counts[1]=result.accepted;counts[2]=result.split;
+        counts[3]=result.pruned;counts[4]=result.max_depth;
+        if(timings){timings[0]=std::chrono::duration<double>(built-start).count();
+            timings[1]=std::chrono::duration<double>(done-built).count();}
+        if(stats){stats[0]=reads;stats[1]=build_reads;stats[2]=bytes;
+            stats[3]=sizeof(lumina_source_measure::Node);}
+        return 0;
+    }catch(...){return 9;}
+}
+}
+extern "C" int source_measure_probe(int nf,int block,const double *values,const double *params,int limit,
+    double *mantissa,int64_t *exponent,int *counts){
+    return execute(nf,block,values,params,limit,mantissa,exponent,counts,nullptr,nullptr);
+}
+extern "C" int source_measure_cost(int nf,int block,const double *values,const double *params,int limit,
+    double *mantissa,int64_t *exponent,int *counts,double *timings,uint64_t *stats){
+    return execute(nf,block,values,params,limit,mantissa,exponent,counts,timings,stats);
+}

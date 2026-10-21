@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 
-from lumina_compiled_input import DenseView
+from lumina_linear_native import DenseView
 
 P=ct.c_void_p
 I=ct.c_int

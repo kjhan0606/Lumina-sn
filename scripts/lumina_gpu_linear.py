@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from lumina_compiled_input import DenseView
+from lumina_linear_native import DenseView
 from lumina_gpu_driver import (Runtime as BaseRuntime, GpuDriver, Arena, Leaf, Location,
     P, I, D, U, S, check, CACHE_LIMIT)
 from lumina_linear_native import NativeMap, Positive

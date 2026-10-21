@@ -1,0 +1,70 @@
+{
+  "schema": "lumina-positive-source-measure-implementation-v1",
+  "status": "CPU_FIXED737_AND_NATIVE_SELECTED_ACCURACY_MET_NOT_PRODUCTION",
+  "final_goal": "ACTIVE_NOT_MET",
+  "owner": "현재 운전자(Codex). 단일 운전자 지정 질문에 대한 사용자 승인(2026-10-22)을 현재 세션 지정으로 해석하고 사용자에게 명시했다. 다른 세션의 기존 결과와 변경은 보존하며 기존 작업을 임의 취소하지 않는다.",
+  "objective": "실제 방출 원천의 native 꺾임을 재근사하지 않는 일반 감쇠 적분을 구현해, 실제 χ를 포함한737열 고정 사례의 정확도와 불필요한 원천 세분화 감소를 함께 확인한다. 그 결과로 전ν 후보 구현 진행 여부를 판단한다. 최종 목적은 여전히 자체장·생산율과 CMFGEN 이온분포/스펙트럼 동질성이다.",
+  "scope": "별도 source-measure 헤더와 직접 시험을 추가한다. 기존 signedχ 모멘트·정확한 누적τ·3Δδ와 공간선형 물리 재구성은 재사용하고, η secant 적분만 양의 native 모멘트 적분으로 바꾼 후보를 선택적으로 호출한다. 기존 B 기본 함수와 실패 결과는 보존한다.",
+  "planning_basis": [
+    "Astra 설계 기록 docs/LUMINA_SOURCE_MEASURE_PLAN_2026-10-22_QyTli2.json",
+    "공개 수학 자문과 고정밀11시험 docs/LUMINA_SOURCE_MEASURE_PROOF_2026-10-22_NJD3ly.json"
+  ],
+  "implementation": "원천 endpoint별25차 Bernstein 모멘트를 개별 가수/지수로 보존한다. 범위 query는 전체 모멘트 벡터를 다시 합성하지 않고 canonical 노드와 잘린 native leaf에서 제한된 cubic 감쇠를 적분한다. 감쇠의 Bernstein 계수 폭을1/8 이내로 나누고 양의8차 Taylor 다항식을 쓴다. χ 근사·급수·모멘트/scale 산술·좌표·누적 합 오차를 구분해 같은 출력의 기존 예산에서 소비한다. 영원천과 회복 가능한 subnormal을 중간 double곱으로 소실시키지 않는다.",
+  "inputs": {
+    "fixed737_profile": "/gpfs/kjhan/cmfgen_runs/lumina_B_native_case_20261022-GSf2Dk/failed-profile.npz",
+    "profile_sha256": "1b65ed7c06be54bf128274ae9117fc29dcd6a8e8978c27f8149d8851c73d99d2",
+    "reference": "기존 독립 native-bin Gauss96/192 기준3.788115811685263e-8/3.7881158116852666e-8. 같은 입력의 수송 참조이며 CMFGEN J 자체가 아니다."
+  },
+  "acceptance": {
+    "source_relative": 1e-8,
+    "fixed737": "원래 χ와 η를 유지한 고정 사례의 독립 적분 차이가 반환 오차 안에 있고, 반환 오차가 자기 출력의1e-8 이하. η가 투명할 때만 빠른 것으로 수용하지 않는다.",
+    "tests": "signedχ·gain·fullSR·narrowχ/η·경계/blue/정지·약한 출력·변하는 subnormal·영원천·실패 미발행·기존 B 재현을 함께 확인한다.",
+    "work": "원래11791 source패널과 새 source패널/실제 CPU 시간을 함께 기록하되 GPU 가속률/전체장 ETA로 외삽하지 않는다.",
+    "preserved_production": "원래 미세참조1e-4·공간 추정1e-5·전ν 주파수별 오차·10초·활성 작업공간1GiB·생산 PHOT 가중오차1e-4를 유지한다. CPU 후보 통과를 생산 수용이나 GPU 추가 실행 승인 판정으로 대체하지 않는다."
+  },
+  "execution": "Lageunha에서 부하와 입력 경로를 확인한 CPU1·가상4GiB·외부300초의 분리된 직접 시험. GPU0·MPI0. 실제 대형 계수 준비·전ν/전체장·GPU 재실행은 이 CPU 시험에 포함하지 않는다.",
+  "CPU_fixed737_result": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_measure_CPU_linear_20261022-4i2prH",
+    "result_sha256": "5cc85abe03690b7bdde036dc95fbcf209cd5d99414ceb617e5c5206253662a82",
+    "tests": "130 passed in6.81s; test.log SHA256 c78ca8003797b16a4c2d2e48e03350c2df8dff7ce8c2290eda4435ff3c04e9e6",
+    "accuracy": "실제 χ를 유지한737열의 block1/4/16/32 모두 자기 출력1e-8 오차 예산과 독립 Gauss96/192 대조를 통과했다. 새 값3.788115811678423e-8, 기준3.7881158116852666e-8, 상대차 약1.81e-12다.",
+    "work": "모든 block에서 원천패널3069·최대깊이24다. 이전 B의11791패널·깊이38과 구별한다. block32의 query reader는2426176에서753668로 감소했다.",
+    "cost": "첫 모멘트 구현은 패널이 줄어도 총 CPU 시간이 거의 줄지 않았다. 정확한 단일 native-bin quadratic 원천 경로와 동일 양의 급수의 폐형식 곱셈 가중을 추가해 block32 build0.02556초+수송0.03855초가 됐다. 이전 CPU 중앙값0.10869초와 비교할 수 있으나 현재 값은1회 관측이며 GPU 가속률/전체장 ETA가 아니다.",
+    "preserved_first_failure": "첫 직접시험은93통과/1실패였다. subnormal 독립 기준에서 tiny를 먼저 곱해 반올림한 시험식 오류였다. 기준 계산의 곱셈 순서만 수정했고 허용오차·원 입력·수송 코드는 바꾸지 않았다. root lumina_source_measure_CPU_20261022-KKmDTj와 로그 SHA256 d3f015a95948b3e0f467c63673081570ea746a76cae259b82feedc1ce8552e5a를 보존한다."
+  },
+  "native_selected_extension": {
+    "purpose": "작은 고정 사례만의 성공으로 끝내지 않고 같은 원 native 반경/provider·fullSR 기하와 기존 미세참조에서 실제13003의 원 세 열 정확도를 확인한다.",
+    "method": "별도 cmf_measure_native.cpp가 원 provider를 그대로 사용한다. 기존 B 기본 함수/라이브러리는 보존하고 NativeKernel의 명시적인 source_measure 선택으로만 호출한다. 선택 실행 계획의 engine/schema를 별도로 봉인한다.",
+    "resources": "이전 세 열 실행과 같은 Lageunha CPU1·가상16GiB·외부300초/내부270초·열별60초·세 열/물리구간1개 한 번. 16GiB는 원래3GiB dense 계수 준비용이며,4GiB 고정 사례 시험의 메모리를 몰래 넓힌 것으로 기록하지 않는다. GPU0·전ν0·F0·SE/RE0.",
+    "acceptance": "원래 columns624712/624968/625223과8192분할 미세참조·1e-4·공간 추정1e-5·원천1e-8을 유지한다. 이 참조는 CMFGEN J가 아닌 동일 입력의 수송 기준이다. 실패는 원본을 보존하고 자동 전ν/GPU 재실행으로 넘어가지 않는다.",
+    "tests_before_execution": "같은 native 보간 순서·내부/외부 모드·생성번호·blue/정지·실패 canary 시험을 기존 B와 새 후보 각각에 직접 적용한다."
+  },
+  "native_selected_result": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_measure_native_20261022-VMZu5X",
+    "plan_sha256": "fa097362178dba507b5a92867827ef4edcc373c3e7c29c42803ee18a66478f8b",
+    "result_sha256": "d7e30f37f021141a17bc095d7ea55aa7608ec101597d704eb85c97d48fbef00d",
+    "native_library_sha256": "89904c7426f49852e4fa4497cb6abd0057a419e686edd8b35dcfd6da904e1ebc",
+    "tests": "146 passed in7.91s; test.log SHA256 f399f893a3be75b973ee375f85b4b43cf163ff527a36c5fcfa130f1ae9ee640d",
+    "status": "SOURCE_MEASURE_SELECTED_ACCURACY_MET_NOT_FULL_NU/exit0",
+    "columns": [
+      {"column":624712,"actual":1.627578948262479e-8,"fine_reference":1.6275740019540464e-8,"relative_gap":3.0390682246306255e-6,"panels":17381,"old_B_panels":47957,"seconds":0.36942606419324875,"old_B_seconds":0.29507055319845676},
+      {"column":624968,"actual":1.5736675588274364e-8,"fine_reference":1.5736610472415224e-8,"relative_gap":4.137857974706449e-6,"panels":21741,"old_B_panels":66517,"seconds":0.4247130695730448,"old_B_seconds":0.46567581966519356},
+      {"column":625223,"actual":3.113168362600701e-8,"fine_reference":3.113167672838696e-8,"relative_gap":2.215627545876231e-7,"panels":26603,"old_B_panels":84399,"seconds":0.47360270470380783,"old_B_seconds":0.5056614335626364}
+    ],
+    "resources": "전체16.7845초·dense 준비8.4528초·peak RSS2885404KiB·GPU0. 세 열의 공간 leaf7/7/13과 맵 호출27/27/51은 이전 B와 같다.",
+    "critical_assessment": "원천패널은 크게 줄었으나 세 열 CPU 수송 합계는 기존1.2664초 대 새1.2677초로 비슷하다. 고차 모멘트 준비·개별 scale와 χ query 비용이 남아 있다. 이 결과만으로 전ν10초나 전체장 속도 향상을 주장하거나 GPU 생산을 시작하지 않는다. 각 CPU 시간은 별도 시점 단발 관측이다.",
+    "limits": "이는 같은 원 입력의 수송 미세참조와의 정확도다. 새 CMFGEN 복사장·Si/S 생산율·이온분포·스펙트럼을 얻은 것이 아니다. 기존 Reader가 반환한 double 원천 이후의 scale 보존이며, 선행 ES/J 조립의 모든 표현 범위까지 새로 보증한 것이 아니다."
+  },
+  "device_compile_only": {
+    "source": "tests/source_measure_compile.cu",
+    "object_sha256": "b8d23423481c488ef82f4ef25b71904d68ab1ede7f2d6d432060ac2d3f9be901",
+    "log_sha256": "5841b93eb0fdfc88fca704e234566ab8d8f01fd35979287ff22a3a5587979849",
+    "result": "CUDA13.0.2/GNU13/sm_89/fast-math 없이 장치 템플릿까지 컴파일 exit0. GPU 문맥·수치 실행0.",
+    "compiler_observation": "255register·kernel stack7504B와 큰 spill 보고가 있다. 컴파일 성공은 GPU 실행시간/실측 메모리/전ν 정확도 통과가 아니다.",
+    "next_cost_issue": "큰 모멘트 벡터와 적응 스택을 한 thread에 모두 올리는 비용, 고차 트리 생성·endpoint 재사용 및 경계 bin 재평가를 줄여야 한다. CPU 소수 열의 성공을 근거로 같은 B를 자동 GPU 재실행하지 않는다.",
+    "legacy_B_compile_regression": "기존 cmf_linear_cuda.cu도 같은 CUDA 옵션으로 컴파일 exit0이다. legacy-linear.o SHA256 b8ada312f64706f9d7999b437b67bfd8c8bcb455a418f3149ce3e5044f457d97, legacy-linear.log SHA256 1db78cbc74e19c152caf072da21b397869cf35fb476f43874e6c4dee8986fae4. 기존 source_maps stack6256B다. 이것은 refactor의 컴파일 회귀 확인이며 기존 GPU 실제시험을 새 바이너리에서 다시 했다는 뜻이 아니다."
+  },
+  "preservation_and_rollback": "기존 B·실패 root·737열 입력·원자료와 타 세션 변경을 보존한다. 기존 적분 함수는 같은 기본 구현을 호출하고, 새 후보는 별도 함수로만 호출한다. 출력 root는 mktemp로 생성해 기존 파일을 덮어쓰지 않는다.",
+  "reproduction": "src와 직접 probe/test를 새 격리 root에 고정하고 GNU13 C++17·O2·ffp-contract=off·Wall/Wextra/Werror로 컴파일한 뒤 CPU1·4GiB·timeout300의 pytest와 고정737열 대조를 실행한다. 정확한 실행 명령·해시·종료 결과는 후속 결과 기록에 추가한다.",
+  "remaining": "CPU 산술과 실제 χ 사례 이후에도 전ν 메모리·GPU 성능·생산 PHOT·native90 자체장 쌍·SE/RE·CMFGEN Si/S 이온분포/스펙트럼 목표는 미완이다."
+}

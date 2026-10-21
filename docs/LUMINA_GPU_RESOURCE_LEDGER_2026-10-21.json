@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 00:02",
+  "as_of_KST": "2026-10-22 03:11",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,45 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.38177777776666,
-  "remaining_before_new_reservations_GPUh": 73.61822222223334,
+  "used_upper_GPUh": 70.51177777776666,
+  "remaining_before_new_reservations_GPUh": 73.48822222223334,
   "current_reserved_GPUh": 0,
+  "B_unused_case_continuation": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_unused_20261022-VhX0dX",
+    "plan_sha256": "9b82b4d764645e4f0724a90928f33622ff6e81a2293a4f10f8e4913979a71eed",
+    "state": "SETTLED_13003_EXTERNAL_75S_LIMIT_NO_COMPLETE_VECTOR",
+    "started_KST": "2026-10-22T02:58:22+09:00",
+    "ended_KST": "2026-10-22T03:01:40+09:00",
+    "allocated_gpu_seconds": 198,
+    "allocated_GPUh": 0.055,
+    "terminal_exit_code": 124,
+    "exec_session": 70514,
+    "additional_device_tests": "2 passed in121.26s",
+    "cumulative_B_allocated_gpu_seconds": 468,
+    "cumulative_B_allocated_GPUh": 0.13,
+    "remaining_preparation_budget_seconds_not_retry_authority": 1332,
+    "reserved_GPUh": 0,
+    "conditional_field_max_GPUh": 3.5,
+    "cumulative_B_max_GPUh": 4,
+    "scope": "기존0은 재실행하지 않았다. 원래 미실행13003 한 번은75초 외부한도에서 종료됐으며 완성전ν/전체장은0이다. 이번198초를 한 번 차감하고 미사용예약3.925GPUh는 전부해제했다. B비용미달로자동재실행하지않는다."
+  },
+  "current_B_run": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_build_20261022-UTsELN",
+    "plan_sha256": "2a7f43d11fcdc22f14acf5215b1551cf7caaaf04992d8487c2548ae9661c7dbe",
+    "state": "SETTLED_GPU0_BASELINE_CHECK_FAILED_NO_13003_NO_NATIVE_FIELD",
+    "reserved_GPUh": 0,
+    "started_KST": "2026-10-22T02:22:08+09:00",
+    "ended_KST": "2026-10-22T02:26:38+09:00",
+    "allocated_gpu_seconds": 270,
+    "allocated_GPUh": 0.075,
+    "terminal_exit_code": 1,
+    "exec_session": 85941,
+    "settlement": "GPU 할당 창270초=0.075GPUh를 한 번 정산했다. 실패로 미사용4GPUh 예약을 해제했으며 실제13003/전체장은0이다.",
+    "preparation_max_GPUh": 0.5,
+    "conditional_field_max_GPUh": 3.5,
+    "remaining_after_settlement_GPUh": 73.54322222223334,
+    "scope": "Ada GPU0 1장; 준비·장치시험·실제0/13003 최대30분; 전ν 정확도·10초 통과 후에만 조건부 완성장. 자동재시도0."
+  },
   "settled_batch_C_run": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_gpu_batch_local_20261021-xSx3Z2",
     "plan_sha256": "1865fdfdba8226c267b47a80d902b7a4a7bb2656308cb65b463f09f5f7b81748",
@@ -130,6 +166,6 @@
   "planned_C_max_GPUh": 4,
   "remaining_if_C_fully_reserved_GPUh": 69.61822222223334,
   "reservation_rule": "GPU 실행 시작 시에만 예약하고 종료 후 실제 GPU 할당시간으로 한 번 정산한다",
-  "manual_scope": "직렬 C142초와 batch-C91초는 각각 한 번 정산 완료다. 둘 다 생산 기각이며 GPU/조건부 native 전체장/예약0이다. B 설계 평가 중이고 과거 미기록 수동 활동을 새로 재구성한 것은 아니다.",
+  "manual_scope": "직렬 C142초/batch-C91초·B 첫할당270초·원래 미실행13003 후속198초는 모두 종료·정산 완료다. 현재 GPU 예약0이며 같은 B의 자동 재시작 권한은 없다. 원천 모멘트 후속 후보의 CPU 직접시험·소수 열 대조·CUDA 컴파일은 GPU 사용0이다. 이전0·13003 원 실패를 보존하며 과거 미기록 수동 활동을 새로 추정하지 않았다.",
   "originals_preserved": true
 }
