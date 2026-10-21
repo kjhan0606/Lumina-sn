@@ -1,0 +1,71 @@
+{
+  "schema": "lumina-positive-source-measure-candidate-v1",
+  "status": "ARCHITECTURE_RECOMMENDED_IMPLEMENTATION_NOT_STARTED_OWNER_CONFIRMATION_PENDING",
+  "final_goal": "ACTIVE_NOT_MET",
+  "objective": "원천 재근사의 불필요한 세분화를 제거해 native90 자체 J1/J2·실제 잔차·생산 Si/S율을 확보하고, 궁극적으로 CMFGEN과 자기일관 이온분포·스펙트럼·물리량을 비교한다. 국소 적분기 성공으로 이 목표를 대체하지 않는다.",
+  "preserved_failure": {
+    "candidate": "SPATIAL_LINEAR_B",
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_unused_20261022-VhX0dX",
+    "terminal_exit": 124,
+    "complete_13003_vector": false,
+    "decision": "전ν 완결·10초 조건 미달을 유지한다. 같은 B의 자동 재시작·시간 연장·허용오차 완화는 하지 않는다.",
+    "evidence": "docs/LUMINA_B_SOURCE_COST_2026-10-22_QyTli2.json"
+  },
+  "astra_evaluation": {
+    "model": "gpt-6-astra",
+    "agent": "01a15b79-30ab-7d62-baac-5aa94edc01ea",
+    "submission": "01a15fb1-38b5-7311-9c30-8f76ea50ab70",
+    "state": "COMPLETED_AND_CLOSED",
+    "scope": "읽기 전용 후속 방법 기획·평가. 코드 변경·수치 실행·GPU 승인이 아니다.",
+    "recommendation": "실제 비음수 η 측도의 모멘트를 소비하는 양의 원천 적분을 다음 후보로 권고한다.",
+    "diagnosis": "χ와3Δδ를0으로 만든737열 시험에서 기존 적분기는8317패널을 사용했으나 정확한 원천 모멘트는 독립 native-bin Gauss8과7.78e-16 이내였다. 불필요한 η secant 재근사의 작업량을 확인한 것이며 실제13003의 모든 비용 원인이나 GPU 가속률을 입증하지는 않았다.",
+    "diagnostic_root": "/gpfs/kjhan/cmfgen_runs/lumina_B_source_cost_diagnostic_20261022-QyTli2",
+    "diagnostic_sha256": "e89d028ddaed84a01546d12d1e3e6cdd6c16b2e633f8ba4e60791f5452060453",
+    "simpler_alternative": "정확한 질량항 e^c M을 먼저 분리하고 expm1(z) 잔차에만 η secant를 쓰는 방법도 가능하다. 일반 감쇠에서 재근사가 남으므로 주 후보로 선택하지 않고 저차 경로 가능성으로만 남긴다."
+  },
+  "mathematical_contract": {
+    "measure": "dμ=η ds, M=∫dμ. η 자체를 매끄러운 secant로 대체하지 않는다.",
+    "positive_series": "Φ=c+z, 0≤z≤r≤0.5일 때 S_N=e^c Σ[n=0..N] ∫z^n dμ/n!, 0≤R_N≤e^(c+r) M r^(N+1)/(N+1)!.",
+    "phase_shift": "cubic Bernstein 제어계수의 최솟값을 c로 써서 z의 계수도 비음수가 되게 한다. 함수값의 양수성만으로 계수의 양수성을 가정하지 않는다.",
+    "degree": "N차 급수는 endpoint η 모멘트 최대3N+1차가 필요하다. 최대31차를 저장한다면 N≤10만 지원하며 부족할 때 phase 분할 또는 명시적 실패로 처리한다.",
+    "moment_definition": "같은 정규좌표 t의 A_i^m=∫B_i^m(t)ηa(t)dt, B_i^m=∫B_i^m(t)ηb(t)dt를 쓴다. 공간 가중 η=(u0+du*t)ηa+(1-u1+du*(1-t))ηb의 모멘트는 u0*A_i^m+du*(i+1)/(m+1)*A_(i+1)^(m+1)+(1-u1)*B_i^m+du*(m+1-i)/(m+1)*B_i^(m+1)로 모두 양의 항이다. 길이 배율은 한 번만 적용한다.",
+    "native_bin_rule": "17점 Gauss의 다항식 정확성은 각 원래 선형 bin 내부에서만 쓴다. 절점이 여러 개인 block 전체를 단일 다항식으로 취급하지 않는다.",
+    "errors": "급수 나머지·모멘트 생성/합성·좌표/scale 반올림·χ secant 광학깊이 오차를 모두 소비한다. |ΔΦ|≤δ의 영향은 양의 적분에 expm1(δ)로 반영한다. 비선형 공간 기하 차분 추정과 독립 미세참조는 별도로 유지한다.",
+    "preserve": "signedχ·gain·정확한0η·개별 양수 scale·native 반경에서 진η/ES/J를 보간한 뒤 산란원을 조립하는 순서·외부 대기 closure·각도/코어 경계·원 입력과 비교용 CMFGEN의 분리를 유지한다."
+  },
+  "implementation_constraints": [
+    "매 query마다31차 벡터를 전부 재합성하지 않고 query를 덮는 노드에 제한된 국소 cubic을 적분한다. 필요한 차수만 읽는다.",
+    "block32의 고정 양의 변환은 재사용한다. 짧은 범위는 원래 partial bin 경로로 처리하되 큰 span의 실제χ 사례도 통과해야 한다.",
+    "모든 공간 leaf마다 전ν 고차 모멘트 트리를 새로 만들지 않는다. 물질·동결 J 세대와 실제 endpoint 보간 위치를 정확히 식별한 재사용 구조가 필요하다.",
+    "기존 cache·replay·오차 버퍼·모멘트와 임시 메모리를 합친 실제 활성 작업공간1GiB 이내 명세와 실측이 필요하다. 추정만으로 통과시키지 않는다."
+  ],
+  "operator_readonly_implementation_notes": {
+    "source": "src/cmf_linear_provider.hpp: Reader::at",
+    "native_internal_basis": "내부 mode1의 ηtrue와 ES/J가 같은 w로 보간될 때 η(w)=(1-w)^2 C0+2w(1-w)C1+w^2 C2, C0=η0+ES0*J0, C1=(η0+η1+ES0*J1+ES1*J0)/2, C2=η1+ES1*J1이다. 비음수 basis의 모멘트를 조합하면 J 세대 안에서 보간 위치별 전ν 트리 재구축을 피할 가능성이 있다.",
+    "limits": "위 항등식은 내부 mode1에 대한 수학적 구현 참고이며 아직 코드·오차·메모리 검증이 없다. mode2 외부 대기는 η=exp((1-w)e0+w e1)이므로 같은 유한차 basis를 적용하면 물리 보간을 바꾸게 된다. 외부 경로를 단순히 같은 다항식으로 치환하지 않는다."
+  },
+  "proposed_verification_not_launched": {
+    "owner": "운전자(Codex). 단일 운전자 확인 후 새 후보의 분리된 root에서 구현·직접시험한다.",
+    "CPU": "독립 적분·signedχ/gain/zeroη·약한 주파수별 오차 및 실제χ를 복원한737열 고정 사례를 먼저 확인한다. 투명 극한의 빠른 경로만으로 수용하지 않는다.",
+    "GPU": "Astra 제안은 RTX5000 Ada1장·CPU4·host/device 각16GiB·활성 작업공간1GiB·준비/검증 최대30분·실제13003 전ν 최대1회·구간 상한60초·합격10초·재시도0이다. 아직 실행·예약하지 않았다. 새 후보의 자원 기록을 별도로 봉인하며 이전 B 사용량을 지우거나 미사용 예산을 자동 재시도 권한으로 취급하지 않는다.",
+    "acceptance": "기존 독립 미세참조1e-4·원천1e-8/공간 추정1e-5·주파수별 오차비≤1·D2H 포함10초와 생산 PHOT 가중오차1e-4를 유지한다. 일반 가중 I 합은 생산 광흡수율이 아니다.",
+    "failure": "메모리·정확도·10초 중 하나라도 실패하면 후보 미달로 종료한다. 시간 연장·정확도 완화·자동 재실행으로 전환하지 않는다.",
+    "after_local_acceptance": "조건을 모두 충족한 뒤 별도 봉인된 완성장 쌍·실제 J1 잔차·생산 Si/S율로 진행한다. 그 이후에도 자기일관 SE/RE와 CMFGEN 스펙트럼/이온분포 목표는 별도로 남는다."
+  },
+  "resource_observation": {
+    "ledger": "docs/LUMINA_GPU_RESOURCE_LEDGER_2026-10-21.json",
+    "total_GPUh": 144,
+    "used_upper_GPUh": 70.51177777776666,
+    "remaining_GPUh": 73.48822222223334,
+    "reserved_GPUh": 0,
+    "new_GPU_usage_in_this_record": 0,
+    "note": "기존198초는 다른 작업이 이미 정산했다. 이 문서에서 중복 차감하거나 공유 대장을 수정하지 않는다."
+  },
+  "ownership_blocker": "같은 scripts/lumina_gpu_linear_remaining.py가 다른 작업에서02:49/02:53에 변경됐고 별도13003 실행도 관측했다. 현재 세션과 다른 세션 중 어느 쪽이 단일 운전자인지 사용자에게 질문했으며 답변이 아직 없다. 공유 코드·인계서·자원 대장은 덮어쓰지 않았고 경쟁 GPU 실행도 하지 않았다. 단일 운전자 확인이 구현 재개의 선행 조건이다.",
+  "reproduction": [
+    "sed -n '1,220p' src/cmf_characteristic_linear.hpp",
+    "sed -n '1,210p' src/cmf_linear_provider.hpp",
+    "sed -n '1,180p' docs/LUMINA_B_SOURCE_COST_2026-10-22_QyTli2.json",
+    "sha256sum /gpfs/kjhan/cmfgen_runs/lumina_B_source_cost_diagnostic_20261022-QyTli2/diagnostic.json"
+  ]
+}
