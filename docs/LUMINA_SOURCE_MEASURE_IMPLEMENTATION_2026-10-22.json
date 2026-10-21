@@ -3,6 +3,51 @@
   "status": "CPU_FIXED737_AND_NATIVE_SELECTED_ACCURACY_MET_NOT_PRODUCTION",
   "final_goal": "ACTIVE_NOT_MET",
   "owner": "현재 운전자(Codex). 단일 운전자 지정 질문에 대한 사용자 승인(2026-10-22)을 현재 세션 지정으로 해석하고 사용자에게 명시했다. 다른 세션의 기존 결과와 변경은 보존하며 기존 작업을 임의 취소하지 않는다.",
+  "positive_projection_optimization": {
+    "state": "CPU_PROJECTION_NATIVE_SELECTED_AND_SMALL_GPU_CORE_MET_NOT_NATIVE_FULL_GPU",
+    "purpose": "고차 원천 모멘트의 native-bin별 순차 합성을 동일한 양의 고정 투영행렬로 바꿔 실제 native 세 열의 총 수송 시간을 줄인다. GPU 전ν/자체장·CMFGEN 동질성 완료로 대체하지 않는다.",
+    "planning_scope": "기존 Astra의 block32 양의 고정 변환 재사용 권고에 따른 구현 내부 최적화다. 물리 이산화·N25·감쇠 급수·수용 기준은 변경하지 않고 추가 모델/감사 호출을 하지 않는다.",
+    "mathematics": "각 native bin에 제한된 Bernstein 기저를 Bernoulli blossom의 양의 확률 재귀로 계산하고, 그 bin 안의 정확한 선형 원천 leaf 모멘트를 적분해 native vertex→block 모멘트 행렬을 만든다. 여러 꺾임이 있는 block을 하나의 다항식으로 간주하지 않는다. 원천 값과 별개인 행렬만 폭별로 재사용한다.",
+    "preserved": "N25·개별 Positive scale·signedχ·fullSR·원 provider 보간 순서·source1e-8/공간1e-5/독립미세1e-4·실패 보존. 원래 순차 합성은 직접 대조 기준으로 남긴다.",
+    "evidence_and_resources": "CPU1·4GiB·300초에서 행렬 항등식/순차 합성과의 대조·기존 직접시험·실제χ737열을 확인한다. 이어 같은 원 세 열을 CPU1·16GiB·외부300초/열별60초로 대조하며 cold/warm 또는 준비/수송 시간을 구분한다. 새 격리 root만 사용하고 이전 c437b82 결과를 보존한다.",
+    "CPU_evidence": "lumina_source_projection_CPU_20261022-L0VUNA:163시험/14.33초/exit0. test.log SHA256 7bec0865742992082ec78e7f287a0098fdd380f38d0eb69fb16ae61f30fcca97, case.json ae0da29030fbd2483a73bdf472d57347605721b8163ab824330d392d5866a545. block32 모멘트 준비0.02556→0.002523초, 수송0.039598초. 독립 기준/패널3069/원1e-8 기준 유지.",
+    "native_evidence": "lumina_source_projection_native_20261022-rMBJ2T:selected-plan SHA256 72d90d70801b4f009da2f4e38a98c33aad9a222cc2877c7c0fdd0cd46ee6851f, selected.json 3f0b967d0afb2fc6717a869c0a523d29738575fe47764157d88bd7212af8da29. 세 열 값은 앞선 후보와 같은 double이고 원1e-4를 통과한다. CPU 각0.177598/0.218373/0.235650초, 합0.631621초 대 앞선1.267742초다. 별도 시점 단발 관측이며 GPU 성능 예측이 아니다.",
+    "GPU_direct_test_scope": "기존 Astra 후속 원천 측도 설계의 구현으로 CMF_GPU_SOURCE_MEASURE 별도 바이너리·ABI1128B를 선택한다. native vertex별 원천을 한 번 공유하고 k모멘트를 스레드별 병렬 계산한다. 작은 합성 NF17/35/70만 native-bin 독립 적분·CPU 맵과 대조한다. Lageunha Ada0 한 장·CPU1·host/device 각16GiB/활성1GiB·GPU 할당창 최대180초(0.05GPUh)·새 root/원본 보존. 실제13003 전ν·전체 F·SE/RE는0이며 이 시험 통과로 생산 수용하지 않는다. GPU 시작 직전에만 예약하고 종료 후 실제 할당창으로 한 번 정산한다. 컴파일은 GPU 사용0이며 외부240초/CPU1·4GiB 한도다.",
+    "GPU_direct_seal": {
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_20261022-xQNYu9",
+      "GPU_library_sha256": "4c716b172dd7d8d599bcb19741ff776d7d07b6a3a703fe7c161ffb107442a590",
+      "CPU_library_sha256": "1fc1d658722d92e7a740c27905c995629802dab11cbb53c40063abff8996abaf",
+      "tests_sha256": "ce8354f16d76d0c187c1f6a06ce0875f824e5f2dd4372c3f25abbfb14503859f",
+      "GPU_Python_sha256": "caf9c9be8e73a1256062d35207c7f3fac62ed84db50bddab8713ec03ce9449ba",
+      "linear_Python_sha256": "4cebd76d215f73c896f05a1fadd901009cfc25545e625a44e896a912e7a566e6",
+      "host_tests": "165 passed,7 GPU-only skipped in16.50s",
+      "compile_observation": "모멘트 빌더42register/stack0/spill0/shared1060B, 상위 모멘트 병합56register/stack432B/spill0. 원천 적분 source_maps는255register/stack8416B와 큰 spill이 남는다. 전ν 성능 판정이 아니다.",
+      "serialization": "투영 계수는 같은 CUDA 문맥의 default stream 빌드 사이에서 순차 교체한다. 현재 한 스레드 driver의 순차 build/query 계약이다. 같은 문맥의 동시 build를 지원한다고 주장하지 않는다.",
+      "active_workspace": "native1115020ν의 χ+η 트리·맵cache·replay·오차·투영행렬 global13728B 합산 예상973244968B<1GiB다. 아직 실제 native GPU 전ν 메모리 실측 통과는 아니다."
+    },
+    "GPU_first_direct_result": {
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_20261022-xQNYu9",
+      "plan_sha256": "287ffa455522ff03f21f9a40eccca4b92df4e648e5c46e840b7619f2a73bb3ba",
+      "result": "8 passed,1 failed in1.43s/exit1. 구성은 CPU host2·일반 장치6 통과, 약한 원천 fixture1 실패다.",
+      "log_sha256": "74e674960299d592f3e3f059ef88240ae21ef08d62ca7f2a8d3733d78b5540fd",
+      "classification": "fixture가 χ와 함께 ES까지0으로 만들어 기존 Reader::at의 ES>0 계약을 위반했다. CPU에서도 같은 원 fixture는 status2로 거부됨을 재현했다. ES>0·J0=0으로 고치면 CPU 원천4.672639281939737e-24를 얻는다. GPU underflow 문제나 물리 코드 수정으로 판정하지 않는다.",
+      "memory": "reserved6777208832B·observed_peak2701590528B·작은 합성 버퍼 peak42596B·종료 GPU free32228MiB/util0%다. 큰 native 입력 실측이 아니다.",
+      "allocation": "1792621851→1792621854의3초=0.0008333333333GPUh를 한 번 정산했고 첫 예약은 해제했다."
+    },
+    "weak_fixture_confirmation": {
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_weak_20261022-5FuUfA",
+      "test_sha256": "044164c9a62ad4232c7f7a574ad6eed6b34b1794fee7935476f20e59ec9e1505",
+      "scope": "수치 바이너리·허용오차·물리 코드 변경 없이 Input weak branch만 고쳤다. 정상 ES를 보존하고 jmode0으로 산란원만0으로 한다. 통과한 일반 장치6개는 재사용하고 실패한 한 사례만 확인한다. 원180초 중 첫3초를 차감해 GPU 남은 창 최대177초(외부170초+kill 유예5초)·CPU1·host/device16GiB·전ν/전체장0이다. 원 실패와 JSON은 그대로 보존한다.",
+      "result": "1 passed in0.87s/exit0. 같은4c716b172d… GPU 바이너리에서 성공했다. 일반6+약한 원천1=고유 장치7사례를 검증한 것이며9개 전체를 GPU시험으로 세지 않는다.",
+      "plan_sha256": "9a0295e1716ce93f43d342c0e986bae598c81d1c58f988cca40702c2b2bf6419",
+      "log_sha256": "073b1bbed3fedd224b758a734fc16517c5bf3d17bd10f69d131ecd1b1c9690ca",
+      "memory_sha256": "9d7d86ed782f7c8d450ed3126b76b94c57a55112ab197ce8bb8f31eaafd1a926",
+      "allocation": "1792622146→1792622149의3초를 한 번 정산했다. 두 작은 창 합계6초=0.0016666667GPUh다. 현재 예약0·기록상잔여73.4865555556GPUh다.",
+      "final_host_regression": "167 passed,7 GPU-only skipped in17.67s. host-test.log SHA256 723222e451acb78959223ea400a020aca43d42543c272cdacaf45bc4ad6999f1. ES=0·J0 입력도 기존/새 native에서 실패 canary를 보존함을 추가 확인했다."
+    },
+    "legacy_GPU_compile_after_flag_addition": "새 플래그를 끈 기본 B CUDA 경로도 GNU13/CUDA13.0.2/sm_89에서 컴파일 exit0이다. 마지막 root의 legacy-linear.o SHA256 3afed5cbde622b9d51496be5dcb958d1b512fcb709ce5b1e94eb3a053cf1e6b7, log 42df140a5feb34ef952c0bd40cf58440b24b878684c55f5165f66ec78579012f. 기존 B를 수치 재실행한 것이 아니며 GPU 사용0이다.",
+    "next_native_gpu_decision": "새 후보의 실제13003 전ν 정확도·10초 판정은 아직 하지 않았다. 작은 GPU 성공이나 CPU2배 향상으로 생산 통과를 선언하지 않는다. 후속 원천 측도 계획의 원자원·원기준 안에서 새 후보 한 번의 결정적 실제 판정으로 이어간다. 같은 실패 B/이전 원본은 재시작하지 않는다."
+  },
   "objective": "실제 방출 원천의 native 꺾임을 재근사하지 않는 일반 감쇠 적분을 구현해, 실제 χ를 포함한737열 고정 사례의 정확도와 불필요한 원천 세분화 감소를 함께 확인한다. 그 결과로 전ν 후보 구현 진행 여부를 판단한다. 최종 목적은 여전히 자체장·생산율과 CMFGEN 이온분포/스펙트럼 동질성이다.",
   "scope": "별도 source-measure 헤더와 직접 시험을 추가한다. 기존 signedχ 모멘트·정확한 누적τ·3Δδ와 공간선형 물리 재구성은 재사용하고, η secant 적분만 양의 native 모멘트 적분으로 바꾼 후보를 선택적으로 호출한다. 기존 B 기본 함수와 실패 결과는 보존한다.",
   "planning_basis": [

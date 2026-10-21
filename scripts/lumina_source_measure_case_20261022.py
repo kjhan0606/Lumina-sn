@@ -53,7 +53,7 @@ def main():
     record={'schema':'lumina-source-measure-fixed737-v1','scope':'CPU 고정 사례만; GPU 성능·전체장 ETA·CMFGEN J 일치가 아니다',
             'profile':str(PROFILE),'profile_sha256':PROFILE_HASH,'rows':[],
             'source_hashes':{str(p.relative_to(ROOT)):digest(p) for p in
-                [ROOT/'src/cmf_source_measure.hpp',ROOT/'src/cmf_characteristic_linear.hpp',
+                [ROOT/'src/cmf_source_measure.hpp',ROOT/'src/cmf_source_projection.hpp',ROOT/'src/cmf_characteristic_linear.hpp',
                  ROOT/'src/cmf_linear_moments.hpp',ROOT/'src/cmf_ordered_maps.hpp',
                  ROOT/'tests/source_measure_probe.cpp',Path(__file__).resolve()]}}
     command=[os.environ.get('CXX','c++'),'-O2','-std=c++17','-ffp-contract=off','-Wall','-Wextra','-Werror',

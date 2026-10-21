@@ -91,7 +91,7 @@ def test_native_window_map_matches_independent_bin_integral(native, column, shif
     assert abs(actual.value()-expected) <= error.value()+2e-13*expected
 
 
-@pytest.mark.parametrize('bad', ['generation', 'location', 'column', 'eta', 'budget'])
+@pytest.mark.parametrize('bad', ['generation', 'location', 'column', 'eta', 'ES', 'budget'])
 def test_native_failures_preserve_output_canary(native, bad):
     view, arrays = inputs(); locs = (Location*2)(Location(1, 3, 2, .3), Location(1, 2, 1, .7))
     generation, column, relative = 7, 3, 1e-7
@@ -99,6 +99,7 @@ def test_native_failures_preserve_output_canary(native, bad):
     elif bad == 'location': locs[1].first = 19
     elif bad == 'column': column = 65
     elif bad == 'eta': arrays[0][2, :, :] = -3.
+    elif bad == 'ES': arrays[0][1, :, :] = 0.; view.jmode = 0
     else: relative = 1e-18
     output = NativeMap(); ct.memset(ct.byref(output), 0xA5, ct.sizeof(output)); before = bytes(output)
     code = native.fun(ct.byref(view), generation, locs, 1., .001, .014, .001, column, 32, relative, 100000, ct.byref(output))

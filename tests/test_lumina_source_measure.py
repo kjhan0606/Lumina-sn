@@ -1,6 +1,7 @@
 """일반 χ 원천 모멘트 후보와 독립 native-bin 적분을 직접 대조한다."""
 import ctypes as ct
 from decimal import Decimal,localcontext
+from math import comb
 import os
 from pathlib import Path
 import subprocess
@@ -133,3 +134,55 @@ def test_failure_never_publishes_partial_result(source_measure,bad):
     assert code!=0
     np.testing.assert_array_equal(m,np.full(7,-17.));np.testing.assert_array_equal(e,np.full(7,-17))
     np.testing.assert_array_equal(counts,np.full(5,-17))
+
+
+@pytest.mark.parametrize('width',[1,2,4,7,16,31,32,33,64,255,256])
+def test_positive_projection_preserves_exact_constant_linear_and_native_knots(source_measure,width):
+    lib=source_measure._library
+    p=np.ctypeslib.ndpointer(dtype='f8',flags='C_CONTIGUOUS')
+    fun=lib.source_projection_weights;fun.argtypes=[ct.c_int,p,ct.c_int];fun.restype=ct.c_int
+    weights=np.zeros((width+1,26))
+    assert fun(width,weights,weights.size)==0
+    assert np.min(weights)>0
+    np.testing.assert_allclose(weights.sum(axis=0),np.full(26,1/26),rtol=4e-14,atol=0)
+    np.testing.assert_allclose(np.linspace(0,1,width+1)@weights,
+                               (np.arange(26)+1)/(26*27),rtol=4e-14,atol=0)
+    # 독립 native-bin Gauss16: 이 행렬의 생성/병합 재귀를 사용하지 않는다.
+    rng=np.random.default_rng(102220+width);eta=rng.uniform(0,2,width+1)
+    x,w=np.polynomial.legendre.leggauss(16);v=(x+1)/2;w=w/(2*width)
+    reference=np.zeros(26)
+    for j in range(width):
+        t=(j+v)/width;source=(1-v)*eta[j]+v*eta[j+1]
+        for k in range(26):
+            reference[k]+=np.sum(w*comb(25,k)*t**k*(1-t)**(25-k)*source)
+    np.testing.assert_allclose(eta@weights,reference,rtol=4e-13,atol=0)
+
+
+@pytest.mark.parametrize('width',[1,7,32,64,256])
+def test_projected_and_sequential_positive_moments_agree_including_subnormal(source_measure,width):
+    lib=source_measure._library
+    p=np.ctypeslib.ndpointer(dtype='f8',flags='C_CONTIGUOUS')
+    e=np.ctypeslib.ndpointer(dtype='i8',flags='C_CONTIGUOUS')
+    f=lib.source_projection_moments;f.argtypes=[ct.c_int,p,ct.c_int,p,e];f.restype=ct.c_int
+    rng=np.random.default_rng(102221+width)
+    for eta_scale in (1.,1e-200,1e200,np.nextafter(0.,1.)):
+        values=np.zeros((4,width+1));values[2:]=rng.integers(0,4,(2,width+1))*eta_scale
+        results=[]
+        for direct in (0,1):
+            m=np.full(52,-17.);ex=np.full(52,-17,dtype='i8')
+            assert f(width,values,direct,m,ex)==0
+            with localcontext() as context:
+                context.prec=90
+                results.append([Decimal.from_float(a)*Decimal(2)**int(b) for a,b in zip(m,ex)])
+        for a,b in zip(*results):
+            assert abs(a-b)<=Decimal('4e-13')*max(abs(a),abs(b))
+
+
+def test_projection_failure_preserves_output_canary(source_measure):
+    lib=source_measure._library;p=np.ctypeslib.ndpointer(dtype='f8',flags='C_CONTIGUOUS')
+    e=np.ctypeslib.ndpointer(dtype='i8',flags='C_CONTIGUOUS')
+    f=lib.source_projection_moments;f.argtypes=[ct.c_int,p,ct.c_int,p,e];f.restype=ct.c_int
+    values=np.ones((4,9));values[2,4]=-1
+    m=np.full(52,-17.);ex=np.full(52,-17,dtype='i8')
+    assert f(8,values,1,m,ex)!=0
+    np.testing.assert_array_equal(m,np.full(52,-17.));np.testing.assert_array_equal(ex,np.full(52,-17))

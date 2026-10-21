@@ -1,4 +1,5 @@
 #include "cmf_source_measure.hpp"
+#include "cmf_source_projection.hpp"
 #include <vector>
 #include <chrono>
 #include <algorithm>
@@ -26,13 +27,14 @@ int execute(int nf,int block,const double *values,const double *params,int limit
         std::vector<lumina_linear::Node> nodes((size_t)2*leaves,lumina_linear::empty());
         std::vector<lumina_source_measure::Node> sources((size_t)2*leaves,lumina_source_measure::empty());
         for(int i=0;i<blocks;i++){
-            auto chi=lumina_linear::empty();auto eta=lumina_source_measure::empty();
-            for(int bin=i*block;bin<std::min(nf-1,(i+1)*block);bin++){
-                lumina_linear::Node p,n;lumina_source_measure::Node q,r;
-                if(!lumina_linear::partial(reader,nf,bin,0.,1.,p)||!lumina_linear::combine(chi,p,n)||
-                   !lumina_source_measure::partial(reader,nf,bin,0.,1.,q)||!lumina_source_measure::combine(eta,q,r))return 2;
-                chi=n;eta=r;
+            auto chi=lumina_linear::empty();lumina_source_measure::Node eta;
+            int end=std::min(nf-1,(i+1)*block);
+            for(int bin=i*block;bin<end;bin++){
+                lumina_linear::Node p,n;
+                if(!lumina_linear::partial(reader,nf,bin,0.,1.,p)||!lumina_linear::combine(chi,p,n))return 2;
+                chi=n;
             }
+            if(!lumina_source_projection::block(reader,nf,i*block,end,eta))return 2;
             nodes[leaves+i]=chi;sources[leaves+i]=eta;
         }
         for(int i=leaves-1;i>0;i--){
@@ -69,4 +71,26 @@ extern "C" int source_measure_probe(int nf,int block,const double *values,const 
 extern "C" int source_measure_cost(int nf,int block,const double *values,const double *params,int limit,
     double *mantissa,int64_t *exponent,int *counts,double *timings,uint64_t *stats){
     return execute(nf,block,values,params,limit,mantissa,exponent,counts,timings,stats);
+}
+extern "C" int source_projection_weights(int width,double *out,int count){
+    if(width<1||width>256||!out||count!=(width+1)*(lumina_source_measure::degree+1))return 1;
+    try{const auto &m=lumina_source_projection::matrix(width);std::copy(m.weights.begin(),m.weights.end(),out);return 0;}
+    catch(...){return 2;}
+}
+extern "C" int source_projection_moments(int width,const double *values,int direct,double *mantissa,int64_t *exponent){
+    if(width<1||width>256||!values||!mantissa||!exponent)return 1;
+    try{
+        uint64_t reads=0;Reader r={width+1,values,&reads};auto n=lumina_source_measure::empty();
+        if(direct){if(!lumina_source_projection::block(r,width+1,0,width,n))return 2;}
+        else for(int j=0;j<width;j++){
+            lumina_source_measure::Node p,next;
+            if(!lumina_source_measure::partial(r,width+1,j,0.,1.,p)||!lumina_source_measure::combine(n,p,next))return 2;
+            n=next;
+        }
+        for(int c=0;c<2;c++)for(int k=0;k<=lumina_source_measure::degree;k++){
+            int i=c*(lumina_source_measure::degree+1)+k;
+            mantissa[i]=n.m[c][k].mantissa;exponent[i]=n.m[c][k].exponent;
+        }
+        return 0;
+    }catch(...){return 3;}
 }

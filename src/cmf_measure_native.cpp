@@ -1,6 +1,7 @@
 #include "cmf_linear_native.h"
 #include "cmf_linear_provider.hpp"
 #include "cmf_source_measure.hpp"
+#include "cmf_source_projection.hpp"
 #include <algorithm>
 #include <vector>
 
@@ -28,14 +29,14 @@ extern "C" int cmf_measure_native_map(const CMFNodalDenseView *view,uint64_t gen
         std::vector<lumina_source_measure::Node> sources((size_t)2*leaves,lumina_source_measure::empty());
         uint64_t built=0,combinations=0;
         for(int i=0;i<blocks;i++){
-            Node whole_node=empty();auto eta=lumina_source_measure::empty();
-            for(int bin=i*block;bin<std::min(nf-1,(i+1)*block);bin++){
-                Node part,next;lumina_source_measure::Node source,merged;
-                if(!partial(reader,nf,bin,0.,1.,part)||!combine(whole_node,part,next)||
-                   !lumina_source_measure::partial(reader,nf,bin,0.,1.,source)||
-                   !lumina_source_measure::combine(eta,source,merged))return 2;
-                whole_node=next;eta=merged;built++;combinations++;
+            Node whole_node=empty();lumina_source_measure::Node eta;
+            int end=std::min(nf-1,(i+1)*block);
+            for(int bin=i*block;bin<end;bin++){
+                Node part,next;
+                if(!partial(reader,nf,bin,0.,1.,part)||!combine(whole_node,part,next))return 2;
+                whole_node=next;built++;combinations++;
             }
+            if(!lumina_source_projection::block(reader,nf,i*block,end,eta))return 2;
             nodes[leaves+i]=whole_node;sources[leaves+i]=eta;
         }
         for(int i=leaves-1;i>0;i--){

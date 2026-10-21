@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 03:11",
+  "as_of_KST": "2026-10-22 07:38",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,37 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.51177777776666,
-  "remaining_before_new_reservations_GPUh": 73.48822222223334,
+  "used_upper_GPUh": 70.51344444443333,
+  "remaining_before_new_reservations_GPUh": 73.48655555556667,
   "current_reserved_GPUh": 0,
+  "source_projection_GPU_weak_confirmation": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_weak_20261022-5FuUfA",
+    "state": "SETTLED_CORRECTED_WEAK_FIXTURE_PASSED",
+    "library_sha256": "4c716b172dd7d8d599bcb19741ff776d7d07b6a3a703fe7c161ffb107442a590",
+    "max_allocation_seconds": 177,
+    "reserved_GPUh": 0,
+    "allocation_started_epoch": 1792622146,
+    "allocation_ended_epoch": 1792622149,
+    "allocated_gpu_seconds": 3,
+    "allocated_GPUh": 0.0008333333333333334,
+    "terminal_exit": 0,
+    "test_result": "1 passed in0.87s. 같은 수치 바이너리에서 입력 fixture만 수정했다.",
+    "scope": "같은 수치 바이너리에서 ES>0·J0=0으로 수정한 약한 원천 합성 사례 하나만 재확인한다. 이전6개 장치 통과를 재실행하지 않고 첫3초를 원180초에서 차감해 최대177초만 남긴다. 실제13003 전ν/전체장은0이다."
+  },
+  "source_projection_GPU_direct": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_20261022-xQNYu9",
+    "state": "SETTLED_8_PASSED_1_INVALID_ES_FIXTURE_FAILED",
+    "library_sha256": "4c716b172dd7d8d599bcb19741ff776d7d07b6a3a703fe7c161ffb107442a590",
+    "max_allocation_seconds": 180,
+    "reserved_GPUh": 0,
+    "allocation_started_epoch": 1792621851,
+    "allocation_ended_epoch": 1792621854,
+    "allocated_gpu_seconds": 3,
+    "allocated_GPUh": 0.0008333333333333334,
+    "terminal_exit": 1,
+    "test_result": "8 passed,1 failed in1.43s. 일반 트리/맵은 통과, 약한 원천 fixture가 ES=0으로 원 native의 ES>0 입력 계약을 위반했다. 오류48을 보존하고 실제 전ν/전체장은0이다.",
+    "scope": "새 원천 측도 병렬 투영 후보의 NF17/35/70 합성 직접 시험만 수행한다. CPU1·host/device 각16GiB·활성1GiB, 실제13003 전ν/전체 F/SE·RE는0이다. 기존 실패 B 재시작이 아니며 종료 후 allocation.started/ended 초를 한 번 정산한다."
+  },
   "B_unused_case_continuation": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_B_gpu_unused_20261022-VhX0dX",
     "plan_sha256": "9b82b4d764645e4f0724a90928f33622ff6e81a2293a4f10f8e4913979a71eed",
@@ -166,6 +194,6 @@
   "planned_C_max_GPUh": 4,
   "remaining_if_C_fully_reserved_GPUh": 69.61822222223334,
   "reservation_rule": "GPU 실행 시작 시에만 예약하고 종료 후 실제 GPU 할당시간으로 한 번 정산한다",
-  "manual_scope": "직렬 C142초/batch-C91초·B 첫할당270초·원래 미실행13003 후속198초는 모두 종료·정산 완료다. 현재 GPU 예약0이며 같은 B의 자동 재시작 권한은 없다. 원천 모멘트 후속 후보의 CPU 직접시험·소수 열 대조·CUDA 컴파일은 GPU 사용0이다. 이전0·13003 원 실패를 보존하며 과거 미기록 수동 활동을 새로 추정하지 않았다.",
+  "manual_scope": "직렬 C142초/batch-C91초·B 첫할당270초·원래 미실행13003 후속198초는 모두 종료·정산 완료다. 원천 측도 GPU 후속 후보의 작은 직접 시험은3+3초=6초를 추가 정산했다. 현재 예약0이며 같은 실패 B 자동 재시작 권한은 없다. CPU·소수 열·컴파일은 GPU 사용0이고 이전0·13003·잘못된 ES fixture 실패를 모두 보존한다. 과거 미기록 수동 활동은 새로 추정하지 않았다.",
   "originals_preserved": true
 }

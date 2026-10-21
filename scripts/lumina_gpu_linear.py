@@ -24,7 +24,7 @@ class Piece(ct.Structure):
 
 
 class Runtime(BaseRuntime):
-    def __init__(self, library, baseline_free):
+    def __init__(self, library, baseline_free, *, _node_bytes=NODE_BYTES):
         functions = {
             'lumina_linear_cuda_node_bytes': ([], S), 'lumina_linear_cuda_map_bytes': ([], S),
             'lumina_linear_cuda_local_bytes': ([], S),
@@ -36,29 +36,36 @@ class Runtime(BaseRuntime):
             'lumina_history_cuda_reconstruct': ([I, D]+[P]*4, I),
             'lumina_history_cuda_boundary': ([I, P, P, D, P, P], I),
             'lumina_history_cuda_accumulate': ([I]*3+[P]*5, I)}
-        abis = (('lumina_linear_cuda_node_bytes', NODE_BYTES), ('lumina_linear_cuda_map_bytes', MAP_BYTES),
+        abis = (('lumina_linear_cuda_node_bytes', _node_bytes), ('lumina_linear_cuda_map_bytes', MAP_BYTES),
                 ('lumina_linear_cuda_local_bytes', LOCAL_BYTES))
         super().__init__(library, baseline_free, _functions=functions, _abis=abis)
 
 
-def memory_layout(nf, width):
+def memory_layout(nf, width, *, node_bytes=NODE_BYTES, extra_bytes=0):
     if type(nf) is not int or type(width) is not int or not 8 <= nf <= 2000000 or not 1 <= width <= 65536:
         raise ValueError('B GPU 격자/폭 오류')
+    if type(node_bytes) is not int or node_bytes<NODE_BYTES or type(extra_bytes) is not int or extra_bytes<0:
+        raise ValueError('모멘트 작업공간 크기 오류')
     arena = max(640*1024**2, 3*nf*MAP_BYTES)
     arena = (arena+255)//256*256
-    blocks = (nf-2)//32+1; leaves = 1 << (blocks-1).bit_length(); tree = 2*leaves*NODE_BYTES
+    blocks = (nf-2)//32+1; leaves = 1 << (blocks-1).bit_length(); tree = 2*leaves*node_bytes
     results = max(96*1024**2, nf*LOCAL_BYTES); slots = min(4096, results//(width*LOCAL_BYTES))
     slabs = (nf+width-1)//width
     weighted = nf*8+((nf+4095)//4096)*32
     aux = 3*nf*8+nf*16+4096*8*2+slabs*8+8+weighted
-    workspace = arena+tree+results+aux
+    workspace = arena+tree+results+aux+extra_bytes
     if slots < 1 or workspace > CACHE_LIMIT: raise MemoryError('B 활성 적분 작업공간1GiB 초과')
     return dict(arena=arena, tree=tree, results=results, slots=slots, workspace=workspace)
 
 
 class LinearDriver(GpuDriver):
+    node_bytes=NODE_BYTES
+    projection_bytes=0
+    engine='SPATIAL_LINEAR_B'
     def __init__(self, runtime, provider, cpu_library, *, block_width=256):
-        layout = memory_layout(provider.nf, block_width)
+        layout = memory_layout(provider.nf, block_width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
+        if runtime.lib.lumina_linear_cuda_node_bytes()!=self.node_bytes:
+            raise ValueError('GPU driver와 바이너리의 모멘트 저장 구조가 다르다')
         if Path(cpu_library).resolve() != provider._binary or provider.identity.get('field', {}).get('role', '').startswith('REFERENCE'):
             raise ValueError('같은 native context와 자체 J 입력 필요')
         self.rt, self.provider, self.nf, self.ns, self.width = runtime, provider, provider.nf, provider.ns, block_width
@@ -82,7 +89,7 @@ class LinearDriver(GpuDriver):
             endpoints = (Location*2)(loc[0], loc[2]); p = Piece()
             check(self.lib.lumina_linear_cuda_plan(ct.byref(self.view), endpoints, length,
                 self.provider._source.dlognu, da, db, begin, width, 32, ct.byref(p)))
-            if 2*p.leaves*NODE_BYTES > self.tree.size: raise MemoryError('B 모멘트 tree 작업공간')
+            if 2*p.leaves*self.node_bytes > self.tree.size: raise MemoryError('B 모멘트 tree 작업공간')
             built = min(p.nf-1, ((p.bins+31)//32)*32)
             work.take('bin_maps', built); work.take('tree_compositions', p.leaves-1)
             work.take('padding_leaves', p.leaves-((p.bins+31)//32))
@@ -169,7 +176,7 @@ class LinearDriver(GpuDriver):
                 error_normalization='maximum of per-frequency relative ratios; no intensity floor or global bright norm',
                 error_certificate=False, max_mesh_leaves=maximum_leaves, rounds=rounds, cache_evictions=evictions,
                 cache_peak_bytes=self.arena.peak, active_workspace_bytes=self.layout['workspace'],
-                limited_polynomials=int(self.rt.download(self.limited, 1, 'u8')[0]), engine='SPATIAL_LINEAR_B')
+                limited_polynomials=int(self.rt.download(self.limited, 1, 'u8')[0]), engine=self.engine)
         finally:
             work.deadline = previous_deadline
             for slab in leaves:
