@@ -1,0 +1,80 @@
+{
+  "schema": "lumina-source-measure-native-GPU-decision-v1",
+  "status": "TERMINAL_EXTERNAL_TIMEOUT_NO_VECTOR_COMPLETION_COST_NOT_MET_ACCURACY_UNVERIFIED",
+  "final_goal": "ACTIVE_NOT_MET",
+  "objective": "새 원천 측도 후보가 같은 원 native 입력에서 실제13003 전ν 정확도와 비용을 함께 충족하는지 판정해 자체장/생산율 진행 여부를 결정한다. 최종 목표인 CMFGEN Si II/III·S 이온분포/스펙트럼 동질성은 아직 미달이다.",
+  "owner": "현재 단일 운전자(Codex). 사용자 추가진행 사전승인과 기존 Astra의 후속 원천 측도 설계/자원 권고를 적용한다. 별도 소단계 감사나 모델 호출은 추가하지 않는다.",
+  "run_root": "/gpfs/kjhan/cmfgen_runs/lumina_source_measure_actual_20261022-ihYw9d",
+  "sealed_plan_sha256": "c80ca77a3144331920531141635934aacc880a7de28cda0e50ecee8b6ec79c73",
+  "adapter_tests": "170 passed,7 GPU-only skipped in10.23s. final-test.log SHA256 daa1348497d4558d9a085664073975e6a47df9ef37a84fda649fb7a98e57dbdf. 첫 외곽 mock의 Location 타입 오류는 시험만 수정했고 원 실패 로그를 보존했다.",
+  "resource_precheck": "GPU0의 다른 프로젝트 preprocess4개는 중단하지 않았다. Ollama가 일시적으로 점유한 뒤 종료됐고, 이후 가용26188MiB/util3%로 원24GiB/5% 이하 조건을 충족한 관측에서 실행한다. 공유 장치 관측이며 성능 결과에 공존 상태를 함께 남긴다.",
+  "terminal_result": {
+    "exec_session": 48224,
+    "terminal_exit": 124,
+    "allocation_started_epoch": 1792623860,
+    "allocation_ended_epoch": 1792623931,
+    "allocated_gpu_seconds": 71,
+    "complete_vector_present": false,
+    "last_partial_sha256": "dc4906a99b2ca05c088897ec0f8583b47fd39036f91181ceef15e54b55f2b0e5",
+    "classification": "새 후보의 실제 구간이 외부70초 TERM(총75초 한도)에서 종료됐다. 완결/10초는 미달이다. 정확도는 완성 벡터가 없어 미검증이며 실패를 꾸며내지 않는다.",
+    "stale_json": "STARTED/INTERVAL_13003/parallel_work0는elapsed12.413초에 실행 전 publish한 마지막 기록이다. 부모 exit124·종료 receipt·프로세스 부재로 terminal이다. 이후 내부 단계와 작업량을0이라고 해석하지 않는다.",
+    "memory_before_local": "live3836603524B·reserved6774390784B·observed_peak6544949248B였다. 이는 수송 전 관측이며 계산 중 peak를 뜻하지 않는다.",
+    "integrator_actual_allocation": "live에서 canonical2408443200+outer454928160+반경920+runtime status4B를 빼고 투영 module global13728B를 더하면973244968B<1GiB다. 계획값과 실제 사전 할당 합계가 일치한다.",
+    "shared_load": "시작 조건은free26188MiB/util3%로 충족했고 다른 프로젝트4개가 계속 공존했다. 종료 후 같은4개만 남고 free26188MiB/util9%다. 공존 부하의 영향을 분리한 내재 수행시간은 주장하지 않는다.",
+    "preserved": "원 gpu-local.json·빈 actual.log·plan·src/scripts·바이너리는 보존한다. 별도 terminal.json이 종료 정본이다. 같은 후보 재시작/시간 연장/허용오차 완화/전체장은 없다.",
+    "settlement": "이번71초를 한 번 차감해 원천 측도 누적77초, 남은 준비1723초다. 이것은 같은 실패의 재시도 권한이 아니다. GPU대장 잔여73.4668333333GPUh·예약0이다."
+  },
+  "next_architecture_mathematical_advice": {
+    "agent": "01a160ba-f502-7da2-baad-0e30f785a603",
+    "model": "gpt-6-astra",
+    "state": "COMPLETED_AND_CLOSED",
+    "scope": "공개 수송 적분/자료구조 수학만 질문했다. 로컬 원문·공유 문맥·소스·실험 수치는 전달/열람하지 않았다. 실제 성능·물리 판정이나 실행 승인으로 꾸미지 않는다.",
+    "conditions": [
+      "캐시에서 진단을 뺄 수 있으나 합성/수용/적응이 소비하는T,S,E총합,eτ와 같은 합산 순서를 보존해야 한다. 뒤 전달오차가 앞 원천에 작용하는 항도 유지한다.",
+      "χ/η tree의 block/leaves 수는 독립일 수 있다. leaf번호가 아닌 같은 native 구간·origin·endpoint·generation으로 연결해야 한다.",
+      "η query는 완전 포함 노드와 정확히 잘린 native partial로 적분 측도를 덮어야 한다. 넓은 노드의 위상만 제한해 query밖 원천까지 적분하면 안 된다.",
+      "rich→compact 맵의 합성과 수용 투영은 같은 입력맵에서 교환해야 한다. tree 분할 변경에 따른 roundoff/적응 경로 변화는 별도 오차 안에서 판정한다.",
+      "실제 동시 존재하는 tree/cache/replay/global/임시를 모두 합산한다. payload/경계 비용 감소만으로 적응 stack/warp divergence가 해결됐다고 주장하지 않는다."
+    ],
+    "operator_context": "현재 blue는 역방향이 아니라 마지막 nativeν 이후의 상수 연장이다. 공개 자문의 조건부 방향 언급을 현재 코드의 방향 오류로 오인하지 않는다."
+  },
+  "planning_basis": "docs/LUMINA_SOURCE_MEASURE_PLAN_2026-10-22_QyTli2.json 및 docs/LUMINA_SOURCE_MEASURE_IMPLEMENTATION_2026-10-22.json. 기존 소유권 대기는 사용자 승인 후 해소됐고, 기획 근거와 과거 작성자는 유지한다.",
+  "scope": "원 입력/M70/native90/NF1115020/epoch1683072·J0=I0=0·같은 fullSR 구간13003 한 번만 수행한다. 기존0이나 실패 B는 재시작하지 않는다. 전체 F·SE/RE·생산 Si/S율·CMFGEN 장 주입·자동 반복은 없다.",
+  "sealed_baselines": {
+    "GPU_library": "/gpfs/kjhan/cmfgen_runs/lumina_source_projection_GPU_20261022-xQNYu9/measure_cuda.so",
+    "GPU_library_sha256": "4c716b172dd7d8d599bcb19741ff776d7d07b6a3a703fe7c161ffb107442a590",
+    "geometry_library": "/gpfs/kjhan/cmfgen_runs/lumina_gpu_batch_local_20261021-xSx3Z2/driver.so",
+    "geometry_library_sha256": "6f82306bff6170037a40f09303f33e1cb00d930ddbdeb0cbe38d7b8b61855be4",
+    "origin": "/gpfs/kjhan/cmfgen_runs/lumina_native90_pair_20261021-e7DQZB/native-contract.json",
+    "origin_sha256": "0fe9718063d6d1ba46a1dbb32e4ccace4430f8d4f7040ef0be86ee3a025ac598",
+    "reference": "같은 봉인 입력·기하·명시적0 입사/0J에서 기존8192분할 독립 세 점624712/624968/625223. CMFGEN J 자체가 아니다.",
+    "reuse": "167 CPU·고유 GPU 장치7사례를 재사용한다. 원 ES=0 fixture 실패도 보존한다. 새 GPU 수치 바이너리 재컴파일/변경 없이 실행 외곽과 작업량 집계만 연결한다."
+  },
+  "acceptance": {
+    "fine_reference_relative": 1e-4,
+    "fine_each_point": "세 참조점 각각의 상대차와 기존 최대정규화차가 모두1e-4 이내. 밝은 다른 참조점이 약한 값을 숨기지 않게 기록한다.",
+    "source_relative": 1e-8,
+    "spatial_relative": 1e-5,
+    "per_frequency_error_ratio": 1,
+    "cost_including_D2H_seconds": 10,
+    "memory": "host/device 각16GiB·실제 활성 적분 작업공간1GiB 이내. 현재 합산 예상973244968B이며 실제 기록과 대조한다.",
+    "production_PHOT": "이 국소 I 시험은 생산 PHOT 율이 아니다. 실제 완성 J에서 생산 광흡수율과 가중오차1e-4를 확인해야 하며 현재 미검증이다."
+  },
+  "resources": {
+    "location": "Lageunha RTX5000 Ada GPU0 한 장; 부하·프로젝트/입력 확인 후 실행",
+    "CPUs_max": 4,
+    "GPU_preparation_cumulative_seconds_max": 1800,
+    "GPU_already_used_seconds": 6,
+    "remaining_preparation_seconds": 1794,
+    "this_external_seconds": 75,
+    "this_internal_total_seconds": 70,
+    "interval_seconds_max": 60,
+    "interval_calls": 1,
+    "automatic_retries": 0,
+    "parallel_work_max": "512×NF. 기존 χ build/query/replay 외 η 투영vertex/node·상위 병합·padding 구조 작업을 같은 총량에 추가 집계한다. scalar FLOP나 CPU formal 계산 수와 혼용하지 않는다.",
+    "output_max_GiB": 10,
+    "GPU_booking": "시작 직전에 남은 준비 한도 안에서 이번75초=0.0208333333GPUh만 예약하고 종료 후 실제 할당 창을 한 번 정산한다. 조건부 전체장 예약은 만들지 않는다."
+  },
+  "failure_and_preservation": "정확도·메모리·10초·총 작업량 또는 시간 한도 실패 시 원 결과와 마지막 완료 배치를 보존한다. 부분 벡터를 완성장으로 소비하지 않는다. 외부 timeout도 실제 종료 receipt로 기록하며 stale STARTED를 살아 있는 작업으로 오인하거나 자동 재시작하지 않는다.",
+  "reproduction": "새 root에 원본의 봉인 Python 의존성과 현재 선택 실행기·검증한 두 바이너리를 고정한다. lumina_gpu_measure_local.py prepare가 원 구간/입력/기준과 모든 파일 SHA를 봉인한다. 그 digest로 run을 한 번 수행한다. 기존 root/started/완성 벡터/실패 로그는 덮어쓰지 않는다. 실행 전 외곽 직접시험은 GPU 없이 CPU1·4GiB·300초다."
+}

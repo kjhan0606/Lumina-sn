@@ -93,6 +93,12 @@ class LinearDriver(GpuDriver):
             built = min(p.nf-1, ((p.bins+31)//32)*32)
             work.take('bin_maps', built); work.take('tree_compositions', p.leaves-1)
             work.take('padding_leaves', p.leaves-((p.bins+31)//32))
+            if self.projection_bytes:
+                blocks=(p.bins+31)//32
+                # 고수준 구조 작업 단위다. scalar FLOP/CPU formal 수와 혼용하지 않는다.
+                for kind,count in (('source_projected_vertices',built+blocks),('source_projection_nodes',blocks),
+                    ('source_tree_compositions',p.leaves-1),('source_padding_nodes',p.leaves-blocks)):
+                    work.counts.setdefault(kind,0);work.take(kind,count)
             check(self.lib.lumina_linear_cuda_build(ct.byref(p), self.tree.address, self.rt.status))
             work.take('map_queries', width)
             check(self.lib.lumina_linear_cuda_query(ct.byref(p), self.tree.address, 1e-8, 100000,

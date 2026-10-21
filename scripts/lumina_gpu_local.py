@@ -27,6 +27,16 @@ LIMITS=dict(cpus=4,host_GiB=16,device_GiB=16,cache_GiB=1,GPU=1,device_index=0,
 SCHEMA='lumina-gpu-native-local-v1'
 
 
+def fine_comparison(actual,fine,*,each_output=False):
+    actual=np.asarray(actual,dtype='f8');fine=np.asarray(fine,dtype='f8')
+    if actual.shape!=fine.shape or fine.ndim!=1 or not fine.size or \
+       not np.all(np.isfinite(actual)) or not np.all(np.isfinite(fine)) or np.any(fine<=0):
+        raise ValueError('동일 열의 유한 값과 양의 미세참조가 필요하다')
+    delta=abs(actual-fine);individual=delta/fine;gap=float(delta.max()/fine.max())
+    return dict(fine_max_norm_difference=gap,fine_relative_differences=individual.tolist(),
+                accuracy_met=gap<=1e-4 and (not each_output or bool(np.all(individual<=1e-4))))
+
+
 def prepare(root,*,extra_files=(),interval_indices=(0,13003),comparison_context=None):
     root=Path(root).resolve();out=root/'gpu-local-plan.json'
     if out.exists():raise FileExistsError('기존 GPU 계획 보존')
@@ -111,9 +121,8 @@ def run(path,digest):
                             entry.update(baseline_max_norm_difference=gap,accuracy_met=gap<=3e-12)
                         else:
                             actual=output[c['fine_columns']];fine=np.array(c['fine_values'])
-                            gap=float(abs(actual-fine).max()/abs(fine).max())
                             entry.update(fine_columns=c['fine_columns'],fine_values=fine.tolist(),actual_values=actual.tolist(),
-                                fine_max_norm_difference=gap,accuracy_met=gap<=1e-4)
+                                **fine_comparison(actual,fine,each_output=LIMITS.get('fine_each_output',False)))
                         out=root/f'gpu-interval-{index}.npy'
                         with out.open('xb') as f:np.save(f,output,allow_pickle=False)
                         entry['output']=dict(path=str(out),sha256=M.N.sha(out));entry['cost_met']=seconds<=10.

@@ -1,8 +1,9 @@
 {
   "schema": "lumina-positive-source-measure-implementation-v1",
-  "status": "CPU_FIXED737_AND_NATIVE_SELECTED_ACCURACY_MET_NOT_PRODUCTION",
+  "status": "CPU_SMALL_GPU_MET_ACTUAL_NATIVE_GPU_TIMEOUT_NOT_ACCEPTED",
   "final_goal": "ACTIVE_NOT_MET",
   "owner": "현재 운전자(Codex). 단일 운전자 지정 질문에 대한 사용자 승인(2026-10-22)을 현재 세션 지정으로 해석하고 사용자에게 명시했다. 다른 세션의 기존 결과와 변경은 보존하며 기존 작업을 임의 취소하지 않는다.",
+  "latest_native_GPU_attempt": "lumina_source_measure_actual_20261022-ihYw9d는 검증한 같은 GPU 바이너리로 실제13003 한 번을 수행했으나 외부한도exit124로 종료했다. 완성 벡터가 없으므로 정확도는 미검증, 완결/10초 조건은 미달이다. 실제 사전 할당 적분973244968B<1GiB,71초를 한 번 정산해 원천 측도 누적77초·예약0이다. 원본/실패/다른 프로젝트 작업을 보존했으며 같은 후보를 재시작하지 않는다. 종료 정본·공유 부하·다음 자료구조 수학 자문은 docs/LUMINA_SOURCE_MEASURE_NATIVE_GPU_2026-10-22.json에 있다.",
   "positive_projection_optimization": {
     "state": "CPU_PROJECTION_NATIVE_SELECTED_AND_SMALL_GPU_CORE_MET_NOT_NATIVE_FULL_GPU",
     "purpose": "고차 원천 모멘트의 native-bin별 순차 합성을 동일한 양의 고정 투영행렬로 바꿔 실제 native 세 열의 총 수송 시간을 줄인다. GPU 전ν/자체장·CMFGEN 동질성 완료로 대체하지 않는다.",
