@@ -8,6 +8,7 @@
 #SBATCH --mem=16G
 #SBATCH --time=00:02:54
 #SBATCH --no-requeue
+# 위174초요청은Slurm에서3분으로올림된다. 새실행의예약은180초로계상한다.
 source /etc/profile
 module purge
 module load gnu13 cuda/13.0.2

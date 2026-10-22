@@ -1,5 +1,7 @@
 {
   "schema": "lumina-total-cap-reservation-fix-v1",
+  "walltime_accounting_note": "완료후sacct를다시읽어요청174초와실제Timelimit180초의차이를확인했다. Slurm이분단위로올림했으므로174초를scheduler가보장한상한으로주장하지않는다. 실제할당22초만한번차감했고기존6초와합쳐28초로원180초안이다. 기존요청/예약이력은보존하고대장의실제할당상한을정정했다. 이후실행은분단위요청과예약을일치시켜야한다. 이수정은수치/총메모리/최종물리기준변경이아니다.",
+  "operator_readback": "433283의저장된scaled T/S/E를CPU35참조와읽어재계산한원천최대상대차는1.9962951751645104e-16이며41대조모두충족했다. 원시데이터해시와source/runtime/header/driver/계획스크립트를현재작업본과byte대조했다. GPU_root가정본이며동일목적의별도준비root wkdqV7는GPU에제출하지않았다. 해당보완CPU시험58통과/5선택CUDA host skip/7.23초·budget-complete.log SHA256 60ddabf7efcf5dc5cd45a8745b0bc4ef6bc6ea4778f3b620e7c5e48f2d3393d8다. 준비root의초기두로그는누락의존경로로실패했고보존했다. 외부독립감사나전ν/전체장검증은아니다.",
   "status": "A100_LIMITED_ACCURACY_MET_NOT_FULL_NU",
   "job_id": "433283",
   "CPU_regression": "GPU_root의cpu-regression.log는22예약경계+15native회귀=37 passed in2.18s다. 기본상한·선택총한도·NVML/CUDA차이·overflow/가용·실패숫자API와기존국소/전역인덱스/실패미발행을확인했다.",
