@@ -12,6 +12,9 @@ typedef struct {
 /* baseline_free는 생성 직전 nvidia-smi에서 얻은 바이트다. cap<=16GiB, GPU0만.
  * 문맥/모듈/최대 resident local+stack 예약을 포함해 한도를 지킨다. */
 CMFGpuRuntime *cmf_gpu_create(int device,uint64_t cap,uint64_t baseline_free,int *code);
+/* 현재 host 스레드의 마지막 생성 예약 계산. 문맥 실패도 숫자를 보존한다.
+ * 기존 ABI는 그대로이며 선택적 진단 API를 지원하는 바이너리에서만 쓴다. */
+int cmf_gpu_last_preflight(CMFGpuMemory *out,uint64_t *available,uint64_t *cap,int *reason);
 void cmf_gpu_destroy(CMFGpuRuntime *ctx);
 int cmf_gpu_allocate(CMFGpuRuntime *ctx,uint64_t bytes,void **out);
 int cmf_gpu_release(CMFGpuRuntime *ctx,void *pointer);

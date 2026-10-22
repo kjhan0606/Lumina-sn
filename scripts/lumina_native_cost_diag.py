@@ -66,7 +66,12 @@ def inputs(root,record):
             geometry=helper.geometry(plan,13003,[Leaf(0.,1.)])
             loc,length,da,db=helper.piece(*geometry[:3],0,0)
             ends=(Location*2)(loc[0],loc[2]);view=provider.borrow_dense_view()
-            lib=ct.CDLL(old['gpu_library']);f=lib.lumina_linear_cuda_plan
+            # 장치 대조에서는 같은 아키텍처로 봉인한 현재 라이브러리의 host
+            # 계획 함수를 쓴다. CPU-only 준비에는 원 계획 바이너리를 재사용한다.
+            planner=root/'diagnostic.so'
+            if not planner.is_file():planner=Path(old['gpu_library'])
+            record['planning_library_sha256']=sha(planner)
+            lib=ct.CDLL(str(planner));f=lib.lumina_linear_cuda_plan
             f.argtypes=[ct.c_void_p]*2+[ct.c_double]*4+[ct.c_int]*3+[ct.c_void_p];f.restype=ct.c_int
             piece=Piece();check(f(ct.byref(view),ends,length,source.dlognu,da,db,0,source.nf,2,ct.byref(piece)))
             record.update(source_identity=source.identity,interval=13003,coarse_only=True,full_frequency=False,
@@ -137,6 +142,7 @@ def gpu(root):
         if free<24*1024:raise MemoryError('원 free24GiB 조건 미충족')
         record.update(precheck_free_MiB=free,precheck_utilization=util,library_sha256=sha(root/'diagnostic.so'))
         with inputs(root,record) as (provider,old,_host,ends):
+            if record['piece']!=baseline['piece']:raise ValueError('원 CPU coarse와 host 계획 범위 불일치')
             with Runtime(root/'diagnostic.so',free*1024**2) as runtime:
                 driver=CompactDriver(runtime,provider,old['cpu_library'])
                 p=Piece();part=record['piece']

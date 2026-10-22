@@ -29,6 +29,17 @@ class Memory(ct.Structure):
     _fields_=[(key,U) for key in ('live','peak','reserved','observed_peak','baseline_free','total','kernel_local','stack','threads')]
 
 
+def creation_preflight(lib):
+    """지원하는 바이너리에서만 실패 직전 예약 숫자를 읽는다. 재생성하지 않는다."""
+    fun=getattr(lib,'cmf_gpu_last_preflight',None)
+    if fun is None:return None
+    fun.argtypes=[P,P,P,P];fun.restype=I
+    report=Memory();available=U();cap=U();reason=I()
+    if fun(ct.byref(report),ct.byref(available),ct.byref(cap),ct.byref(reason)):return None
+    return dict({key:int(getattr(report,key)) for key,_ in Memory._fields_},
+                available=int(available.value),cap=int(cap.value),reason=int(reason.value))
+
+
 class Location(ct.Structure):
     _fields_=[('mode',I),('first',I),('last',I),('weight',D)]
 
@@ -88,7 +99,10 @@ class Runtime:
         if any(getattr(lib,name)()!=size for name,size in abis):
             raise ValueError('GPU 공통 코어 ABI 변경')
         code=I();self.ctx=lib.cmf_gpu_create(0,16*1024**3,int(baseline_free),ct.byref(code))
-        if not self.ctx:check(code.value or 1)
+        if not self.ctx:
+            report=creation_preflight(lib)
+            if report is not None:raise RuntimeError('GPU 생성 실패: '+str(code.value or 1)+'; preflight='+str(report))
+            check(code.value or 1)
         self.status=lib.cmf_gpu_status(self.ctx)
     @property
     def closed(self):return self.ctx is None

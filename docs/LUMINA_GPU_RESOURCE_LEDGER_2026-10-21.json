@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 10:15",
+  "as_of_KST": "2026-10-22 10:45",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,50 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.62122222221111,
-  "remaining_before_new_reservations_GPUh": 73.37877777778889,
+  "used_upper_GPUh": 70.62899999998889,
+  "remaining_before_new_reservations_GPUh": 73.37100000001111,
   "current_reserved_GPUh": 0,
+  "a100_total_cap_candidate": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_a100_total_cap_20261022-K57YkA",
+    "state": "SETTLED_A100_LIMITED_ACCURACY_MET_NOT_FULL_NU",
+    "job_id": "433283",
+    "max_allocation_seconds": 174,
+    "reserved_GPUh": 0,
+    "allocated_gpu_seconds": 22,
+    "allocated_GPUh": 0.006111111111111111,
+    "terminal_state": "COMPLETED/0:0",
+    "GPU_result_sha256": "e3042313c16352e814a37fd9b5100754925739b708fea58a0552e9d335dacc83",
+    "terminal_sha256": "b5313cf84359b0e4b5930de2426da70db364313ce5e9676d5feb356f6f056191",
+    "settlement": "sacct 본할당22초를 한 번 정산하고174초 예약을 해제했다. Python창20.464초/보수21초와step21초는 같은할당 안이므로 별도차감하지 않는다. 기존실패4초+진단2초+수정22초=28초로 원180초 이내이며 남은152초는 재시도권한이 아니다. Ada누적394초/준비1406초는 그대로다.",
+    "library_sha256": "b288dd5c4d4d31f494448dd9de3cda939b8551338f29d58f862f09d2e9da18ee",
+    "scope": "원A100180초에서실패4초/진단2초를제외한174초이내다. GPU1/CPU1/host·device16GiB/활성1GiB·노드미고정/no-requeue·수치창148초·작은9시험/트리1회/867열이하를유지한다. 원수송/오차는변경하지않고명시적총한도예약선택만확인한다. 전ν/전체장/SE·RE는0이다."
+  },
+  "a100_native_query_comparison": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_adaptive_a100_20261022-UozV5x",
+    "state": "SETTLED_CREATE_DENIED_BEFORE_NUMERICAL_QUERY",
+    "max_allocation_seconds": 180,
+    "reserved_GPUh": 0,
+    "allocated_gpu_seconds": 4,
+    "allocated_GPUh": 0.0011111111111111111,
+    "job_id": "433262",
+    "terminal_state": "FAILED/1:0",
+    "settlement": "sacct 본할당4초를 한 번 정산하고 원180초 예약을 해제했다. Python창1.187초/보수2초는 같은 할당 안이므로 별도 차감하지 않는다. cmf_gpu_create code3에서 수치 질의 전 실패했고 전체장은0이다.",
+    "admission_diagnostic": {
+      "root_suffix": "admission",
+      "state": "SETTLED_ADMISSION_GUARDS_REPRODUCED_NO_NUMERICAL_QUERY",
+      "max_allocation_seconds": 60,
+      "reserved_GPUh": 0,
+      "allocated_gpu_seconds": 2,
+      "allocated_GPUh": 0.0005555555555555556,
+      "job_id": "433269",
+      "terminal_state": "COMPLETED/0:0",
+      "result_sha256": "e774f0709eab3ce5c180378c37414bbb55e4fef0cecc9352415327e9a28d30a6",
+      "settlement": "sacct 본할당2초를 한 번 정산하고60초 예약을 해제했다. 원실패4초+진단2초=6초이며 원180초 중174초가 남는다. baseline>CUDA total256KiB·예약9769517056B>8GiB를 재현했고 실제16GiB조건은 통과했다. 수치질의는0이다.",
+      "scope": "기존 초기화 조건을 변경하지 않고 CUDA/NVML 메모리와 보수예약을 읽는 진단만 한다. GPU1·CPU1·16GiB·1분·native 수치질의0이다. 앞선4초와 합산 최대64초로 기존180초 예산 이내이며 수치 계산의 자동 재시작이 아니다."
+    },
+    "library_sha256": "2053286d0b40dd06e86d186bd6c6f7bac5ba71ccd52dc369fea56a2adb6cc98e",
+    "scope": "같은 frozen 수치 입력의 A100 단회 대조. syntax/a100_pcie·노드미고정·GPU1/CPU1/16GiB/3분/no-requeue이며 수치창은148초·GPU9시험/트리1회/867열 이하로 유지한다. 전체 Slurm 할당을 실제sacct GPU초로 한 번 정산한다. 기존 Ada 누적394초·준비1406초는 보존하고 전체장/전ν 실패를 재시작하지 않는다."
+  },
   "adaptive_linear_exp_candidate": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_adaptive_exp_20261022-dqpNi8",
     "state": "SETTLED_LIMITED_GPU_ACCURACY_MET_NOT_FULL_NU",

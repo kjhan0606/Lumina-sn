@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include "cmf_gpu_runtime.h"
+#include "cmf_gpu_budget.hpp"
 #ifdef CMF_GPU_LINEAR
 #include "cmf_linear_cuda.h"
 #else
@@ -15,6 +16,14 @@ struct Block {void *pointer;uint64_t bytes;};
 struct CMFGpuRuntime {
     uint64_t cap;CMFGpuMemory memory;int *status;std::vector<Block> blocks;
 };
+static thread_local CMFGpuMemory last_preflight={};
+static thread_local uint64_t last_available=0,last_cap=0;
+static thread_local int last_reason=0;
+static thread_local bool preflight_valid=false;
+extern "C" int cmf_gpu_last_preflight(CMFGpuMemory *out,uint64_t *available,uint64_t *cap,int *reason){
+    if(!preflight_valid||!out||!available||!cap||!reason)return 1;
+    *out=last_preflight;*available=last_available;*cap=last_cap;*reason=last_reason;return 0;
+}
 static bool contains(CMFGpuRuntime *c,const void *pointer,uint64_t bytes)
 {
     if(!c||!pointer||!bytes)return false;
@@ -35,6 +44,7 @@ static int observed(CMFGpuRuntime *c)
 }
 extern "C" CMFGpuRuntime *cmf_gpu_create(int device,uint64_t cap,uint64_t baseline,int *code)
 {
+    preflight_valid=false;
     if(!code)return nullptr;
     *code=1;
     if(device!=0||cap<(UINT64_C(1)<<30)||cap>(UINT64_C(16)<<30)||!baseline)return nullptr;
@@ -62,12 +72,18 @@ extern "C" CMFGpuRuntime *cmf_gpu_create(int device,uint64_t cap,uint64_t baseli
 #endif
     c->memory.total=total;c->memory.kernel_local=std::max(kernel_local,forest);c->memory.stack=stack;
     c->memory.threads=std::max<uint64_t>(65536,(uint64_t)prop.multiProcessorCount*prop.maxThreadsPerMultiProcessor);
-    uint64_t context=baseline>available?baseline-available:0;
-    c->memory.reserved=context+(c->memory.kernel_local+stack)*c->memory.threads+(UINT64_C(256)<<20);
+    constexpr bool total_cap=
+#ifdef CMF_GPU_TOTAL_CAP_RESERVATION
+        true;
+#else
+        false;
+#endif
+    auto reservation=lumina_gpu_budget::plan(cap,baseline,total,available,c->memory.kernel_local,stack,c->memory.threads,total_cap);
+    c->memory.reserved=reservation.reserved;
+    last_preflight=c->memory;last_available=available;last_cap=cap;last_reason=reservation.reason;preflight_valid=true;
     /* stack도 resident 전 스레드로 보수적으로 예약한다. 이미 할당된 stack과
      * context를 중복 상계할 수 있지만 총16GiB를 넓히지 않는다. */
-    if(baseline>total||c->memory.reserved>(UINT64_C(8)<<30)||c->memory.reserved>=cap||
-       available<cap-c->memory.reserved){delete c;*code=3;return nullptr;}
+    if(reservation.reason!=lumina_gpu_budget::OK){delete c;*code=3;return nullptr;}
     void *status=nullptr;int rc=cmf_gpu_allocate(c,sizeof(int),&status);
     if(rc){cmf_gpu_destroy(c);*code=rc;return nullptr;}
     c->status=static_cast<int *>(status);
@@ -84,7 +100,7 @@ extern "C" void cmf_gpu_destroy(CMFGpuRuntime *c)
 extern "C" int cmf_gpu_allocate(CMFGpuRuntime *c,uint64_t bytes,void **out)
 {
     if(!c||!out||!bytes)return 1;
-    if(c->memory.live>c->cap-c->memory.reserved||bytes>c->cap-c->memory.reserved-c->memory.live)return 3;
+    if(!lumina_gpu_budget::fits(c->cap,c->memory.reserved,c->memory.live,bytes))return 3;
     void *p=nullptr;if(cudaMalloc(&p,bytes)!=cudaSuccess)return 2;
     try{c->blocks.push_back({p,bytes});}catch(...){cudaFree(p);return 3;}
     c->memory.live+=bytes;c->memory.peak=std::max(c->memory.peak,c->memory.live);
