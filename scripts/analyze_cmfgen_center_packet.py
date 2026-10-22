@@ -17,10 +17,10 @@ from run_cmfgen_formal_primary import fields
 INVENTORY = Path('/gpfs/kjhan/cmfgen_runs/lumina_mom_capture_build_20261019-RbUeST/formal_v2/formal-build.json')
 
 
-def analyze(root):
+def analyze(root, out=None, comparison=None):
     field = root/'field'
     report = json.loads((root/'center-packet-run.json').read_text())
-    comparison_path = root/'center-field-comparison.json'
+    comparison_path = comparison if comparison is not None else root/'center-field-comparison.json'
     comparison = json.loads(comparison_path.read_text())
     if (report['returncode'] != 97 or report['new_field_sha256'] != comparison['captured_sha256'] or
         report['baseline_field_sha256'] != comparison['original_sha256'] or
@@ -28,7 +28,7 @@ def analyze(root):
         not all(comparison[k] for k in ('geometry_equal','frequency_equal','weights_equal')) or
         max(comparison['component_max_frequency_normalized_difference']) > 1e-10):
         raise ValueError('전체 장의 수치적 계측 무간섭 조건 미충족')
-    target = root/'center-packet-analysis.json'
+    target = out if out is not None else root/'center-packet-analysis.json'
     if target.exists():
         raise FileExistsError('기존 포획 판독 보존')
     inventory = json.loads(INVENTORY.read_text())['ray_inventory']
@@ -67,9 +67,9 @@ def analyze(root):
                              max_ray_moment_over_roundoff_bound=float(np.max(np.divide(
                                  error, bound, out=np.zeros_like(error), where=bound>0))),
                              max_J_relative_to_original_final=max_rel,
-                             native49_J_over_final=float(j[48]/native[48]),
-                             native50_J_over_final=float(j[49]/native[49]),
-                             native49_50_J=[float(j[48]), float(j[49])],
+                             native49_J_over_final=float(j[49]/native[49]),
+                             native50_J_over_final=float(j[50]/native[50]),
+                             native49_50_J=[float(j[49]), float(j[50])],
                              ray_points_inserted=g['RAY_POINTS_INSERTED'],
                              packet_sha256={p.name:sha(p) for p in paths}))
     output = dict(scope=__doc__, original_field_sha256=report['baseline_field_sha256'],
@@ -77,6 +77,7 @@ def analyze(root):
                   byte_identical=report['field_byte_identical'],
                   numerically_equal_within_1e_10=True,
                   comparison_sha256=sha(comparison_path),native_nodes_only=True,
+                  native_nodes_zero_based=[49,50],
                   cases=rows, final_goal='NOT_MET')
     with target.open('x') as stream:
         json.dump(output, stream, ensure_ascii=False, indent=2, allow_nan=False)
@@ -88,5 +89,10 @@ def analyze(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, required=True)
+    parser.add_argument('--out', type=Path,
+                        help='기존 분석을 보존하고 새 경로에 정정 요약을 기록한다')
+    parser.add_argument('--comparison', type=Path,
+                        help='정정된 동일 native 위치의 전주파수 비교 결과')
     args = parser.parse_args()
-    analyze(args.root.resolve())
+    analyze(args.root.resolve(),args.out.resolve() if args.out is not None else None,
+            args.comparison.resolve() if args.comparison is not None else None)

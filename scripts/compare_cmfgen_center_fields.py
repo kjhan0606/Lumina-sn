@@ -46,8 +46,8 @@ def compare(previous, captured, out):
                     local = index-1-begin
                     target[str(index)] = dict(frequency_Hz=float(old['freq'][index-1]*1e15),
                         maximum_J_relative=float(normalized[local, 0]),
-                        old_native49_50_J=a[local, 0, 48:50].tolist(),
-                        new_native49_50_J=b[local, 0, 48:50].tolist(),
+                        old_native49_50_J=a[local, 0, 49:51].tolist(),
+                        new_native49_50_J=b[local, 0, 49:51].tolist(),
                         calls_old=int(old['calls'][index-1]),
                         calls_new=int(new['calls'][index-1]))
         result = dict(scope=__doc__, records=len(old), geometry_equal=True,
@@ -60,7 +60,8 @@ def compare(previous, captured, out):
                       J_p95_frequency_max_relative=float(np.percentile(j_frequencies, 95)),
                       J_max_frequency_max_relative=float(np.max(j_frequencies)),
                       J_frequency_max_relative_index=int(np.argmax(j_frequencies)+1),
-                      target=target, original_sha256=sha(previous), captured_sha256=sha(captured),
+                      target=target, native_nodes_zero_based=[49,50],
+                      original_sha256=sha(previous), captured_sha256=sha(captured),
                       final_goal='NOT_MET')
         with out.open('x') as stream:
             json.dump(result, stream, ensure_ascii=False, indent=2, allow_nan=False)

@@ -20,7 +20,7 @@ CONFIG = Path('/gpfs/kjhan/cmfgen_runs/lumina_field0_checkpoint_20261020-EoA5Bi/
 SHELL = 39
 
 
-def compare(out, siii_detail=False):
+def compare(out, siii_detail=False, siii_profile=False):
     if out.exists():
         raise FileExistsError('기존 native-node 광흡수율 결과 보존')
     start=time.monotonic()
@@ -63,10 +63,13 @@ def compare(out, siii_detail=False):
                '400–800Å':(wave>=400)&(wave<800),
                '800–1600Å':(wave>=800)&(wave<1600),
                '1400–1500Å':(wave>=1400)&(wave<1500)}
-        if siii_detail:
+        if siii_detail or siii_profile:
             for lo in range(400,800,50):
                 masks[f'{lo}–{lo+50}Å']=(wave>=lo)&(wave<lo+50)
-        targets=((16,3),) if siii_detail else TARGETS
+        if siii_profile:
+            for lo in range(600,750,10):
+                masks[f'{lo}–{lo+10}Å']=(wave>=lo)&(wave<lo+10)
+        targets=((16,3),) if (siii_detail or siii_profile) else TARGETS
 
         def block(sl):
             radiation={}
@@ -123,5 +126,7 @@ if __name__=='__main__':
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--siii-detail',action='store_true',
                         help='S III만 계산하고 400–800Å를 50Å씩 분해한다')
+    parser.add_argument('--siii-profile',action='store_true',
+                        help='S III만 계산하고 600–750Å를 10Å씩 추가 분해한다')
     args=parser.parse_args()
-    compare(args.out.resolve(),args.siii_detail)
+    compare(args.out.resolve(),args.siii_detail,args.siii_profile)
