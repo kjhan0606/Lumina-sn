@@ -126,7 +126,7 @@ def compare(raw,expected):
             less_equal(actual_s.difference(s),actual_e+e) and less_equal(actual_e,actual_s*1e-8))
 
 
-def gpu(root):
+def gpu(root,*,three_piece_reference=None):
     target=root/'gpu-cost.json'
     if target.exists():raise FileExistsError('기존 GPU 진단 보존')
     baseline=json.loads((root/'cpu-cost.json').read_text())
@@ -176,11 +176,39 @@ def gpu(root):
                     publish(target,record)
                 for column in baseline['columns']:query(column,1)
                 for first,count in [(0,32),(624704,32),(624712,256),(624712,512)]:query(first,count)
+                if three_piece_reference is not None:
+                    proof=json.loads(Path(three_piece_reference).read_text())
+                    if proof['status']!='CPU_THREE_PIECE_SAMPLE_FINISHED' or \
+                       proof['coordinate_mode']!='ORIGINAL_GLOBAL_TREE' or len(proof['rows'])!=3 or \
+                       {r['piece'] for r in proof['rows']}!={0,1,2} or any(
+                           r['column']!=569899 or not r['comparison_met'] or r['original']['code'] for r in proof['rows']):
+                        raise ValueError('실패569899의 원 전역트리 세 조각 참조 필요')
+                    import lumina_local_micro as M
+                    from lumina_nodal_driver import CompiledDriverPlan
+                    g=M.open_geometry(old['preparation']);plan=CompiledDriverPlan(g,provider._source,panels=1,block_width=256)
+                    geometry=driver.geometry(plan,13003,[Leaf(0.,1.)])
+                    record.update(coarse_only=False,three_piece_reference_sha256=sha(three_piece_reference))
+                    for row in sorted(proof['rows'],key=lambda r:r['piece']):
+                        loc,length,da,db=driver.piece(*geometry[:3],0,row['piece'])
+                        if (length,da,db)!=(row['length'],row['da'],row['db']):raise ValueError('원 세 조각 기하 변경')
+                        endpoints=(Location*2)(loc[0],loc[2]);p=Piece()
+                        check(runtime.lib.lumina_linear_cuda_plan(ct.byref(driver.view),endpoints,length,
+                            provider._source.dlognu,da,db,0,provider.nf,2,ct.byref(p)))
+                        expected={row['column']:row['original']}
+                        timed('TREE_BUILD_PIECE_'+str(row['piece']),lambda:runtime.lib.lumina_linear_cuda_build(
+                            ct.byref(p),driver.tree.address,runtime.status))
+                        query(row['column'],1)
+                        record['comparisons'][-1]['piece']=row['piece']
+                if hasattr(driver,'integration_report'):record['integration']=driver.integration_report()
                 driver.arena.release(offset);driver.close();driver=None
                 record['memory_end']=runtime.report()
         record['status']='LIMITED_GPU_COST_DIAGNOSIS_FINISHED_NOT_FIELD';return 0
     except Exception as error:
-        record.update(status='LIMITED_GPU_COST_DIAGNOSIS_STOPPED',error=type(error).__name__+': '+str(error));return 1
+        record.update(status='LIMITED_GPU_COST_DIAGNOSIS_STOPPED',error=type(error).__name__+': '+str(error))
+        if driver is not None and hasattr(driver,'integration_report'):
+            try:record['integration']=driver.integration_report()
+            except Exception as report_error:record['integration_report_error']=str(report_error)
+        return 1
     finally:
         record['elapsed_seconds']=time.monotonic()-started;publish(target,record)
 

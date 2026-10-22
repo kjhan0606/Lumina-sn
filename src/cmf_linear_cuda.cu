@@ -4,6 +4,13 @@
 #include "cmf_linear_endpoint_cache.hpp"
 #include "cmf_characteristic_linear.hpp"
 #include "cmf_linear_affine.hpp"
+#ifdef CMF_GPU_HYBRID_MEASURE
+#if !defined(CMF_GPU_WARP_MEASURE) || defined(CMF_GPU_NATIVE_BIN_STREAM)
+#error CMF_GPU_HYBRID_MEASURE_requires_warp_and_its_own_native_dispatch
+#endif
+#include "cmf_native_bin_stream.hpp"
+#include "cmf_hybrid_measure.hpp"
+#endif
 #ifdef CMF_GPU_NATIVE_BIN_STREAM
 #if defined(CMF_GPU_WARP_MEASURE) || !defined(CMF_GPU_COMPACT_MEASURE) || !defined(CMF_GPU_ENDPOINT_CACHE)
 #error CMF_GPU_NATIVE_BIN_STREAM_requires_own_compact_endpoint_path
@@ -106,12 +113,26 @@ extern "C" size_t lumina_linear_cuda_endpoint_bytes(int nf){
 #endif
 }
 extern "C" int lumina_linear_cuda_source_integrator(void){
-#ifdef CMF_GPU_NATIVE_BIN_STREAM
+#ifdef CMF_GPU_HYBRID_MEASURE
+    return 2;
+#elif defined(CMF_GPU_NATIVE_BIN_STREAM)
     return 1;
 #else
     return 0;
 #endif
 }
+#ifdef CMF_GPU_HYBRID_MEASURE
+// 추가장치상태32B는 선택 driver의 활성 작업공간에 포함한다.
+__device__ static unsigned long long hybrid_stats[4];
+extern "C" int lumina_linear_cuda_hybrid_stats(int reset,unsigned long long *out){
+    if(reset==1){
+        const unsigned long long zero[4]={};
+        return cudaMemcpyToSymbol(hybrid_stats,zero,sizeof(zero))==cudaSuccess?0:2;
+    }
+    if(reset!=0||!out)return 1;
+    return cudaMemcpyFromSymbol(out,hybrid_stats,sizeof(hybrid_stats))==cudaSuccess?0:2;
+}
+#endif
 extern "C" size_t lumina_linear_cuda_cooperative_bytes(void){
 #ifdef CMF_GPU_WARP_MEASURE
     // A100 최대108SM·SM당32block 상계. 같은 시각의 모든 공유 상태를
@@ -329,7 +350,13 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     lumina_source_measure::Tree measure={source,p.source_leaves,p.block,p.nf};
 #endif
 #ifdef CMF_GPU_WARP_MEASURE
-    int code=lumina_characteristic::integrate_using_stack(profile,Positive::zero(),relative,maximum,result,
+    int code=lumina_characteristic::integrate_using_stack(profile,Positive::zero(),relative,
+#ifdef CMF_GPU_HYBRID_MEASURE
+        lumina_hybrid_measure::primary_budget(maximum),
+#else
+        maximum,
+#endif
+        result,
         lumina_warp_measure::Evaluate{measure},lumina_warp_measure::Stack{pending[threadIdx.x/32]});
 #else
     int code=lumina_source_measure::integrate(profile,measure,Positive::zero(),relative,maximum,result);
@@ -338,6 +365,12 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     int code=lumina_characteristic::integrate(profile,Positive::zero(),relative,maximum,result);
 #endif
     if(code){
+#ifdef CMF_GPU_HYBRID_MEASURE
+        if(lumina_hybrid_measure::secondary_budget(maximum)>0&&lumina_hybrid_measure::retryable(code)){
+            if((threadIdx.x&31)==0)lumina_hybrid_measure::mark(maps[i],code);
+            return;
+        }
+#endif
 #ifdef CMF_GPU_WARP_MEASURE
         if((threadIdx.x&31)==0)
 #endif
@@ -362,6 +395,38 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
 #endif
     maps[i]=m;
 }
+#ifdef CMF_GPU_HYBRID_MEASURE
+// 드문 대체 출력만 scalar 상태를 갖는다. warp kernel의 stack에 합치지 않는다.
+__global__ static void source_maps_fallback(CMFLinearCudaPiece p,const Node *nodes,double relative,int maximum,
+    int first,int count,StoredMap *maps,int *status){
+    int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=count||*status)return;i+=first;
+    int tag=lumina_hybrid_measure::pending(maps[i]);if(tag==0)return;
+    if(tag<0){atomicCAS(status,0,47);return;}
+    unsigned long long started=clock64();atomicAdd(hybrid_stats,1ULL);
+    Reader reader=make_reader(p,nodes);lumina_linear::Tree tree={nodes,p.leaves,p.block,p.nf};
+    lumina_characteristic::Profile<Reader> profile={reader,tree,i,p.offset,p.span,p.length,p.da-p.db};
+    if(i>=p.nf){profile.column=0;profile.exit_shift=p.offset+i;}
+    lumina_characteristic::Result result;
+    int code=lumina_native_bin::integrate(profile,Positive::zero(),relative,
+        lumina_hybrid_measure::secondary_budget(maximum),result);
+    lumina_linear::Integral tau;Positive t;
+    if(!code&&(!profile.tau(1.,tau)||!Positive::from_log(-tau.value,t)))code=lumina_characteristic::NUMERIC_RANGE;
+    if(code){
+        atomicAdd(hybrid_stats+2,1ULL);
+#ifdef CMF_GPU_FAILURE_COLUMN
+        atomicCAS(status,0,100000000+8*(p.begin+i)+code);
+#else
+        atomicCAS(status,0,100+code);
+#endif
+    }else{
+        using lumina_linear_affine::encode;
+        maps[i]={encode(t),encode(result.source),encode(result.error),tau.error};
+        atomicAdd(hybrid_stats+1,1ULL);
+    }
+    // 각 thread의 cycle합이며 wall time이나 GPU 비용으로 환산하지 않는다.
+    atomicAdd(hybrid_stats+3,clock64()-started);
+}
+#endif
 extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *nodes,double relative,
     int maximum,void *maps,int *status)
 {
@@ -372,6 +437,11 @@ extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *
         source_maps<<<(count+query_width-1)/query_width,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
             first,count,static_cast<StoredMap *>(maps),status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
+#ifdef CMF_GPU_HYBRID_MEASURE
+        source_maps_fallback<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
+            first,count,static_cast<StoredMap *>(maps),status);
+        if(cudaGetLastError()!=cudaSuccess)return 2;
+#endif
     }
     return 0;
 }
@@ -384,6 +454,11 @@ extern "C" int lumina_linear_cuda_query_range(const CMFLinearCudaPiece *p,const 
        maximum<1||maximum>100000||first<0||count<1||count>1024||first>p->count-count)return 1;
     source_maps<<<(count+query_width-1)/query_width,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
         first,count,static_cast<StoredMap *>(maps),status);
+#ifdef CMF_GPU_HYBRID_MEASURE
+    if(cudaGetLastError()!=cudaSuccess)return 2;
+    source_maps_fallback<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
+        first,count,static_cast<StoredMap *>(maps),status);
+#endif
     return cudaGetLastError()==cudaSuccess?0:2;
 }
 #endif
@@ -493,6 +568,9 @@ extern "C" int lumina_linear_cuda_workspace(size_t *local){
 #endif
 #ifdef CMF_GPU_ENDPOINT_CACHE
         ,(const void *)fill_endpoints
+#endif
+#ifdef CMF_GPU_HYBRID_MEASURE
+        ,(const void *)source_maps_fallback
 #endif
     };
     size_t maximum=0,aux;

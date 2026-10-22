@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 14:18",
+  "as_of_KST": "2026-10-22 14:39",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -98,8 +98,25 @@
   },
   "used_upper_GPUh": 71.71761111110003,
   "remaining_before_new_reservations_GPUh": 72.28238888889997,
-  "current_reserved_GPUh": 0,
-  "remaining_after_current_reservations_GPUh": 72.28238888889997,
+  "current_reserved_GPUh": 1,
+  "remaining_after_current_reservations_GPUh": 71.28238888889997,
+  "hybrid_transport": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_hybrid_20261022-6u8Dsi",
+    "state": "SUBMITTED_PENDING_RESOURCES_CPU343_MET_STRICT_BUILD_MET",
+    "job_id": "434129",
+    "plan_sha256": "f1c560eff504607b31bb0cfc5332fac2e260c5c8b0e9eb2b67d1514cbc5764d9",
+    "library_sha256": "48186e753c6530063aea38d5898ce9695682978246972968be3802683d8c4229",
+    "execution_manifest_sha256": "cb5fe1cd554ce99a20c63efbf9a9edad005cedb30796d16610a173a27285b360",
+    "CPU_test_sha256": "46245f4ca35fde4a14cd55e574ae0b024a814d169bc9c1d8adc9939aa530633d",
+    "compile_log_sha256": "6e2870455d3e6a8a9cb379d2f3e38fb1f6619f393c49ce0bd66f9dc5e1dea717",
+    "reserved_GPUh": 1,
+    "max_allocation_seconds": 3600,
+    "previous_combined_preparation_seconds": 4341,
+    "user_extended_cumulative_preparation_limit_seconds": 7941,
+    "scope": "원source-measure warp가명시적work/precision한도3..7일때만같은출력을별도native kernel로처리한다. 두패널상한합<=원maxpanels/원오차·입력·signedχ/fullSR보존. GPU1/CPU1/16GiB/활성1070005192B<1GiB/512NF. 같은할당의작은장치시험·원867질의+실패569899세조각3질의대조후원13003전주파수단회다. 구간3420/내부3480/외부3500/Slurm3600은중첩상한. 10초는보고이며전체장/SE_RE/자동재시도0이다.",
+    "authority": "사용자전주파수제한확대·추가진행사전승인안에서동일실행반복이아닌새구현의단회최대3600초를명시예약했다. 기존4341초를초기화하지않으며누적7941초를표시한다. 전역144GPUh상한은유지한다.",
+    "settlement_rule": "종료후본할당ElapsedRaw만한번정산하고미사용예약을해제한다. 기존4341초·동일할당직접시험/step/Python시간은중복차감하지않는다."
+  },
   "native_prefix_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_prefix_followup_20261022-mxJnPj",
     "state": "SETTLED_DEVICE2_MET_FULL_INTERVAL_TIMEOUT_NO_VECTOR",

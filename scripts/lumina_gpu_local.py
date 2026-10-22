@@ -150,6 +150,8 @@ def run(path,digest):
                         if plan.arrays['steps'][index].tolist()!=spec['step']:raise ValueError('봉인 구간 변경')
                         runtime.zero(driver.ray);t=time.monotonic()
                         report=driver.interval(plan,index,work,max_seconds=LIMITS['interval_seconds'])
+                        if hasattr(driver,'integration_report'):
+                            report['integration']=driver.integration_report()
                         output=runtime.download(driver.ray,source.nf);seconds=time.monotonic()-t
                         entry=dict(index=index,completion_seconds=seconds,report=report)
                         if index==0:
@@ -175,6 +177,10 @@ def run(path,digest):
         record.update(status='GPU_LOCAL_NOT_MET',error=type(error).__name__+': '+str(error))
         if driver is not None and hasattr(driver,'last_completed_batch'):
             record['last_completed_batch']=driver.last_completed_batch
+        if driver is not None and hasattr(driver,'integration_report'):
+            try:record['integration']=driver.integration_report()
+            except Exception as report_error:
+                record['integration_report_error']=type(report_error).__name__+': '+str(report_error)
     finally:
         record['phase']='finished';publish()
     return code

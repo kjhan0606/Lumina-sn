@@ -1,6 +1,22 @@
 # 자체 복사장·생산 Si/S율을 위한 수송 완결 묶음 — 혼합 실행 준비
 
-상태: **계획 선택, 미구현·미제출·미판정**. 구현·직접시험·실행은 운전자 Codex가 담당한다.
+상태: **선택형 구현·CPU343시험·strict 빌드 완료, 장치/원수송 결과 미판정**. 구현·직접시험·실행은 운전자 Codex가 담당한다.
+
+## 구현 고정본과 조건부 단회
+
+root `/gpfs/kjhan/cmfgen_runs/lumina_hybrid_20261022-6u8Dsi`, 계획SHA256 `f1c560eff504607b31bb0cfc5332fac2e260c5c8b0e9eb2b67d1514cbc5764d9`, GPU바이너리 `48186e753c6530063aea38d5898ce9695682978246972968be3802683d8c4229`다. CPU기하 `6f82306bff6170037a40f09303f33e1cb00d930ddbdeb0cbe38d7b8b61855be4`와원입력/원참조를그대로재사용한다.
+
+**Slurm434129 단회 제출**,14:39:53 최초조회 `PENDING/Resources`다. 최대1GPUh만예약했고현재전역사용71.7176111111GPUh/예약후가용71.2823888889GPUh를유지한다. CPU로그SHA256 `46245f4ca35fde4a14cd55e574ae0b024a814d169bc9c1d8adc9939aa530633d`,strict컴파일로그 `6e2870455d3e6a8a9cb379d2f3e38fb1f6619f393c49ce0bd66f9dc5e1dea717`,실행manifest `cb5fe1cd554ce99a20c63efbf9a9edad005cedb30796d16610a173a27285b360`다. 제출후고정root는변경하지않는다.
+
+`CMF_GPU_HYBRID_MEASURE`/driver적분기ID2를추가했다. 기존warp/native동시선택금지를무조건해제하지않았으며잘못된driver/binary는할당전에거부한다. 기본warp는원패널예산의올림절반,분리native대체는나머지만쓴다. 3..7의명시적한도만전환하며입력오류1/일반수치오류2는그대로실패한다. 실패부분값은사용하지않는다. 별도전역배열없이미완맵의비물리태그를두kernel사이에만사용하며,같은stream의대체kernel이완성하거나실패상태를설정한뒤에만replay가실행된다.
+
+대체호출/성공/미해결수와thread clock tick합의32B만추가했다. clock tick합은wall time이나GPU비용이아니다. 보수공유상태21233664B와추가32B까지포함한활성공간은 **1070005192B<1GiB**다. runtime의localSize조회에대체kernel도추가해stack예약을숨기지않았다. strict sm80에서빠른warp stack2592B/spill store2680B·load1908B,대체kernel stack3872B/store30874B·load19940B·각255register다. 실제성능통과를뜻하지않는다.
+
+CPU1/4GiB/180초한도에서 **343통과/13장치전용skip·18.13초**다. 실패분류/예산합/태그손상거부/선택ABI/누적비용·원오차정책과기존native/source-measure/characteristic/endpoint직접회귀를함께시험했다. 초기격리준비에서warp공통characteristic/moments헤더가빠진CPU컴파일실패2건을보존했다. 기존검증warp헤더와SHA가같은두헤더를포함한현재고정본의기본객체/혼합strict빌드는모두exit0다. GPU추가지출은아직0이다.
+
+같은할당에서장치직접시험과원35열포함867질의/CPU대조에기존실패569899의coarse/두half3질의를더해확인한다. 그3질의는보존된원전역트리CPU참조와비교하며434043의미보존적응mesh재현이라고하지않는다. 모두통과한경우에만같은할당에서원13003전1115020ν/공간적응을실행한다. 구간3420/내부3480/외부3500/Slurm3600초는중첩상한이다. 8NF의보수직접시험작업을원512NF에서먼저차감한다.
+
+재현명령은고정root에서 `bash scripts/check_lumina_hybrid_cpu.sh <새격리root>`, `bash compile.sh <새격리root>`, `python3 -B scripts/lumina_gpu_hybrid_actual.py prepare <새root>`, `sbatch actual.sh <root> <planSHA>`다. CPU/장치시험은원로그가없는새root에서만수행한다. 이미제출된같은root에재제출/덮어쓰기를하지않으며출력/비용/독립3열의결과는이문서에추가한다. 이번단회가성공해도자체J1/J2·생산Si/S율·SE_RE·CMFGEN최종목표는아직미완이다.
 
 ## 목표와 현재 장애
 
