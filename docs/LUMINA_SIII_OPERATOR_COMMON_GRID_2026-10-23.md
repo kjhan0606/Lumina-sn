@@ -684,7 +684,18 @@ J 차이는 `2.46e-16 / 2.41e-16`이다. 따라서 **바이트 비동일·
 재현한 최대 scaled 오차는 `0`이다. 이것은 전대역 청색 연쇄의
 완주 판정이 아니며, 실제 S III 잔차의 연산자 기여율도 아니다.
 전대역 재현은 Lageunha CPU1·최대 1시간의 별도 읽기 작업으로
-진행 중이며 완료 결과를 별도로 판정한다.
+완료했다. `replay_cmfgen_siii_compact_capture.py`가 첫 주파수
+`40286`에서 마지막 `45481`까지 `15550`회 호출을 연쇄 재현했고,
+포획된 경계·native49–52 광선점과의 최대 scaled 오차는 `0`이었다.
+보고서의 `reached_band_end=true`와 위 analyzer의 호출 재고
+`15550`이 일치한다. 보고서 `siii-replay-all.json`의 SHA256은
+`2da60eb558a2ccd80c5f5c0aa66af5752204b376c22c791a2c26b4adde385a37`이며,
+초기 청색·compact·기하 해시가 analyzer의 입력 해시와 같다.
+독립 재현이 확인한 것은 **봉인 CMFGEN 공간 formal과 주파수 청색
+연쇄가 해당 포획값을 재생한다는 것**이다. 내부 경계는 포획값을
+입력으로 사용했고 대체 C 연산자·새 자기일관 장은 계산하지 않았다.
+따라서 S III 초과 `168.200668`의 원인 기여율, Si/S 분포,
+스펙트럼·물리량 동질성은 여전히 미판정이다.
 
 재현: `scripts/compare_cmfgen_center_fields.py`에 위 봉인/새
 `FORMAL_PRIMARY_FIELDS.bin`을 `--previous/--captured`로 주고
