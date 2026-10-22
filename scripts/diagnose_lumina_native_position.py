@@ -32,10 +32,11 @@ def photon_band(nu,value,mask):
     return float(np.trapezoid(value[mask]/nu[mask],nu[mask]))
 
 
-def run(root,shell):
+def run(root,shell,subdivisions=4):
     root=Path(root).resolve()
     if (socket.gethostname().lower()!='lageunha' or Path.cwd().resolve()!=PROJECT or
-            shell not in (37,39) or not root.is_dir() or list(root.iterdir())):
+            shell not in (37,39) or subdivisions not in (4,8) or
+            not root.is_dir() or list(root.iterdir())):
         raise ValueError('Lageunha·프로젝트·셀37/39·빈 새 root 필요')
     if shutil.disk_usage(root).free<2*1024**3:
         raise ValueError('진단 자료 저장 공간 부족')
@@ -62,7 +63,8 @@ def run(root,shell):
             sha(references[0])!=pair['input_sha256'][str(references[0])]):
         raise ValueError('원 native 수송/물질70/J71 입력 신원 불일치')
     record=dict(schema='lumina-native-position-fixed-v1',status='PREPARING',shell=shell,
-        native_indices=dict(outer=88-shell,inner=89-shell),material_record=70,
+        native_indices=dict(outer=88-shell,inner=89-shell),subdivisions=subdivisions,
+        material_record=70,
         reference_record=71,F_calls_completed=0,physical_RT_executions=0,SE_RE_updates=0,
         final_goal='NOT_MET',resources=dict(host='lageunha',CPU=16,GPU=0,
             memory_GiB=64,wall_seconds_max=3600,F_calls_max=1,automatic_retry=0),
@@ -100,7 +102,7 @@ def run(root,shell):
         total_eta=true_eta+es*native_j
         if not np.isfinite(total_eta).all() or np.any(total_eta<0):
             raise ValueError('원 native 방출률 오류')
-        plan=NativeSpatialGeometry(loaded.plan.g,subdivisions=4,
+        plan=NativeSpatialGeometry(loaded.plan.g,subdivisions=subdivisions,
                                    extra_native_indices=native_indices)
         record.update(status='RUNNING',native_radii_cm=plan.sample_radii[-2:].tolist(),
             actual_ray_count=len(plan.paths),half_segments=plan.half_segments,
@@ -146,7 +148,8 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out-root',type=Path,required=True)
     parser.add_argument('--shell',type=int,choices=(37,39),required=True)
+    parser.add_argument('--subdivisions',type=int,choices=(4,8),default=4)
     args=parser.parse_args()
-    result=run(args.out_root,args.shell)
+    result=run(args.out_root,args.shell,args.subdivisions)
     print(json.dumps(dict(root=str(args.out_root),status=result['status'],
         elapsed_seconds=result['elapsed_seconds'],bands=result['bands']),ensure_ascii=False))

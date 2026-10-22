@@ -109,7 +109,12 @@ def build_variant(out, compiler='cc'):
 class NativeSpatialGeometry(CoupledGeometry):
     """외부 경로는 동일, 내부 셀만 지정한 수만큼 나누고 위치 가중치를 준다."""
     def __init__(self,g,subdivisions=1,extra_native_indices=None):
-        super().__init__(g,subdivisions)
+        if (type(subdivisions) is not int or not 1<=subdivisions<=8 or
+                (subdivisions>4 and extra_native_indices is None)):
+            raise ValueError('8분할은 두 native 관측점을 지정한 격리 경로 전용')
+        # 공통 생산 기하의 4분할 상한은 보존한다. 이 격리 경로만 아래에서
+        # 모든 ray를 요청한 세분 수로 다시 만든다.
+        super().__init__(g,min(subdivisions,4))
         if extra_native_indices is None:
             return
         if (not isinstance(extra_native_indices,(tuple,list)) or

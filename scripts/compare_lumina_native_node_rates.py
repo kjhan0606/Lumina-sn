@@ -20,19 +20,20 @@ CONFIG = Path('/gpfs/kjhan/cmfgen_runs/lumina_field0_checkpoint_20261020-EoA5Bi/
 SHELL = 39
 
 
-def compare(out, siii_detail=False, siii_profile=False):
+def compare(out, siii_detail=False, siii_profile=False, transport_root=ROOT):
     if out.exists():
         raise FileExistsError('기존 native-node 광흡수율 결과 보존')
     start=time.monotonic()
-    record=json.loads((ROOT/'execution.json').read_text())
+    transport_root=Path(transport_root).resolve()
+    record=json.loads((transport_root/'execution.json').read_text())
     config=json.loads(CONFIG.read_text())
     plan=json.loads(Path(config['plan']).read_text())
     if record['status']!='NATIVE_POSITION_F_COMPLETE' or record['shell']!=SHELL or \
        record['native_indices']!={'outer':49,'inner':50} or \
        record['material_record']!=70 or record['reference_record']!=71:
         raise ValueError('같은 물질·반경의 실제 수송이 아님')
-    f_path=ROOT/'F-native-positions.npy'
-    j_path=ROOT/'CMFGEN-native-J.npy'
+    f_path=transport_root/'F-native-positions.npy'
+    j_path=transport_root/'CMFGEN-native-J.npy'
     if B.sha(f_path)!=record['output']['sha256'] or \
        B.sha(j_path)!=record['CMFGEN_native_J']['sha256']:
         raise ValueError('기존 F/J 전체 장 신원 변경')
@@ -104,7 +105,7 @@ def compare(out, siii_detail=False, siii_profile=False):
                     frequencies=len(nu),ions=[list(key) for key in targets],
                     results=result,do_lev_dissolution=do_dis,
                     photo_preprocessing=smoothing,
-                    input_sha256={str(p):B.sha(p) for p in (ROOT/'execution.json',
+                    input_sha256={str(p):B.sha(p) for p in (transport_root/'execution.json',
                         f_path,j_path,CONFIG,Path(config['grid']))},
                     elapsed_seconds=time.monotonic()-start,
                     peak_rss_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
@@ -128,5 +129,7 @@ if __name__=='__main__':
                         help='S III만 계산하고 400–800Å를 50Å씩 분해한다')
     parser.add_argument('--siii-profile',action='store_true',
                         help='S III만 계산하고 600–750Å를 10Å씩 추가 분해한다')
+    parser.add_argument('--transport-root',type=Path,default=ROOT,
+                        help='완료된 같은 물질70/J71 native 반경 F 실행 root')
     args=parser.parse_args()
-    compare(args.out.resolve(),args.siii_detail,args.siii_profile)
+    compare(args.out.resolve(),args.siii_detail,args.siii_profile,args.transport_root)

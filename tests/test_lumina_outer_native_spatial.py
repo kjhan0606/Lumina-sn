@@ -111,6 +111,25 @@ def test_native_gradient_changes_actual_rays(native_library,kernels):
         assert np.max(np.abs(native-baseline)) > 1e-12*np.max(baseline)
 
 
+def test_eight_subsegments_preserve_native_observation_and_finite_solution(native_library,kernels):
+    p = problem(kernels)
+    j = np.full((p.n+2,p.nf),1e-4)
+    values=[]
+    for subdivisions in (4,8):
+        plan=NativeSpatialGeometry(p.g,subdivisions=subdivisions,
+                                   extra_native_indices=(10,11))
+        assert np.array_equal(plan.sample_radii[-2:],p.g.native_radius[[10,11]])
+        with operator(native_library,plan,p) as c:
+            chi=np.full((p.n+1,p.nf),1e-14)
+            eta=np.full((p.n+1,p.nf),1e-18)
+            set_native_fixed(c,chi,eta,j)
+            field,_=c.apply_j(j)
+            values.append(field)
+    # 주파수 drift가 구간마다 적분되므로 미세한 세분 의존성은 허용한다.
+    assert all(np.isfinite(value).all() and np.all(value>=0) for value in values)
+    np.testing.assert_allclose(values[1],values[0],rtol=1e-5,atol=1e-20)
+
+
 def test_new_source_and_output_cannot_overwrite(native_library):
     with pytest.raises(FileExistsError,match='보존'):
         build_variant(native_library.parent)
