@@ -9,6 +9,28 @@ struct Reader {
         return lumina_ordered::finite(chi)&&lumina_ordered::finite(eta)&&eta>=0;
     }
 };
+struct RefineUntilCoordinateLimit {
+    template<class R> lumina_characteristic::PanelStatus operator()(
+        const lumina_characteristic::Profile<R> &p,double a,double b,double,
+        lumina_characteristic::Panel &out) const {
+        lumina_linear::Node node;
+        if(!p.range(a,b,node))return lumina_characteristic::INVALID;
+        out={};out.upper=lumina_ordered::Positive::one();
+        return lumina_characteristic::SPLIT;
+    }
+};
+extern "C" int lumina_characteristic_resolution_probe(int invalid_reader){
+    double values[8]={.1,.1,.1,.1,1.,1.,1.,1.};
+    if(invalid_reader)values[5]=-1.;
+    Reader reader={2,values};lumina_linear::Node nodes[2]={};
+    lumina_linear::Tree tree={nodes,1,1,2};
+    lumina_characteristic::Profile<Reader> p={reader,tree,0,1000.,1.,1.,0.};
+    lumina_characteristic::Result result={};result.source=lumina_ordered::Positive::one();
+    auto status=lumina_characteristic::integrate_using(p,lumina_ordered::Positive::zero(),
+        1e-7,10000,result,RefineUntilCoordinateLimit{});
+    if(result.source.mantissa!=.5||result.source.exponent!=1)return 99;
+    return status;
+}
 extern "C" int lumina_characteristic_linear_probe(int nf,int block,const double *values,const double *parameters,
     int max_panels,double *mantissas,std::int64_t *exponents,int *counts)
 {
@@ -30,7 +52,7 @@ extern "C" int lumina_characteristic_linear_probe(int nf,int block,const double 
         lumina_characteristic::Profile<Reader> profile={reader,tree,0,parameters[1],parameters[2],parameters[0],parameters[3]};
         lumina_ordered::Positive incident;
         if(!lumina_ordered::Positive::from_double(parameters[4],incident))return 97;
-        lumina_characteristic::Result result;
+        lumina_characteristic::Result result={};
         int status=lumina_characteristic::integrate(profile,incident,parameters[5],max_panels,result);
         if(status)return status;
         lumina_ordered::Positive fields[7]={result.value,result.transmitted,result.source,result.error,

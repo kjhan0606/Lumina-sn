@@ -234,6 +234,13 @@ template<class P,class PanelFunction,class Stack> LUMINA_CHAR Status integrate_u
         if(r.panels>=max_panels)return WORK_LIMIT;
         ++r.panels;
         if(q.depth>r.max_depth)r.max_depth=q.depth;
+        if(p.span>0){
+            lumina_linear::Position a,b;
+            if(!p.position(q.u0,a)||!p.position(q.u1,b))return NUMERIC_RANGE;
+            // 양의 공간 폭이 같은 주파수 좌표로 반올림되면 입력 오류가 아니다.
+            // 더 분할하거나 좌표를 임의로 벌리지 않고 정밀도 한계로 반환한다.
+            if(a.bin==b.bin&&a.fraction==b.fraction)return PRECISION_LIMIT;
+        }
         Panel a;PanelStatus status=evaluate(p,q.u0,q.u1,relative/32.,a);
         if(status==INVALID)return NUMERIC_RANGE;
         Positive scale,budget,errors;

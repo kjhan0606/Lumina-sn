@@ -18,12 +18,23 @@ def characteristic(tmp_path_factory):
         '-Wall', '-Wextra', '-Werror', '-fPIC', '-shared', '-I'+str(ROOT/'src'),
         str(ROOT/'tests/characteristic_linear_probe.cpp'), '-o', str(path)], capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
-    f = ct.CDLL(str(path)).lumina_characteristic_linear_probe
+    library = ct.CDLL(str(path))
+    f = library.lumina_characteristic_linear_probe
+    f.resolution = library.lumina_characteristic_resolution_probe
+    f.resolution.argtypes = [ct.c_int]; f.resolution.restype = ct.c_int
     p = np.ctypeslib.ndpointer(dtype='f8', flags='C_CONTIGUOUS')
     e = np.ctypeslib.ndpointer(dtype='i8', flags='C_CONTIGUOUS')
     i = np.ctypeslib.ndpointer(dtype='i4', flags='C_CONTIGUOUS')
     f.argtypes = [ct.c_int, ct.c_int, p, p, ct.c_int, p, e, i]; f.restype = ct.c_int
     return f
+
+
+def test_collapsed_positive_frequency_interval_is_precision_limit_not_bad_data(characteristic):
+    assert characteristic.resolution(0) == 4
+
+
+def test_invalid_reader_still_reports_numeric_range_and_does_not_publish(characteristic):
+    assert characteristic.resolution(1) == 2
 
 
 def run(fun, values, *, length=1., shift=0., span=0., delta=0., incident=0., relative=1e-7, block=4, limit=100000):

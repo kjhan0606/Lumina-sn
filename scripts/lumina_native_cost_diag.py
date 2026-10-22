@@ -126,7 +126,7 @@ def compare(raw,expected):
             less_equal(actual_s.difference(s),actual_e+e) and less_equal(actual_e,actual_s*1e-8))
 
 
-def gpu(root,*,three_piece_reference=None):
+def gpu(root,*,three_piece_reference=None,three_piece_column=569899,reference_integrator='original'):
     target=root/'gpu-cost.json'
     if target.exists():raise FileExistsError('기존 GPU 진단 보존')
     baseline=json.loads((root/'cpu-cost.json').read_text())
@@ -178,23 +178,29 @@ def gpu(root,*,three_piece_reference=None):
                 for first,count in [(0,32),(624704,32),(624712,256),(624712,512)]:query(first,count)
                 if three_piece_reference is not None:
                     proof=json.loads(Path(three_piece_reference).read_text())
+                    if reference_integrator not in ('original','native_bin') or type(three_piece_column) is not int:
+                        raise ValueError('명시한 CPU 적분기/실패열 필요')
                     if proof['status']!='CPU_THREE_PIECE_SAMPLE_FINISHED' or \
                        proof['coordinate_mode']!='ORIGINAL_GLOBAL_TREE' or len(proof['rows'])!=3 or \
                        {r['piece'] for r in proof['rows']}!={0,1,2} or any(
-                           r['column']!=569899 or not r['comparison_met'] or r['original']['code'] for r in proof['rows']):
-                        raise ValueError('실패569899의 원 전역트리 세 조각 참조 필요')
+                           r['column']!=three_piece_column or r[reference_integrator]['code'] or
+                           (reference_integrator=='original' and not r['comparison_met']) for r in proof['rows']):
+                        raise ValueError('원 전역트리 세 조각의 명시 CPU 참조 필요')
+                    if proof['source_identity']!=record['source_identity']:raise ValueError('세 조각 참조의 물질/입력 변경')
                     import lumina_local_micro as M
                     from lumina_nodal_driver import CompiledDriverPlan
                     g=M.open_geometry(old['preparation']);plan=CompiledDriverPlan(g,provider._source,panels=1,block_width=256)
                     geometry=driver.geometry(plan,13003,[Leaf(0.,1.)])
-                    record.update(coarse_only=False,three_piece_reference_sha256=sha(three_piece_reference))
+                    record.update(coarse_only=False,three_piece_reference_sha256=sha(three_piece_reference),
+                        three_piece_reference_integrator=reference_integrator,
+                        three_piece_reference_scope='CPU implementation comparison; not an independent physical reference')
                     for row in sorted(proof['rows'],key=lambda r:r['piece']):
                         loc,length,da,db=driver.piece(*geometry[:3],0,row['piece'])
                         if (length,da,db)!=(row['length'],row['da'],row['db']):raise ValueError('원 세 조각 기하 변경')
                         endpoints=(Location*2)(loc[0],loc[2]);p=Piece()
                         check(runtime.lib.lumina_linear_cuda_plan(ct.byref(driver.view),endpoints,length,
                             provider._source.dlognu,da,db,0,provider.nf,2,ct.byref(p)))
-                        expected={row['column']:row['original']}
+                        expected={row['column']:row[reference_integrator]}
                         timed('TREE_BUILD_PIECE_'+str(row['piece']),lambda:runtime.lib.lumina_linear_cuda_build(
                             ct.byref(p),driver.tree.address,runtime.status))
                         query(row['column'],1)
