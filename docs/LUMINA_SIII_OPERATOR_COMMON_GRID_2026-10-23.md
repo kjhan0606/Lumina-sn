@@ -576,17 +576,17 @@ formal 재실행과 원 장 재현은 하지 않았다.** 원 packet을
 전체 공간광선 두 방향 강도와 저장 원강도의 최대 scaled 오차는
 `0`이었다. 포획 원 광선의 청색 상태와 재생 상태도 각 주파수에서
 바이트 값 기준으로 일치했다. 최적화 후 재검증 보고서는
-`/gpfs/kjhan/cmfgen_runs/lumina_siii_compact_build_20261023-nOoVGp/blue-chain-715-v2.json`
-(SHA256 `ce1eba3da1406d2391e23ae2dc4ca99ef31fe5d4430d62e8b60a051f18ed6fa6`)이고,
+`/gpfs/kjhan/cmfgen_runs/lumina_siii_compact_build_20261023-nOoVGp/blue-chain-715-v3.json`
+(SHA256 `08a6b9749443f4f8e0cd48057e7cd898085028f47bd7dd6413f1ee22ee45493b`)이고,
 재현 코드는 `scripts/check_cmfgen_local_sc_packet.py`
-(SHA256 `25dc32ab190df8f6768d2fef98c23747ac4960507fa949149d45f034fa53d600`)다.
+(SHA256 `b710ea2afeae978b1615154bd03b2c0dce483f90efcf6e2282edc4c816343dfb`)다.
 이 증거는 **한 번의 주파수 경계**를 통과한 것이며 목표
 600–750Å 전체의 누적 청색 이력 검증이 아니다.
 
 새 `scripts/replay_cmfgen_siii_compact_capture.py`는 예정된 compact
 stream에서 χ/η·경계·native 광선점·초기 청색 상태를 읽어
 호출별 전체 광선을 연쇄 재생하고, 각 기록의 원 강도·이전 강도·
-기하 b 계수와 대조하도록 준비했다. 합성 직접시험 11개가 통과했으나
+기하 b 계수와 대조하도록 준비했다. 합성 직접시험 12개가 통과했으나
 **실제 compact 자료에는 아직 적용하지 못했다**. 최종 호출 수와
 원 J장 동등성은 기존 `analyze_cmfgen_siii_compact_capture.py`가
 별도로 검사해야 한다. 원 formal 재실행·전대역 재현·원인 기여율·

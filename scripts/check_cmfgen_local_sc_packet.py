@@ -16,6 +16,13 @@ from analyze_cmfgen_formal_capture import formal_state, geometry, rays
 from prepare_cmfgen_mom_capture import sha
 
 
+BEZIER_COEFFICIENTS=tuple(
+    np.array([1/(math.factorial(i)*(i+3)),
+              2/(math.factorial(i)*(i+2)*(i+3)),
+              2/(math.factorial(i)*(i+1)*(i+2)*(i+3))],dtype='f8')
+    for i in range(13))
+
+
 def e_coeff(tau):
     if tau>0.01:
         ee=np.exp(-tau)
@@ -34,16 +41,9 @@ def bezier_source(sup,target,far,tau,neighbor):
     if tau<=0:
         return 0.
     if tau<=.5:
-        coefficients=[]
-        for i in range(13):
-            factorial=math.factorial(i)
-            coefficients.append(np.array([
-                1/(factorial*(i+3)),
-                2/(factorial*(i+2)*(i+3)),
-                2/(factorial*(i+1)*(i+2)*(i+3))],dtype='f8'))
-        weights=coefficients[12]
+        weights=BEZIER_COEFFICIENTS[12]
         for i in range(11,-1,-1):
-            weights=-tau*weights+coefficients[i]
+            weights=-tau*weights+BEZIER_COEFFICIENTS[i]
         weights=tau*weights
     else:
         inverse=1/tau
