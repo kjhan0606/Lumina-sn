@@ -77,3 +77,57 @@ def bdf_p0_segment_nonuniform(log_frequency, length, drift, chi, eta, incident,
             np.any(result.y[:, -1] < 0):
         raise ValueError('비등간격 상풍 기준해 실패 또는 음수')
     return result.y[:, -1], dict(nfev=result.nfev, nlu=result.nlu)
+
+
+def bdf_p0_segment_nonuniform_spatial_linear(log_frequency, length, drift,
+                                              chi_inner, chi_outer,
+                                              eta_inner, eta_outer, incident,
+                                              rtol=1e-8, atol=1e-15):
+    """실제 비등간격 격자에서 양 끝 χ/η를 광선 거리로 선형 보간한 P0.
+
+    주파수 결합 b는 구간 평균 drift/length로 고정한다. 원 Bézier SC나
+    실제 가변 b의 생산 계산을 뜻하지 않는다.
+    """
+    x = np.asarray(log_frequency, dtype='f8')
+    incident = np.asarray(incident, dtype='f8')
+    chi_inner, chi_outer, eta_inner, eta_outer = (
+        np.asarray(value, dtype='f8') for value in
+        (chi_inner, chi_outer, eta_inner, eta_outer))
+    n = len(incident)
+    arrays = (x, chi_inner, chi_outer, eta_inner, eta_outer, incident)
+    if (n < 2 or n > 8192 or any(value.shape != (n,) for value in arrays) or
+            not all(np.isfinite(value).all() for value in arrays) or
+            np.any(np.diff(x) <= 0) or
+            np.any(eta_inner < 0) or np.any(eta_outer < 0) or
+            np.any(incident < 0) or
+            not np.isfinite([length, drift, rtol, atol]).all() or
+            length < 0 or drift < 0 or (length == 0 and drift != 0) or
+            not 0 < rtol <= 1e-3 or not 0 < atol <= 1e-8):
+        raise ValueError('공간 선형 비등간격 P0 입력 오류')
+    if length == 0:
+        return incident.copy(), dict(nfev=0, nlu=0)
+    coupling = drift / np.diff(x)
+    static_diagonal = np.zeros(n)
+    static_diagonal[:-1] = coupling
+    static_diagonal += 3 * drift
+
+    def diagonal(t):
+        chi = chi_inner + t * (chi_outer - chi_inner)
+        return -(length * chi + static_diagonal)
+
+    def derivative(t, value):
+        result = diagonal(t) * value
+        result[:-1] += coupling * value[1:]
+        result += length * (eta_inner + t * (eta_outer - eta_inner))
+        return result
+
+    def jacobian(t, _):
+        return diags((diagonal(t), coupling), (0, 1), shape=(n, n),
+                     format='csc')
+
+    result = solve_ivp(derivative, (0., 1.), incident, method='BDF',
+                       jac=jacobian, rtol=rtol, atol=atol)
+    if (not result.success or not np.isfinite(result.y).all() or
+            np.any(result.y[:, -1] < 0)):
+        raise ValueError('공간 선형 P0 강성해 실패 또는 음수')
+    return result.y[:, -1], dict(nfev=result.nfev, nlu=result.nlu)

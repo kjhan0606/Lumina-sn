@@ -15,7 +15,8 @@ from scipy.integrate import solve_ivp
 from analyze_cmfgen_formal_capture import geometry
 from analyze_cmfgen_siii_compact_capture import records
 from check_cmfgen_local_sc_packet import e_coeff
-from lumina_upwind_p0_bdf import bdf_p0_segment_nonuniform
+from lumina_upwind_p0_bdf import (bdf_p0_segment_nonuniform,
+                                  bdf_p0_segment_nonuniform_spatial_linear)
 from prepare_cmfgen_mom_capture import sha
 from prepare_cmfgen_siii_compact_capture import FIRST, LAST
 
@@ -173,8 +174,60 @@ def continuous_scalar_reference(log_frequency, length, drift, chi, eta,
     return intensity, len(boundaries) - 1
 
 
+def continuous_scalar_spatial_linear_reference(log_frequency, length, drift,
+                                                chi_inner, chi_outer,
+                                                eta_inner, eta_outer, incident,
+                                                target_index, rtol=1e-9):
+    """주파수 접점과 광선 양 끝 χ/η의 공간 선형 변화를 모두 보존한다.
+
+    속도항은 한 구간 평균 drift로 고정한다. 원 CMFGEN 주파수 상풍·
+    Bézier 공간 SC나 Lumina 전체 광선의 정확한 복원은 아니다.
+    """
+    x = np.asarray(log_frequency, dtype='f8')
+    chi_inner, chi_outer, eta_inner, eta_outer, incident = (
+        np.asarray(value, dtype='f8') for value in
+        (chi_inner, chi_outer, eta_inner, eta_outer, incident))
+    arrays = (x, chi_inner, chi_outer, eta_inner, eta_outer, incident)
+    if (x.ndim != 1 or len(x) < 2 or
+            any(value.shape != x.shape for value in arrays) or
+            not all(np.isfinite(value).all() for value in arrays) or
+            np.any(np.diff(x) <= 0) or
+            np.any(eta_inner < 0) or np.any(eta_outer < 0) or
+            np.any(incident < 0) or
+            not np.isfinite([length, drift, rtol]).all() or
+            length <= 0 or drift <= 0 or not 0 < rtol <= 1e-3 or
+            type(target_index) is not int or not 0 <= target_index < len(x)):
+        raise ValueError('공간 선형 연속 특성선 입력 오류')
+    target = float(x[target_index])
+    blue = target + drift
+    if blue > x[-1]:
+        raise ValueError('포획 대역 밖 청색 경계 필요')
+    boundaries = np.r_[blue, x[(x > target) & (x < blue)][::-1], target]
+    intensity = float(np.interp(blue, x, incident))
+    for high, low in zip(boundaries[:-1], boundaries[1:]):
+        duration = length * (high - low) / drift
+
+        def derivative(u, value):
+            frequency = high + u * (low - high)
+            fraction = (blue - frequency) / drift
+            chi = ((1 - fraction) * np.interp(frequency, x, chi_inner) +
+                   fraction * np.interp(frequency, x, chi_outer))
+            eta = ((1 - fraction) * np.interp(frequency, x, eta_inner) +
+                   fraction * np.interp(frequency, x, eta_outer))
+            return duration * (eta - (chi + 3 * drift / length) * value)
+
+        result = solve_ivp(derivative, (0., 1.), [intensity], method='BDF',
+                           rtol=rtol, atol=1e-18)
+        if not result.success or not np.isfinite(result.y).all():
+            raise ValueError('공간 선형 접점별 연속해 실패')
+        intensity = float(result.y[0, -1])
+    if not np.isfinite(intensity) or intensity < 0:
+        raise ValueError('공간 선형 연속해 음수/비유한')
+    return intensity, len(boundaries) - 1
+
+
 def compare_spot(capture, out, ray_number, target_index,
-                 outer_native_zero_index=49):
+                 outer_native_zero_index=49, spatial_linear=False):
     """원격자 접점별 강성 연속해와 P0를 실제 한 광선·한 ν에서 대조한다."""
     script_sha256 = sha(Path(__file__))
     if out.exists():
@@ -202,6 +255,34 @@ def compare_spot(capture, out, ray_number, target_index,
         data['b_outer'], data['b_inner'], data['incoming'][k])
     p0 = float(p0_tight[target_index])
     norm = max(abs(continuous_tight), abs(p0), 1e-300)
+    spatial_linear_result = None
+    if spatial_linear:
+        spatial_args = (x, data['length'], data['drift'], data['chi_inner'],
+                        data['chi_outer'], data['eta_inner'], data['eta_outer'],
+                        data['incoming'])
+        spatial_p0_loose, _ = bdf_p0_segment_nonuniform_spatial_linear(
+            *spatial_args, rtol=1e-8, atol=1e-15)
+        spatial_p0_tight, spatial_info = bdf_p0_segment_nonuniform_spatial_linear(
+            *spatial_args, rtol=1e-9, atol=1e-17)
+        spatial_cont_loose, spatial_pieces = (
+            continuous_scalar_spatial_linear_reference(
+                *spatial_args, target_index, rtol=1e-9))
+        spatial_cont_tight, tighter_pieces = (
+            continuous_scalar_spatial_linear_reference(
+                *spatial_args, target_index, rtol=1e-10))
+        if spatial_pieces != tighter_pieces:
+            raise ValueError('공간 선형 주파수 접점 수 불일치')
+        p0_v = float(spatial_p0_tight[target_index])
+        scale = max(abs(p0_v), abs(spatial_cont_tight), 1e-300)
+        spatial_linear_result = dict(
+            p0_intensity=p0_v, continuous_intensity=spatial_cont_tight,
+            p0_minus_continuous=p0_v-spatial_cont_tight,
+            p0_minus_continuous_relative_to_pair_scale=(p0_v-spatial_cont_tight)/scale,
+            original_minus_continuous=ref-spatial_cont_tight,
+            p0_tolerance_change=float(abs(spatial_p0_loose[target_index]-p0_v)),
+            continuous_tolerance_change=abs(spatial_cont_loose-spatial_cont_tight),
+            frequency_pieces=spatial_pieces, p0_bdf_nfev=spatial_info['nfev'],
+            coefficient_rule='chi/eta linear in ray distance between captured native endpoints; constant mean drift')
     report = dict(scope=__doc__, status='LOCAL_CONDITIONAL_ONLY',
                   ray_number=ray_number, reverse_band_index=target_index,
                   outer_native_zero_index=outer_native_zero_index,
@@ -218,6 +299,7 @@ def compare_spot(capture, out, ray_number, target_index,
                   p0_minus_continuous=p0 - continuous_tight,
                   p0_minus_continuous_relative_to_pair_scale=(p0-continuous_tight)/norm,
                   original_minus_continuous=ref - continuous_tight,
+                  spatial_linear_comparison=spatial_linear_result,
                   p0_tolerance_change=float(abs(p0_loose[target_index] - p0)),
                   continuous_tolerance_change=abs(continuous_loose-continuous_tight),
                   continuous_frequency_pieces=pieces,
@@ -246,6 +328,8 @@ if __name__ == '__main__':
                         help='Python 0-based 바깥 native 인덱스; 48,49,50 중 선택')
     parser.add_argument('--spot-index', type=int, required=True,
                         help='증가하는 주파수 순서의 0-based 표본 인덱스')
+    parser.add_argument('--spatial-linear', action='store_true',
+                        help='같은 양 끝 χ/η를 공간 선형으로 보존한 두 연산자도 계산')
     args = parser.parse_args()
     compare_spot(args.capture.resolve(), args.out.resolve(), args.ray,
-                 args.spot_index, args.outer_native_index)
+                 args.spot_index, args.outer_native_index, args.spatial_linear)

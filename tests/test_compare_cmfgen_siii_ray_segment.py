@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import compare_cmfgen_siii_ray_segment as C
 from compare_cmfgen_siii_ray_segment import (cmfgen_linear_spatial_exit,
                                               continuous_scalar_reference,
+                                              continuous_scalar_spatial_linear_reference,
                                               native_segment_rows)
 
 
@@ -49,6 +50,35 @@ def test_scalar_reference_rejects_missing_blue_boundary():
                                     np.ones(len(x)), np.ones(len(x)), 10)
 
 
+def test_spatial_linear_continuous_reduces_to_fixed_medium():
+    x = np.linspace(0., 1., 101)
+    chi = np.full(len(x), .3)
+    eta = np.full(len(x), .12)
+    incident = np.full(len(x), .8)
+    expected, pieces = continuous_scalar_reference(x, 2., .07, chi, eta,
+                                                    incident, 50, rtol=1e-10)
+    got, same_pieces = continuous_scalar_spatial_linear_reference(
+        x, 2., .07, chi, chi, eta, eta, incident, 50, rtol=1e-10)
+    assert same_pieces == pieces
+    assert got == pytest.approx(expected, rel=2e-8)
+
+
+def test_spatial_linear_continuous_vacuum_with_varying_emission():
+    x = np.linspace(0., 1., 101)
+    zero = np.zeros(len(x))
+    inner = np.full(len(x), .1)
+    outer = np.full(len(x), .5)
+    length, drift = 2., .07
+    got, _ = continuous_scalar_spatial_linear_reference(
+        x, length, drift, zero, zero, inner, outer,
+        np.ones(len(x)), 50, rtol=1e-10)
+    a = 3 * drift
+    expected = (np.exp(-a) + length *
+                (inner[0] * (-np.expm1(-a)) / a +
+                 (outer[0] - inner[0]) * (a - 1 + np.exp(-a)) / a**2))
+    assert got == pytest.approx(expected, rel=2e-8)
+
+
 def test_linear_spatial_exit_uses_current_upstream_and_previous_frequency_source():
     out = cmfgen_linear_spatial_exit(100., .01, 1., 1., 2., 4.,
                                      0., 0., 0., 0., .5)
@@ -77,7 +107,7 @@ def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
         b_outer=0., b_inner=0.,
         length=1., drift=.05, geometry=geom, compact=compact))
     out = tmp_path / 'spot.json'
-    C.compare_spot(tmp_path, out, 1, 15)
+    C.compare_spot(tmp_path, out, 1, 15, spatial_linear=True)
     report = __import__('json').loads(out.read_text())
     assert report['status'] == 'LOCAL_CONDITIONAL_ONLY'
     assert report['outer_native_zero_index'] == 49
@@ -85,5 +115,6 @@ def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
     assert report['final_goal'] == 'NOT_MET'
     assert report['continuous_frequency_pieces'] >= 2
     assert report['cmfgen_linear_spatial']['tau'] == pytest.approx(.1)
+    assert report['spatial_linear_comparison']['p0_intensity'] > 0
     with pytest.raises(FileExistsError):
         C.compare_spot(tmp_path, out, 1, 15)

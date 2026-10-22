@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from lumina_upwind_p0_bdf import bdf_p0_segment, bdf_p0_segment_nonuniform
+from lumina_upwind_p0_bdf import (bdf_p0_segment,
+                                  bdf_p0_segment_nonuniform,
+                                  bdf_p0_segment_nonuniform_spatial_linear)
 from lumina_upwind_p0_oracle import exact_p0_segment
 
 
@@ -81,3 +83,28 @@ def test_nonuniform_frequency_order_is_required():
     with pytest.raises(ValueError, match='비등간격'):
         bdf_p0_segment_nonuniform([0., .02, .02], 1., .1,
                                   np.ones(3), np.ones(3), np.ones(3))
+
+
+def test_spatial_linear_p0_reduces_to_constant_nonuniform_operator():
+    x = np.cumsum(np.r_[0., np.linspace(.008, .012, 23)])
+    chi = np.linspace(.1, 2., len(x))
+    eta = np.full(len(x), .02)
+    incident = 1. + .1 * np.sin(np.arange(len(x)))**2
+    expected, _ = bdf_p0_segment_nonuniform(x, 1., .04, chi, eta, incident,
+                                             rtol=1e-10, atol=1e-14)
+    got, _ = bdf_p0_segment_nonuniform_spatial_linear(
+        x, 1., .04, chi, chi, eta, eta, incident,
+        rtol=1e-10, atol=1e-14)
+    np.testing.assert_allclose(got, expected, rtol=2e-11, atol=2e-11)
+
+
+def test_spatial_linear_p0_vacuum_emission_has_trapezoid_solution():
+    x = np.array([0., .03, .07])
+    incident = np.array([.2, .3, .4])
+    inner = np.array([.1, .2, .3])
+    outer = np.array([.5, .6, .7])
+    got, _ = bdf_p0_segment_nonuniform_spatial_linear(
+        x, 2., 0., np.zeros(3), np.zeros(3), inner, outer,
+        incident, rtol=1e-10, atol=1e-14)
+    np.testing.assert_allclose(got, incident + inner + outer,
+                               rtol=2e-8, atol=2e-9)
