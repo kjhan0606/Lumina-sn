@@ -16,8 +16,8 @@ from lumina_nodal_driver import CompiledDriverPlan
 class ObserverDriverPlan(CompiledDriverPlan):
     """원 native 광선을 보존하며 외곽 고리와 선택적 disk 미세화를 추가한다."""
     def __init__(self, geometry, source, *, block_width=256, disk_subdivisions=1):
-        if type(disk_subdivisions) is not int or disk_subdivisions not in (1, 2, 4, 8):
-            raise ValueError('관측자 disk 세분화는1/2/4/8 중 하나여야 함')
+        if type(disk_subdivisions) is not int or disk_subdivisions not in (1, 2, 4, 8, 16):
+            raise ValueError('관측자 disk 세분화는1/2/4/8/16 중 하나여야 함')
         super().__init__(geometry, source, panels=1, block_width=block_width)
         a = self.arrays
         paths = a['paths'].tolist(); steps = a['steps'].tolist()

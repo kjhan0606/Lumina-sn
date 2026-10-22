@@ -73,7 +73,7 @@
     "scope": "새 observer plan과 광선별 수송 연결·관측자 변환·양쪽 core 한계의 disk 적분·Hz/Angstrom 절대 광도 단위를 구현한다. 기존 수송 적분기를 재사용한다. R 밖 진공인 정상 구대칭 스냅샷이며 시간 의존/중력/외부 입사광을 추가하지 않는다.",
     "exclusions": "실제 GPU/완성장/물질 갱신/최종 observer 계산을 이번 준비로 실행하지 않는다. 자체 J1/J2, SE/RE, 경로 누적 오차, 각도·주파수·공간 격자 수렴과 최종 CMFGEN 일치를 증명하지 않는다.",
     "inputs_preserved": "진행 중인 flx1en의 봉인본과 실행은 무변경이다. 기존 물질70/native90 계수 및 외곽 기하를 재사용하는 별도 계획만 만든다. 기존 내부장 계획을 수정하지 않는다.",
-    "implementation": "scripts/lumina_observer_spectrum.py의 ObserverDriverPlan, ObserverSpectrum, run_observer. 기본 장 실행기에 자동 연결하거나 기존 실행의 scratch를 바꾸지 않는다. 새 실행에서만 동일 driver의 ray/characteristic/candidate를 사용하며 장치 버퍼 추가는0이다. 물질 격자를 바꾸지 않는 disk_subdivisions=1/2/4/8을 제공하고 새 비-core 광선의 z=0 접선을 삽입해 전환점 구간을 건너뛰지 않는다.",
+    "implementation": "scripts/lumina_observer_spectrum.py의 ObserverDriverPlan, ObserverSpectrum, run_observer. 기본 장 실행기에 자동 연결하거나 기존 실행의 scratch를 바꾸지 않는다. 새 실행에서만 동일 driver의 ray/characteristic/candidate를 사용하며 장치 버퍼 추가는0이다. 물질 격자를 바꾸지 않는 disk_subdivisions=1/2/4/8/16을 제공하고 새 비-core 광선의 z=0 접선을 삽입해 전환점 구간을 건너뛰지 않는다. 기본값1은 유지하며 기본값 자체를 정확도 보증으로 쓰지 않는다.",
     "physics": "출구 D=gamma*(1-beta*mu_lab), nu_c=D*nu_obs, I_obs=I_c/D^3. I를 log(nu)에 선형 보간하며 log(I) 보간이나 대역 외 외삽은 없다. q=(p/R)^2에서 core 쪽/대기 쪽 두 한계를 각각 보존한다. L_nu=4*pi^2*R^2*integral(I_obs dq), L_lambda_per_A=L_nu*nu^2/c*1e-8.",
     "observable_acceptance_for_preparation": "상수 disk의 절대 정규화, 각도선형 해석해로의 격자 수렴, core jump의 정확한 면적, alpha0/3 power law의 상대론 변환과 주파수 미세화, Angstrom Jacobian/에너지, 누락·중복·부적합·미완 수송의 결과 거부를 직접 확인한다. 정확한 대수는 반올림 오차 수준, 각도선형 최종 상대차1e-5, alpha3 미세 주파수 상대차5e-7/오차10배 감소, 단위변환 적분 상대차2e-7이다. 이는 실제 모델 정확도 기준을 대체하지 않는다.",
     "direct_tests": {
@@ -83,6 +83,37 @@
       "log_sha256": "44de0946ae032cc257e7ce4ea2af37b7d74c2ce633ffe45e695fe9d8e8d554d0",
       "initial_failures_preserved": "/tmp/lumina-observer-check-D2iAfy/host-test.log: 10통과/2실패. 상수 disk 입력의 cm 반경 누락과 단위 역산의 반올림 허용폭을 정정했다. 물리 정확도 기준이나 생산 수치는 바꾸지 않았다.",
       "temporary_log_preservation": "위 /tmp 로그는 영구 보존을 보장하지 않으며 시험 소스와 재현 명령을 저장소에 보존한다."
+    },
+    "real_characteristic_followup": {
+      "scope": "정적·정상·균일 회색 제조 매질과 차가운 불투명 core의 해석 시험이다. 실제 C++ 특성선 적분을 ObserverDriverPlan/run_observer/관측자 조립에 연결했다. 장치 메모리와 경계 주입만 CPU 배열 대역이며 구간 강도는 해석식 대입이나 증가량 대역이 아니다. 실제 원자자료/CMFGEN 외곽 폐합/자체장 시험은 아니다.",
+      "manufactured_shape": [24, 8],
+      "optical_radius_cases": [0, 0.7, 3],
+      "maximum_each_ray_relative": [5.551115123125783e-16, 7.693845560652335e-14, 6.905587213168474e-14],
+      "ray_reference": "p<core의 출사 길이는 sqrt(R^2-p^2)-sqrt(core^2-p^2), 대기 광선은2sqrt(R^2-p^2). I=eta*length 또는 eta/chi*(-expm1(-chi*length)). 중복 core 두 한계를 별도로 사용한다.",
+      "transparent_continuum_reference": "L_nu=(8*pi^2*eta/3)*(R^3+(R^2-core^2)^(3/2)-core^3)",
+      "transparent_continuum_luminosity_erg_s_Hz": 3.7027491497696566e23,
+      "transparent_disk_grids": [
+        {"subdivisions": 1, "paths": 65, "C_characteristic_calls": 3854, "luminosity_erg_s_Hz": 3.700754854947812e23, "relative_to_continuum": 0.0005385984146315526},
+        {"subdivisions": 4, "paths": 254, "C_characteristic_calls": 15134, "luminosity_erg_s_Hz": 3.7026175914115436e23, "relative_to_continuum": 0.00003552991379962567},
+        {"subdivisions": 16, "paths": 1010, "C_characteristic_calls": 60254, "luminosity_erg_s_Hz": 3.702741358201298e23, "relative_to_continuum": 0.000002104265788283044}
+      ],
+      "coarse_grid_finding": "기본 disk1은 이 회색 문제에서조차1e-4를 넘는다. 4와16의 미세화에서1e-4 안으로 수렴하지만, 이 합성3격자를 실제 native90 모델의 공간/각도/주파수 최종3-grid 검증으로 대체하지 않는다. 실제 observer에서도 격자 수렴을 확인해야 한다.",
+      "excluded_annulus_fractions_by_case": [0.3928870392262298, 0.43793570702789786, 0.5048644641989684],
+      "annulus_interpretation": "외곽 고리를 빼면 이 제조 문제의 광도가39~50% 빠진다. 실제 CMFGEN/Lumina 스펙트럼의 차이가 이 비율이라는 뜻은 아니다.",
+      "tests": "관측자16시험과 기존44회귀, 총60통과/23.28초. CPU1/4GiB/외부180초이며 추가 GPU0이다. 실제 특성선 커널을 호출한 합성 observer 평가는5회/86950구간이고 native90 모델의 observer 실행은0이다.",
+      "source_sha256": {
+        "src/cmf_characteristic_linear.hpp": "9a381893446ae59115352e62af794da0b2437359e3ff093ed4ff486c515b24a1",
+        "tests/characteristic_linear_probe.cpp": "80b296f0cdcb71806c0302f3f8d5f91c1065addd16e886bebf2489bc5e28ed11",
+        "scripts/lumina_observer_spectrum.py": "f403606e0178d503b5031cbbe6d4bacdbd1a1dec732920798b929a7dab973083",
+        "tests/test_lumina_observer_spectrum.py": "e30c6802de0e66238ccf7305f63e4e5456e424f43a17d1c2dc913f986cae94f9"
+      },
+      "log": "/tmp/lumina-observer-physical-integration-DUano2/host-test.log",
+      "log_sha256": "62aebed0821a69f318906599bed0808e0ddec02c0e7b50acde66dfa9d37e96a3",
+      "standalone_proof_root": "/tmp/lumina-observer-volume-IGnYUs",
+      "standalone_proof_sha256_by_optical_radius": ["bd428e1a80cf9230a4afcc1456c538aacddbe1091b4c1f0b5f72fdb313528d2b", "2eb2c674375c65c8fc4a5a1e9be376e300be95a78c87873f6c2eee123fe078f0", "eb6a024947872055081d5a4245d441fd40c0bf668f138031df5055b38a94d3ae"],
+      "reproduction": "기존 direct_tests.command의 네 시험 파일을 같은 CPU1/4GiB/180초·새 basetemp에서 실행한다. 각 회색 사례의 grey-observer-transport.json에 실제 값/호출 수/격자오차를 쓴다. /tmp 산출물의 영구 보존을 보장하지 않으므로 재현 명령과 핵심 수치는 이 문서에 보존한다.",
+      "accepted_physical_spectrum": false,
+      "final_goal_complete": false
     },
     "actual_geometry_preparation": "봉인 geometry.npz의 기존 해시 검사 뒤 실제90점/1115020주파수의 계획만 생성했다. 내부장107광선/16172구간과 달리 observer는131광선/16724구간이다. 새 외곽 고리24광선과 길이0의 p=R 접선을 포함한다. native 최외곽6.0549e15cm, 외곽9.08235e15cm, disk 가중합1이다. 계수 조회/물리수송/GPU호출은0이다.",
     "resources": {"host": "lageunha", "CPU": 1, "memory_GiB": 4, "seconds_per_check": 180, "GPU": 0},
