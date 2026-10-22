@@ -20,7 +20,7 @@ CONFIG = Path('/gpfs/kjhan/cmfgen_runs/lumina_field0_checkpoint_20261020-EoA5Bi/
 SHELL = 39
 
 
-def compare(out):
+def compare(out, siii_detail=False):
     if out.exists():
         raise FileExistsError('기존 native-node 광흡수율 결과 보존')
     start=time.monotonic()
@@ -63,6 +63,10 @@ def compare(out):
                '400–800Å':(wave>=400)&(wave<800),
                '800–1600Å':(wave>=800)&(wave<1600),
                '1400–1500Å':(wave>=1400)&(wave<1500)}
+        if siii_detail:
+            for lo in range(400,800,50):
+                masks[f'{lo}–{lo+50}Å']=(wave>=lo)&(wave<lo+50)
+        targets=((16,3),) if siii_detail else TARGETS
 
         def block(sl):
             radiation={}
@@ -77,7 +81,7 @@ def compare(out):
 
         result=[]
         for (z,stage),value in ion_rates_stream(nu,block,routes,rows,models,selected,
-                                                 do_dis,targets=TARGETS):
+                                                 do_dis,targets=targets):
             for label in ('outer49','inner50'):
                 rates={name:float(item['photo'][0]) for name,item in value['total'].items()}
                 pairs={}
@@ -89,12 +93,12 @@ def compare(out):
                 result.append(dict(Z=z,stage=stage,native_node=label,
                                    cell_population_shell=SHELL,routes=value['routes'],
                                    bands=pairs))
-        if len(result)!=8:
-            raise ValueError('네 이온·두 native 점 광흡수율 누락')
+        if len(result)!=2*len(targets):
+            raise ValueError('요청 이온·두 native 점 광흡수율 누락')
         out.mkdir(parents=False)
         report=dict(scope=__doc__,material_record=70,reference_record=71,
                     cells_with_populations=[SHELL],native_nodes=[49,50],
-                    frequencies=len(nu),ions=[list(key) for key in TARGETS],
+                    frequencies=len(nu),ions=[list(key) for key in targets],
                     results=result,do_lev_dissolution=do_dis,
                     photo_preprocessing=smoothing,
                     input_sha256={str(p):B.sha(p) for p in (ROOT/'execution.json',
@@ -117,5 +121,7 @@ def compare(out):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--siii-detail',action='store_true',
+                        help='S III만 계산하고 400–800Å를 50Å씩 분해한다')
     args=parser.parse_args()
-    compare(args.out.resolve())
+    compare(args.out.resolve(),args.siii_detail)
