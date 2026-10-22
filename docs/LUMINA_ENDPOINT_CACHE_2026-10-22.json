@@ -1,0 +1,98 @@
+{
+  "schema": "lumina-exact-endpoint-reuse-v1",
+  "status": "REWORK_FULL_INTERVAL_TIMEOUT_NO_VECTOR",
+  "operator_completion_review": {
+    "verdict": "REWORK",
+    "reproduced": "원 reader 값/실제35열 원천값의 bit 일치·원 적응 패널·부분 트리 경계·세대 재채움·잘못된 입력 거부 및 장치13사례를 직접 재현했다. 실행 바이너리는 계획의ae497888…와 같다.",
+    "unmet_objective": "실제 전주파수 공간적응 완성값·원 독립 정확도·10초 비용은 미달/미판정이다. 자체 J1/J2·생산 Si/S율·SE/RE·CMFGEN 이온분포/스펙트럼도 미완이다.",
+    "decision": "정확한 값 재사용 기능은 선택형으로 보존하되 생산 수용으로 올리지 않는다. 다음은 같은 캐시 반복이 아닌 적응 질의의 반복 범위·누적 광학깊이·큰 지역 상태를 줄이는 구조 결정이다. 어느 커널이 정지했거나 유일한 병목이라고 단정하지 않는다.",
+    "memory_before_transport": "실제 사전 활성1048771496B<1GiB·보수예약+live13540089348B<16GiB·관측7773159424B다. 수송 중 최종peak를 새로 관측한 것은 아니다.",
+    "sacct_sha256": "72f307240ba9a1577bc20a4f155180549f3d8a1feb9fc82dbbc59de299770224",
+    "last_result_sha256": "3959804b2ac055fc61937e87ff4dbfa8853ff130f6510958beb562fb8faf3f0f",
+    "host_test_sha256": "4f1f6017be04a63a23d120cbdb84ee6f0230c8b1d82c37c525897b6b7ae624d2",
+    "candidate_GPU_seconds": 142,
+    "combined_preparation_GPU_seconds": 705,
+    "remaining_preparation_seconds": 1095,
+    "budget_settlement": "후속 본할당141초만 한 번 차감했다. 앞선fixture1초는 이미 정산돼 후보합계142초이며 step1/140초는 별도로 더하지 않는다. 예약0·잔여73.2923888889GPUh다.",
+    "review_scope": "Astra는 공개 설계 자문이다. 실제 시험·종료 판정은 운전자 자체 수행이며 외부 독립 감사로 표시하지 않는다."
+  },
+  "operator_terminal_confirmation": {
+    "job_id": "433934",
+    "sacct": "FAILED/124:0, 할당141초; 장치시험 step1초와 수송 step140초를 다시 더하지 않는다.",
+    "direct_device": "4 passed,9 deselected in0.53s, exit0. 기존433928의 통과9개와 별도 실행이며 합쳐13개 고유 시험이다.",
+    "direct_device_log_sha256": "d0080d61b0eb78e25de1fb43a22bef7b1514af2956ac417aca61efe5caab8a2c",
+    "sealed_files": "후속본 execution.sha256 읽기 전용 재확인에서 불일치0",
+    "complete_vector": false,
+    "accuracy": "완성 벡터가 없어 독립 미세참조3열/최종 오차는 미판정이다.",
+    "cost": "완결/10초 목표 미달이다. 같은 후보의 자동 재시작·시간 확대를 하지 않는다.",
+    "stale_state": "STARTED/5.6696초/parallel_work0는 수송 전 마지막 발행 기록이다. 실제0작업이나 특정 커널 교착의 증거로 사용하지 않는다."
+  },
+  "job_id": "433934",
+  "plan_sha256": "81a48a7edee28295644bbc6c919fafbdbcbe9ef9a546b6dea9686c38b4c9af50",
+  "adapter_test": "새4 passed in0.16s. 이전9 passed in0.39s의 host 계획5개와 원 한도 보존을 재사용한다. GPU 문맥은 생성하지 않았다.",
+  "GPU_library_sha256": "ae49788865afeee46ba36dfb82dc7279f9a70989df583e4066b4b02438e39335",
+  "CPU_direct": "최종231 passed,5 GPU-only skipped in15.21s. header required_prefix와 Python 작업량을 마지막 트리 block 전체까지 일치시켰고 GPU fixture의 tuple 원소 대입 문제도 실제 helper로 직접시험했다.",
+  "CPU_actual": {
+    "status": "CPU_COARSE_COMPARISON_MET_NOT_FIELD",
+    "columns": 35,
+    "same_source_bits": 35,
+    "same_panels": true,
+    "query_seconds_before": 0.127749835,
+    "query_seconds_after": 0.122842523,
+    "comparison_sha256": "70ddd35b25ae14cb1f52d9f46d4da474f3170302bda80ef59ba358480ec4dd95",
+    "result_sha256": "c1a422ab6f260e104820beaa4a406db5b07eca3fae80ecb031bd955cad9d4594",
+    "limits": "같은 coarse35열 CPU 대조다. 단발 CPU 관측은 GPU/전주파수/전체장 가속률·최종 물리 수용이 아니다."
+  },
+  "final_goal": "ACTIVE_NOT_MET",
+  "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_followup_20261022-0YoWCi",
+  "first_device_attempt": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_cache_fixed_20261022-ClLEqp",
+    "job_id": "433928",
+    "allocation_seconds": 1,
+    "test_result": "9passed,1fixture TypeError in0.50s. arrays tuple의 원소에 augmented assignment한 오류이며 수송은 미시작이다.",
+    "followup": "원 바이너리를 재컴파일하지 않는다. 통과9개는 재사용하고 fixture 수정/부분 경계 미시험4개만 확인한 뒤 아직 미실행인 원13003을 같은 후속 할당에서 단회 수행한다.",
+    "device_test_sha256": "35a4297fbba39225eb713483b79845b9310689e75d7f484e30708d5f1d005f99"
+  },
+  "initial_candidate_preserved": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_cache_20261022-syZQPW",
+  "preparation_fix": "부분 query의 필요한 열 끝만 채우면 η32 트리가 만드는 마지막 block의 끝점이 누락된다. rounded block 전체와 청색 끝을 채우도록 수정했다. 초기 격리본은 새 fixture/옛 header가 섞여 required_prefix 컴파일 오류로 CPU 시험이 중단됐다. GPU를 제출하지 않았으며 초기 로그/바이너리는 보존하고 새 root에서 일관된 소스로 다시 검증한다.",
+  "objective": "반복된 끝점 재구성값을 그대로 재사용해 원13003 전주파수 공간적응·독립 정확도·완결 비용을 충족할 수 있는 수송을 만든다. 최종 목표는 자체 복사장과 Si/S 이온분포·스펙트럼·물리량의 CMFGEN 동질성이다.",
+  "evidence_for_change": "원 reader는 적응 패널마다 같은 native χ/η를 반경에서 다시 조립하고 외부대기에서는 exp도 재계산한다. 실제 고정표본은 반복 reader 질의가 있으며 기존 A100 전주파수 단회433358은141초에 완성값 없이 종료했다. 이 변경이 전체 병목을 해결하거나 속도를 보장한다고 단정하지 않는다.",
+  "scope": "선택형 CMF_GPU_ENDPOINT_CACHE만 두 끝점 χ/η 네 binary64 평면을 매 build마다 다시 채운다. 원 반경 보간→ES×J→주파수 보간 순서·signedχ·fullSR·원천1e-8/공간1e-5·최종 출력별 오차·적응 DFS를 변경하지 않는다. 기본 경로는 보존한다.",
+  "exclusions": ["기존 실패 계산 재시작", "시간/오차 완화", "전체장/SE/RE", "참조 J 주입", "국소 통과를 최종 물리 수용으로 대체"],
+  "inputs": "원 M70/native90/NF1115020/epoch1683072/J0=I0=0/fullSR13003과 기존8192분할 참조3열을 재사용한다. 원 계획·바이너리·실패 이력은 보존한다.",
+  "changes": ["원 Reader.at 결과를 변환 없이 저장하는 reader", "모든 새 조각·J/물질 세대마다 기본 스트림 fill→build→query", "끝점 평면 전체 비용을 tree/활성 workspace에 포함", "선택 ABI 비용이 다른 driver/바이너리는 할당 전에 거부", "끝점 재구성도 원512NF 구조 작업예산에 포함"],
+  "owner": "운전자 Codex",
+  "acceptance": {
+    "direct": "끝점 값의 bit 일치·반경/ES×J 순서·새 세대 재채움·원 적응 맵의 값/오차/패널·잘못된 입력의 canary 보존을 직접 대조한다.",
+    "actual": "실제 완성 전주파수 벡터·독립 참조3열 각각/최대정규화차1e-4·최종 출력별 추정오차비1 이하를 구분해 판정한다. 독립 검증 범위는3열이다.",
+    "cost": "D2H 포함10초 목표를 유지한다. 내부140/구간120/외부150초는 중단 상한이지 수용 기준이 아니다.",
+    "memory": "새 평면35680640B를 포함한 native1115020 workspace1048771496B<1GiB. 총host/device16GiB와 원 가용/예약/overflow 검사를 보존한다."
+  },
+  "resource_envelope": {
+    "CPU_direct": "lageunha CPU1·4GiB·180초 이내",
+    "CPU_build": "lageunha CPU1·16GiB·원 경로120초/선택240초/CPU참조60초 각각 외부한도",
+    "CPU_actual_samples": "lageunha CPU1·16GiB·기존270초 내부/300초 외부·고정35열 한 번",
+    "conditional_GPU": "직접시험 충족 시 새 후보만 단일A100·CPU1·host/device16GiB·활성1GiB·180초/no-requeue. 작은 필수 장치시험 뒤 같은 할당에서 실제13003 단회, 자동 재시도0.",
+    "before_GPU_combined_preparation_seconds": 564,
+    "original_preparation_budget_seconds": 1800,
+    "remaining_preparation_seconds": 1236,
+    "reserved_GPUh": 0
+  },
+  "planning": {
+    "agent": "Astra 01a16165-21d8-7793-9885-2946212a370b",
+    "status": "COMPLETED_CLOSED",
+    "result": "원 Reader의 동일 binary64 값 재사용은 물리 근사를 추가하지 않는다. 세대/기하 변경 때 재채움, query 종료 전 덮어쓰기 금지, 모든 동시 메모리 비용 포함이 필수다. 작은 통과는 원 전주파수/물리 목표를 대신하지 않는다.",
+    "scope": "공개 추상 알고리즘 문제만 전달했다. 도구·로컬열람·원소스·실험자료는 제공하지 않았다. 실행 승인/실제 수치 수용이 아니다."
+  },
+  "preservation": "기존 root/실패/입력은 수정하지 않는다. 새 root에서만 증거를 만들고, 실패 시 같은 후보를 자동 반복하거나 시간·기준을 바꾸지 않는다.",
+  "expected_evidence": ["CPU 직접시험", "원경로/선택 CUDA compile.log", "같은 실제35열 CPU 대조", "선택 장치 직접시험", "조건부 원13003 완성/종료 및 정확도/비용 분리 판정"],
+  "reproduction": "격리 root의 scripts/build_lumina_endpoint_cache.sh로 strict sm80을 빌드한다. host 시험과 lumina_native_cost_diag.py cpu 및 compare_lumina_native_cost.py를 같은 source identity로 수행한다. GPU는 봉인된 계획·스크립트와 단회 한도에서만 실행한다.",
+  "operator_prefix_reproduction": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_prefix_20261022-7Wpgxv",
+    "command": "test.sh: test_lumina_endpoint_cache.py와 test_lumina_native_cost.py, CPU1/4GiB/120초",
+    "result": "38 passed in6.75s, exit0, GPU0",
+    "log_sha256": "3bbd25779547b96a6a4f8452141c3e468fb124c2e35b5d633df18ed397d3cfed",
+    "scope": "부분 트리의 η32/χ2 block 반올림·정적/청색 끝·원 Reader/재채움/오차·패널 대조다. 전체 수송이나 CMFGEN 물리 수용이 아니다.",
+    "additional_device_regression": "begin/count/span=(0,1,3.4),(31,3,32.4),(0,33,0)의 원 CPU 맵 대조를 추가했다. abb130b 봉인 이후 추가한 시험이므로 기존433928의 장치 통과 개수에 합산하지 않는다."
+  }
+}

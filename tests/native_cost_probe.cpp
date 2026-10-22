@@ -2,6 +2,7 @@
 #include "cmf_linear_provider.hpp"
 #include "cmf_source_measure.hpp"
 #include "cmf_source_projection.hpp"
+#include "cmf_linear_endpoint_cache.hpp"
 #include <algorithm>
 #include <chrono>
 #include <vector>
@@ -9,8 +10,11 @@
 namespace {
 struct Reader {
     lumina_native_linear::Reader original;uint64_t *reads;
+    const double *endpoints=nullptr;int nf=0;
     bool at(int point,int column,double &chi,double &eta) const {
-        ++*reads;return original.at(point,column,chi,eta);
+        ++*reads;
+        if(endpoints)return lumina_endpoint_cache::Reader{endpoints,nf,nf}.at(point,column,chi,eta);
+        return original.at(point,column,chi,eta);
     }
 };
 }
@@ -34,12 +38,21 @@ static int execute(const CMFLinearCudaPiece *p,int column,CMFLinearNativeMap *ou
         int local_column=blue?0:column-anchor;
         double offset=blue?p->offset+column:p->offset;
         Reader reader={{p->view,{p->locations[0],p->locations[1]},p->base+anchor},&reads};
+#ifdef CMF_GPU_ENDPOINT_CACHE
+        std::vector<double> endpoints((size_t)4*nf);
+        for(int column=0;column<nf;column++)
+            if(!lumina_endpoint_cache::fill(reader.original,nf,column,endpoints.data()))return 3;
+        reader.endpoints=endpoints.data();reader.nf=nf;
+#endif
         int bins=p->span==0||local_column+offset>=nf-1?0:
             (int)::ceil(::fmin(nf-1.,local_column+offset+p->span));
         if(global)bins=p->bins;
         int blocks=(bins+1)/2,leaves=1;while(leaves<blocks)leaves*=2;
         int source_blocks=(bins+31)/32,source_leaves=1;while(source_leaves<source_blocks)source_leaves*=2;
         uint64_t bytes=uint64_t(2)*leaves*sizeof(Node)+uint64_t(2)*source_leaves*sizeof(lumina_source_measure::Node);
+#ifdef CMF_GPU_ENDPOINT_CACHE
+        bytes+=(uint64_t)4*nf*sizeof(double);
+#endif
         if(bytes>(UINT64_C(1)<<30))return 2;
         std::vector<Node> nodes((size_t)2*leaves,empty());
         std::vector<lumina_source_measure::Node> sources((size_t)2*source_leaves,lumina_source_measure::empty());

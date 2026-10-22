@@ -22,9 +22,10 @@ class Runtime(LinearRuntime):
         super().__init__(library,baseline_free,_node_bytes=NODE_BYTES,_map_bytes=MAP_BYTES)
 
 
-def memory_layout(nf,width):
+def memory_layout(nf,width,*,endpoint_cache=False):
     if type(nf) is not int or type(width) is not int or not 8<=nf<=2000000 or not 1<=width<=65536:
         raise ValueError('축약 GPU 격자/폭 오류')
+    if type(endpoint_cache) is not bool:raise ValueError('끝점 캐시 선택 형식 오류')
     arena=max(192*1024**2,3*nf*MAP_BYTES);arena=(arena+255)//256*256
     def leaves(block):
         blocks=(nf-2)//block+1
@@ -34,10 +35,11 @@ def memory_layout(nf,width):
     slabs=(nf+width-1)//width
     weighted=nf*8+((nf+4095)//4096)*32
     aux=3*nf*8+nf*16+4096*8*2+slabs*8+8+weighted
-    workspace=arena+chi_tree+source_tree+results+aux+PROJECTION_BYTES
+    endpoint=4*nf*8 if endpoint_cache else 0
+    workspace=arena+chi_tree+source_tree+endpoint+results+aux+PROJECTION_BYTES
     if slots<1 or workspace>CACHE_LIMIT:raise MemoryError('축약 활성 적분 작업공간1GiB 초과')
-    return dict(arena=arena,tree=chi_tree+source_tree,chi_tree=chi_tree,source_tree=source_tree,
-                results=results,slots=slots,workspace=workspace)
+    return dict(arena=arena,tree=chi_tree+source_tree+endpoint,chi_tree=chi_tree,source_tree=source_tree,
+                results=results,slots=slots,workspace=workspace,endpoint_bytes=endpoint)
 
 
 class CompactDriver(LinearDriver):
@@ -49,7 +51,12 @@ class CompactDriver(LinearDriver):
     engine='SPACE_LINEAR_COMPACT_SOURCE_MEASURE_GPU'
 
     def layout_for(self,nf,width):
-        return memory_layout(nf,width)
+        return memory_layout(nf,width,endpoint_cache=self.endpoint_cache)
 
     def tree_bytes(self,piece):
-        return 2*piece.leaves*272+2*piece.source_leaves*SOURCE_NODE_BYTES
+        return 2*piece.leaves*272+2*piece.source_leaves*SOURCE_NODE_BYTES+(4*piece.nf*8 if self.endpoint_cache else 0)
+
+
+class EndpointCompactDriver(CompactDriver):
+    endpoint_cache=True
+    engine='SPACE_LINEAR_COMPACT_EXACT_ENDPOINT_CACHE_GPU'

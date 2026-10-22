@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 10:45",
+  "as_of_KST": "2026-10-22 11:45",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,39 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.66816666665557,
-  "remaining_before_new_reservations_GPUh": 73.33183333334443,
+  "used_upper_GPUh": 70.70761111110002,
+  "remaining_before_new_reservations_GPUh": 73.29238888889998,
   "current_reserved_GPUh": 0,
+  "endpoint_cache_full_interval": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_followup_20261022-0YoWCi",
+    "state": "SETTLED_DEVICE13_MET_FULL_INTERVAL_TIMEOUT_NO_VECTOR",
+    "job_id": "433934",
+    "first_device_attempt": {
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_cache_fixed_20261022-ClLEqp",
+      "job_id": "433928",
+      "state": "FAILED/1:0;9passed/1fixtureTypeError;actual_not_started",
+      "allocated_gpu_seconds": 1,
+      "device_test_sha256": "35a4297fbba39225eb713483b79845b9310689e75d7f484e30708d5f1d005f99",
+      "sacct_sha256": "8d752f65403b347b58cced4329e9686e407fbd9dd4de5e705c2689b98c3d9d07",
+      "settlement": "본할당1초를 한 번 차감하고 첫 예약은 해제했다. 수송은 시작하지 않았다. 같은 바이너리/9통과를 재사용하고 fixture 수정과 미시험 부분 경계4개만 새 후속에서 확인한다."
+    },
+    "plan_sha256": "81a48a7edee28295644bbc6c919fafbdbcbe9ef9a546b6dea9686c38b4c9af50",
+    "library_sha256": "ae49788865afeee46ba36dfb82dc7279f9a70989df583e4066b4b02438e39335",
+    "reserved_GPUh": 0,
+    "max_allocation_seconds": 180,
+    "allocated_gpu_seconds": 141,
+    "allocated_GPUh": 0.03916666666666667,
+    "candidate_total_gpu_seconds_including_first_fixture": 142,
+    "combined_preparation_seconds_after": 705,
+    "remaining_preparation_seconds_after": 1095,
+    "terminal_state": "FAILED/124:0",
+    "sacct_sha256": "72f307240ba9a1577bc20a4f155180549f3d8a1feb9fc82dbbc59de299770224",
+    "last_result_sha256": "3959804b2ac055fc61937e87ff4dbfa8853ff130f6510958beb562fb8faf3f0f",
+    "settlement": "후속 본할당141초만 한 번 차감하고 예약을 모두 해제했다. 첫fixture1초는 이미 차감돼 후보합계142초/원준비705초다. 후속 장치4통과·기존9재사용이지만 전주파수 완성값은 없으며 정확도 미판정/완결·10초 미달이다. 같은 후보 자동 재실행/연장은 하지 않는다.",
+    "previous_combined_preparation_seconds": 564,
+    "remaining_preparation_seconds_before": 1236,
+    "scope": "끝점 재구성값만 정확히 재사용하는 새 후보 단회다. 작은 장치 직접시험 뒤 같은할당의 원13003 전주파수 공간적응을 실행한다. GPU1/CPU1·host/device16GiB·활성1048771496B<1GiB·원512NF·원오차/10초·Slurm180초/내부140/구간120초·노드미고정/no-requeue를 보존한다. 전체장/SE/RE/자동재시도0이다."
+  },
   "a100_full_interval": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_a100_actual_20261022-uMgaEU",
     "state": "SETTLED_EXTERNAL_TIMEOUT_NO_COMPLETE_VECTOR",

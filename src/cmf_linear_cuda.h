@@ -14,6 +14,8 @@ typedef struct {
 size_t lumina_linear_cuda_node_bytes(void);
 size_t lumina_linear_cuda_map_bytes(void);
 size_t lumina_linear_cuda_local_bytes(void);
+/* 선택형 끝점 평면의 실제 추가 비용. 기본 바이너리는0이다. */
+size_t lumina_linear_cuda_endpoint_bytes(int nf);
 int lumina_linear_cuda_workspace(size_t *local);
 int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNodalLocation *locations,
     double length,double h,double da,double db,int begin,int count,int block,CMFLinearCudaPiece *out);

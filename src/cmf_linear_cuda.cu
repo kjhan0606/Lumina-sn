@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include "cmf_linear_cuda.h"
 #include "cmf_linear_provider.hpp"
+#include "cmf_linear_endpoint_cache.hpp"
 #include "cmf_characteristic_linear.hpp"
 #include "cmf_linear_affine.hpp"
 #ifdef CMF_GPU_COMPACT_MEASURE
@@ -17,7 +18,6 @@ using StoredMap=CMFLinearNativeMap;
 #endif
 #include <algorithm>
 using lumina_linear::Node;
-using lumina_native_linear::Reader;
 using lumina_ordered::Positive;
 using lumina_ordered::product;
 using lumina_ordered::sum;
@@ -31,19 +31,58 @@ static constexpr size_t node_bytes=sizeof(Node)+sizeof(lumina_source_measure::No
     256;
 static constexpr size_t node_bytes=sizeof(Node);
 #endif
-static int source_block(const CMFLinearCudaPiece &p){
+__host__ __device__ static int source_block(const CMFLinearCudaPiece &p){
 #ifdef CMF_GPU_COMPACT_MEASURE
     (void)p;return 32;
 #else
     return p.block;
 #endif
 }
-static uint64_t tree_bytes(const CMFLinearCudaPiece &p){
+__host__ __device__ static uint64_t moment_tree_bytes(const CMFLinearCudaPiece &p){
     uint64_t bytes=(uint64_t)2*p.leaves*sizeof(Node);
 #ifdef CMF_GPU_SOURCE_MEASURE
     bytes+=(uint64_t)2*p.source_leaves*sizeof(lumina_source_measure::Node);
 #endif
     return bytes;
+}
+#ifdef CMF_GPU_ENDPOINT_CACHE
+__host__ __device__ static int endpoint_prefix(const CMFLinearCudaPiece &p){
+    return lumina_endpoint_cache::required_prefix(p.nf,p.bins,p.block,source_block(p),p.offset,p.span,p.count);
+}
+#endif
+static uint64_t tree_bytes(const CMFLinearCudaPiece &p){
+    uint64_t bytes=moment_tree_bytes(p);
+#ifdef CMF_GPU_ENDPOINT_CACHE
+    bytes+=(uint64_t)4*p.nf*sizeof(double);
+#endif
+    return bytes;
+}
+#ifdef CMF_GPU_ENDPOINT_CACHE
+using Reader=lumina_endpoint_cache::Reader;
+__device__ static Reader make_reader(const CMFLinearCudaPiece &p,const Node *nodes){
+    const double *values=reinterpret_cast<const double *>(reinterpret_cast<const char *>(nodes)+moment_tree_bytes(p));
+    return {values,p.nf,endpoint_prefix(p)};
+}
+__global__ static void fill_endpoints(CMFLinearCudaPiece p,Node *nodes,int *status){
+    int prefix=endpoint_prefix(p),count=prefix+(prefix<p.nf?1:0);
+    int at=blockIdx.x*blockDim.x+threadIdx.x;if(at>=count||*status)return;
+    int column=at<prefix?at:p.nf-1;
+    double *values=reinterpret_cast<double *>(reinterpret_cast<char *>(nodes)+moment_tree_bytes(p));
+    lumina_native_linear::Reader original={p.view,{p.locations[0],p.locations[1]},p.base};
+    if(!lumina_endpoint_cache::fill(original,p.nf,column,values))atomicCAS(status,0,47);
+}
+#else
+using Reader=lumina_native_linear::Reader;
+__device__ static Reader make_reader(const CMFLinearCudaPiece &p,const Node *){
+    return {p.view,{p.locations[0],p.locations[1]},p.base};
+}
+#endif
+extern "C" size_t lumina_linear_cuda_endpoint_bytes(int nf){
+#ifdef CMF_GPU_ENDPOINT_CACHE
+    return nf>=2&&nf<=2000000?(size_t)4*nf*sizeof(double):0;
+#else
+    (void)nf;return 0;
+#endif
 }
 static bool valid_piece(const CMFLinearCudaPiece *p){
     using lumina_ordered::finite;
@@ -84,7 +123,7 @@ extern "C" int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNo
 __global__ static void build_blocks(CMFLinearCudaPiece p,Node *nodes,int *status){
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=p.leaves||*status)return;
     Node n=lumina_linear::empty(),part,next;
-    Reader reader={p.view,{p.locations[0],p.locations[1]},p.base};
+    Reader reader=make_reader(p,nodes);
     int blocks=p.bins?(p.bins-1)/p.block+1:0;
     if(i<blocks){
         int end=(i+1)*p.block;if(end>p.nf-1)end=p.nf-1;
@@ -122,7 +161,7 @@ static int prepare_projection(const CMFLinearCudaPiece &p){
         return 0;
     }catch(...){return 3;}
 }
-__global__ static void source_blocks(CMFLinearCudaPiece p,SourceNode *nodes,int *status){
+__global__ static void source_blocks(CMFLinearCudaPiece p,SourceNode *nodes,const Node *chi_nodes,int *status){
     int i=blockIdx.x,lane=threadIdx.x;
     __shared__ Positive eta[2][maximum_block+1];__shared__ int failed;
     if(lane==0)failed=*status;__syncthreads();if(failed)return;
@@ -134,7 +173,7 @@ __global__ static void source_blocks(CMFLinearCudaPiece p,SourceNode *nodes,int 
     int blocks=p.bins?(p.bins-1)/block+1:0;
     int first=i*block,width=i<blocks?min(block,p.nf-1-first):0;
     if(width>0&&lane<=width){
-        Reader reader={p.view,{p.locations[0],p.locations[1]},p.base};
+        Reader reader=make_reader(p,chi_nodes);
         for(int c=0;c<2;c++){
             double chi,value;
             if(!reader.at(2*c,first+lane,chi,value)||!Positive::from_double(value,eta[c][lane])){
@@ -188,10 +227,15 @@ __global__ static void source_tree_level(int base,SourceNode *nodes,int *status)
 extern "C" int lumina_linear_cuda_build(const CMFLinearCudaPiece *p,void *raw,int *status){
     if(!valid_piece(p)||!raw||!status)return 1;
     Node *nodes=static_cast<Node *>(raw);
+#ifdef CMF_GPU_ENDPOINT_CACHE
+    int prefix=endpoint_prefix(*p),count=prefix+(prefix<p->nf?1:0);
+    fill_endpoints<<<(count+threads-1)/threads,threads>>>(*p,nodes,status);
+    if(cudaGetLastError()!=cudaSuccess)return 2;
+#endif
 #ifdef CMF_GPU_SOURCE_MEASURE
     int rc=prepare_projection(*p);if(rc)return rc;
     SourceNode *source=reinterpret_cast<SourceNode *>(nodes+2*p->leaves);
-    source_blocks<<<p->source_leaves,64>>>(*p,source,status);
+    source_blocks<<<p->source_leaves,64>>>(*p,source,nodes,status);
     if(cudaGetLastError()!=cudaSuccess)return 2;
 #endif
     build_blocks<<<(p->leaves+threads-1)/threads,threads>>>(*p,nodes,status);
@@ -212,7 +256,7 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     int first,int count,StoredMap *maps,int *status)
 {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=count||*status)return;i+=first;
-    Reader reader={p.view,{p.locations[0],p.locations[1]},p.base};
+    Reader reader=make_reader(p,nodes);
     lumina_linear::Tree tree={nodes,p.leaves,p.block,p.nf};
     lumina_characteristic::Profile<Reader> profile={reader,tree,i,p.offset,p.span,p.length,p.da-p.db};
     // 처음부터 청색 끝을 넘는 열도 원래 마지막ν의 상수 연장이다.
@@ -370,6 +414,9 @@ extern "C" int lumina_linear_cuda_workspace(size_t *local){
         (const void *)forward,(const void *)backward,(const void *)weighted
 #ifdef CMF_GPU_SOURCE_MEASURE
         ,(const void *)source_blocks,(const void *)source_tree_level
+#endif
+#ifdef CMF_GPU_ENDPOINT_CACHE
+        ,(const void *)fill_endpoints
 #endif
     };
     size_t maximum=0,aux;

@@ -12,12 +12,22 @@ import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from lumina_gpu_compact import Runtime,CompactMap,CompactDriver,MAP_BYTES
+from lumina_gpu_compact import Runtime,CompactMap,CompactDriver,EndpointCompactDriver,MAP_BYTES
 from lumina_gpu_linear import Piece,LOCAL_BYTES
 from lumina_gpu_driver import check
 from lumina_linear_native import NativeKernel,CPositive
 from test_lumina_gpu_measure import Input,SourceNode
 from test_lumina_linear_native import endpoint
+
+
+def tree_bytes(piece):
+    driver=EndpointCompactDriver if os.environ.get('LUMINA_ENDPOINT_CACHE')=='1' else CompactDriver
+    return driver.__new__(driver).tree_bytes(piece)
+
+
+def double_source_input(data):
+    data.arrays[0][2]*=2.
+    data.arrays[2][...]*=2.
 
 
 @pytest.fixture(scope='module')
@@ -43,7 +53,7 @@ def test_split_device_tree_has_correct_source_origin_padding_and_exact_moments(g
     data=Input(gpu,nf);p=Piece();nodes=None
     try:
         check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,1.1,.001,.000575,.000375,0,nf,2,ct.byref(p)))
-        nodes=gpu.allocate(CompactDriver.__new__(CompactDriver).tree_bytes(p))
+        nodes=gpu.allocate(tree_bytes(p))
         check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
         assert p.source_leaves!=p.leaves
         raw=gpu.download(nodes.part(2*p.leaves*272,2*p.source_leaves*856),(2*p.source_leaves,856),'u1')
@@ -69,7 +79,7 @@ def test_compact_device_map_keeps_CPU_source_transmission_and_total_error(gpu,sh
     nf=17;data=Input(gpu,nf,weak);p=Piece();buffers=[];length=1e300 if weak else 1.1;h=.001
     try:
         check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,length,h,(shift+span)*h,shift*h,0,nf,2,ct.byref(p)))
-        nodes=gpu.allocate(CompactDriver.__new__(CompactDriver).tree_bytes(p));buffers.append(nodes)
+        nodes=gpu.allocate(tree_bytes(p));buffers.append(nodes)
         maps=gpu.allocate(nf*MAP_BYTES);buffers.append(maps)
         check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
         check(gpu.lib.lumina_linear_cuda_query(ct.byref(p),nodes.address,1e-8,100000,maps.address,gpu.status))
@@ -119,7 +129,7 @@ def test_range_query_retains_original_indices_and_does_not_publish_outside_range
     f.argtypes=[ct.c_void_p]*2+[ct.c_double]+[ct.c_int]*3+[ct.c_void_p]*2;f.restype=ct.c_int
     try:
         check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,1.1,.001,.003775,.000375,0,70,2,ct.byref(p)))
-        nodes=gpu.allocate(CompactDriver.__new__(CompactDriver).tree_bytes(p));buffers.append(nodes)
+        nodes=gpu.allocate(tree_bytes(p));buffers.append(nodes)
         maps=gpu.allocate(70*MAP_BYTES);buffers.append(maps)
         gpu.upload(maps,np.full(70*MAP_BYTES,0xA5,dtype='u1'))
         check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
@@ -137,6 +147,54 @@ def test_range_query_retains_original_indices_and_does_not_publish_outside_range
             assert f(ct.byref(p),nodes.address,1e-8,100000,first,count,maps.address,gpu.status)==1
         gpu.sync()
         np.testing.assert_array_equal(gpu.download(maps,(70,MAP_BYTES),'u1'),raw)
+    finally:
+        for b in reversed(buffers):b.close()
+        data.close()
+
+
+@pytest.mark.parametrize('begin,count,span',[(0,1,3.4),(31,3,32.4),(0,33,0.)])
+def test_partial_piece_keeps_rounded_source_vertices_and_CPU_map(gpu,begin,count,span):
+    # query 끝보다 멀리 읽는 마지막 η32 block도 원 Reader와 같아야 한다.
+    nf=129;data=Input(gpu,nf);p=Piece();buffers=[];shift=.375;h=.001;length=1.1
+    try:
+        check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,length,h,
+            (shift+span)*h,shift*h,begin,count,2,ct.byref(p)))
+        nodes=gpu.allocate(tree_bytes(p));buffers.append(nodes)
+        maps=gpu.allocate(count*MAP_BYTES);buffers.append(maps)
+        check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
+        check(gpu.lib.lumina_linear_cuda_query(ct.byref(p),nodes.address,1e-8,100000,maps.address,gpu.status))
+        raw=gpu.download(maps,(count,MAP_BYTES),'u1')
+        cpu=NativeKernel(os.environ['LUMINA_COMPACT_NATIVE_LIBRARY'],source_measure=True)
+        for index in range(count):
+            expected,_=cpu.map(data.host,data.locations,length,h,(shift+span)*h,shift*h,begin+index)
+            actual=CompactMap.from_buffer_copy(raw[index].tobytes())
+            for a,b in [(actual.transmission.positive().value(),expected.t.value()),
+                        (actual.source.positive().value(),expected.source.value())]:
+                assert abs(a-b)<=3e-10*abs(b)
+            assert abs(actual.source.positive().value()-expected.source.value())<=\
+                actual.source_error.positive().value()+expected.source_error.value()
+    finally:
+        for b in reversed(buffers):b.close()
+        data.close()
+
+
+@pytest.mark.skipif(os.environ.get('LUMINA_ENDPOINT_CACHE')!='1',reason='끝점 캐시 선택 바이너리만 시험')
+def test_endpoint_cache_refills_changed_input_for_each_piece(gpu):
+    nf=35;data=Input(gpu,nf);p=Piece();buffers=[]
+    try:
+        check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,1.1,.001,.003775,.000375,
+            7,8,2,ct.byref(p)))
+        nodes=gpu.allocate(tree_bytes(p));maps=gpu.allocate(8*MAP_BYTES);buffers=[nodes,maps]
+        results=[]
+        for _ in range(2):
+            check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
+            check(gpu.lib.lumina_linear_cuda_query(ct.byref(p),nodes.address,1e-8,100000,maps.address,gpu.status))
+            raw=gpu.download(maps,(8,MAP_BYTES),'u1')
+            results.append([CompactMap.from_buffer_copy(row.tobytes()).source.positive().value() for row in raw])
+            double_source_input(data)
+            gpu.upload(data.buffers[0],data.arrays[0]);gpu.upload(data.buffers[2],data.arrays[2])
+            p.view.generation+=1
+        np.testing.assert_array_equal(np.array(results[1]),2*np.array(results[0]))
     finally:
         for b in reversed(buffers):b.close()
         data.close()

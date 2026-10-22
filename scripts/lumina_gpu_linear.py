@@ -17,6 +17,15 @@ LOCAL_BYTES = 64
 POSITIVE_DTYPE = np.dtype([('m', '<f8'), ('e', '<i8')])
 
 
+def endpoint_prefix(piece,chi_block,source_block):
+    if piece.offset>=piece.nf-1:return 0
+    last=math.ceil(min(piece.nf-1,piece.offset+piece.count-1+piece.span))
+    if piece.bins:
+        end=max(((piece.bins+block-1)//block)*block for block in (chi_block,source_block))
+        last=max(last,min(piece.nf-1,end))
+    return last+1
+
+
 class Piece(ct.Structure):
     _fields_ = [('view', DenseView), ('locations', Location*2)]+[
         (k, D) for k in ('length', 'h', 'da', 'db', 'offset', 'span')]+[
@@ -65,6 +74,7 @@ class LinearDriver(GpuDriver):
     source_block=None
     interval_limit_seconds=60.
     projection_bytes=0
+    endpoint_cache=False
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
         return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
@@ -78,6 +88,12 @@ class LinearDriver(GpuDriver):
             raise ValueError('GPU driver와 바이너리의 모멘트 저장 구조가 다르다')
         if runtime.lib.lumina_linear_cuda_map_bytes()!=self.map_bytes:
             raise ValueError('GPU driver와 바이너리의 맵 저장 구조가 다르다')
+        endpoint=getattr(runtime.lib,'lumina_linear_cuda_endpoint_bytes',None)
+        if endpoint is not None:
+            endpoint.argtypes=[I];endpoint.restype=S
+        actual=0 if endpoint is None else endpoint(provider.nf)
+        if actual!=(4*provider.nf*8 if self.endpoint_cache else 0):
+            raise ValueError('GPU driver와 바이너리의 끝점 캐시 비용이 다르다')
         if Path(cpu_library).resolve() != provider._binary or provider.identity.get('field', {}).get('role', '').startswith('REFERENCE'):
             raise ValueError('같은 native context와 자체 J 입력 필요')
         self.rt, self.provider, self.nf, self.ns, self.width = runtime, provider, provider.nf, provider.ns, block_width
@@ -102,6 +118,10 @@ class LinearDriver(GpuDriver):
             check(self.lib.lumina_linear_cuda_plan(ct.byref(self.view), endpoints, length,
                 self.provider._source.dlognu, da, db, begin, width, self.chi_block, ct.byref(p)))
             if self.tree_bytes(p) > self.tree.size: raise MemoryError('B 모멘트 tree 작업공간')
+            if self.endpoint_cache:
+                prefix=endpoint_prefix(p,self.chi_block,self.source_block or self.chi_block)
+                work.counts.setdefault('endpoint_reconstructed_columns',0)
+                work.take('endpoint_reconstructed_columns',2*(prefix+(prefix<p.nf)))
             blocks=(p.bins+self.chi_block-1)//self.chi_block
             built = min(p.nf-1, blocks*self.chi_block)
             work.take('bin_maps', built); work.take('tree_compositions', p.leaves-1)
