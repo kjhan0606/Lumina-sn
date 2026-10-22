@@ -32,6 +32,15 @@
     "src/lumina_cmfgen.c는 continuum cs와 별도 cmfgen_fine_jbar 결과를 하나의 generation에 게시한다. 실제 동일 수송해에서 파생됐는지 소비자 연결을 확인해야 한다.",
     "observer writer는 cs의 chi_tot/chi_es/S_fixed/J와 현재 opac/Te를 함께 사용한다. 마지막 물질 갱신 뒤 같은 물질로 장을 다시 닫아야 상태 혼합을 피한다."
   ],
+  "existing_code_reuse_2026_10_22": {
+    "verification": "운전자 소스 확인만 수행했으며 native90 실제 물질 갱신 시험은 하지 않았다.",
+    "source": "src/lumina_plasma.c",
+    "source_sha256": "ac2b53e702dafd9bf44c20e309eb13a77f90a71d85a43553939d60363665e1ec",
+    "finding": "고정T 물질 해법 자체가 전혀 없는 것은 아니다. a210_production_solve의 LUMINA_FIXED_TE_PROFILE 분기는 pinned_te로 a210_production_bundle_ledger를 호출하고 replay.electron_density와 개체수 후보를 nlte_population_candidate_commit_bundle로 함께 반영한다. RE 근을 구한 것으로 표시하지 않고 고정T 잔차를 별도로 기록한다.",
+    "call_policy": "lumina_r7_publish_and_solve_te의 solve_te=false는 여전히 물질 갱신 경로가 아니다. 기존 고정T 분기는 solve_te=true를 통해 진입한다. 온도 고정을 이유로 이 호출을 생략하거나 동일한 물질 트랜잭션을 중복 구현하지 않는다.",
+    "remaining_integration": "native90 재시작·전 model-atom 매핑·새 권위장의 continuum/line 연결은 여전히 미완이다. 이 생산 경로는 n_shells+1 shell 경계와 중간속도/반경을 사용하므로 CMFGEN native 점을 shell 평균으로 바꾸지 않는 좌표 대응을 확인해야 한다. 기존 코드 존재만으로 같은90점/전원소 갱신의 실제 성공을 주장하지 않는다.",
+    "execution_change": "현재434043의 입력·바이너리·한도를 변경하지 않고 새 물리 실행도 추가하지 않았다. 실제 첫 동일물질 대조가 설명되기 전 물질 피드백을 시작하지 않는 기존 종료 규칙을 유지한다."
+  },
   "implementation_scope": [
     "실제 전 원소 인구·비균일 T/ne·물리 프로필의 재시작 입력과 정확한 model-atom 대응.",
     "고정T에서 실제 전 원소 물질/공유 ne를 갱신하는 생산 경로. 온도 hold를 물질 갱신 생략으로 대체하지 않는다.",
