@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 12:09",
+  "as_of_KST": "2026-10-22 12:18",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -98,7 +98,22 @@
   },
   "used_upper_GPUh": 70.74705555554446,
   "remaining_before_new_reservations_GPUh": 73.25294444445554,
-  "current_reserved_GPUh": 0,
+  "current_reserved_GPUh": 1,
+  "remaining_after_current_reservations_GPUh": 72.25294444445554,
+  "user_extended_full_frequency_interval": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_endpoint_long_20261022-jhBEFk",
+    "state": "SUBMITTED_PENDING_RESOURCES",
+    "job_id": "433944",
+    "plan_sha256": "35714139374666e490ca5e1f8e68a0e9be7ca3ff53dd2a61bb1198dea3204b1d",
+    "library_sha256": "ae49788865afeee46ba36dfb82dc7279f9a70989df583e4066b4b02438e39335",
+    "reserved_GPUh": 1,
+    "max_allocation_seconds": 3600,
+    "previous_combined_preparation_seconds": 847,
+    "original_preparation_budget_seconds": 1800,
+    "authority": "사용자2026-10-22: 전주파수 수송 제한이 의미 없으면 충분히 확대하라. 기존 준비상한을 명시 확대하고 동일 검증 바이너리 단회에 최대1GPUh를 예약한다. 기존 소비와 실패는 유지한다.",
+    "scope": "GPU1/CPU1/host-device16GiB/활성1GiB/512NF/원 정확도 유지. 구간3400·내부3500·외부3550·Slurm3600초는 중첩 상한이다. 10초는 비용 보고로 분리하며 전체장/SE_RE/자동재시도0이다.",
+    "settlement_rule": "종료 후 본할당 ElapsedRaw만 한 번 차감하고 미사용 예약을 해제한다. 이전847초 및 같은 할당의 Python/step/중첩시간을 중복 차감하지 않는다."
+  },
   "chi_only_tau_full_interval": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_chi_tau_20261022-omuUR0",
     "state": "SETTLED_DEVICE13_MET_FULL_INTERVAL_TIMEOUT_NO_VECTOR",

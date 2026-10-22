@@ -39,6 +39,24 @@ def completion_assessment(seconds,*,shared_accuracy=False):
                 performance_qualified=bool(not shared_accuracy and observed))
 
 
+def local_acceptance(entry,*,shared_accuracy=False,require_cost_target=True):
+    """국소 정확도와 성능목표를 분리하되 기존 기본 판정은 유지한다."""
+    if type(require_cost_target) is not bool:raise ValueError('비용목표 필수 여부 형식 오류')
+    return bool(entry['accuracy_met'] and
+                (shared_accuracy or not require_cost_target or entry['cost_met']))
+
+
+def local_completion(results,*,shared_accuracy=False,require_cost_target=True):
+    if not results or not all(local_acceptance(e,shared_accuracy=shared_accuracy,
+        require_cost_target=require_cost_target) for e in results):
+        raise ValueError('미완료 또는 미충족 구간을 완료로 표시할 수 없다')
+    if shared_accuracy:status='GPU_LOCAL_SHARED_ACCURACY_MET_PERFORMANCE_UNASSESSED_NOT_FIELD'
+    elif require_cost_target:status='GPU_LOCAL_MET_NOT_FIELD'
+    else:status='GPU_LOCAL_ACCURACY_MET_COST_REPORTED_NOT_FIELD'
+    return dict(status=status,performance_qualified=bool(not shared_accuracy and
+        all(e['performance_qualified'] for e in results)))
+
+
 def fine_comparison(actual,fine,*,each_output=False):
     actual=np.asarray(actual,dtype='f8');fine=np.asarray(fine,dtype='f8')
     if actual.shape!=fine.shape or fine.ndim!=1 or not fine.size or \
@@ -87,6 +105,8 @@ def run(path,digest):
     if M.N.sha(path)!=digest:raise ValueError('GPU 실행 계획 변경')
     c=json.loads(path.read_text())
     if c['schema']!=SCHEMA or c['limits']!=LIMITS:raise ValueError('GPU 실행 범위 변경')
+    require_cost=LIMITS.get('require_cost_target',True)
+    if type(require_cost) is not bool:raise ValueError('비용목표 필수 여부 형식 오류')
     for group in ('sealed_sha256','input_sha256'):
         if any(M.N.sha(Path(p))!=h for p,h in c[group].items()):raise ValueError('GPU 봉인 입력/코드 변경')
     for key in ('origin','baseline','reference'):
@@ -97,7 +117,8 @@ def run(path,digest):
     if type(shared) is not bool:raise ValueError('공유 정확도 선택 형식 오류')
     start=time.monotonic();record=dict(status='STARTED',plan_sha256=digest,results=[],actual_model_F_calls=0,
         SE_RE_updates=0,accepted_physical_field=False,final_goal='NOT_MET');work=None;driver=None
-    record.update(shared_accuracy_only=shared,performance_qualified=False if shared else None)
+    record.update(shared_accuracy_only=shared,require_cost_target=require_cost,
+                  performance_qualified=False if shared else None)
     def publish():
         record.update(elapsed_seconds=time.monotonic()-start,peak_rss_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
         if work is not None:record.update(parallel_work=work.used,work_counters=work.counts,
@@ -144,11 +165,12 @@ def run(path,digest):
                         entry['output']=dict(path=str(out),sha256=M.N.sha(out))
                         entry.update(completion_assessment(seconds,shared_accuracy=shared))
                         record['results'].append(entry);record['memory_after_local']=runtime.report();publish()
-                        if not entry['accuracy_met'] or (not shared and not entry['cost_met']):raise RuntimeError('실제 GPU 구간 정확도/10초 비용 미달')
+                        if not local_acceptance(entry,shared_accuracy=shared,require_cost_target=require_cost):
+                            raise RuntimeError('실제 GPU 구간 정확도/필수 비용목표 미달')
                     driver.close();driver=None
                     record['memory_end']=runtime.report()
-                record['status']='GPU_LOCAL_SHARED_ACCURACY_MET_PERFORMANCE_UNASSESSED_NOT_FIELD' if shared else 'GPU_LOCAL_MET_NOT_FIELD'
-                record['performance_qualified']=not shared;code=0
+                record.update(local_completion(record['results'],shared_accuracy=shared,
+                                               require_cost_target=require_cost));code=0
     except Exception as error:
         record.update(status='GPU_LOCAL_NOT_MET',error=type(error).__name__+': '+str(error))
         if driver is not None and hasattr(driver,'last_completed_batch'):
