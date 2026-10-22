@@ -132,6 +132,33 @@ Astra의 보정 의견은 **C의 동일 등간격 주파수·110 ray·8분할
 보고하고 자동 확대하지 않는다. 기존 완성 자료와 실행 한도는
 유지한다. 최종 Si/S 자기일관 분포·물리량·스펙트럼은 아직 미달이다.
 
+### 첫 소스 판독: 선형 상풍 후보와 원 연산자는 다르다
+
+`/gpfs/kjhan/cmfgen_src/cur_cmf/plane/`의 실제 소스에서
+`cmf_formal_rel_v4.f:140–142`는 비첫 주파수에
+`NU_ON_dNU=1/dLOG_NU`를 넣고, `rel_variables.f:77–81`은
+`χτ=χ+(NU_ON_dNU+3)b`, `S′=(η+NU_ON_dNU b I_prev)/χτ`를
+계산한다. 해당 파일의 주석에 있는 `ν/(νprev−ν)` 표현보다
+**호출부의 실제 대입**을 비교 계약으로 삼는다.
+`optdepth_v4.f`는 호출된 `METHOD='ZERO'` 분기에서 끝점
+`χτ`의 사다리꼴 광학깊이를 사용한다. `solve_cmf_formal_v2.f`는
+내부 광선 구간에 세 점 포물선 short-characteristic과 음수
+source 기여의 선형 외삽 분기를, 끝 구간에는 선형 source
+적분을 사용한다. 바깥 유입 `I_M(1)=0`; 안쪽은 광선 종류와
+`DIFFUSION` 경계에 따라 결정된다. 이것을 단일 구간의
+1차 상풍·끝점 선형 source와 동일시할 수 없다.
+
+판독한 원소스 SHA256은 순서대로 `rel_variables.f`
+`c356ed12e3c78b138680495cc5e728fe9616c146b31f3ed81c1c2e252106a7fe`,
+`cmf_formal_rel_v4.f`
+`6e53ff6f18fd2999e43f09f9d59c220c99e83250df6657feda7592299c93928e`,
+`solve_cmf_formal_v2.f`
+`f8a4f06c8e2b4f84ec994320db58eafcf8fece5d7f755ba751e023966bc284b8`,
+`optdepth_v4.f`
+`18f51367546bfedda238515a8463e92f7704a425d26a0f10a340a9722ff7b9ce`다.
+아직 소형 후보를 원 연산자와 재현 비교하지 않았으며, χτ≤0
+가능성을 숨기는 clip/floor도 도입하지 않는다.
+
 ## 이전 포획 검토 이력
 
 아래는 원격자 비등간격 확인 **전**의 계획이다. 위 수정 묶음이
