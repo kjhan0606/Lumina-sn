@@ -108,6 +108,31 @@ def build_variant(out, compiler='cc'):
 
 class NativeSpatialGeometry(CoupledGeometry):
     """외부 경로는 동일, 내부 셀만 지정한 수만큼 나누고 위치 가중치를 준다."""
+    def __init__(self,g,subdivisions=1,extra_native_indices=None):
+        super().__init__(g,subdivisions)
+        if extra_native_indices is None:
+            return
+        if (not isinstance(extra_native_indices,(tuple,list)) or
+                len(extra_native_indices)!=2 or
+                any(type(index) is not int or not 0<=index<len(g.native_radius)
+                    for index in extra_native_indices) or
+                extra_native_indices[0]==extra_native_indices[1]):
+            raise ValueError('서로 다른 native 관측 깊이 두 개 필요')
+        # 마지막 두 *출력* 위치만 교체한다. 고정 J의 마지막 두 *입력* 행은
+        # 원 reference_indices에 남아 외부 산란 경계의 물리 조건을 유지한다.
+        target=np.asarray(g.native_radius[list(extra_native_indices)],dtype='f8')
+        self.sample_radii[-2:]=target
+        self.impacts=np.unique(np.r_[self.impacts,target])
+        self.paths=[]
+        for impact in self.impacts:
+            cuts=np.unique(np.r_[g.radius,self.sample_radii])
+            cuts=cuts[cuts>=max(self.boundaries[0],impact)]
+            z=np.sqrt((cuts-impact)*(cuts+impact))
+            negative=self._path(impact,-z[::-1],cuts[::-1],subdivisions)
+            positive=self._path(impact,z,cuts,subdivisions)
+            self.paths.append((float(impact),impact<self.boundaries[0],negative,positive))
+        self.half_segments=sum(len(a)+len(b) for _,_,a,b in self.paths)
+
     def _path(self, impact, coordinates, radii, subdivisions):
         result = []
         for position,(start,end) in enumerate(zip(coordinates[:-1],coordinates[1:])):

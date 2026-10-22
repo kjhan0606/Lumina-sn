@@ -44,6 +44,35 @@ def test_native_plan_preserves_unsplit_p0_geometry(kernels):
                 assert b.weight == a.weight if a.exterior else 0 <= b.weight <= 1
 
 
+def test_native_observation_radii_keep_fixed_source_indices(native_library,kernels):
+    p = problem(kernels)
+    reference = NativeSpatialGeometry(p.g,subdivisions=2)
+    same = NativeSpatialGeometry(p.g,subdivisions=2,
+                                 extra_native_indices=tuple(p.g.reference_indices))
+    assert np.array_equal(same.sample_radii,reference.sample_radii)
+    assert same.half_segments == reference.half_segments
+    j = np.full((p.n+2,p.nf),1e-4)
+    with operator(native_library,same,p) as c:
+        original,_ = c.apply_j(j)
+    with operator(native_library,reference,p) as c:
+        repeated,_ = c.apply_j(j)
+    np.testing.assert_array_equal(original,repeated)
+
+    target = NativeSpatialGeometry(p.g,subdivisions=2,extra_native_indices=(10,11))
+    assert np.array_equal(target.sample_radii[:-2],reference.sample_radii[:-2])
+    assert np.array_equal(target.sample_radii[-2:],p.g.native_radius[[10,11]])
+    assert set(reference.impacts).issubset(set(target.impacts))
+    with operator(native_library,target,p) as c:
+        chi = np.full((p.n+1,p.nf),1e-14)
+        eta = np.full((p.n+1,p.nf),1e-18)
+        set_native_fixed(c,chi,eta,j)
+        result,_ = c.apply_j(j)
+    assert result.shape == j.shape and np.isfinite(result).all()
+    assert np.all(result >= 0)
+    with pytest.raises(ValueError,match='native 관측'):
+        NativeSpatialGeometry(p.g,extra_native_indices=(10,10))
+
+
 def test_uniform_native_source_matches_p0_and_rejects_new_j(native_library,kernels):
     p = problem(kernels)
     p.cell_chi[:] = 1e-14
