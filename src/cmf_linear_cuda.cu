@@ -25,6 +25,7 @@
 #error CMF_GPU_WARP_MEASURE_requires_compact_endpoint_cache
 #endif
 #include "cmf_warp_measure.cuh"
+#include "cmf_warp_device.hpp"
 #endif
 #ifdef CMF_GPU_COMPACT_MEASURE
 #ifndef CMF_GPU_SOURCE_MEASURE
@@ -135,9 +136,11 @@ extern "C" int lumina_linear_cuda_hybrid_stats(int reset,unsigned long long *out
 #endif
 extern "C" size_t lumina_linear_cuda_cooperative_bytes(void){
 #ifdef CMF_GPU_WARP_MEASURE
-    // A100 최대108SM·SM당32block 상계. 같은 시각의 모든 공유 상태를
+    // 지원 장치 최대108SM·SM당32block 상계. 같은 시각의 모든 공유 상태를
     // 원1GiB workspace에 포함한다. 실제 동시 block 수를 과소평가하지 않는다.
-    return (size_t)108*32*(threads/32)*64*sizeof(lumina_characteristic::Pending);
+    static_assert(threads==lumina_warp_device::block_threads,"warp block budget ABI");
+    return (size_t)lumina_warp_device::maximum_sms*lumina_warp_device::maximum_blocks_per_sm*
+        (threads/32)*64*sizeof(lumina_characteristic::Pending);
 #else
     return 0;
 #endif
@@ -146,7 +149,8 @@ extern "C" int lumina_linear_cuda_cooperative_device(void){
 #ifdef CMF_GPU_WARP_MEASURE
     int device;cudaDeviceProp p;
     if(cudaGetDevice(&device)!=cudaSuccess||cudaGetDeviceProperties(&p,device)!=cudaSuccess)return 2;
-    if(p.major!=8||p.minor!=0||p.multiProcessorCount>108)return 3;
+    if(!lumina_warp_device::compatible(p.major,p.minor,p.multiProcessorCount,
+        p.maxThreadsPerMultiProcessor,p.maxThreadsPerBlock,p.warpSize))return 3;
 #endif
     return 0;
 }

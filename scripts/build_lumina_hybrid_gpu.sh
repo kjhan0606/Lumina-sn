@@ -4,16 +4,18 @@ source /etc/profile
 module purge
 module load gnu13 cuda/13.0.2
 set -euo pipefail
+hybrid_arch=${LUMINA_HYBRID_CUDA_ARCH:-sm_80}
+case "$hybrid_arch" in sm_80|sm_89) ;; *) exit 2 ;; esac
 cd "$1"
 test "$(hostname)" = LagEunha
 test ! -e history_cuda.so
 ulimit -v 16777216
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
-timeout -k 5 120 taskset -c 25 nvcc -O2 -std=c++17 -arch=sm_80 --threads=1 \
+timeout -k 5 120 taskset -c 25 nvcc -O2 -std=c++17 -arch="$hybrid_arch" --threads=1 \
     --fmad=false --ftz=false -DCMF_GPU_LINEAR -DCMF_GPU_SOURCE_MEASURE -DCMF_GPU_COMPACT_MEASURE \
     -Xcompiler=-fPIC,-ffp-contract=off,-Wall,-Wextra,-Werror -Isrc -c src/cmf_linear_cuda.cu \
     -o original-linear.o >original-compile.log 2>&1
-timeout -k 5 300 taskset -c 25 nvcc -O2 -std=c++17 -arch=sm_80 --threads=1 \
+timeout -k 5 300 taskset -c 25 nvcc -O2 -std=c++17 -arch="$hybrid_arch" --threads=1 \
     --fmad=false --ftz=false --prec-div=true --prec-sqrt=true -DCMF_GPU_LINEAR \
     -DCMF_GPU_SOURCE_MEASURE -DCMF_GPU_COMPACT_MEASURE -DCMF_GPU_DIAGNOSTIC_RANGE \
     -DCMF_GPU_ENVELOPE_UPPER -DCMF_GPU_ADAPTIVE_LINEAR_EXP -DCMF_GPU_TOTAL_CAP_RESERVATION \

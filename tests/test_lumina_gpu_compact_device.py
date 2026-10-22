@@ -32,9 +32,17 @@ def double_source_input(data):
 
 
 @pytest.fixture(scope='session')
-def gpu():
+def gpu(request):
     path=os.environ.get('LUMINA_COMPACT_GPU_LIBRARY')
     if not path:pytest.skip('별도 봉인된 축약 원천 GPU 직접시험만 허용')
+    # 같은 fixture를 여러 모듈에서 import하면 session scope여도 별도
+    # FixtureDef가 생긴다. 실제 pytest session이 하나의 CUDA 문맥을 소유한다.
+    cached=getattr(request.session,'_lumina_compact_gpu_context',None)
+    if cached is not None:
+        if cached.closed or cached.library!=Path(path).resolve():
+            raise ValueError('공유 장치 문맥의 바이너리/생존 신원 불일치')
+        yield cached
+        return
     row=subprocess.run(['nvidia-smi','--id=0','--query-gpu=memory.free,utilization.gpu','--format=csv,noheader,nounits'],
         check=True,capture_output=True,text=True,timeout=15).stdout.strip().split(',')
     free,util=[int(v.strip()) for v in row]
@@ -42,8 +50,10 @@ def gpu():
     assert free>=24*1024
     if not shared:assert util<=5
     with Runtime(path,free*1024**2) as runtime:
+        request.session._lumina_compact_gpu_context=runtime
         try:yield runtime
         finally:
+            del request.session._lumina_compact_gpu_context
             with (Path(os.environ['LUMINA_COMPACT_GPU_RECORD_ROOT'])/'memory.json').open('x') as f:
                 json.dump(dict(runtime.report(),shared_correctness=shared,precheck_utilization=util,
                                timing_acceptance=False),f,indent=2,allow_nan=False)
