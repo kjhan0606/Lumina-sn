@@ -1,0 +1,50 @@
+{
+  "schema": "lumina-readonly-cost-observation-v1",
+  "as_of_KST": "2026-10-22T09:38:46+09:00",
+  "final_goal": "NOT_MET",
+  "scope": "다른 작업이 만든 진단 결과를 읽기 전용으로 확인했다. 이 세션은 해당 실행을 제출·재실행·취소하지 않았고 공유 소스·자원 대장·원 결과도 변경하지 않았다.",
+  "root": "/gpfs/kjhan/cmfgen_runs/lumina_native_cost_diag_20261022-9VS8ZG",
+  "baseline_commit": "1b2c544a32c2825e5267b79adc9994619472dccb",
+  "prior_turn_classification": "PROGRESS: 후속 η 측도 설계를 Astra가 평가했고 별도 기록을7544812로 커밋·푸시했다. 이번 재개에서는 현재 HEAD와 실제 결과를 다시 읽어 그 설계가 이미 구현된 사실을 확인했으며 중복 구현하지 않는다.",
+  "current_scientific_state": "새 원천 측도·축약 구현의 소형 시험은 통과했으나 실제13003 전ν는 사용자 시간2배 후속도141초·exit124로 끝나 완성값이 없다. native90 자체장 쌍·생산 Si/S율·자기일관 SE/RE·CMFGEN 분포/스펙트럼 동질성은 여전히 미완이다.",
+  "CPU_sample": {
+    "status": "CPU_SAMPLE_FINISHED_NO_MAP_FAILURES",
+    "result_sha256": "72ddc25defea9495230930a2e61b394ed290b791da5afe269d685a48dea124eb",
+    "library_sha256": "050e1c942104168006d503ad0de97507301f3af72d8d78ff66c05abb36d99d3a",
+    "sample_count": 35,
+    "sample_rule": "32개 균등 층화 열과 기존 참조3개를 중복 제거한 고정 표본이다. 같은13003의 첫 coarse map이며 공간 적응 완료값이 아니다.",
+    "panel_range": [1, 5127],
+    "query_reader_range": [42, 254076],
+    "query_seconds_range": [0.00000581, 0.03320902],
+    "slowest_sample_column": 647430,
+    "slowest_sample_panels": 5127,
+    "dense_preparation_seconds": 10.844786351546645,
+    "total_seconds": 14.981168327853084,
+    "limits": "표본 안에서도 작업량이 크게 다르다. 이것만으로 전ν 평균·최악 꼬리·GPU 커널 병목·전체장 시간 또는 CMFGEN 정확도를 추론하지 않는다. code0은 해당 적분기 완료이지 최종 물리 수용이 아니다."
+  },
+  "limited_GPU_attempt": {
+    "terminal_status": "FAILED_NOT_FIELD",
+    "terminal_exit": 1,
+    "terminal_sha256": "bc6da6e52335949e44faf8f847a020cfe1496c0fdd55df76cfcf099ee4503a05",
+    "device_log_sha256": "0ecbad3aa2ceb2e38803de3595c2ce69eccd0eb5d162a43a22159f6ef2a4169f",
+    "launcher_sha256": "7c95a8fbd6833afdbdd9ad49efbb2f173b16217fb5cb9688eb2460ecd0e4ffb7",
+    "observed_device_test_result": "9 errors in0.82s",
+    "failure": "Runtime.__init__가 CUDA_MODULE_LOADING=EAGER를 요구하지만 이 root의 gpu-cost.sh는 이를 export하지 않았다. 모든 오류는 그 환경 검사에서 발생했다.",
+    "code_location": "scripts/lumina_gpu_driver.py:68의 환경 검사는 해당 Runtime의 ct.CDLL 및 cmf_gpu_create 호출보다 앞에 있다.",
+    "meaning": "이 시도의 적분 커널 실패·메모리 초과·수치 정확도 실패가 아니라 수치 실행 전 필수 환경 설정 누락이다. 다음 gpu-cost 단계도 실행되지 않아 TREE_BUILD/QUERY 시간이 없다.",
+    "not_a_general_explanation": "이 누락으로 이전 실제13003의 시간초과를 설명하지 않는다. 이전 실행은 장치 문맥과 사전 할당이 성공한 기록이 있어 별개의 문제다.",
+    "accounting": "gpu-window.json은 창1.2228초와 charged_seconds2를 기록한다. 이 세션은 이를 사용량에 새로 더하거나 예약을 해제하지 않는다. 공유 대장의 정산 담당이 원 창을 한 번만 처리해야 한다."
+  },
+  "direct_test_evidence": {
+    "host_result": "191 passed,12 skipped in28.26s",
+    "host_log_sha256": "77fba5c262cc5454273cb2f140a60454627ba7dba84215f9ee116094600f7caf",
+    "limits": "host 통과는 GPU 실행 환경을 검증한 것이 아니며 이번 GPU9개는 통과가 아니라 환경 오류다."
+  },
+  "next_action": "단일 운전자가 기존 실패를 보존하고 실행 환경의 명시적 EAGER 설정을 교정한 다음, 아직 얻지 못한 제한 단계별 시간과 같은 coarse CPU/GPU 비교를 확보해야 한다. 기존 전ν 실패를 재시작하거나 시간·오차·물리 기준을 바꿀 근거는 아니다. 수정·실행은 이 관측 기록에서 수행하지 않았다.",
+  "ownership": "이 세션이 재개된 뒤에도 공유 진단 문서가09:37:45에 다른 작업에서 갱신됐다. 소스 변경·새 GPU 실행의 단일 운전자 확인은 여전히 필요하다. 재개 후 차단 사유 감사는 새로 시작하며 이번 턴은 첫 확인이다.",
+  "reproduction": [
+    "해당 root의 cpu-cost.json·gpu-window.json·device-test.log·gpu-cost.sh를 읽고 위 SHA256을 대조한다.",
+    "scripts/lumina_gpu_driver.py의 Runtime.__init__에서 환경 검사와 문맥 생성의 실행 순서를 확인한다.",
+    "원 파일을 덮어쓰거나 관측 실패만을 이유로 기존 실행을 재시작하지 않는다."
+  ]
+}
