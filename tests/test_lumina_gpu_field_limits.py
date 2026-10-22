@@ -61,6 +61,15 @@ def test_long_interval_is_forwarded_without_extending_the_whole_field(field_doub
     assert d.calls==[(0,3240.),(1,3240.)] and report['total_seconds_limit']==5400.
 
 
+def test_explicit_whole_field_limit_preserves_remaining_time_and_complete_return(field_double):
+    d,_p,_clock=field_double
+    d.field_limit_seconds=14700.;d.interval_limit_seconds=14400.;d.elapsed_per_interval=6500.
+    _moments,report=invoke(field_double,seconds=14500.,interval_seconds=14400.)
+    assert d.calls==[(0,14400.),(1,8000.)]
+    assert report['physical_intervals']==2 and report['total_seconds_limit']==14500.
+    assert report['accepted_physical_field'] is False
+
+
 def test_remaining_field_budget_clips_each_interval(field_double):
     d,_p,_clock=field_double;d.elapsed_per_interval=45.
     with pytest.raises(TimeoutError):invoke(field_double,seconds=70.,interval_seconds=3240.)

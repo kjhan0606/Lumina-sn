@@ -182,6 +182,7 @@ class Work:
 
 
 class GpuDriver:
+    field_limit_seconds=5400.
     def __init__(self,runtime,provider,cpu_library,*,block_width=256,_layout=None):
         if type(block_width) is not int or not 1<=block_width<=65536:raise ValueError('GPU slab 폭 오류')
         if (Path(cpu_library).resolve()!=provider._binary or
@@ -363,7 +364,7 @@ class GpuDriver:
         """완전한 물리 광선/JHK다. 중간 구간 성공을 완성장으로 반환하지 않는다."""
         self.bound()
         if (plan.source is not self.provider._source or plan.panels!=1 or plan.driver_block_width!=self.width or
-            not 0<seconds<=5400. or type(max_full_vectors) is not int or not 1<=max_full_vectors<=2000000):
+            not 0<seconds<=self.field_limit_seconds or type(max_full_vectors) is not int or not 1<=max_full_vectors<=2000000):
             raise ValueError('GPU 장 계획/실행 한도 오류')
         if (isinstance(interval_seconds,bool) or not isinstance(interval_seconds,(int,float)) or
             not math.isfinite(interval_seconds) or not 0<interval_seconds<=getattr(self,'interval_limit_seconds',5400.)):
