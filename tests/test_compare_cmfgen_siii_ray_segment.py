@@ -7,7 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import compare_cmfgen_siii_ray_segment as C
-from compare_cmfgen_siii_ray_segment import continuous_scalar_reference
+from compare_cmfgen_siii_ray_segment import (cmfgen_linear_spatial_exit,
+                                              continuous_scalar_reference)
 
 
 def test_scalar_knot_split_reference_matches_constant_medium_analytic_solution():
@@ -39,6 +40,18 @@ def test_scalar_reference_rejects_missing_blue_boundary():
                                     np.ones(len(x)), np.ones(len(x)), 10)
 
 
+def test_linear_spatial_exit_uses_current_upstream_and_previous_frequency_source():
+    out = cmfgen_linear_spatial_exit(100., .01, 1., 1., 2., 4.,
+                                     0., 0., 0., 0., .5)
+    assert out['tau'] == 100.
+    assert out['source_outer'] == 2.
+    assert out['source_inner'] == 4.
+    assert out['linear_exit'] == pytest.approx(2.02, rel=1e-12)
+    with pytest.raises(ValueError, match='유효 χ'):
+        cmfgen_linear_spatial_exit(1., .01, -1., 1., 2., 4.,
+                                   0., 0., 0., 0., .5)
+
+
 def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
     x = np.linspace(0., 1., 31)
     geom = tmp_path / 'geometry.bin'
@@ -48,6 +61,11 @@ def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
     monkeypatch.setattr(C, 'actual_ray', lambda *_: dict(
         log_frequency=x, incoming=np.ones(len(x)), observed=np.ones(len(x)),
         chi=np.full(len(x), .1), eta=np.full(len(x), .1),
+        dlognu=np.full(len(x), x[1]-x[0]),
+        chi_outer=np.full(len(x), .1), chi_inner=np.full(len(x), .1),
+        eta_outer=np.full(len(x), .1), eta_inner=np.full(len(x), .1),
+        previous_outer=np.ones(len(x)), previous_inner=np.ones(len(x)),
+        b_outer=0., b_inner=0.,
         length=1., drift=.05, geometry=geom, compact=compact))
     out = tmp_path / 'spot.json'
     C.compare_spot(tmp_path, out, 1, 15)
@@ -56,5 +74,6 @@ def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
     assert report['operator_contribution'] == 'NOT_DETERMINED'
     assert report['final_goal'] == 'NOT_MET'
     assert report['continuous_frequency_pieces'] >= 2
+    assert report['cmfgen_linear_spatial']['tau'] == pytest.approx(.1)
     with pytest.raises(FileExistsError):
         C.compare_spot(tmp_path, out, 1, 15)

@@ -14,6 +14,7 @@ from scipy.integrate import solve_ivp
 
 from analyze_cmfgen_formal_capture import geometry
 from analyze_cmfgen_siii_compact_capture import records
+from check_cmfgen_local_sc_packet import e_coeff
 from lumina_upwind_p0_bdf import bdf_p0_segment_nonuniform
 from prepare_cmfgen_mom_capture import sha
 from prepare_cmfgen_siii_compact_capture import FIRST, LAST
@@ -46,7 +47,9 @@ def actual_ray(capture, ray_number):
         values.append((row['freq'], p_inner[0], p_outer[0],
                        .5 * (row['chi_ext'][outer] + row['chi_ext'][inner]),
                        .5 * (row['eta_ext'][outer] + row['eta_ext'][inner]),
-                       row['dlognu']))
+                       row['dlognu'], p_outer[2], p_inner[2],
+                       row['chi_ext'][outer], row['chi_ext'][inner],
+                       row['eta_ext'][outer], row['eta_ext'][inner]))
 
     previous = None
     for row in records(field / 'siii_compact.bin', g, include_rays=True):
@@ -63,12 +66,50 @@ def actual_ray(capture, ray_number):
     log_frequency = np.log(data[:, 0])
     if (not np.isfinite(data).all() or np.any(np.diff(log_frequency) <= 0) or
             np.any(data[:, 1:3] < 0) or np.any(data[:, 4] < 0) or
+            np.any(data[:, 6:8] < 0) or np.any(data[:, 10:12] < 0) or
             not np.allclose(np.diff(log_frequency), data[:-1, 5], rtol=1e-8, atol=1e-12)):
         raise ValueError('원격자·광선·계수 신원 불일치')
     return dict(log_frequency=log_frequency, incoming=data[:, 1],
                 observed=data[:, 2], chi=data[:, 3], eta=data[:, 4],
+                dlognu=data[:, 5], previous_outer=data[:, 6],
+                previous_inner=data[:, 7], chi_outer=data[:, 8],
+                chi_inner=data[:, 9], eta_outer=data[:, 10],
+                eta_inner=data[:, 11], b_outer=float(ray['B_P'][outer]),
+                b_inner=float(ray['B_P'][inner]),
                 length=length, drift=drift, geometry=geometry_files[0],
                 compact=field / 'siii_compact.bin')
+
+
+def cmfgen_linear_spatial_exit(length, dlognu, chi_outer, chi_inner,
+                               eta_outer, eta_inner, previous_outer,
+                               previous_inner, b_outer, b_inner, current_inner):
+    """원 CMFGEN 상풍 source를 고정한 두 끝점 선형 공간 SC 대조.
+
+    원 내부 구간의 Bézier 제한자는 포함하지 않는다. 따라서 이 값과
+    포획 출구의 차이만 공간 source 적분식의 조건부 차이다.
+    """
+    terms = np.asarray((length, dlognu, chi_outer, chi_inner, eta_outer,
+                        eta_inner, previous_outer, previous_inner,
+                        b_outer, b_inner, current_inner), dtype='f8')
+    if (not np.isfinite(terms).all() or length <= 0 or dlognu <= 0 or
+            min(eta_outer, eta_inner, previous_outer, previous_inner,
+                current_inner) < 0):
+        raise ValueError('원 공간 source 대조 입력 오류')
+    alpha = 1. / dlognu
+    effective_outer = chi_outer + (alpha + 3.) * b_outer
+    effective_inner = chi_inner + (alpha + 3.) * b_inner
+    if min(effective_outer, effective_inner) <= 0:
+        raise ValueError('원 공간 source 유효 χ 비양수')
+    source_outer = (eta_outer + alpha * b_outer * previous_outer) / effective_outer
+    source_inner = (eta_inner + alpha * b_inner * previous_inner) / effective_inner
+    tau = .5 * length * (effective_outer + effective_inner)
+    ee, e0, e1, _ = e_coeff(tau)
+    linear = (current_inner * ee + (e1 / tau) * source_outer +
+              (e0 - e1 / tau) * source_inner)
+    if not np.isfinite((source_outer, source_inner, tau, linear)).all():
+        raise ValueError('원 공간 source 대조 결과 비유한')
+    return dict(tau=float(tau), source_outer=float(source_outer),
+                source_inner=float(source_inner), linear_exit=float(linear))
 
 
 def continuous_scalar_reference(log_frequency, length, drift, chi, eta,
@@ -139,6 +180,12 @@ def compare_spot(capture, out, ray_number, target_index):
     if pieces != pieces_tight:
         raise ValueError('강성 연속해 원격자 접점 수 불일치')
     ref = float(data['observed'][target_index])
+    k = target_index
+    spatial = cmfgen_linear_spatial_exit(
+        data['length'], data['dlognu'][k], data['chi_outer'][k],
+        data['chi_inner'][k], data['eta_outer'][k], data['eta_inner'][k],
+        data['previous_outer'][k], data['previous_inner'][k],
+        data['b_outer'], data['b_inner'], data['incoming'][k])
     p0 = float(p0_tight[target_index])
     norm = max(abs(continuous_tight), abs(p0), 1e-300)
     report = dict(scope=__doc__, status='LOCAL_CONDITIONAL_ONLY',
@@ -148,6 +195,8 @@ def compare_spot(capture, out, ray_number, target_index):
                   length=data['length'], drift_log_frequency=data['drift'],
                   blue_margin_log_frequency=float(x[-1] - x[target_index]),
                   original_cmfgen_exit_intensity=ref,
+                  cmfgen_linear_spatial=spatial,
+                  original_minus_linear_spatial=ref-spatial['linear_exit'],
                   p0_intensity=p0, continuous_intensity=continuous_tight,
                   p0_minus_continuous=p0 - continuous_tight,
                   p0_minus_continuous_relative_to_pair_scale=(p0-continuous_tight)/norm,
