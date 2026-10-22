@@ -61,3 +61,34 @@ def test_native_compact_adapter_preserves_original_cost_and_precision_limits(loc
     assert local.LIMITS['source_relative']==1e-8 and local.LIMITS['spatial_relative']==1e-5
     assert calls[0]['comparison_context']['workspace_expected_bytes']==1013090856
     assert local.LIMITS['actual_model_F_calls']==0
+    module.configure_shared_accuracy()
+    assert local.LIMITS['shared_accuracy_only'] and local.LIMITS['performance_qualification']=='UNASSESSED_SHARED'
+    assert local.LIMITS['cost_target_seconds']==10 and local.LIMITS['external_wall_seconds']==75
+    assert local.LIMITS['prep_window_seconds']==1722 and local.LIMITS['actual_model_F_calls']==0
+    from lumina_gpu_compact import CompactDriver
+    assert CompactDriver.interval_limit_seconds==60.
+    module.configure_double_time()
+    assert local.LIMITS['external_wall_seconds']==150 and local.LIMITS['local_internal_seconds']==140
+    assert local.LIMITS['interval_seconds']==120 and local.LIMITS['user_approved_double_time']
+    assert local.LIMITS['already_allocated_gpu_seconds']==148 and local.LIMITS['prep_window_seconds']==1652
+    assert local.LIMITS['cost_target_seconds']==10 and local.LIMITS['automatic_retries']==0
+    assert CompactDriver.interval_limit_seconds==60. and local.GpuDriver.interval_limit_seconds==120.
+    driver=local.GpuDriver.__new__(local.GpuDriver);driver.bound=lambda:None
+    driver.provider=SimpleNamespace(_source=object())
+    invalid=SimpleNamespace(source=object(),panels=0)
+    with pytest.raises(ValueError,match='물리 구간'):
+        driver.interval(invalid,0,None,max_seconds=120.)
+    with pytest.raises(ValueError,match='시간 한도'):
+        driver.interval(invalid,0,None,max_seconds=121.)
+
+
+def test_native_shared_accuracy_cannot_promote_even_a_fast_time_to_performance(local):
+    assert not local.device_ready(26188,15)
+    assert local.device_ready(26188,15,shared_accuracy=True)
+    assert not local.device_ready(23000,0,shared_accuracy=True)
+    for seconds in [.1,10.,30.]:
+        d=local.completion_assessment(seconds,shared_accuracy=True)
+        assert d['cost_met'] is None and not d['performance_qualified']
+        assert d['observed_cost_target_met']==(seconds<=10.)
+    assert local.completion_assessment(.1)['cost_met'] is True
+    assert local.completion_assessment(30.)['cost_met'] is False

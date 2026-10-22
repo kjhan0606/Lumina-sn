@@ -28,6 +28,21 @@ local.Runtime=Runtime
 local.GpuDriver=CompactDriver
 
 
+def configure_shared_accuracy():
+    local.SCHEMA='lumina-gpu-compact-native-shared-accuracy-once-v1'
+    local.LIMITS=dict(local.LIMITS,shared_accuracy_only=True,performance_qualification='UNASSESSED_SHARED')
+
+
+def configure_double_time():
+    if not local.LIMITS.get('shared_accuracy_only'):raise ValueError('현재 승인된 공유 정확도 후속 실행만 허용')
+    local.SCHEMA='lumina-gpu-compact-native-shared-double-time-once-v1'
+    local.LIMITS=dict(local.LIMITS,local_internal_seconds=140,interval_seconds=120,external_wall_seconds=150,
+                      already_allocated_gpu_seconds=148,prep_window_seconds=1800-148,user_approved_double_time=True)
+    class DoubleTimeCompactDriver(CompactDriver):
+        interval_limit_seconds=120.
+    local.GpuDriver=DoubleTimeCompactDriver
+
+
 def evidence(root):
     for name,digest in [('history_cuda.so',GPU_LIBRARY_SHA),('driver.so',CPU_GEOMETRY_SHA)]:
         if local.M.N.sha(Path(root)/name)!=digest:raise ValueError('직접 검증한 축약/기하 바이너리와 다르다')
@@ -40,15 +55,20 @@ def prepare(root):
         method='NATIVE_COMPACT_SOURCE_MEASURE_CHI2_ETA32',GPU_library_sha256=GPU_LIBRARY_SHA,
         reference='원 native 입력·J0=I0=0·같은 fullSR 구간의 기존8192분할 독립 세 점',
         criteria='세 점 각각과 최대정규화차1e-4·주파수별 공간오차비1 이하·원천1e-8·D2H포함10초',
-        workspace_expected_bytes=1013090856,source_measure_already_GPU_seconds=78,
+        workspace_expected_bytes=1013090856,source_measure_already_GPU_seconds=local.LIMITS['already_allocated_gpu_seconds'],
         small_tests='공유 장치 합성8통과는 정확도 증거다. 성능 수용/실제 구간 완료 증거가 아니다.',
-        performance_precheck='원 free24GiB/util5% 시작 조건 유지. 공유 정확도 모드를 실제 판정에 상속하지 않는다.',
-        no_retry_of_previous_candidate=True,field_calls=0,SE_RE_updates=0))
+        performance_precheck='공유 정확도 선택 시 사용률만 기록하고 성능은 미판정이다. 기본 모드는 원util5%를 유지한다. free24GiB와 원 실행/오차/10초 목표는 그대로다.',
+        no_automatic_retry=True,user_approved_double_time=local.LIMITS.get('user_approved_double_time',False),
+        field_calls=0,SE_RE_updates=0))
 
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('mode',choices=('prepare','run'));p.add_argument('path');p.add_argument('--sha256')
+    p.add_argument('--shared-accuracy',action='store_true',help='실제 크기 정확도만 확인하며 성능 수용은 금지')
+    p.add_argument('--double-time',action='store_true',help='사용자 승인 외부150/내부140/구간120초 후속 단회')
     a=p.parse_args()
+    if a.shared_accuracy:configure_shared_accuracy()
+    if a.double_time:configure_double_time()
     if a.mode=='prepare':prepare(a.path)
     else:
         evidence(Path(a.path).resolve().parent)

@@ -27,6 +27,18 @@ LIMITS=dict(cpus=4,host_GiB=16,device_GiB=16,cache_GiB=1,GPU=1,device_index=0,
 SCHEMA='lumina-gpu-native-local-v1'
 
 
+def device_ready(free,util,*,shared_accuracy=False):
+    """공유 정확도만 사용률 조건을 분리한다. 메모리와 실행 한도는 유지한다."""
+    return free>=24*1024 and (shared_accuracy or util<=5)
+
+
+def completion_assessment(seconds,*,shared_accuracy=False):
+    if not np.isfinite(seconds) or seconds<0:raise ValueError('유한한 완결 시간 필요')
+    observed=seconds<=10.
+    return dict(observed_cost_target_met=bool(observed),cost_met=None if shared_accuracy else bool(observed),
+                performance_qualified=bool(not shared_accuracy and observed))
+
+
 def fine_comparison(actual,fine,*,each_output=False):
     actual=np.asarray(actual,dtype='f8');fine=np.asarray(fine,dtype='f8')
     if actual.shape!=fine.shape or fine.ndim!=1 or not fine.size or \
@@ -81,8 +93,11 @@ def run(path,digest):
         if M.N.sha(Path(c[key]))!=c[key+'_sha256']:raise ValueError('GPU 참조 신원 변경')
     if (root/'gpu-local.json').exists():raise FileExistsError('기존 GPU 결과 보존')
     with (root/'gpu-local.started').open('x') as f:f.write(digest+'\n')
+    shared=LIMITS.get('shared_accuracy_only',False)
+    if type(shared) is not bool:raise ValueError('공유 정확도 선택 형식 오류')
     start=time.monotonic();record=dict(status='STARTED',plan_sha256=digest,results=[],actual_model_F_calls=0,
         SE_RE_updates=0,accepted_physical_field=False,final_goal='NOT_MET');work=None;driver=None
+    record.update(shared_accuracy_only=shared,performance_qualified=False if shared else None)
     def publish():
         record.update(elapsed_seconds=time.monotonic()-start,peak_rss_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
         if work is not None:record.update(parallel_work=work.used,work_counters=work.counts,
@@ -101,8 +116,9 @@ def run(path,digest):
                 smi=subprocess.run(['nvidia-smi','--id=0','--query-gpu=memory.free,utilization.gpu','--format=csv,noheader,nounits'],
                     check=True,capture_output=True,text=True,timeout=15).stdout.strip()
                 free,util=[int(x.strip()) for x in smi.split(',')]
-                if free<24*1024 or util>5:raise RuntimeError('GPU 부하/메모리 여유 부족')
+                if not device_ready(free,util,shared_accuracy=shared):raise RuntimeError('GPU 부하/메모리 여유 부족')
                 record['pre_gpu_memory_free_MiB']=free
+                record['pre_gpu_utilization']=util
                 with Runtime(c['gpu_library'],free*1024**2) as runtime:
                     driver=GpuDriver(runtime,provider,c['cpu_library']);record['memory_before_local']=runtime.report();publish()
                     total_work=LIMITS['local_full_vectors_total']*source.nf;carried=LIMITS.get('carried_parallel_work',0)
@@ -125,12 +141,14 @@ def run(path,digest):
                                 **fine_comparison(actual,fine,each_output=LIMITS.get('fine_each_output',False)))
                         out=root/f'gpu-interval-{index}.npy'
                         with out.open('xb') as f:np.save(f,output,allow_pickle=False)
-                        entry['output']=dict(path=str(out),sha256=M.N.sha(out));entry['cost_met']=seconds<=10.
+                        entry['output']=dict(path=str(out),sha256=M.N.sha(out))
+                        entry.update(completion_assessment(seconds,shared_accuracy=shared))
                         record['results'].append(entry);record['memory_after_local']=runtime.report();publish()
-                        if not entry['accuracy_met'] or not entry['cost_met']:raise RuntimeError('실제 GPU 구간 정확도/10초 비용 미달')
+                        if not entry['accuracy_met'] or (not shared and not entry['cost_met']):raise RuntimeError('실제 GPU 구간 정확도/10초 비용 미달')
                     driver.close();driver=None
                     record['memory_end']=runtime.report()
-                record['status']='GPU_LOCAL_MET_NOT_FIELD';code=0
+                record['status']='GPU_LOCAL_SHARED_ACCURACY_MET_PERFORMANCE_UNASSESSED_NOT_FIELD' if shared else 'GPU_LOCAL_MET_NOT_FIELD'
+                record['performance_qualified']=not shared;code=0
     except Exception as error:
         record.update(status='GPU_LOCAL_NOT_MET',error=type(error).__name__+': '+str(error))
         if driver is not None and hasattr(driver,'last_completed_batch'):

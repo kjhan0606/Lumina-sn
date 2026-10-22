@@ -63,6 +63,7 @@ class LinearDriver(GpuDriver):
     map_bytes=MAP_BYTES
     chi_block=32
     source_block=None
+    interval_limit_seconds=60.
     projection_bytes=0
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
@@ -133,7 +134,7 @@ class LinearDriver(GpuDriver):
 
     def interval(self, plan, index, work, *, max_seconds=60.):
         self.bound()
-        if not 0 < max_seconds <= 60.: raise ValueError('B 구간 시간 한도')
+        if not 0 < max_seconds <= self.interval_limit_seconds: raise ValueError('B 구간 시간 한도')
         if plan.source is not self.provider._source or plan.panels != 1 or type(index) is not int or not 0 <= index < len(plan.arrays['steps']):
             raise ValueError('동일 native 계획의 물리 구간 필요')
         started = time.monotonic(); previous_deadline = work.deadline

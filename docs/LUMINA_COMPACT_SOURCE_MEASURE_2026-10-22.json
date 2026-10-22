@@ -1,6 +1,6 @@
 {
   "schema": "lumina-compact-source-measure-implementation-v1",
-  "status": "CPU_FIXED737_AND_SMALL_DEVICE_ACCURACY_MET_NATIVE_FULL_NU_NOT_YET_ACCEPTED",
+  "status": "USER_DOUBLE_TIME_ALSO_EXTERNAL_TIMEOUT_NO_VECTOR_NOT_ACCEPTED",
   "objective": "원 native 수송의 정확도와 오차 소비를 유지하면서 전ν 완료를 막는 자료구조 비용을 줄인다. 최종 목표는 CMFGEN 물리량/스펙트럼 동질성이며 이 구현만으로 목표 달성을 선언하지 않는다.",
   "owner": "운전자",
   "baseline": "5a7864b1c7785f66af43872ef2b779d2238bc451",
@@ -94,6 +94,59 @@
     "resources": "Lageunha GPU0 한 장/CPU최대4(OMP1)/host·device16GiB/외부75초·내부70초·구간60초 단회. 원 준비1722초 안에서 실제 창을 정산한다. 실행 직전만75초를 예약하며 현재 예약0이다.",
     "precheck": "원free24GiB/util5% 이하 조건을 유지한다. 공유 정확도 개정을 성능 판정에 상속하지 않는다. 다른 프로젝트 작업을 중단/변경하지 않는다.",
     "adapter_tests": "4 passed in0.45s. adapter-test.log SHA256 31968af04ef6cc90c6c2a0ada9f46ec649acb0f83f50f9de695acd5d8223c7d1. 선택 구간/원 정확도·10초·누적78초 보존을 직접 확인했다.",
-    "preservation": "새 root에 검증한 바이너리/정확한 소스/명령/기존 증거를 고정한다. 이전 실패를 보존하고 완성값 없이는 비교나 수용을 주장하지 않는다. 실패 시 자동 재시작/시간 연장/허용오차 완화는 하지 않는다."
+    "preservation": "새 root에 검증한 바이너리/정확한 소스/명령/기존 증거를 고정한다. 이전 실패를 보존하고 완성값 없이는 비교나 수용을 주장하지 않는다. 실패 시 자동 재시작/시간 연장/허용오차 완화는 하지 않는다.",
+    "latest_precheck": "launch-attempt1.log는util15%로 계산 전에 종료됐다. allocation.started/gpu-local.started/벡터는 없다. 사용0초·예약 해제이며 수치 재실행은 아니다."
+  },
+  "native_shared_accuracy_amendment": {
+    "status": "TERMINAL_EXTERNAL_TIMEOUT_NO_VECTOR_ACCURACY_PERFORMANCE_UNASSESSED",
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_native_shared_20261022-4CjVEF",
+    "sealed_plan_sha256": "b54305129231953f0bd6080570038c92b22c9744ac03b969c548d368af11e1ca",
+    "direct_tests": "172 passed,7 GPU-only skipped in13.02s. fixed-host-test.log SHA256 dc62f2b84cc692a09a6d0a5b65ec6eb6868fbb9a0bd7795e687499cff4ae586d. 첫 host-test.log는 이 고정 실행 의존성에 없는 별도 수학 증명 모듈의 collection 오류였다. 원 로그를 보존하고 변경하지 않은 순수 수학11개는 앞선 통과를 재사용했다.",
+    "objective": "사용률 대기와 독립적으로 원 실제13003 전ν 벡터의 완성과 기존 국소 정확도 계약을 확인한다. 성능 수용 및 최종 CMFGEN 동질성은 미판정/미달로 유지한다.",
+    "planning": "Astra01a160e7 공개 검증 설계 검토 완료/종료. 도구·원문·로컬 문맥·소스·실험값 전달/열람은 없었다. 속도만 바뀌고 입력/연산/정밀도/분할/난수/출력 경합이 같다는 조건에서 공유 실제 크기 정확도 시험은 유효하며, 완성/정확도/오차/시간·비용/성능미판정을 분리하라는 권고다. 실제 소스 감사나 실행 승인으로 꾸미지 않는다.",
+    "operator_check": "장치 메모리 cap/가용 조건과 고정 batch/알고리즘/정밀도를 유지한다. 다른 작업과 원 입력/출력은 공유하지 않는다. 결정적 출력별 DFS/순서합성·수용 규칙·수치 바이너리를 바꾸지 않는다. deadline은 성공 표본 수를 줄이는 기준이 아니라 실패 종료 한도다. CUDA 실행 오류와 sticky status를 sync로 확인한다.",
+    "scope": "원M70/native90/NF1115020/epoch1683072·J0=I0=0·fullSR·13003 한 번. 완성전ν와 세 점 독립8192분할 참조1e-4·주파수별 원천1e-8/공간1e-5를 확인한다. 세 점을 모든ν의 독립 참조나 CMFGEN J 일치로 확장하지 않는다.",
+    "resources": "원GPU0 한 장/CPU최대4(OMP1)/host·device16GiB/free24GiB/활성1GiB/총512NF/외부75초·내부70초·구간60초. 원 준비1722초 안에서 실제 사용 창만 정산한다. 시작 직전만 예약하며 현재 GPU0초/예약0이다. 자동 재시도/한도 확대/전체장 없음.",
+    "classification": "완성 여부·세 점 정확도/주파수별 자체 오차·실측 시간/한도·성능미판정을 따로 남긴다. shared_accuracy_only=true에서 cost_met=null, performance_qualified=false이며 관측10초 충족 여부만 별도 기록한다. 정확도 통과여도 GPU_LOCAL_MET_NOT_FIELD 또는 성능/전체장 진행으로 승격하지 않는다.",
+    "preservation": "미시작 원 성능 계획과 첫 precheck 실패, 이전 수치 실패를 보존하고 새 root/새 schema/명시적 --shared-accuracy로 봉인한다. 수치 실행을 시작한 뒤 실패하면 재시작하지 않는다.",
+    "authority": "사용자 추가진행 사전승인 범위에서 정확도 증거를 얻는 운전 변경이다. GPU 수/자원/계산 시간/정확도 한도나 최종 목표를 늘리거나 줄이지 않는다. 성능 수용은 의도적으로 미판정으로 남긴다."
+  },
+  "native_shared_terminal": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_native_shared_20261022-4CjVEF",
+    "terminal_sha256": "185e042862b733d1c581b0692d713c102533349e4097c843f60f3ac8957a5ef3",
+    "terminal_exit": 124,
+    "allocated_gpu_seconds": 70,
+    "complete_vector_present": false,
+    "classification": "완성 미달/정확도 미판정/자체오차 미판정/공유 성능 미판정. 작은 GPU8사례 및 CPU2.42배 단발 개선은 실제 전ν 완성을 보장하지 않았다. 정확도가 틀렸다고도 맞았다고도 판단하지 않는다.",
+    "last_partial_sha256": "de41fe321a21df3f17e723992970377d8303ea0a69d4f67da3c86f2c932f16ee",
+    "stale_record": "STARTED/INTERVAL_13003/parallel_work0는elapsed12.928초 수송 전 마지막 publish다. 실제0작업/특정 커널 정지/살아 있는 계산으로 오인하지 않는다. 부모46790 exit124·종료마커·프로세스와 장치문맥 부재로 terminal을 확인했다.",
+    "memory": "사전 live3876449412B에서 canonical2408443200+outer454928160+반경920+상태4B를 빼고 module global13728B를 더하면1013090856B<1GiB로 계획과 같다. 수송 전예약6781763584B/관측peak6584795136B이며 계산 중 최종peak는 미측정이다. 메모리 초과 증거는 없다.",
+    "sharing": "외부 시작free26188MiB/util8%, dense 후free26188MiB/util4%. 같은 다른 프로젝트4개는 그대로 보존했다. 공존 영향을 분리한 내재 속도/특정 병목 커널은 단정하지 않는다.",
+    "settlement": "1792627441→1792627511의70초를 한 번 차감하고 예약을 해제했다. 원천 후보 누적148초·준비1652초 남음·잔여73.4471111111GPUh·예약0이다.",
+    "next": "같은 전ν 호출을 다시 돌리지 않는다. 원 물리 입력을 고정한 CPU 소수ν의 패널/Reader/시간 분포로 느린 작업의 분포를 조사하고, 필요시 전체 재실행이 아닌 한정된 장치 단계/타일 진단으로 빌드·질의·재생 비용을 구분한다. 결과 없이 또 다른 캐시/하한 변형을 늘리거나 실제 병목을 단정하지 않는다. 최종 자체장·생산율·CMFGEN 분포/스펙트럼은 여전히 미완이다."
+  },
+  "user_approved_double_time": {
+    "status": "TERMINAL_USER_DOUBLE_TIME_EXTERNAL_TIMEOUT_NO_VECTOR",
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_compact_native_doubletime_20261022-nd9sC6",
+    "sealed_plan_sha256": "9d978eecfea7c0c4318b73886d90bfdee99d38c81f626e600e385a2e1dfcc945",
+    "direct_tests": "172 passed,7 GPU-only skipped in10.40s. host-test.log SHA256 dec02f66585b0dd66e7a33b9196f377a3136a09ca0f2f39136c6df8bd258b447. 원 클래스60초 보존·승인 subclass120초/121초 거부·원 정확도/10초 목표와 기존148초 계상 유지도 확인했다.",
+    "authority": "사용자 원문: 시간 할당을 2배로 증가를 승인함. 현재 실제 구간 단회 한도를 외부75→150초/내부70→140초/구간60→120초로 해석하고 먼저 사용자에게 알렸다. 이 명시적 승인에 따른 새 후속1회이며 과거 실패를 지우거나 자동 재시도로 표시하지 않는다.",
+    "preserved_scope": "원 입력·J0=I0=0·fullSR·13003만·같은 GPU/기하 바이너리·CPU1/GPU0 한 장·host/device16GiB·활성1GiB·총512NF·원천1e-8/공간1e-5/세점1e-4·자동재시도0·전체장0",
+    "time_and_budget": "외부150초(TERM140/KILL10)/내부140초/구간120초. 이미 사용한148초는 유지하며 원 준비1800초 중1652초에서 실제 사용을 차감한다. 총GPUh 예산이나 정확도/10초 성능 목표를 두 배로 늘리지 않는다. 공유 정확도 모드이므로 성능은 계속 미판정이다.",
+    "implementation": "기본 LinearDriver/CompactDriver의 구간 한도60초는 유지하고 승인된 별도 host subclass만120초다. 수치 CUDA 바이너리와 수송 식은 바꾸지 않는다.",
+    "preservation": "이전 terminal/STARTED/로그/봉인 입력을 그대로 보존하고 새 root/새 schema/명시적 --shared-accuracy --double-time으로 실행한다. 종료 후 비용을 한 번 정산하고 완성/정확도/오차/시간/성능미판정을 분리한다. 이 후속도 실패하면 추가 자동 실행은 하지 않는다.",
+    "terminal_result": {
+      "terminal_sha256": "bc3ffcac851e4540eea78c8234e6321f60013c91d26971ec63532d45f38d49bf",
+      "exec_session": 42918,
+      "terminal_exit": 124,
+      "allocated_gpu_seconds": 141,
+      "complete_vector_present": false,
+      "classification": "완성 미달·정확도 미판정·자체오차 미판정·공유 성능 미판정. 시간2배만으로는 실제 전ν 완성이 해결되지 않았다.",
+      "last_partial_sha256": "7f97158e27ec4c76e8ddf2b2995e29eefa3927934ff3b6dbf2a7066e672fad9f",
+      "stale_record": "STARTED/parallel_work0는elapsed11.980초 수송 전publish다. 실제0작업·살아 있는 계산·특정 병목 커널을 뜻하지 않는다. 부모exit124·종료마커·프로세스/장치문맥 부재로 종료를 확인했다.",
+      "memory_and_sharing": "실제 사전 적분 할당1013090856B·수송 전reserved6781763584B/관측peak6584795136B로 이전과 같다. 계산 중 최종peak는 미측정이다. 시작free26188MiB/util13%, dense 후util3%였고 다른4개 작업은 보존했다. 공존 영향이나 특정 병목은 분리하지 못했다.",
+      "settlement": "1792627979→1792628120의141초를 한 번 정산하고 예약을 해제했다. 원천 후보 누적289초·준비1511초 남음·잔여73.4079444445GPUh·예약0이다.",
+      "next": "추가 시간 연장이나 같은 전ν 실행을 반복하지 않는다. 원 입력을 고정한 소수ν의 패널/Reader/시간 분포와 한정된 단계/타일 비용을 조사해 실제 병목을 구분한다. 최종 물리 목표/자체장/생산율/CMFGEN 비교는 미완이며 국소 정확도도 완성 벡터가 없어 판정하지 못했다."
+    }
   }
 }
