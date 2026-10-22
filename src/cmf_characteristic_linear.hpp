@@ -54,14 +54,19 @@ template<class Reader> struct Profile {
         lumina_linear::Position p;NormalizedSource<Reader> r={&reader,scale};
         return position(u,p)&&lumina_linear::at(r,tree.nf,p,v);
     }
-    LUMINA_CHAR bool range(double u0,double u1,Node &out) const {
+    template<class N> LUMINA_CHAR bool range(double u0,double u1,N &out) const {
         if(span==0){double v[4],s[4]={};return values(0.,v)&&lumina_linear::leaf(1.,v,v,s,out);}
         lumina_linear::Position a,b;
         return position(u0,a)&&position(u1,b)&&lumina_linear::query(reader,tree,a,b,out);
     }
     LUMINA_CHAR bool tau(double u,lumina_linear::Integral &out) const {
         if(u==0){out={0.,0.};return true;}
-        Node n;lumina_linear::Integral a;
+#ifdef CMF_GPU_CHI_ONLY_TAU
+        lumina_linear::ChiNode n;
+#else
+        Node n;
+#endif
+        lumina_linear::Integral a;
         if(!range(0.,u,n)||!lumina_linear::path_integral(n,0,length,0.,u,a))return false;
         double slope=::fmax(::fmax(::fabs(n.trace[0].slo),::fabs(n.trace[0].shi)),
             ::fmax(::fabs(n.trace[1].slo),::fabs(n.trace[1].shi)));

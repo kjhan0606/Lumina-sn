@@ -17,29 +17,32 @@ using lumina_ordered::finite;
 /* p/q는 구간 폭으로 나눈 좌/우 barycentric 적분이다. x의 큰 원점을
  * 보관하거나 prefix끼리 빼지 않는다. mag는 실제 signed 상쇄의 오차 상계다. */
 struct Trace {double p,q,mag_p,mag_q,lo,hi,slo,shi;};
-struct Node {double width;Trace trace[4];int depth;}; // χ입구/χ출구/η입구/η출구
+struct Node {static constexpr int traces=4;double width;Trace trace[4];int depth;}; // χ입구/χ출구/η입구/η출구
+// 저장 트리의 ABI는 그대로 두고 τ 질의의 지역 상태만 절반으로 줄인다.
+struct ChiNode {static constexpr int traces=2;double width;Trace trace[2];int depth;};
 
 LUMINA_LINEAR Node empty(){Node n={};return n;}
-LUMINA_LINEAR bool leaf(double width,const double *left,const double *right,const double *slopes,Node &out)
+template<class N> LUMINA_LINEAR bool leaf(double width,const double *left,const double *right,const double *slopes,N &out)
 {
     if(!finite(width)||width<=0||!left||!right||!slopes)return false;
-    Node n={};n.width=width;
+    N n={};n.width=width;
     for(int k=0;k<4;k++){
         double a=left[k],b=right[k],s=slopes[k];
         if(!finite(a)||!finite(b)||!finite(s)||(k>=2&&(a<0||b<0)))return false;
+        if(k>=N::traces)continue; // η의 입력 거부 조건은 χ-only에서도 보존한다.
         Trace t={a/3.+b/6.,a/6.+b/3.,::fabs(a)/3.+::fabs(b)/6.,::fabs(a)/6.+::fabs(b)/3.,
             ::fmin(a,b),::fmax(a,b),s,s};
         n.trace[k]=t;
     }
     out=n;return true;
 }
-LUMINA_LINEAR bool combine(const Node &a,const Node &b,Node &out)
+template<class N> LUMINA_LINEAR bool combine(const N &a,const N &b,N &out)
 {
     if(a.width==0){out=b;return true;}if(b.width==0){out=a;return true;}
     double width=a.width+b.width;
     if(!finite(width)||a.width<0||b.width<0)return false;
-    double l=a.width/width,r=b.width/width;Node n={};n.width=width;n.depth=1+(a.depth>b.depth?a.depth:b.depth);
-    for(int k=0;k<4;k++){
+    double l=a.width/width,r=b.width/width;N n={};n.width=width;n.depth=1+(a.depth>b.depth?a.depth:b.depth);
+    for(int k=0;k<N::traces;k++){
         const Trace &x=a.trace[k],&y=b.trace[k];Trace t;
         double middle=l*x.q+r*y.p,mag=l*x.mag_q+r*y.mag_p;
         t.p=l*x.p+r*middle;t.q=l*middle+r*y.q;
@@ -49,6 +52,14 @@ LUMINA_LINEAR bool combine(const Node &a,const Node &b,Node &out)
         n.trace[k]=t;
     }
     out=n;return true;
+}
+// 트리는 원 전체 Node로 성공적으로 build된 것만 사용한다. 방문 순서와
+// 각 χ 필드의 산술은 전체 질의와 같고 η 모멘트의 재병합만 생략한다.
+LUMINA_LINEAR bool combine(const ChiNode &a,const Node &b,ChiNode &out){
+    ChiNode n={b.width,{b.trace[0],b.trace[1]},b.depth};return combine(a,n,out);
+}
+LUMINA_LINEAR bool combine(const Node &a,const ChiNode &b,ChiNode &out){
+    ChiNode n={a.width,{a.trace[0],a.trace[1]},a.depth};return combine(n,b,out);
 }
 
 /* 출력 column의 큰 정수부와 작은 fraction을 분리해 유지한다. */
@@ -74,7 +85,7 @@ template<class Reader> LUMINA_LINEAR_READER bool at(const Reader &r,int nf,Posit
     }
     return true;
 }
-template<class Reader> LUMINA_LINEAR_READER bool partial(const Reader &r,int nf,int bin,double first,double last,Node &out)
+template<class Reader,class N> LUMINA_LINEAR_READER bool partial(const Reader &r,int nf,int bin,double first,double last,N &out)
 {
     if(bin<0||bin>=nf-1||!finite(first)||!finite(last)||first<0||last>1||first>=last)return false;
     double a[4],b[4],v0[4],v1[4],slopes[4];
@@ -87,17 +98,17 @@ template<class Reader> LUMINA_LINEAR_READER bool partial(const Reader &r,int nf,
     }
     return leaf(last-first,v0,v1,slopes,out);
 }
-template<class Reader> LUMINA_LINEAR_READER bool blue(const Reader &r,int nf,double width,Node &out)
+template<class Reader,class N> LUMINA_LINEAR_READER bool blue(const Reader &r,int nf,double width,N &out)
 {
     double v[4],slopes[4]={};if(!at(r,nf,{nf-1,0.},v))return false;return leaf(width,v,v,slopes,out);
 }
 
 /* 각 잎은 block개의 연속 원래 bin이다. 경계 조각만 직접 계산한다. */
 struct Tree {const Node *nodes;int leaves,block,nf;};
-LUMINA_LINEAR bool node_range(const Tree &t,int low,int high,Node &out)
+template<class N> LUMINA_LINEAR bool node_range(const Tree &t,int low,int high,N &out)
 {
     if(!t.nodes||t.leaves<1||(t.leaves&(t.leaves-1))||low<0||high<low||high>t.leaves)return false;
-    Node left=empty(),right=empty(),next;int a=low+t.leaves,b=high+t.leaves;
+    N left={},right={},next;int a=low+t.leaves,b=high+t.leaves;
     while(a<b){
         if(a&1){if(!combine(left,t.nodes[a++],next))return false;left=next;}
         if(b&1){if(!combine(t.nodes[--b],right,next))return false;right=next;}
@@ -105,12 +116,12 @@ LUMINA_LINEAR bool node_range(const Tree &t,int low,int high,Node &out)
     }
     return combine(left,right,out);
 }
-template<class Reader> LUMINA_LINEAR_READER bool query(const Reader &r,const Tree &t,Position begin,Position end,Node &out)
+template<class Reader,class N> LUMINA_LINEAR_READER bool query(const Reader &r,const Tree &t,Position begin,Position end,N &out)
 {
     double width=difference(begin,end);
     if(t.nf<2||t.nf>2000000||t.block<1||t.block>256||!finite(width)||width<=0||begin.bin<0||
        begin.fraction<0||begin.fraction>=1||end.fraction<0||end.fraction>=1)return false;
-    Node whole=empty(),part,next;Position blue_edge={t.nf-1,0.};
+    N whole={},part,next;Position blue_edge={t.nf-1,0.};
     if(begin.bin>=t.nf-1)return blue(r,t.nf,width,out);
     Position top=end.bin>=t.nf-1?blue_edge:end;
     int low=begin.bin,high=top.bin;
@@ -145,9 +156,9 @@ template<class Reader> LUMINA_LINEAR_READER bool query(const Reader &r,const Tre
 }
 
 struct Integral {double value,error;};
-LUMINA_LINEAR bool path_integral(const Node &node,int first,double length,double u0,double u1,Integral &out)
+template<class N> LUMINA_LINEAR bool path_integral(const N &node,int first,double length,double u0,double u1,Integral &out)
 {
-    if(first!=0&&first!=2)return false;
+    if(first!=0&&(first!=2||N::traces<4))return false;
     if(!finite(length)||length<0||!finite(u0)||!finite(u1)||u0<0||u1>1||u0>u1)return false;
     const Trace &a=node.trace[first],&b=node.trace[first+1];
     double value=u0*a.p+u1*a.q+(1.-u0)*b.p+(1.-u1)*b.q;
