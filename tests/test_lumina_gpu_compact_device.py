@@ -30,7 +30,7 @@ def double_source_input(data):
     data.arrays[2][...]*=2.
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope='session')
 def gpu():
     path=os.environ.get('LUMINA_COMPACT_GPU_LIBRARY')
     if not path:pytest.skip('별도 봉인된 축약 원천 GPU 직접시험만 허용')

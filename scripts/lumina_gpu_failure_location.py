@@ -7,6 +7,7 @@ import re
 
 import lumina_gpu_native_actual as base
 from lumina_gpu_native_bin import NativeBinDriver
+from lumina_gpu_failure_code import decode
 local=base.local
 
 
@@ -19,16 +20,6 @@ local.LIMITS=dict(local.LIMITS,engine='NATIVE_BIN_FAILURE_LOCATION_ONLY',prep_wi
     already_allocated_gpu_seconds=1064,local_internal_seconds=150,interval_seconds=140,
     external_wall_seconds=160,slurm_allocation_seconds=180)
 local.GpuDriver=LocationDriver
-
-
-def decode(code):
-    if type(code) is not int:return None
-    payload=code-100-100000000
-    if payload<0:return None
-    column,status=divmod(payload,8)
-    if not 0<=column<2000000 or not 1<=status<=7:return None
-    return dict(output_column=column,characteristic_status=status,
-        scope='첫 관측 실패이며 최소 실패열은 아니다. coarse/두half의 어느 조각인지는 CPU에서 확인한다.')
 
 
 def prepare(root):

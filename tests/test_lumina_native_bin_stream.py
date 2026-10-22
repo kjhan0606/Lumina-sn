@@ -37,7 +37,7 @@ def test_native_knots_signed_cross_terms_partial_blue_and_fullsr(kernel,shift,sp
     assert fields[3]<=1e-8*fields[0] and fields[3]>=sum(fields[4:])*(1-3e-14)
 
 
-@pytest.mark.parametrize('chi',[0.,1.,1000.,-30.])
+@pytest.mark.parametrize('chi',[0.,1.,1000.,1e8,1e10,-30.])
 def test_static_limit_and_thick_bin_subdivision_with_decimal_reference(kernel,chi):
     values=np.array([[chi]*9,[chi]*9,[2.]*9,[2.]*9])
     result=run(kernel,values,span=6.8,shift=.37,delta=.013,incident=.7,relative=1e-8)
@@ -49,7 +49,7 @@ def test_static_limit_and_thick_bin_subdivision_with_decimal_reference(kernel,ch
         error=D(result[1][3])*Decimal(2)**int(result[2][3])
         assert abs(actual-expected)<=error
     assert fields[3]<=1e-8*fields[0]
-    if chi==1000.:assert result[3][3]>0 and result[3][2]>0
+    if chi>=1000.:assert result[3][3]>0 and result[3][2]>0
 
 
 @pytest.mark.parametrize('length,eta,chi',[(1e-200,1e-200,-500e200),

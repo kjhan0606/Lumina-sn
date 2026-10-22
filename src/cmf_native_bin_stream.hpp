@@ -134,11 +134,16 @@ LUMINA_BIN lumina_characteristic::Status one_bin(const Model &m,double relative,
            !restrict_source(m.eta,q.a,q.b,eta))return NUMERIC_RANGE;
         high=phase[0];double low=high;
         for(int k=1;k<4;k++){high=::fmax(high,phase[k]);low=::fmin(low,phase[k]);}
+        // 감쇠에는 bin 전체가 아니라 출구부터 q.b까지의 τ 오차가 필요하다.
+        // quadratic Bernstein 각 누적 기저의 적분은 min(q.b,1/3) 이하라
+        // signed χ도 전체 절댓값 구성오차×min(1,3*q.b)로 감쌀 수 있다.
+        // 전체 T/상류맵에는 아래의 원 m.tau_error를 그대로 사용한다.
+        double phase_error=m.tau_error*::fmin(1.,3.*q.b)*(1.+8.*DBL_EPSILON);
         Positive total=Positive::zero(),upper,coordinate,enclosed,scale,budget,error;
         for(int k=0;k<3;k++)if(!scaled(eta[k],1./3.,part)||!sum(total,part,total))return NUMERIC_RANGE;
         if(!scale_length(total,m.length,m.du*width,total)||!scaled(total,1.+512.*DBL_EPSILON,total)||
            !scaled(m.coordinate,width,coordinate)||!sum(total,coordinate,upper)||
-           !Positive::from_log(high+m.tau_error+256.*DBL_EPSILON*(::fabs(high)+1.),attenuation)||
+           !Positive::from_log(high+phase_error+256.*DBL_EPSILON*(::fabs(high)+1.),attenuation)||
            !product(upper,attenuation,upper)||!sum(r.source,seed,scale)||
            !scaled(scale,relative/8.*width,budget)||!scaled(absolute_budget,width/8.,part)||
            !sum(budget,part,budget))return NUMERIC_RANGE;
@@ -147,7 +152,7 @@ LUMINA_BIN lumina_characteristic::Status one_bin(const Model &m,double relative,
         Positive value,roundoff;
         if(ready){
             if(!polynomial_integral(m,eta,phase,width,value,roundoff)||!sum(value,roundoff,enclosed)||
-               !scaled(enclosed,::expm1(m.tau_error),part)||!sum(roundoff,part,roundoff)||
+               !scaled(enclosed,::expm1(phase_error),part)||!sum(roundoff,part,roundoff)||
                !product(coordinate,attenuation,part)||!sum(roundoff,part,roundoff)||
                !sum(r.roundoff,roundoff,error)||!sum(scale,value,part)||!scaled(part,relative/4.,budget)||
                !scaled(absolute_budget,.25,part)||!sum(budget,part,budget))return NUMERIC_RANGE;
