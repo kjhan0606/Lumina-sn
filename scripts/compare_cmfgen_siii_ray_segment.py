@@ -51,7 +51,18 @@ def actual_ray(capture, ray_number, outer_native_zero_index=49):
     if not np.isfinite([length, drift]).all() or length <= 0 or drift <= 0:
         raise ValueError('실제 광선의 양의 길이·청색 드리프트 필요')
     values = []
+    far_values = []
     indices = []
+    if outer_native_zero_index > 48:
+        far = int(ray['LNK'][outer_native_zero_index - 1]) - 1
+        if not 0 <= far < outer:
+            raise ValueError('원 Bézier 바깥 이웃 광선 링크 오류')
+        far_length = float(ray['S_P'][far] - ray['S_P'][outer])
+        if not np.isfinite(far_length) or far_length <= 0:
+            raise ValueError('원 Bézier 바깥 이웃 광선 길이 오류')
+    else:
+        far = None
+        far_length = None
 
     def keep(row):
         p_outer = row['points'][outer_row][ray_number - 1]
@@ -63,6 +74,10 @@ def actual_ray(capture, ray_number, outer_native_zero_index=49):
                        row['dlognu'], p_outer[2], p_inner[2],
                        row['chi_ext'][outer], row['chi_ext'][inner],
                        row['eta_ext'][outer], row['eta_ext'][inner]))
+        if far is not None:
+            p_far = row['points'][outer_row - 1][ray_number - 1]
+            far_values.append((p_far[2], row['chi_ext'][far],
+                               row['eta_ext'][far]))
 
     previous = None
     for row in records(field / 'siii_compact.bin', g, include_rays=True):
@@ -82,6 +97,16 @@ def actual_ray(capture, ray_number, outer_native_zero_index=49):
             np.any(data[:, 6:8] < 0) or np.any(data[:, 10:12] < 0) or
             not np.allclose(np.diff(log_frequency), data[:-1, 5], rtol=1e-8, atol=1e-12)):
         raise ValueError('원격자·광선·계수 신원 불일치')
+    if far_values:
+        far_data = np.asarray(far_values[::-1], dtype='f8')
+        if (not np.isfinite(far_data).all() or
+                np.any(far_data[:, [0, 2]] < 0)):
+            raise ValueError('원 Bézier 바깥 이웃 계수/강도 오류')
+        far_neighbor = dict(previous=far_data[:, 0],
+                            chi=far_data[:, 1], eta=far_data[:, 2],
+                            b=float(ray['B_P'][far]), length=far_length)
+    else:
+        far_neighbor = None
     return dict(log_frequency=log_frequency, incoming=data[:, 1],
                 observed=data[:, 2], chi=data[:, 3], eta=data[:, 4],
                 dlognu=data[:, 5], previous_outer=data[:, 6],
@@ -90,6 +115,7 @@ def actual_ray(capture, ray_number, outer_native_zero_index=49):
                 eta_inner=data[:, 11], b_outer=float(ray['B_P'][outer]),
                 b_inner=float(ray['B_P'][inner]),
                 outer_native_zero_index=outer_native_zero_index,
+                far_neighbor=far_neighbor,
                 length=length, drift=drift, geometry=geometry_files[0],
                 compact=field / 'siii_compact.bin')
 
