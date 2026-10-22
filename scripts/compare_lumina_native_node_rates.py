@@ -157,6 +157,8 @@ def compare(out, siii_detail=False, siii_profile=False, transport_root=ROOT,
         out.mkdir(parents=False)
         report=dict(scope=__doc__,material_record=70,reference_record=71,
                     cells_with_populations=[SHELL],native_nodes=[49,50],
+                    transport_operator_scheme=record.get('operator_scheme',
+                        'continuous characteristic raw positive; legacy record'),
                     frequencies=len(nu),ions=[list(key) for key in targets],
                     results=result,do_lev_dissolution=do_dis,
                     photo_preprocessing=smoothing,
