@@ -71,7 +71,7 @@ def test_long_ceiling_preserves_physics_memory_and_sealed_four_hour_mode(adapter
     assert (limits['interval_seconds'],limits['local_internal_seconds'],
         limits['external_wall_seconds'],limits['prep_window_seconds'],
         limits['slurm_allocation_seconds'])==(86000,86100,86200,86400,86400)
-    assert limits['local_full_vectors_total']==16384
+    assert limits['local_full_vectors_total']==2000000
     assert limits['already_allocated_gpu_seconds']==22264
     assert limits['cumulative_preparation_limit_seconds']==108664
     assert adapter.local.GpuDriver.interval_limit_seconds==86000.
@@ -85,8 +85,11 @@ def test_long_ceiling_preserves_physics_memory_and_sealed_four_hour_mode(adapter
     nf=1115020
     work=Work(limits['local_full_vectors_total']*nf-limits['carried_parallel_work'],
         time.monotonic()+2)
-    work.take('map_queries',4096*nf)
-    assert work.maximum+limits['carried_parallel_work']==16384*nf
+    work.take('map_queries',16384*nf)
+    assert work.used==16384*nf
+    assert work.maximum+limits['carried_parallel_work']==2000000*nf
+    with pytest.raises(RuntimeError,match='작업량 한도'):
+        work.take('map_queries',work.maximum-work.used+1)
 
 
 @pytest.mark.parametrize('previous',[True,None,4586.,-1,0,22263])

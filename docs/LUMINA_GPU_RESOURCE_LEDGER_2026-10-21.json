@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 21:09",
+  "as_of_KST": "2026-10-22 22:46",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -135,10 +135,10 @@
     "external_wall_seconds": 86200,
     "maximum_parent_seconds": 86400,
     "maximum_parent_GPUh": 24,
-    "local_full_vectors_total": 16384,
+    "local_full_vectors_total": 2000000,
     "new_reserved_GPUh": 0,
-    "condition": "4시간 실패의 원인은 시간 상한이다. 다음 필요 실행의 선택 가능 상한만 24시간/16384NF로 높였다. 기존 단일13003구간의 무체크포인트 반복은 전체장·Si/S·스펙트럼을 산출하지 않으므로 자동 시작하지 않는다. 실제 실행 전 물리 목적·입력·노드 가용성·24GPUh 예약을 새 root에서 확인한다.",
-    "preserved": "GPU1/CPU1/host-device16GiB/활성1GiB/원정확도/원입력/패널상한/자동재시도0.16384NF는 누적 작업량이며 동시 할당량이 아니다. 기존 봉인본과 4시간 옵션은 불변이다."
+    "condition": "4시간 실패의 원인은 시간 상한이다. 다음 필요 실행의 선택 가능 시간은 24시간, 누적 작업량은 사실상 비차단인 2000000NF로 설정했다. 기존 단일13003구간의 무체크포인트 반복은 전체장·Si/S·스펙트럼을 산출하지 않으므로 자동 시작하지 않는다. 실제 실행 전 물리 목적·입력·노드 가용성·24GPUh 예약을 새 root에서 확인한다.",
+    "preserved": "GPU1/CPU1/host-device16GiB/활성1GiB/원정확도/원입력/패널상한/자동재시도0.2000000NF는 누적 구조작업의 엔진 허용 최댓값으로, 동시 할당량이나 주파수 격자 크기가 아니다. 기존 봉인본과 4시간 옵션은 불변이다."
   },
   "collapsed_frequency_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_collapse_GPU_20261022-flx1en",

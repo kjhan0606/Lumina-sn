@@ -26,7 +26,7 @@ def extend_execution_limits(previous_gpu_seconds, *, long_run=False):
     if type(long_run) is not bool or (long_run and previous_gpu_seconds<22264):
         raise ValueError('24시간 선택에는 종료된 4시간 실행의 정산이 필요하다')
     interval_seconds,internal_seconds,external_seconds,parent_seconds,full_vectors=(
-        (86000,86100,86200,86400,16384) if long_run else
+        (86000,86100,86200,86400,2000000) if long_run else
         (14400,14500,14600,14700,4096))
     class ExtendedDriver(base.HybridDriver):
         interval_limit_seconds=float(interval_seconds)
@@ -78,7 +78,7 @@ if __name__=='__main__':
     group.add_argument('--extended-after-gpu-seconds',type=int,
         help='이전 부모 종료 후 정산한 누적 GPU초. 다음 봉인 단회에 4시간/4096NF 적용')
     group.add_argument('--long-after-gpu-seconds',type=int,
-        help='4시간 실행 종료 후 정산한 누적 GPU초. 새 봉인 단회에 최대24시간/16384NF 적용')
+        help='4시간 실행 종료 후 정산한 누적 GPU초. 새 봉인 단회에 최대24시간/2000000NF 적용')
     parser.add_argument('--sha256');a=parser.parse_args();root=Path(a.path).resolve()
     if a.extended_after_gpu_seconds is not None:extend_execution_limits(a.extended_after_gpu_seconds)
     if a.long_after_gpu_seconds is not None:extend_execution_limits(a.long_after_gpu_seconds,long_run=True)
