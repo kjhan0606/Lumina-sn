@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 16:57",
+  "as_of_KST": "2026-10-22 21:09",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,20 +96,27 @@
       }
     ]
   },
-  "used_upper_GPUh": 72.68511111110003,
-  "remaining_before_new_reservations_GPUh": 71.31488888889997,
-  "current_reserved_GPUh": 4.083333333333333,
-  "remaining_after_current_reservations_GPUh": 67.23155555556664,
+  "used_upper_GPUh": 76.6962222222111,
+  "remaining_before_new_reservations_GPUh": 67.3037777777889,
+  "current_reserved_GPUh": 0,
+  "remaining_after_current_reservations_GPUh": 67.3037777777889,
   "extended_full_frequency_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR",
-    "state": "DEVICE30_AND_ACTUAL_CPU_COMPARISONS_MET_FULL_INTERVAL_RUNNING",
+    "state": "SETTLED_INTERVAL_TIMEOUT_NO_VECTOR",
     "parent_pid": 3524330,
     "calculation_pid": 3525158,
     "parent_started_epoch": 1792655719,
+    "parent_ended_epoch": 1792670159,
+    "parent_exit": 1,
+    "allocated_gpu_seconds": 14440,
+    "allocated_GPUh": 4.011111111111111,
+    "combined_preparation_seconds_after": 22264,
     "plan_sha256": "f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab",
     "execution_manifest_sha256": "d3ae269d63880257ea4debafa2abc15324147c13e674776b1b6227939271e3f1",
-    "direct_result": "동일 부모의 장치30통과/0.90초 및 원입력 CPU대조를 통과한 뒤 원13003 전주파수 수송을 실행 중이다. 16:57 단일 GPU문맥3525158/6306MiB. 완성벡터·독립3열·최종오차·전체장·CMFGEN 판정은 아직 없다.",
-    "reserved_GPUh": 4.083333333333333,
+    "direct_result": "동일 부모의 장치30통과/0.90초와 원입력 CPU대조 통과 뒤 전주파수 수송이 구간14400초 시간초과로 종료했다. Python14413.369초/부모14440초·exit1, 마지막 오차비19.59364>1·공간반복16756회·합산 구조작업1050453589=약942NF<4096NF·대체1641/1641성공/미해결0. 완성벡터·독립3열·최종 정확도 판정은 없다.",
+    "reserved_GPUh": 0,
+    "result_sha256": "1f22fe5293d3ab4eefab7214cf508c3dbcb418f66e6e8d7db1fe9f527a5e145d",
+    "failure_sha256": "aaed24b5a043f60db83e6da40ea361dbfb1f5b333dc67ac0e9a639486d1afd4d",
     "maximum_parent_seconds": 14700,
     "previous_combined_preparation_seconds": 7824,
     "cumulative_preparation_limit_seconds": 22524,
@@ -119,19 +126,19 @@
     "local_full_vectors_total": 4096,
     "library_sha256": "e6de564a1cc71a2f76e3261eb13160bc26850a10e88314c96a1d97b8e8124675",
     "scope": "사용자의 충분한 실행한도 확대 지시를 적용한 단회다. 이전 flx1en은 실제 시간초과/부모3238초로 종료했고 원본을 보존했다. 같은 검증 바이너리·원13003/전1115020주파수·원정확도/패널한도·GPU1/CPU1·host-device16GiB/활성1GiB·준비32NF 이월을 유지한다. 새 오차전달 API/재구성 후보/전체장/SE_RE는 넣지 않는다. 자동재시도0이다.",
-    "settlement_rule": "이 새 부모 창만 한 번 정산한다. 이전7824초나 같은 부모의 시험/진단/Python 시간은 중복 차감하지 않는다."
+    "settlement_rule": "이번 부모1792655719..1792670159의14440초만 한 번 정산했다. 이전7824초나 같은 부모의 시험/진단/Python 시간은 중복 차감하지 않는다. 14700초 예약에서 미사용260초는 전부 해제했다."
   },
   "next_full_frequency_execution_policy": {
-    "state": "USER_AUTHORIZED_RESERVED_FOR_SINGLE_FOLLOWUP_AFTER_TIMEOUT",
-    "interval_seconds": 14400,
-    "local_internal_seconds": 14500,
-    "external_wall_seconds": 14600,
-    "maximum_parent_seconds": 14700,
-    "maximum_parent_GPUh": 4.083333333333333,
-    "local_full_vectors_total": 4096,
-    "new_reserved_GPUh": 4.083333333333333,
-    "condition": "현재 flx1en은 변경/중단/중복하지 않는다. 종료 후 실제 누적 GPU초를 명시하고 새 실행 직전에 총144GPUh 안에서 예약한다. 성공한 동일 계산은 재실행하지 않는다.",
-    "preserved": "GPU1/CPU1/host-device16GiB/활성1GiB/원정확도/원입력/패널상한/자동재시도0.4096NF는 누적 작업량이며 동시 할당량이 아니다."
+    "state": "LONG_CEILING_CONFIGURED_NOT_RESERVED_NOT_LAUNCHED",
+    "interval_seconds": 86000,
+    "local_internal_seconds": 86100,
+    "external_wall_seconds": 86200,
+    "maximum_parent_seconds": 86400,
+    "maximum_parent_GPUh": 24,
+    "local_full_vectors_total": 16384,
+    "new_reserved_GPUh": 0,
+    "condition": "4시간 실패의 원인은 시간 상한이다. 다음 필요 실행의 선택 가능 상한만 24시간/16384NF로 높였다. 기존 단일13003구간의 무체크포인트 반복은 전체장·Si/S·스펙트럼을 산출하지 않으므로 자동 시작하지 않는다. 실제 실행 전 물리 목적·입력·노드 가용성·24GPUh 예약을 새 root에서 확인한다.",
+    "preserved": "GPU1/CPU1/host-device16GiB/활성1GiB/원정확도/원입력/패널상한/자동재시도0.16384NF는 누적 작업량이며 동시 할당량이 아니다. 기존 봉인본과 4시간 옵션은 불변이다."
   },
   "collapsed_frequency_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_collapse_GPU_20261022-flx1en",

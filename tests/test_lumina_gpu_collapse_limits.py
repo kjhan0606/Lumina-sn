@@ -64,6 +64,39 @@ def test_new_work_limit_permits_more_work_without_allocating_a_larger_cache(adap
         work.take('map_queries',work.maximum-work.used+1)
 
 
+def test_long_ceiling_preserves_physics_memory_and_sealed_four_hour_mode(adapter):
+    before=dict(adapter.local.LIMITS)
+    adapter.extend_execution_limits(22264,long_run=True)
+    limits=adapter.local.LIMITS
+    assert (limits['interval_seconds'],limits['local_internal_seconds'],
+        limits['external_wall_seconds'],limits['prep_window_seconds'],
+        limits['slurm_allocation_seconds'])==(86000,86100,86200,86400,86400)
+    assert limits['local_full_vectors_total']==16384
+    assert limits['already_allocated_gpu_seconds']==22264
+    assert limits['cumulative_preparation_limit_seconds']==108664
+    assert adapter.local.GpuDriver.interval_limit_seconds==86000.
+    assert HybridDriver.interval_limit_seconds==3420.
+    for key in ('source_relative','spatial_relative','fine_each_output','require_cost_target',
+        'cost_target_seconds','cpus','GPU','host_GiB','device_GiB','cache_GiB',
+        'automatic_retries','local_calls','actual_model_F_calls','SE_RE_updates','carried_parallel_work'):
+        assert limits[key]==before[key],key
+    layout=adapter.local.GpuDriver.__new__(adapter.local.GpuDriver).layout_for(1115020,256)
+    assert layout['workspace']==1070005192<1024**3
+    nf=1115020
+    work=Work(limits['local_full_vectors_total']*nf-limits['carried_parallel_work'],
+        time.monotonic()+2)
+    work.take('map_queries',4096*nf)
+    assert work.maximum+limits['carried_parallel_work']==16384*nf
+
+
+@pytest.mark.parametrize('previous',[True,None,4586.,-1,0,22263])
+def test_long_execution_requires_settled_prior_usage(adapter,previous):
+    before=dict(adapter.local.LIMITS)
+    with pytest.raises(ValueError):
+        adapter.extend_execution_limits(previous,long_run=True)
+    assert adapter.local.LIMITS==before
+
+
 @pytest.mark.parametrize('previous',[True,None,4586.,-1,0,4585])
 def test_extended_execution_cannot_reset_previous_usage(adapter,previous):
     before=dict(adapter.local.LIMITS)

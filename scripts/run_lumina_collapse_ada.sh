@@ -1,5 +1,5 @@
 #!/bin/bash
-# 기본 부모 timeout -k5 3410. 세 번째 인자가 있으면 -k5 14695(총14700초).
+# 기본 부모 timeout -k5 3410. 정산초 인자: 4시간 -k5 14695, long: 24시간 -k5 86395.
 source /etc/profile
 module purge
 module load gnu13 cuda/13.0.2
@@ -13,11 +13,15 @@ flock -n 9
 plan_sha=$2
 extended_args=()
 actual_seconds=3350
-if test "$#" -eq 3; then
+if test "$#" -eq 4; then
+    test "$4" = long
+    extended_args=(--long-after-gpu-seconds "$3")
+    actual_seconds=86200
+elif test "$#" -eq 3; then
     extended_args=(--extended-after-gpu-seconds "$3")
     actual_seconds=14600
 fi
-test "$#" -ge 2 && test "$#" -le 3
+test "$#" -ge 2 && test "$#" -le 4
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CUDA_MODULE_LOADING=EAGER
 export CUDA_VISIBLE_DEVICES=0 PYTHONPATH="$PWD/scripts"

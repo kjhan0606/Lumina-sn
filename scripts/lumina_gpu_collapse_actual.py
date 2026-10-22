@@ -19,19 +19,26 @@ CPU=Path('/gpfs/kjhan/cmfgen_runs/lumina_collapse_fix_20261022-r7el0K')
 CPU_SHA='7e1736a1d4c2a9bd7c1a4facf6a6d176aa38f4cc1aa96fa4770edbb429cd1729'
 
 
-def extend_execution_limits(previous_gpu_seconds):
-    """다음 봉인 실행만 확대한다. 이전 부모의 실제 정산초를 명시한다."""
+def extend_execution_limits(previous_gpu_seconds, *, long_run=False):
+    """새 봉인 실행에만 시간·누적작업 한도를 적용한다."""
     if type(previous_gpu_seconds) is not int or previous_gpu_seconds<4586:
         raise ValueError('이전 준비 계산의 실제 누적 GPU초가 필요하다')
+    if type(long_run) is not bool or (long_run and previous_gpu_seconds<22264):
+        raise ValueError('24시간 선택에는 종료된 4시간 실행의 정산이 필요하다')
+    interval_seconds,internal_seconds,external_seconds,parent_seconds,full_vectors=(
+        (86000,86100,86200,86400,16384) if long_run else
+        (14400,14500,14600,14700,4096))
     class ExtendedDriver(base.HybridDriver):
-        interval_limit_seconds=14400.
+        interval_limit_seconds=float(interval_seconds)
     local.GpuDriver=ExtendedDriver
-    local.SCHEMA='lumina-collapsed-frequency-position-user-extended-4h-v1'
-    local.LIMITS=dict(local.LIMITS,prep_window_seconds=14700,
+    local.SCHEMA=('lumina-collapsed-frequency-position-user-extended-24h-v1' if long_run else
+                  'lumina-collapsed-frequency-position-user-extended-4h-v1')
+    local.LIMITS=dict(local.LIMITS,prep_window_seconds=parent_seconds,
         already_allocated_gpu_seconds=previous_gpu_seconds,
-        cumulative_preparation_limit_seconds=previous_gpu_seconds+14700,
-        interval_seconds=14400,local_internal_seconds=14500,external_wall_seconds=14600,
-        slurm_allocation_seconds=14700,local_full_vectors_total=4096,
+        cumulative_preparation_limit_seconds=previous_gpu_seconds+parent_seconds,
+        interval_seconds=interval_seconds,local_internal_seconds=internal_seconds,
+        external_wall_seconds=external_seconds,
+        slurm_allocation_seconds=parent_seconds,local_full_vectors_total=full_vectors,
         user_extended_full_frequency=True)
 
 
@@ -67,10 +74,14 @@ def prepare(root):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('mode',choices=('prepare','check','run'));parser.add_argument('path')
-    parser.add_argument('--extended-after-gpu-seconds',type=int,
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument('--extended-after-gpu-seconds',type=int,
         help='이전 부모 종료 후 정산한 누적 GPU초. 다음 봉인 단회에 4시간/4096NF 적용')
+    group.add_argument('--long-after-gpu-seconds',type=int,
+        help='4시간 실행 종료 후 정산한 누적 GPU초. 새 봉인 단회에 최대24시간/16384NF 적용')
     parser.add_argument('--sha256');a=parser.parse_args();root=Path(a.path).resolve()
     if a.extended_after_gpu_seconds is not None:extend_execution_limits(a.extended_after_gpu_seconds)
+    if a.long_after_gpu_seconds is not None:extend_execution_limits(a.long_after_gpu_seconds,long_run=True)
     if a.mode=='prepare':prepare(root)
     elif a.mode=='check':
         evidence(root)
