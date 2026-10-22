@@ -110,3 +110,33 @@ def test_compact_device_replay_preserves_order_recovery_and_weak_failure(gpu):
         assert gpu.download(scores,1)[0]>100
     finally:
         for b in reversed(buffers):b.close()
+
+
+@pytest.mark.skipif(os.environ.get('LUMINA_COMPACT_RANGE_TEST')!='1',reason='범위 진단 바이너리 명시 선택 필요')
+def test_range_query_retains_original_indices_and_does_not_publish_outside_range(gpu):
+    data=Input(gpu,70);p=Piece();buffers=[]
+    f=gpu.lib.lumina_linear_cuda_query_range
+    f.argtypes=[ct.c_void_p]*2+[ct.c_double]+[ct.c_int]*3+[ct.c_void_p]*2;f.restype=ct.c_int
+    try:
+        check(gpu.lib.lumina_linear_cuda_plan(ct.byref(data.device),data.locations,1.1,.001,.003775,.000375,0,70,2,ct.byref(p)))
+        nodes=gpu.allocate(CompactDriver.__new__(CompactDriver).tree_bytes(p));buffers.append(nodes)
+        maps=gpu.allocate(70*MAP_BYTES);buffers.append(maps)
+        gpu.upload(maps,np.full(70*MAP_BYTES,0xA5,dtype='u1'))
+        check(gpu.lib.lumina_linear_cuda_build(ct.byref(p),nodes.address,gpu.status))
+        check(f(ct.byref(p),nodes.address,1e-8,100000,31,6,maps.address,gpu.status))
+        raw=gpu.download(maps,(70,MAP_BYTES),'u1')
+        assert np.all(raw[:31]==0xA5) and np.all(raw[37:]==0xA5)
+        cpu=NativeKernel(os.environ['LUMINA_COMPACT_NATIVE_LIBRARY'],source_measure=True)
+        for column in range(31,37):
+            expected,_=cpu.map(data.host,data.locations,1.1,.001,.003775,.000375,column)
+            actual=CompactMap.from_buffer_copy(raw[column].tobytes())
+            for a,b in [(actual.transmission.positive().value(),expected.t.value()),
+                        (actual.source.positive().value(),expected.source.value())]:
+                assert abs(a-b)<=3e-10*abs(b)
+        for first,count in [(-1,1),(69,2),(0,0),(0,1025)]:
+            assert f(ct.byref(p),nodes.address,1e-8,100000,first,count,maps.address,gpu.status)==1
+        gpu.sync()
+        np.testing.assert_array_equal(gpu.download(maps,(70,MAP_BYTES),'u1'),raw)
+    finally:
+        for b in reversed(buffers):b.close()
+        data.close()

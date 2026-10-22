@@ -255,6 +255,18 @@ extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *
     }
     return 0;
 }
+#ifdef CMF_GPU_DIAGNOSTIC_RANGE
+extern "C" int lumina_linear_cuda_query_range(const CMFLinearCudaPiece *p,const void *nodes,double relative,
+    int maximum,int first,int count,void *maps,int *status)
+{
+    using lumina_ordered::finite;
+    if(!valid_piece(p)||!nodes||!maps||!status||!finite(relative)||relative<=0||relative>.01||
+       maximum<1||maximum>100000||first<0||count<1||count>1024||first>p->count-count)return 1;
+    source_maps<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
+        first,count,static_cast<StoredMap *>(maps),status);
+    return cudaGetLastError()==cudaSuccess?0:2;
+}
+#endif
 __device__ static void maximum(double *address,double value){
     atomicMax(reinterpret_cast<unsigned long long *>(address),__double_as_longlong(value));
 }

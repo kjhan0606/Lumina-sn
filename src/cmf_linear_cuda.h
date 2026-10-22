@@ -20,6 +20,12 @@ int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNodalLocation
 int lumina_linear_cuda_build(const CMFLinearCudaPiece *piece,void *nodes,int *status);
 int lumina_linear_cuda_query(const CMFLinearCudaPiece *piece,const void *nodes,double relative,
     int max_panels,void *maps,int *status);
+#ifdef CMF_GPU_DIAGNOSTIC_RANGE
+/* 진단 전용. 프로필 좌표는 그대로이고 maps는 원 piece.count 크기의 배열이다.
+ * first/count 위치에만 쓰며 전체 출력으로 소비하지 않는다. */
+int lumina_linear_cuda_query_range(const CMFLinearCudaPiece *piece,const void *nodes,double relative,
+    int max_panels,int first,int count,void *maps,int *status);
+#endif
 /* 각 maps[row]는 coarse/left/right×stride. 오류는 시작 때부터 sticky다.
  * 반환0은 enqueue일 뿐이며 sync/status 전 출력 소비는 금지한다. */
 int lumina_linear_cuda_replay(int n,int width,int stride,int block_width,double relative,
