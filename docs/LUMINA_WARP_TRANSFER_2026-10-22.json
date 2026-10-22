@@ -1,0 +1,84 @@
+{
+  "schema": "lumina-cooperative-warp-transfer-bundle-v1",
+  "status": "DIRECT_COOPERATIVE_CHECKS_MET_FULL_OBJECTIVE_UNMET",
+  "operator_assessment": {
+    "verdict": "REWORK",
+    "tested_scope": "작은 장치27시험과 원13003 첫coarse의867질의/41회 CPU 대조만 충족했다. 전범위/공간적응은 완결하지 않았다.",
+    "accuracy": "41대조 모두 원 T/S 상대3e-10·반환오차 합·자기원천1e-8 충족. 원천 최대 상대차3.9925903503e-16. 독립8192분할3열/전체최종오차/CMFGEN Si/S·스펙트럼은 미판정이다.",
+    "cost": "512열 커널·동기화0.361382초(D2H별도), 제한 진단 전체9.277712초. 기존 별도A100관측2.158626초와는 후보/조건이 달라 확정배속/전주파수 ETA로 쓰지 않는다. 단일질의는 최대0.396209초로 작은 작업의 통신 비용도 남는다.",
+    "physical_priority": "현재 정본에서 실패열569899의 CPU양좌표/세조각 재현 및 native-bin 접두τ 불확실성 수정이 진행됐다. 그 수정본 전주파수 결과가 우선이다. warp를 수치 원인 해결로 표시하거나 미통합 선택을 합쳐 실행하지 않는다.",
+    "reproduction": "종료후 manifest 불일치0·sacct parent12초/0:0·원본/CPU참조 보존을 확인했다. 미사용 full runner3개는 /tmp/lumina-warp-deferred-C3QFPX와 mYGobe 봉인본에 복구 가능하게 보존했다."
+  },
+  "short_GPU_result": {
+    "job_id": "433995",
+    "state": "COMPLETED/0:0",
+    "GPU_seconds": 12,
+    "direct": "27 passed in0.53s",
+    "query_columns": 867,
+    "CPU_comparisons": 41,
+    "all_comparisons_met": true,
+    "memory": "예약8310816768+live3912130052=12222946820B<16GiB. 관측 장치 가용량 차이7768965120B. 공유상태 상계까지 포함한workspace1070005160B<1GiB. 종료live4는 상태 정수뿐이다.",
+    "sacct_sha256": "3b1d84a994c5e9fdade494be4cba69a1115f18f3099b0be8b1a7bfa9bc173944",
+    "device_log_sha256": "ca1d80b0be45f1d329aaf3f03ea24fa19a560e24b4e5ae40cd17ab62f0a91e76",
+    "gpu_cost_sha256": "96036ea5510259e6791a3eb917909abfe40de3e11a421d2482492d656118e080",
+    "settlement": "본할당12초만 한 번 차감하고 선택 검증의 미사용 예약을 해제했다. 당시누적1090GPU초·잔여73.1854444445GPUh이며 다른 작업/예약은 별개로 보존했다."
+  },
+  "merged_CPU_result": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_warp_checks_20261022-rwXujs/merged-cpu",
+    "scope": "HEAD dda0004의 기본/native-bin 코드와 협력 변경을 고정했다. 이후 별도 접두τ 수정본의 시험으로 대신 표시하지 않는다.",
+    "result": "338 passed,5 GPU-only skipped in20.04s, CPU1/4GiB/180초 이내",
+    "log_sha256": "0a79fa9df00d7558b6fa1b3c36f956ded5df33931305018bf203f4ff28e2d4f4"
+  },
+  "execution_amendment": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_warp_checks_20261022-rwXujs",
+    "library_sha256": "7674c464e9f29247bc059d08414151ad1ccd81dd808d7ddc3e04ea39bd118c20",
+    "source_merge": "native-bin 기본 경로와 현재 협력 선택의 공존 소스로 strict 기본/협력 sm80을 재컴파일했다. 두 미통합 선택을 동시에 켜면 컴파일에서 명시 거부한다.",
+    "resource_envelope": "A1001/CPU1/host-device16GiB/최대60초/no-requeue, 직접시험20초·고정 범위 대조25초 중첩. 전범위 호출0·자동재시도0. 현재 누적1064GPU초는 이월하고 새60초만 예약한다.",
+    "reason": "현재 정본의 시간확대433944는204초에 시간상한이 아니라 분할 정밀도205로 실패했다. native-bin433954도13초에205로 종료한 것을 읽기 전용 sacct/결과에서 확인했다. warp가 이 수치 원인을 고쳤다고 가정해 같은 전범위를 추가 제출하지 않는다.",
+    "scope_now": "협력 기능의27개 작은 장치시험과 원 고정35열/제한867질의 직접 대조만 새1분 할당에서 수행한다. 전범위/공간적응/전체장/SE_RE/자동재시도는0이다.",
+    "goal_preserved": "원 전범위 완결/독립 정확도 목표는 여전히 미달이며 작은 확인으로 묶음을 완료하지 않는다. 오류205 해결과 native-bin 물리 수송 진행이 우선이고, 협력 코드의 선택 기능 검증은 병렬 내부 작업이다.",
+    "preservation": "mYGobe의 미제출 full 계획과 소스/바이너리는 보존한다. 초기 full 어댑터/스크립트는 현재 정식 제출 경로가 아니며 이 검증과 함께 실행하지 않는다. 새 짧은 검증 root는 별도로 만든다.",
+    "cost_policy": "최신 사용자 시간확대 계약은1시간 한도와 정확도/성능 분리다. 이전 본문10초/1800초는 최초 계획 이력이며 이 짧은 선택 기능 확인이 그 확대 계산을 취소/재정의하지 않는다. 현재 예산 정본은 GPU 대장이다."
+  },
+  "root": "/gpfs/kjhan/cmfgen_runs/lumina_warp_checks_20261022-rwXujs",
+  "sealed_unused_full_root": "/gpfs/kjhan/cmfgen_runs/lumina_warp_ready_20261022-mYGobe",
+  "initial_compile_failure_preserved": "/gpfs/kjhan/cmfgen_runs/lumina_warp_transfer_20261022-E6GwAN",
+  "CPU_direct": "313 passed,5 GPU-only skipped in40.11s. 기본 적응 제어·수치와 협력 상태 비용/혼용 거부를 확인했다. GPU 전용 header의 함수명 충돌을 명시적 이름으로 수정했고 이전 오류 로그/소스는 보존했다.",
+  "CPU_direct_log_sha256": "ebb9943333b203d53928683c7db687238e986c38ed174ee7ce67ae8acfb334bd",
+  "compile": "기본 객체와 strict sm80 협력 선택 모두 exit0. source_maps stack8288→2592B, spill store32428→2680B/load40208→1908B, shared6144B,255register. 컴파일 관측이지 실제 속도/정확도 통과가 아니다.",
+  "GPU_library_sha256": "7674c464e9f29247bc059d08414151ad1ccd81dd808d7ddc3e04ea39bd118c20",
+  "final_goal": "ACTIVE_NOT_MET",
+  "objective": "원 입력·주파수별 정확도·자원 계약을 보존한 전범위13003 수송을 완결하고 독립 참조와 총비용을 판정한다. 최종 목표는 자체장·Si/S 이온분포·스펙트럼·물리량의 CMFGEN 동질성이다.",
+  "scope": "선택형 CMF_GPU_WARP_MEASURE만 한 출력에32 lane을 배정한다. 범위4추적량의32성분과 원천26성분/급수를 분담하고 출력별 DFS 스택만 warp별 공유 상태 하나에 둔다. signedχ 트리 방문·병합 순서·native/반경/ES×J·fullSR·출력별 오차/깊이/작업 상한을 유지한다.",
+  "changes": ["기존 적응 수락 제어를 공통 Stack 정책 함수로 공유", "출력 내부 협력 범위 질의·양의 모멘트/급수 합산", "한 출력만 실패/완료를 기록하고 모든 집단 연산은 같은32 lane이 참여", "공유 상태 비용을 포함한 별도 driver/선택 ABI와 A100 기기 조건"],
+  "arithmetic": "signedχ 합산 순서는 보존한다. 양의 원천52항/다항식 가중합만 균형 합산하며 경로 길이는 기존52항 순차 합보다 작다. 기존 finish의8192*(depth+3)eps 등 보수 수치 예산을 축소하지 않는다. 원 반환오차·독립 참조로 재배열 영향도 확인한다.",
+  "exclusions": ["실패한 같은 scalar 후보 반복", "오차/10초 기준 완화", "참조 J 주입", "소형 속도를 전체 목표 완료로 대체", "주파수 사이 오차/적응 상태 공유"],
+  "inputs_and_baseline": "원 M70/native90/NF1115020/epoch1683072/J0=I0=0/fullSR13003과8192미세참조3열. χ-only scalar d6bd6d88e083c2f92cbb40cb32c5e4496988b8d1b1a515d108aea17e5c6b53f4/433938142초 미완을 보존한다.",
+  "planning": {
+    "agent": "Astra01a16199-5a44-7b22-9152-4ea69313cec5",
+    "status": "COMPLETED_CLOSED",
+    "scope": "도구·로컬 열람·사적 소스/결과를 제공하지 않은 공개 알고리즘 조건부 계획 의견이다. 실제 소스 감사·병목 확인·실행 승인 판정이 아니다.",
+    "priority": "한 출력=한 warp를 우선하고 동기화·출력별 실패 의미·반올림 보수성을 보존한다. spill 감소 이득이 통신/유휴 비용보다 크다는 가설은 전범위 총시간/고정 workspace로 반증 가능해야 한다."
+  },
+  "owner": "운전자 Codex",
+  "acceptance": {
+    "direct": "기본 scalar 회귀·협력 급수/양의 합의 독립 대조·signedχ/약한원천/정적/부분bin/청색/재채움 맵과 원 CPU 반환오차 대조·실패 미발행",
+    "actual": "완성된 원13003 전체 벡터의 미세참조3열 각각/최대정규화차1e-4·원천1e-8/공간1e-5·최종 출력별오차비1 이하",
+    "cost": "트리 준비와 D2H 포함10초. 내부140/구간120/외부150초는 중단 상한이다.",
+    "memory": "전역 workspace1048771496B에 보수 동시 공유상태21233664B까지 포함한1070005160B<1GiB. A100/sm80/최대108SM에서만 이 선택을 허용하며 총host/device16GiB·원512NF를 유지한다."
+  },
+  "resources": {
+    "CPU_direct": "lageunha CPU1/4GiB/180초",
+    "CPU_compile": "CPU1/16GiB/기본120초·선택240초·CPU참조60초",
+    "CPU_actual": "CPU1/16GiB/300초 외부·같은 고정35열 참조만 재사용",
+    "conditional_GPU": "직접시험 충족 후 새 후보만 단일A100/CPU1/16GiB/최대180초/no-requeue. 협력 직접시험과 같은 실제35열/제한867질의를 각20초 외부한도로 확인한 뒤 같은 할당에서 원13003 단회. 노드 미고정·자동재시도0.",
+    "carried_structural_work": "앞선 작은 시험과 진단의 보수8NF를 원512NF에서 먼저 차감한다. 진단의 χ bin/tree/padding 약2.4NF·원천 projection/tree 약1.2NF·끝점2NF·제한질의867 및 작은 합성시험을 합해8NF 이내다. 이는 정확한 실측 FLOP가 아닌 명시한 구조 작업 상계다.",
+    "original_preparation_seconds": 1800,
+    "already_allocated_seconds": 847,
+    "remaining_preparation_seconds_before": 953,
+    "reserved_GPUh": 0
+  },
+  "preservation": "기존 root·입력·바이너리·실패 로그를 수정하지 않는다. 새 격리 root에서만 시험하며 봉인 후 수정하지 않는다.",
+  "expected_evidence": ["scalar 직접시험", "strict 기본/선택sm80 컴파일", "실제 협력 장치 급수·맵/CPU 참조 대조", "전범위 완결/정확도/비용 및 동시 메모리 분리 판정"],
+  "reproduction": "새 격리 root의 고정 소스·compile/verify/actual 명령과 plan SHA로 재현한다. 기존 출력 root는 재사용하지 않는다."
+}

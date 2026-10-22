@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from decimal import Decimal,localcontext
 
 import numpy as np
 import pytest
@@ -198,3 +199,52 @@ def test_endpoint_cache_refills_changed_input_for_each_piece(gpu):
     finally:
         for b in reversed(buffers):b.close()
         data.close()
+
+
+@pytest.mark.skipif(os.environ.get('LUMINA_WARP_MEASURE')!='1',reason='협력 선택 바이너리만 시험')
+@pytest.mark.parametrize('adaptive',[0,1])
+@pytest.mark.parametrize('width',[0.,1e-8,1e-4,.01,.125])
+def test_warp_polynomial_matches_independent_exponential_enclosure(gpu,adaptive,width):
+    f=gpu.lib.lumina_warp_polynomial_probe
+    f.argtypes=[ct.c_void_p,ct.c_int,ct.c_void_p,ct.c_void_p];f.restype=ct.c_int
+    phase=np.array([-.7*width,-.1*width,.3*width,-.4*width]);buffers=[]
+    try:
+        a=gpu.allocate(phase.nbytes);buffers.append(a);gpu.upload(a,phase)
+        b=gpu.allocate(28*8);buffers.append(b)
+        check(f(a.address,adaptive,b.address,gpu.status));gpu.sync();out=gpu.download(b,28)
+        m=int(out[27]);assert m in range(0,25,3) and np.all(out[:m+1]>=1.)
+        with localcontext() as context:
+            context.prec=90;D=Decimal.from_float
+            def basis(n,k,t):
+                return Decimal(comb(n,k))*(t**k if k else Decimal(1))*((1-t)**(n-k) if n!=k else Decimal(1))
+            for x in (0.,.03125,.27,.5,.91,1.):
+                t=D(x);wanted=sum(D(float(phase[k]))*basis(3,k,t) for k in range(4))
+                actual=sum(D(float(out[k]))*basis(m,k,t) for k in range(m+1))
+                expected=(wanted-D(float(out[25]))).exp()
+                assert abs(actual-expected)<=D(float(out[26]))+Decimal('3e-13')*expected
+    finally:
+        for b in reversed(buffers):b.close()
+
+
+@pytest.mark.skipif(os.environ.get('LUMINA_WARP_MEASURE')!='1',reason='협력 선택 바이너리만 시험')
+@pytest.mark.parametrize('case',['zero','flat','wide','weak'])
+def test_warp_positive_reduction_keeps_weak_values_and_roundoff_bound(gpu,case):
+    values=np.zeros(32,dtype=[('m','<f8'),('e','<i8')]);rng=np.random.default_rng(10222026)
+    if case!='zero':
+        values['m']=rng.uniform(.5,1.,32)
+        values['e']=0 if case=='flat' else (rng.integers(-1800,1800,32) if case=='wide' else -1800)
+    f=gpu.lib.lumina_warp_positive_sum_probe
+    f.argtypes=[ct.c_void_p]*3;f.restype=ct.c_int;buffers=[]
+    try:
+        a=gpu.allocate(values.nbytes);buffers.append(a);gpu.upload(a,values)
+        b=gpu.allocate(16);buffers.append(b)
+        check(f(a.address,b.address,gpu.status));gpu.sync()
+        out=CPositive.from_buffer_copy(gpu.download(b,(16,),'u1').tobytes())
+        with localcontext() as context:
+            context.prec=100;D=Decimal.from_float
+            wanted=sum(D(float(v['m']))*Decimal(2)**int(v['e']) for v in values)
+            out.positive()
+            actual=D(out.m)*Decimal(2)**out.e
+            assert abs(actual-wanted)<=Decimal('1e-12')*wanted
+    finally:
+        for b in reversed(buffers):b.close()

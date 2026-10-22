@@ -10,6 +10,15 @@
 #endif
 #include "cmf_native_bin_stream.hpp"
 #endif
+#ifdef CMF_GPU_WARP_MEASURE
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+#error CMF_GPU_WARP_MEASURE_and_NATIVE_BIN_STREAM_are_not_integrated
+#endif
+#if !defined(CMF_GPU_COMPACT_MEASURE) || !defined(CMF_GPU_ENDPOINT_CACHE)
+#error CMF_GPU_WARP_MEASURE_requires_compact_endpoint_cache
+#endif
+#include "cmf_warp_measure.cuh"
+#endif
 #ifdef CMF_GPU_COMPACT_MEASURE
 #ifndef CMF_GPU_SOURCE_MEASURE
 #error CMF_GPU_COMPACT_MEASURE_requires_CMF_GPU_SOURCE_MEASURE
@@ -29,6 +38,12 @@ using lumina_ordered::product;
 using lumina_ordered::sum;
 using lumina_linear_affine::Local;
 static constexpr int threads=128,chunk=32768;
+static constexpr int query_width=
+#ifdef CMF_GPU_WARP_MEASURE
+    threads/32;
+#else
+    threads;
+#endif
 static constexpr int maximum_block=
 #ifdef CMF_GPU_SOURCE_MEASURE
     32;
@@ -96,6 +111,23 @@ extern "C" int lumina_linear_cuda_source_integrator(void){
 #else
     return 0;
 #endif
+}
+extern "C" size_t lumina_linear_cuda_cooperative_bytes(void){
+#ifdef CMF_GPU_WARP_MEASURE
+    // A100 최대108SM·SM당32block 상계. 같은 시각의 모든 공유 상태를
+    // 원1GiB workspace에 포함한다. 실제 동시 block 수를 과소평가하지 않는다.
+    return (size_t)108*32*(threads/32)*64*sizeof(lumina_characteristic::Pending);
+#else
+    return 0;
+#endif
+}
+extern "C" int lumina_linear_cuda_cooperative_device(void){
+#ifdef CMF_GPU_WARP_MEASURE
+    int device;cudaDeviceProp p;
+    if(cudaGetDevice(&device)!=cudaSuccess||cudaGetDeviceProperties(&p,device)!=cudaSuccess)return 2;
+    if(p.major!=8||p.minor!=0||p.multiProcessorCount>108)return 3;
+#endif
+    return 0;
 }
 static bool valid_piece(const CMFLinearCudaPiece *p){
     using lumina_ordered::finite;
@@ -268,10 +300,22 @@ extern "C" int lumina_linear_cuda_build(const CMFLinearCudaPiece *p,void *raw,in
 __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double relative,int maximum,
     int first,int count,StoredMap *maps,int *status)
 {
+#ifdef CMF_GPU_WARP_MEASURE
+    int i=blockIdx.x*query_width+threadIdx.x/32;
+    int failed=0;if((threadIdx.x&31)==0)failed=*status;
+    failed=__shfl_sync(0xffffffffu,failed,0);
+    if(i>=count||failed)return;i+=first;
+    __shared__ lumina_characteristic::Pending pending[threads/32][64];
+#else
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=count||*status)return;i+=first;
+#endif
     Reader reader=make_reader(p,nodes);
     lumina_linear::Tree tree={nodes,p.leaves,p.block,p.nf};
+#ifdef CMF_GPU_WARP_MEASURE
+    lumina_warp_measure::Profile<Reader> profile={reader,tree,i,p.offset,p.span,p.length,p.da-p.db};
+#else
     lumina_characteristic::Profile<Reader> profile={reader,tree,i,p.offset,p.span,p.length,p.da-p.db};
+#endif
     // 처음부터 청색 끝을 넘는 열도 원래 마지막ν의 상수 연장이다.
     if(i>=p.nf){profile.column=0;profile.exit_shift=p.offset+i;}
     lumina_characteristic::Result result;
@@ -284,11 +328,19 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
 #else
     lumina_source_measure::Tree measure={source,p.source_leaves,p.block,p.nf};
 #endif
+#ifdef CMF_GPU_WARP_MEASURE
+    int code=lumina_characteristic::integrate_using_stack(profile,Positive::zero(),relative,maximum,result,
+        lumina_warp_measure::Evaluate{measure},lumina_warp_measure::Stack{pending[threadIdx.x/32]});
+#else
     int code=lumina_source_measure::integrate(profile,measure,Positive::zero(),relative,maximum,result);
+#endif
 #else
     int code=lumina_characteristic::integrate(profile,Positive::zero(),relative,maximum,result);
 #endif
     if(code){
+#ifdef CMF_GPU_WARP_MEASURE
+        if((threadIdx.x&31)==0)
+#endif
 #ifdef CMF_GPU_FAILURE_COLUMN
         atomicCAS(status,0,100000000+8*(p.begin+i)+code);return;
 #else
@@ -305,6 +357,9 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
         encode(result.frequency),encode(result.omitted),tau.error,0,0,
         result.panels,result.accepted,result.split,result.pruned,result.max_depth};
 #endif
+#ifdef CMF_GPU_WARP_MEASURE
+    if((threadIdx.x&31)==0)
+#endif
     maps[i]=m;
 }
 extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *nodes,double relative,
@@ -314,7 +369,7 @@ extern "C" int lumina_linear_cuda_query(const CMFLinearCudaPiece *p,const void *
     if(!valid_piece(p)||!nodes||!maps||!status||!finite(relative)||relative<=0||relative>.01||maximum<1||maximum>100000)return 1;
     for(int first=0;first<p->count;first+=chunk){
         int count=std::min(chunk,p->count-first);
-        source_maps<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
+        source_maps<<<(count+query_width-1)/query_width,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
             first,count,static_cast<StoredMap *>(maps),status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
     }
@@ -327,7 +382,7 @@ extern "C" int lumina_linear_cuda_query_range(const CMFLinearCudaPiece *p,const 
     using lumina_ordered::finite;
     if(!valid_piece(p)||!nodes||!maps||!status||!finite(relative)||relative<=0||relative>.01||
        maximum<1||maximum>100000||first<0||count<1||count>1024||first>p->count-count)return 1;
-    source_maps<<<(count+threads-1)/threads,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
+    source_maps<<<(count+query_width-1)/query_width,threads>>>(*p,static_cast<const Node *>(nodes),relative,maximum,
         first,count,static_cast<StoredMap *>(maps),status);
     return cudaGetLastError()==cudaSuccess?0:2;
 }

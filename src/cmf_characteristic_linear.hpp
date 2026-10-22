@@ -210,8 +210,9 @@ template<class Reader> LUMINA_CHAR bool source_lower(const Profile<Reader> &p,Po
 /* 깊이 우선으로 출구 쪽부터 진행한다. η의 양수성으로 이미 얻은 원천을
  * 나머지 꼬리의 절대오차 예산에 쓸 수 있다. 전ν 공통 crossing mesh는 없다.
  * 성공 때만 out을 쓴다. 오차는 이 공간선형 문제에 대한 주파수별 상계다. */
-template<class Reader,class PanelFunction> LUMINA_CHAR Status integrate_using(const Profile<Reader> &p,Positive incident,double relative,
-    int max_panels,Result &out,const PanelFunction &evaluate)
+struct Pending {double u0,u1;int depth;};
+template<class P,class PanelFunction,class Stack> LUMINA_CHAR Status integrate_using_stack(const P &p,Positive incident,double relative,
+    int max_panels,Result &out,const PanelFunction &evaluate,Stack stack)
 {
     if(!finite(relative)||relative<=0||relative>.01||max_panels<1||p.tree.nf<2||p.tree.nf>2000000||
        p.column<0||p.column>=p.tree.nf||
@@ -226,8 +227,7 @@ template<class Reader,class PanelFunction> LUMINA_CHAR Status integrate_using(co
         if(tau.error>.25||!scaled(r.transmitted,::expm1(tau.error),r.roundoff))return TRANSMISSION_PRECISION_LIMIT;
     }
     Positive seed;if(!source_lower(p,seed))return NUMERIC_RANGE;
-    struct Pending {double u0,u1;int depth;};
-    Pending stack[64];int count=1;stack[0]={0.,1.,0};
+    int count=1;stack[0]={0.,1.,0};
     const double local_relative=relative/8.;
     while(count){
         Pending q=stack[--count];
@@ -269,6 +269,12 @@ template<class Reader,class PanelFunction> LUMINA_CHAR Status integrate_using(co
        !scaled(r.value,relative,second))return NUMERIC_RANGE;
     if(!less_equal(r.error,second))return ACCUMULATION_PRECISION_LIMIT;
     out=r;return OK;
+}
+template<class Reader,class PanelFunction> LUMINA_CHAR Status integrate_using(const Profile<Reader> &p,Positive incident,double relative,
+    int max_panels,Result &out,const PanelFunction &evaluate)
+{
+    Pending stack[64];
+    return integrate_using_stack(p,incident,relative,max_panels,out,evaluate,stack);
 }
 
 struct SecantPanel {

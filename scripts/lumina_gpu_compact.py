@@ -60,3 +60,17 @@ class CompactDriver(LinearDriver):
 class EndpointCompactDriver(CompactDriver):
     endpoint_cache=True
     engine='SPACE_LINEAR_COMPACT_EXACT_ENDPOINT_CACHE_GPU'
+
+
+class WarpCompactDriver(EndpointCompactDriver):
+    # A100 최대108SM·각32block·block당4warp·각64개의24B DFS 상태.
+    # 전역 메모리에 더하지 않지만 원 동시 workspace 한도에는 포함한다.
+    cooperative_shared_bytes=108*32*4*64*24
+    engine='SPACE_LINEAR_COMPACT_COOPERATIVE_WARP_GPU'
+
+    def layout_for(self,nf,width):
+        layout=super().layout_for(nf,width)
+        layout['cooperative_shared']=self.cooperative_shared_bytes
+        layout['workspace']+=self.cooperative_shared_bytes
+        if layout['workspace']>CACHE_LIMIT:raise MemoryError('협력 상태 포함 활성 작업공간1GiB 초과')
+        return layout

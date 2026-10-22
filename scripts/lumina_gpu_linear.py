@@ -76,6 +76,7 @@ class LinearDriver(GpuDriver):
     projection_bytes=0
     endpoint_cache=False
     source_integrator=0
+    cooperative_shared_bytes=0
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
         return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
@@ -100,6 +101,13 @@ class LinearDriver(GpuDriver):
             integrator.argtypes=[];integrator.restype=I
         if (0 if integrator is None else integrator())!=self.source_integrator:
             raise ValueError('GPU driver와 바이너리의 원천 적분기가 다르다')
+        cooperative=getattr(runtime.lib,'lumina_linear_cuda_cooperative_bytes',None)
+        if cooperative is not None:cooperative.argtypes=[];cooperative.restype=S
+        if (0 if cooperative is None else cooperative())!=self.cooperative_shared_bytes:
+            raise ValueError('GPU driver와 바이너리의 협력 상태 비용이 다르다')
+        if self.cooperative_shared_bytes:
+            compatible=runtime.lib.lumina_linear_cuda_cooperative_device
+            compatible.argtypes=[];compatible.restype=I;check(compatible())
         if Path(cpu_library).resolve() != provider._binary or provider.identity.get('field', {}).get('role', '').startswith('REFERENCE'):
             raise ValueError('같은 native context와 자체 J 입력 필요')
         self.rt, self.provider, self.nf, self.ns, self.width = runtime, provider, provider.nf, provider.ns, block_width
