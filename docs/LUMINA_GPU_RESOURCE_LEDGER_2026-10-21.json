@@ -96,9 +96,28 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.62899999998889,
-  "remaining_before_new_reservations_GPUh": 73.37100000001111,
+  "used_upper_GPUh": 70.66816666665557,
+  "remaining_before_new_reservations_GPUh": 73.33183333334443,
   "current_reserved_GPUh": 0,
+  "a100_full_interval": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_a100_actual_20261022-uMgaEU",
+    "state": "SETTLED_EXTERNAL_TIMEOUT_NO_COMPLETE_VECTOR",
+    "job_id": "433358",
+    "plan_sha256": "816bd54a932c51c6a580919274b9526d007a6e162c951f7da73b5a6cd6894a46",
+    "reserved_GPUh": 0,
+    "max_allocation_seconds": 180,
+    "allocated_gpu_seconds": 141,
+    "allocated_GPUh": 0.03916666666666667,
+    "terminal_state": "FAILED/124:0",
+    "sacct_terminal_sha256": "fcdbdfaa8687ccd17367903209232b7221dca6ac3ae56986ae998bca1e44e34c",
+    "last_result_sha256": "3f58caea9ae1d80af97f63e3a8c4ce422f69b0459b1d05dac8ec19db7d2aecde",
+    "combined_preparation_seconds_after": 563,
+    "remaining_combined_preparation_seconds_after": 1237,
+    "settlement": "본할당141초를 한 번 정산하고 예약을 모두 해제했다. step140초와 shell140초는 같은 할당이므로 더하지 않는다. 완성값/정확도는 미판정이며 자동 재시작하지 않는다.",
+    "previous_combined_preparation_seconds": 422,
+    "remaining_combined_preparation_seconds": 1378,
+    "scope": "원13003 전주파수 공간적응 단회. 검증한 A100 바이너리 재사용·GPU1/CPU1/16GiB/활성1GiB·노드미고정·Slurm180초·외부150/내부140/구간120초. 원 준비1800초 안에서 이전Ada394+A10028초를 이월하며 초기화하지 않는다. 전체장/SE/RE/자동재시도0이다."
+  },
   "a100_total_cap_candidate": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_a100_total_cap_20261022-K57YkA",
     "state": "SETTLED_A100_LIMITED_ACCURACY_MET_NOT_FULL_NU",
