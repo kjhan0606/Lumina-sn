@@ -102,7 +102,7 @@
   "remaining_after_current_reservations_GPUh": 72.21822222223331,
   "native_prefix_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_prefix_followup_20261022-mxJnPj",
-    "state": "SUBMITTED_FIRST_ACTUAL_AFTER_FIXTURE_CORRECTION",
+    "state": "RUNNING_DEVICE2_MET_ACTUAL_NO_COMPLETE_VECTOR_YET",
     "job_id": "434043",
     "plan_sha256": "0cfe5db5b8273651661f1254d1888f74df01364445dcaa125ceae6bc6b7a915d",
     "library_sha256": "f6696f6e9d83a082a7730c9f11f0195ace949b41087ed9b16993b18fabba61c3",

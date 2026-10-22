@@ -359,12 +359,15 @@ class GpuDriver:
                 self.event_nodes.part(start*4,count*4).address,self.event_weights.part(start*24,count*24).address,
                 self.ray.address,self.moments.address,self.rt.status))
 
-    def field(self,plan,planck,gradient,*,seconds=5400.,max_full_vectors=2000000,progress=None):
+    def field(self,plan,planck,gradient,*,seconds=5400.,interval_seconds=60.,max_full_vectors=2000000,progress=None):
         """완전한 물리 광선/JHK다. 중간 구간 성공을 완성장으로 반환하지 않는다."""
         self.bound()
         if (plan.source is not self.provider._source or plan.panels!=1 or plan.driver_block_width!=self.width or
             not 0<seconds<=5400. or type(max_full_vectors) is not int or not 1<=max_full_vectors<=2000000):
             raise ValueError('GPU 장 계획/실행 한도 오류')
+        if (isinstance(interval_seconds,bool) or not isinstance(interval_seconds,(int,float)) or
+            not math.isfinite(interval_seconds) or not 0<interval_seconds<=getattr(self,'interval_limit_seconds',5400.)):
+            raise ValueError('GPU 장의 구간 시간 한도 오류')
         started=time.monotonic();work=Work(max_full_vectors*self.nf,started+seconds);a=plan.arrays
         self.prepare_events(plan)
         if self.moments is None:
@@ -384,7 +387,8 @@ class GpuDriver:
                     self.accumulate(len(a['event_node'])+path,1)
                 begin,count=map(int,p[2*leg:2*leg+2])
                 for index in range(begin,begin+count):
-                    report=self.interval(plan,index,work,max_seconds=min(60.,work.deadline-time.monotonic()))
+                    work.check()
+                    report=self.interval(plan,index,work,max_seconds=min(interval_seconds,work.deadline-time.monotonic()))
                     intervals+=1;limited+=report['limited_polynomials'];rounds+=report['rounds']
                     max_mesh=max(max_mesh,report['max_mesh_leaves'])
                     if report['global_tolerance']:
@@ -399,6 +403,7 @@ class GpuDriver:
         moments=self.rt.download(self.moments,(3,self.ns,self.nf));work.check()
         report=dict(physical_intervals=intervals,paths=len(a['paths']),elapsed_seconds=time.monotonic()-started,
             parallel_work=work.used,work_counters=work.counts,max_mesh_leaves=max_mesh,rounds=rounds,
+            interval_seconds_limit=interval_seconds,total_seconds_limit=seconds,
             limited_polynomials=limited,maximum_estimated_error_ratio=worst,memory=self.rt.report(),
             source_generation=self.generation,input_identity=self.input_identity,
             accepted_physical_field=False,final_goal='NOT_MET')
