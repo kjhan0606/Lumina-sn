@@ -115,6 +115,26 @@ LUMINA_MEASURE bool exponential_polynomial(const double *phase,double *coeff,dou
 }
 struct Integral {Positive value,error;int nodes;};
 
+/* pruning 전용 점별 상계다. 실제 감쇠 적분/원천 모멘트는 바꾸지 않는다.
+ * 비음수 선형 보간의 hi와 공간 혼합을 쓴다. 보간/양의 산술의 경로는
+ * 32회 미만이며256eps와 절대256*TRUE_MIN으로 보수적으로 감싼다.
+ * 위치 불확실성의 slope 항과 감쇠 상계는 기존 Evaluate가 별도로 더한다. */
+LUMINA_MEASURE bool envelope_upper(double length,double u0,double u1,double hi0,double hi1,Positive &out){
+    if(!finite(length)||length<=0||!finite(u0)||!finite(u1)||u0<0||u1>1||u0>=u1||
+       !finite(hi0)||!finite(hi1)||hi0<0||hi1<0)return false;
+    Positive h[2],ends[2],x,y,l,du,scale,value,error,absolute;
+    if(!Positive::from_double(hi0,h[0])||!Positive::from_double(hi1,h[1]))return false;
+    double u[2]={u0,u1};
+    for(int k=0;k<2;k++)
+        if(!scaled(h[0],u[k],x)||!scaled(h[1],1.-u[k],y)||!sum(x,y,ends[k]))return false;
+    Positive upper=lumina_characteristic::less_equal(ends[0],ends[1])?ends[1]:ends[0];
+    if(!Positive::from_double(length,l)||!Positive::from_double(u1-u0,du)||!product(l,du,scale)||
+       !product(scale,upper,value)||!scaled(value,256.*DBL_EPSILON/(1.-256.*DBL_EPSILON),error)||
+       !Positive::from_double(DBL_TRUE_MIN,absolute)||!scaled(absolute,256.,absolute)||
+       !product(scale,absolute,absolute)||!sum(value,error,x)||!sum(x,absolute,y))return false;
+    out=y;return true;
+}
+
 LUMINA_MEASURE bool finish(Positive total,int depth,double fraction,double du,double length,const double *phase,
     double log_scale,bool constant,double shift,double tail,Integral &out){
     Positive l,h,s,scale,value,error;
@@ -264,13 +284,24 @@ struct Evaluate {
         double low_error=128.*DBL_EPSILON*(::fabs(lower)+::fabs(d3)+1.);
         double log_upper=-tau.value+tau.error+::fmax(0.,-lower+low_error);
         log_upper+=128.*DBL_EPSILON*(::fabs(log_upper)+1.);
-        Integral mass_integral;double zero_phase[4]={};
-        if(!integrate_range(p,source,u0,u1,zero_phase,0.,true,mass_integral))return INVALID;
+        Positive base;
+#ifdef CMF_GPU_ENVELOPE_UPPER
+        // tiny/정확한0 후보에서는 원 양의 모멘트 적분으로 되돌아간다.
+        // double 보간 뒤0이 된 subnormal을 물리적0으로 오인하지 않는다.
+        if(::fmax(n.trace[2].hi,n.trace[3].hi)>=1024.*DBL_MIN){
+            if(!envelope_upper(p.length,u0,u1,n.trace[2].hi,n.trace[3].hi,base))return INVALID;
+        }else
+#endif
+        {
+            Integral mass_integral;double zero_phase[4]={};
+            if(!integrate_range(p,source,u0,u1,zero_phase,0.,true,mass_integral)||
+               !sum(mass_integral.value,mass_integral.error,base))return INVALID;
+        }
         double slope=::fmax(::fmax(::fabs(n.trace[2].slo),::fabs(n.trace[2].shi)),
                             ::fmax(::fabs(n.trace[3].slo),::fabs(n.trace[3].shi)));
-        Positive source_coordinate,base,attenuation;
+        Positive source_coordinate,attenuation;
         if(!mass(p.length,slope,source_coordinate)||!scaled(source_coordinate,du*coordinate,source_coordinate)||
-           !sum(mass_integral.value,mass_integral.error,base)||!sum(base,source_coordinate,base)||
+           !sum(base,source_coordinate,base)||
            !Positive::from_log(log_upper,attenuation)||!product(base,attenuation,result.upper))return INVALID;
         out=result;
         if(result.upper.mantissa==0)return READY;

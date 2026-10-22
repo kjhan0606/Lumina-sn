@@ -13,11 +13,11 @@ from test_lumina_characteristic_linear import run,decoded,reference
 ROOT=Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope='module')
-def source_measure(tmp_path_factory):
+@pytest.fixture(scope='module',params=[False,True],ids=['original-upper','envelope-upper'])
+def source_measure(tmp_path_factory,request):
     path=tmp_path_factory.mktemp('source-measure')/'measure.so'
     proc=subprocess.run([os.environ.get('CXX','c++'),'-O2','-std=c++17','-ffp-contract=off',
-        '-Wall','-Wextra','-Werror','-fPIC','-shared','-I'+str(ROOT/'src'),
+        '-Wall','-Wextra','-Werror','-fPIC','-shared',*(['-DCMF_GPU_ENVELOPE_UPPER'] if request.param else []),'-I'+str(ROOT/'src'),
         str(ROOT/'tests/source_measure_probe.cpp'),'-o',str(path)],capture_output=True,text=True,timeout=60)
     assert proc.returncode==0,proc.stderr
     lib=ct.CDLL(str(path));f=lib.source_measure_probe
@@ -27,6 +27,34 @@ def source_measure(tmp_path_factory):
     f.argtypes=[ct.c_int,ct.c_int,p,p,ct.c_int,p,e,i];f.restype=ct.c_int
     f._library=lib
     return f
+
+
+@pytest.mark.parametrize('length,u0,u1,hi0,hi1',[
+    (1.,0.,1.,0.,0.),(1.3,.125,.875,2.,7.),(1e300,.25,.75,1e300,1e-300),
+    (1e-300,.25,.75,1e-300,2e-300),(1e300,0.,1.,np.nextafter(0.,1.),0.),
+    (1e300,0.,2.**-60,1e-300,1e-200),(1.3,1.-2.**-52,1.,7.,2.),
+    (1e300,.25,.75,1e-300,1e300)])
+def test_envelope_is_above_high_precision_pointwise_bound_without_intermediate_loss(source_measure,length,u0,u1,hi0,hi1):
+    f=source_measure._library.source_envelope_upper_probe
+    f.argtypes=[ct.c_double]*5+[ct.c_void_p]*2;f.restype=ct.c_int
+    m=ct.c_double(-17.);e=ct.c_int64(-17)
+    assert f(length,u0,u1,hi0,hi1,ct.byref(m),ct.byref(e))==0
+    with localcontext() as context:
+        context.prec=100;D=Decimal.from_float
+        end=lambda u:D(u)*D(hi0)+(1-D(u))*D(hi1)
+        wanted=D(length)*(D(u1)-D(u0))*max(end(u0),end(u1))
+        actual=D(m.value)*Decimal(2)**e.value
+        assert actual>=wanted
+
+
+@pytest.mark.parametrize('args',[(0.,0.,1.,1.,1.),(1.,.8,.2,1.,1.),(1.,0.,1.,-1.,1.),
+                                  (1.,0.,1.,float('nan'),1.)])
+def test_envelope_failure_preserves_output(source_measure,args):
+    f=source_measure._library.source_envelope_upper_probe
+    f.argtypes=[ct.c_double]*5+[ct.c_void_p]*2;f.restype=ct.c_int
+    m=ct.c_double(-17.);e=ct.c_int64(-17)
+    assert f(*args,ct.byref(m),ct.byref(e))==1
+    assert m.value==-17. and e.value==-17
 
 
 @pytest.mark.parametrize('block',[1,4,32])

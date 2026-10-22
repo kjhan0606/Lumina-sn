@@ -1,0 +1,23 @@
+{
+  "schema": "lumina-envelope-query-v1",
+  "status": "LIMITED_GPU_ACCURACY_MET_NOT_FULL_NU",
+  "GPU_result": "작은 장치9통과/0.72초, 실제867열 제한 질의의 중복 포함 CPU 대조41회 모두 기준 충족. 트리0.026154초·512열3.959138초로 이전4.877029초보다 관측시간 약19% 감소했다. 공유 단발 관측이며 통제된 가속률/전ν ETA/10초 수용이 아니다.",
+  "GPU_result_sha256": "e23ee02895d18add17c26e3900208f0537d9a0129c09ddfc08b1617abf7b539a",
+  "terminal_sha256": "08c84c54ec67b738f8ba444b0b095933bdfbf7ab263b06663960f56097263ff9",
+  "settlement": "35.236초·exit0을 보수36초로 한 번 차감했다. 원천 후보 누적365초·준비1435초 남음·잔여73.38683333334445GPUh/예약0이다. 기존 전ν 실패를 다시 돌리지 않았다.",
+  "next": "중복 상계 비용 감소는 확보했으나 큰 단일-thread 적응 질의 비용은 남았다. 원래 bin 안 감쇠 다항식의 불필요한 고차 연산을 줄이는 구현을 먼저 CPU 독립 참조·같은 실제 표본으로 확인한다. 물리/반환 오차 기준은 유지하며 전체장으로 승격하지 않는다.",
+  "root": "/gpfs/kjhan/cmfgen_runs/lumina_envelope_query_20261022-cwIcgC",
+  "objective": "같은 수송 목표 안에서 실제13003 적응 질의의 중복 상계 적분을 줄이고, 원 물리/오차와 실제 표본 정확도를 유지하는지 결정한다. 최종 Si II/III·S 이온분포·스펙트럼 동질성을 대신하지 않는다.",
+  "CPU_evidence": "host-test.log:255통과/21skip/31.32초/exit0, SHA256 b208970a1f92bde4b6c413ca9839aa4a54dbf3c17cd689f6fd2ff5dd7e0af3ed. 새 선택 경로의 국소/전역 비트 동등성·인덱스·실패 canary/native-test.log:15통과/3.20초, SHA256 57032d12e14b5585958d7a3d8d48adc2307e4510f5de5dcb71b0d34c587e7ac2. 기존/새 경로의 독립 Gauss·고정밀·약한 값·subnormal·gain·정확한0를 포함했다.",
+  "CPU_actual": "cpu-cost.json SHA256 d03604de9c0ae5d3467d66f4e282450d10d28a561b7c9053469dc9136686eba9. 같은35열 모두code0·원천값은 이전과 같은double·합산반환오차 이내다. Reader 질의1777104→1205042(약32%감소), query 합계0.235947→0.205363초(단발관측 약13%감소)다.625223열은 패널2261→2263·pruned10→11이고 나머지는 같다. GPU 비용/전체장 ETA로 환산하지 않는다.",
+  "CUDA_compile": "strict GNU13/CUDA13/sm89·fastmath없음·exit0. binary SHA256 7b15f5841fafd86ec80f2f23c72c3d41c40efbda07d10101a44968ac23a26a16. source_maps는255register/stack8672B/spill6404store·7416load이며 직전8464B보다 stack208B 증가했다. spill/성능 개선을 컴파일로 주장하지 않는다.",
+  "baseline": "3bbce6705f690282511c253f4468010d9085ed6a",
+  "owner": "운전자",
+  "planning": "Astra01a16114에 공개 수학 후보만 질문했다. 도구/로컬 열람/소스/입력/실험값 전달은 없었다. 저차 모멘트 항등식의 조건을 검토한 뒤, 그 roundoff 증명 범위를 키우지 않도록 이번 첫 후보는 native 꺾임을 덮는 점별 ηhi 상계로 한정했다. Astra는 이 상계가 진짜 상계이고 버린 전량을 누적 오차로 소비한다면 유효하다고 평가했다. 실제 코드 감사/성능 수용/실행 승인은 아니다. 에이전트는 종료했다.",
+  "change": "명시적 CMF_GPU_ENVELOPE_UPPER에서만 이미 얻은 χ/η 범위 노드의 ηhi로 무감쇠 질량을 Ldu·max(u0hi0+(1-u0)hi1,u1hi0+(1-u1)hi1)로 상계한다. 실제 감쇠 적분과 25차 원천 모멘트·signedχ·fullSR·원 native 순서·원천1e-8·공간1e-5·최종오차 소비는 유지한다. 기존 기본 경로는 그대로다.",
+  "numerics": "hi는 단순 두 endpoint 표본 최대가 아니라 원 native 꺾임/partial/blue를 포함한 범위다. 비음수 보간에서 hi를 만드는 경로와 양의 혼합/scale의32회 미만 산술을256eps와 절대256TRUE_MIN으로 감싼다. 좌표 slope 항·signedχ 감쇠/gain 상계는 기존 Evaluate가 더한다. maxhi<1024DBL_MIN에서는 원 양의 모멘트 상계를 재사용해 double 보간의0을 물리적0으로 오인하지 않는다. 모든 L/du/η 곱은 양의 mantissa/exponent로 한다. 더 느슨한 상계가 pruning을 줄일 수 있지만 허용오차를 완화하지 않는다.",
+  "criteria": "기존/새 선택 경로를 독립 Gauss·고정밀 해석 참조와 비교하고 각각 반환 오차와 원 상대오차를 만족시킨다. 정확한0·subnormal·signed/gain·native/partial/blue·scale 회복·오류 canary를 포함한다. 같은 실제35열의 새/기존 값 차이는 합산 반환오차 내인지 확인하며 패널 수의 bit 동일성을 물리 수용 조건으로 바꾸지 않는다. CPU query Reader/관측시간·CUDA local/spill을 확인한 뒤 같은867열 이하 GPU 한정 시험으로 진전이 있는지 판단한다. 공유 성능/전ν ETA/최종장 수용은 없다.",
+  "resources": "Lageunha CPU1·직접시험4GiB/300초·실제CPU16GiB/300초·개별CUDA컴파일16GiB/240초다. GPU 실행을 선택하면0번 한 장·원 free24GiB/host·device16GiB/활성1GiB·외부150초 내 단일 창·트리1회·총질의867열 이하를 유지한다. 실행 전 예약하고 실제 창만 정산한다. 같은 전체 실패 계산은 재시작하지 않는다.",
+  "preservation": "새 격리 root에 입력/소스/바이너리/명령/결과를 고정한다. 원3bbce67·기존 실패·진단·타 작업을 보존한다. 후보가 원 오차를 위반하거나 비용을 줄이지 못하면 생산 경로로 채택하지 않는다.",
+  "reproduction": "새 root의 compile/host/CPU/GPU 명령과 해시를 후속 기록한다. 실제 비교는 원 baseline9d978eec…에 봉인된 동일native90/NF1115020/J0=I0=0/fullSR13003 첫coarse다. 전체장·SE/RE는0이다."
+}

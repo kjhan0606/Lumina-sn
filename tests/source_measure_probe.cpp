@@ -106,3 +106,9 @@ extern "C" int source_projection_moments(int width,const double *values,int dire
         return 0;
     }catch(...){return 3;}
 }
+extern "C" int source_envelope_upper_probe(double length,double u0,double u1,double hi0,double hi1,
+    double *mantissa,int64_t *exponent){
+    lumina_ordered::Positive result;
+    if(!mantissa||!exponent||!lumina_source_measure::envelope_upper(length,u0,u1,hi0,hi1,result))return 1;
+    *mantissa=result.mantissa;*exponent=result.exponent;return 0;
+}

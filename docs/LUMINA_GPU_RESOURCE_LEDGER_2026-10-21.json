@@ -96,9 +96,23 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.60316666665555,
-  "remaining_before_new_reservations_GPUh": 73.39683333334445,
+  "used_upper_GPUh": 70.61316666665555,
+  "remaining_before_new_reservations_GPUh": 73.38683333334445,
   "current_reserved_GPUh": 0,
+  "envelope_query_candidate": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_envelope_query_20261022-cwIcgC",
+    "state": "SETTLED_LIMITED_GPU_ACCURACY_MET_NOT_FULL_NU",
+    "max_allocation_seconds": 148,
+    "reserved_GPUh": 0,
+    "allocated_gpu_seconds": 36,
+    "allocated_GPUh": 0.01,
+    "terminal_sha256": "08c84c54ec67b738f8ba444b0b095933bdfbf7ab263b06663960f56097263ff9",
+    "GPU_evidence_sha256": "e23ee02895d18add17c26e3900208f0537d9a0129c09ddfc08b1617abf7b539a",
+    "cumulative_source_measure_gpu_seconds": 365,
+    "remaining_preparation_seconds_not_retry_authority": 1435,
+    "settlement": "종료35.236초·exit0을 보수36초로 한 번 정산하고 예약을 해제했다. 작은 GPU9통과·867열 제한 질의/41대조 통과이며 전체전ν/공간적응/전체장은0이다.",
+    "scope": "같은 원 실제13003 첫coarse·구간ηhi 상계 선택 경로의 작은 GPU9시험/트리1회/867질의 이하만 한다. 전체장·공간적응·SE/RE는0이며 같은 전체 실패 계산 재시작이 아니다."
+  },
   "native_cost_diagnosis": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_native_cost_diag_20261022-9VS8ZG",
     "state": "SETTLED_LIMITED_DIAGNOSIS_FINISHED_NOT_FIELD",
