@@ -4,6 +4,20 @@
   "GPU_result": "작은 장치9통과/0.72초, 실제867열 제한 질의의 중복 포함 CPU 대조41회 모두 기준 충족. 트리0.026154초·512열3.959138초로 이전4.877029초보다 관측시간 약19% 감소했다. 공유 단발 관측이며 통제된 가속률/전ν ETA/10초 수용이 아니다.",
   "GPU_result_sha256": "e23ee02895d18add17c26e3900208f0537d9a0129c09ddfc08b1617abf7b539a",
   "terminal_sha256": "08c84c54ec67b738f8ba444b0b095933bdfbf7ab263b06663960f56097263ff9",
+  "decisive_values": {
+    "validated_revision": "3a1dc17의 상계 후보 소스는 frozen root와 SHA256/바이트가 같다. 이후 CMF_GPU_ADAPTIVE_LINEAR_EXP 작업본은 이번 통과 범위에 포함하지 않는다.",
+    "comparison_scope": "고정35열·중복포함41회이며867열 전체의 독립 대조가 아니다. 이번 GPU 대조에는 scaled T/S/E를 저장했다. 해당 값과 cpu-cost.json을 읽어 재계산한 원천 최대 상대차는2.8599052062393306e-16이고 모든 기존 기준을 충족했다. 기존/새CPU35열의 T도같은scaled값이다.",
+    "CPU_GPU_reference": "같은 첫coarse끼리 비교했다. 기존8192공간분할의 최종 세 점/전체장/CMFGEN 분포와 혼동하지 않는다.",
+    "query_seconds_total": 18.393216773867607,
+    "tiles": [
+      {"first": 0, "count": 32, "seconds": 1.2696873787790537},
+      {"first": 624704, "count": 32, "seconds": 0.8726372979581356},
+      {"first": 624712, "count": 256, "seconds": 1.9681415930390358},
+      {"first": 624712, "count": 512, "seconds": 3.9591382443904877}
+    ],
+    "load_caveat": "직전 초기util29%와 이번4%는 다르므로 통제된 성능 A/B·확정 개선률이 아니다. 단일 질의/타일을 전체전ν/공간적응/전체장 수행시간으로 외삽하지 않는다.",
+    "memory": "작업공간1013090856B<1GiB·livepeak3876449412B·문맥/stack보수예약6813712384B·관측peak6584795136B·종료live4B다. 직전보다stack208B·보수예약31948800B가 늘었으며 전체 실패 계산의 최종peak는 아니다."
+  },
   "settlement": "35.236초·exit0을 보수36초로 한 번 차감했다. 원천 후보 누적365초·준비1435초 남음·잔여73.38683333334445GPUh/예약0이다. 기존 전ν 실패를 다시 돌리지 않았다.",
   "next": "중복 상계 비용 감소는 확보했으나 큰 단일-thread 적응 질의 비용은 남았다. 원래 bin 안 감쇠 다항식의 불필요한 고차 연산을 줄이는 구현을 먼저 CPU 독립 참조·같은 실제 표본으로 확인한다. 물리/반환 오차 기준은 유지하며 전체장으로 승격하지 않는다.",
   "root": "/gpfs/kjhan/cmfgen_runs/lumina_envelope_query_20261022-cwIcgC",
@@ -19,5 +33,5 @@
   "criteria": "기존/새 선택 경로를 독립 Gauss·고정밀 해석 참조와 비교하고 각각 반환 오차와 원 상대오차를 만족시킨다. 정확한0·subnormal·signed/gain·native/partial/blue·scale 회복·오류 canary를 포함한다. 같은 실제35열의 새/기존 값 차이는 합산 반환오차 내인지 확인하며 패널 수의 bit 동일성을 물리 수용 조건으로 바꾸지 않는다. CPU query Reader/관측시간·CUDA local/spill을 확인한 뒤 같은867열 이하 GPU 한정 시험으로 진전이 있는지 판단한다. 공유 성능/전ν ETA/최종장 수용은 없다.",
   "resources": "Lageunha CPU1·직접시험4GiB/300초·실제CPU16GiB/300초·개별CUDA컴파일16GiB/240초다. GPU 실행을 선택하면0번 한 장·원 free24GiB/host·device16GiB/활성1GiB·외부150초 내 단일 창·트리1회·총질의867열 이하를 유지한다. 실행 전 예약하고 실제 창만 정산한다. 같은 전체 실패 계산은 재시작하지 않는다.",
   "preservation": "새 격리 root에 입력/소스/바이너리/명령/결과를 고정한다. 원3bbce67·기존 실패·진단·타 작업을 보존한다. 후보가 원 오차를 위반하거나 비용을 줄이지 못하면 생산 경로로 채택하지 않는다.",
-  "reproduction": "새 root의 compile/host/CPU/GPU 명령과 해시를 후속 기록한다. 실제 비교는 원 baseline9d978eec…에 봉인된 동일native90/NF1115020/J0=I0=0/fullSR13003 첫coarse다. 전체장·SE/RE는0이다."
+  "reproduction": "root의compile.sh/host-test.sh/native-test.sh/cxx-envelope.sh/cpu-cost.sh/gpu-cost.sh/gpu-window.py와execution.sha256에 명령/소스/바이너리/CPU결과를 고정했다. strict CUDA13·GNU13·EAGER·단일CPU/스레드다. 원baseline9d978eec…의 입력/봉인 해시를 검사한 동일native90/NF1115020/J0=I0=0/fullSR13003 첫coarse다. 각 실제 GPU 대조의 T/S/E를 CPU 결과와 읽기전용으로 재계산했다. 재현은 새 root에서 같은 입력과 해시/비용을 고정하며 기존 결과를 덮어쓰지 않는다. 운전자 직접시험이며 외부 독립 감사/전ν 재현이 아니다. 전체장·SE/RE는0이다."
 }

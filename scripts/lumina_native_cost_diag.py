@@ -164,7 +164,8 @@ def gpu(root):
                         e=expected[column]
                         if e['code']!=0:continue
                         value=CompactMap.from_buffer_copy(raw[column-first].tobytes());met=compare(value,e)
-                        record['comparisons'].append(dict(column=column,met=met,first=first,count=count))
+                        record['comparisons'].append(dict(column=column,met=met,first=first,count=count,
+                            actual_t=scaled(value.transmission),actual_source=scaled(value.source),actual_error=scaled(value.source_error)))
                         if not met:raise ValueError('같은 coarse CPU/GPU 수치 기준 미달')
                     publish(target,record)
                 for column in baseline['columns']:query(column,1)
