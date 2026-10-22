@@ -75,6 +75,7 @@ class LinearDriver(GpuDriver):
     interval_limit_seconds=60.
     projection_bytes=0
     endpoint_cache=False
+    source_integrator=0
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
         return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
@@ -94,6 +95,11 @@ class LinearDriver(GpuDriver):
         actual=0 if endpoint is None else endpoint(provider.nf)
         if actual!=(4*provider.nf*8 if self.endpoint_cache else 0):
             raise ValueError('GPU driver와 바이너리의 끝점 캐시 비용이 다르다')
+        integrator=getattr(runtime.lib,'lumina_linear_cuda_source_integrator',None)
+        if integrator is not None:
+            integrator.argtypes=[];integrator.restype=I
+        if (0 if integrator is None else integrator())!=self.source_integrator:
+            raise ValueError('GPU driver와 바이너리의 원천 적분기가 다르다')
         if Path(cpu_library).resolve() != provider._binary or provider.identity.get('field', {}).get('role', '').startswith('REFERENCE'):
             raise ValueError('같은 native context와 자체 J 입력 필요')
         self.rt, self.provider, self.nf, self.ns, self.width = runtime, provider, provider.nf, provider.ns, block_width

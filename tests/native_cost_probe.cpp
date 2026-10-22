@@ -3,6 +3,9 @@
 #include "cmf_source_measure.hpp"
 #include "cmf_source_projection.hpp"
 #include "cmf_linear_endpoint_cache.hpp"
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+#include "cmf_native_bin_stream.hpp"
+#endif
 #include <algorithm>
 #include <chrono>
 #include <vector>
@@ -78,7 +81,12 @@ static int execute(const CMFLinearCudaPiece *p,int column,CMFLinearNativeMap *ou
         lumina_source_measure::Tree source={sources.data(),source_leaves,32,nf};
         lumina_characteristic::Profile<Reader> profile={reader,tree,local_column,offset,p->span,p->length,p->da-p->db};
         lumina_characteristic::Result r={};
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+        (void)source;
+        int status=lumina_native_bin::integrate(profile,Positive::zero(),1e-8,100000,r);
+#else
         int status=lumina_source_measure::integrate(profile,source,Positive::zero(),1e-8,100000,r);
+#endif
         auto finish=[&](int code){
             auto done=Clock::now();stats[0]=reads;stats[1]=build_reads;stats[2]=bytes;stats[3]=anchor;
             times[0]=std::chrono::duration<double>(ready-start).count();times[1]=std::chrono::duration<double>(done-ready).count();

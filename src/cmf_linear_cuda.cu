@@ -4,6 +4,12 @@
 #include "cmf_linear_endpoint_cache.hpp"
 #include "cmf_characteristic_linear.hpp"
 #include "cmf_linear_affine.hpp"
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+#if defined(CMF_GPU_WARP_MEASURE) || !defined(CMF_GPU_COMPACT_MEASURE) || !defined(CMF_GPU_ENDPOINT_CACHE)
+#error CMF_GPU_NATIVE_BIN_STREAM_requires_own_compact_endpoint_path
+#endif
+#include "cmf_native_bin_stream.hpp"
+#endif
 #ifdef CMF_GPU_COMPACT_MEASURE
 #ifndef CMF_GPU_SOURCE_MEASURE
 #error CMF_GPU_COMPACT_MEASURE_requires_CMF_GPU_SOURCE_MEASURE
@@ -82,6 +88,13 @@ extern "C" size_t lumina_linear_cuda_endpoint_bytes(int nf){
     return nf>=2&&nf<=2000000?(size_t)4*nf*sizeof(double):0;
 #else
     (void)nf;return 0;
+#endif
+}
+extern "C" int lumina_linear_cuda_source_integrator(void){
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+    return 1;
+#else
+    return 0;
 #endif
 }
 static bool valid_piece(const CMFLinearCudaPiece *p){
@@ -262,7 +275,9 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
     // 처음부터 청색 끝을 넘는 열도 원래 마지막ν의 상수 연장이다.
     if(i>=p.nf){profile.column=0;profile.exit_shift=p.offset+i;}
     lumina_characteristic::Result result;
-#ifdef CMF_GPU_SOURCE_MEASURE
+#ifdef CMF_GPU_NATIVE_BIN_STREAM
+    int code=lumina_native_bin::integrate(profile,Positive::zero(),relative,maximum,result);
+#elif defined(CMF_GPU_SOURCE_MEASURE)
     const SourceNode *source=reinterpret_cast<const SourceNode *>(nodes+2*p.leaves);
 #ifdef CMF_GPU_COMPACT_MEASURE
     lumina_source_measure::Tree measure={source,p.source_leaves,32,p.nf};
@@ -273,7 +288,13 @@ __global__ static void source_maps(CMFLinearCudaPiece p,const Node *nodes,double
 #else
     int code=lumina_characteristic::integrate(profile,Positive::zero(),relative,maximum,result);
 #endif
-    if(code){atomicCAS(status,0,100+code);return;}
+    if(code){
+#ifdef CMF_GPU_FAILURE_COLUMN
+        atomicCAS(status,0,100000000+8*(p.begin+i)+code);return;
+#else
+        atomicCAS(status,0,100+code);return;
+#endif
+    }
     lumina_linear::Integral tau;Positive t;
     if(!profile.tau(1.,tau)||!Positive::from_log(-tau.value,t)){atomicCAS(status,0,43);return;}
     using lumina_linear_affine::encode;

@@ -16,6 +16,8 @@ size_t lumina_linear_cuda_map_bytes(void);
 size_t lumina_linear_cuda_local_bytes(void);
 /* 선택형 끝점 평면의 실제 추가 비용. 기본 바이너리는0이다. */
 size_t lumina_linear_cuda_endpoint_bytes(int nf);
+/* 원천 적분기 신원: 기존0, native 경계별 선택1. 저장 맵 ABI와 별개다. */
+int lumina_linear_cuda_source_integrator(void);
 int lumina_linear_cuda_workspace(size_t *local);
 int lumina_linear_cuda_plan(const CMFNodalDenseView *view,const CMFNodalLocation *locations,
     double length,double h,double da,double db,int begin,int count,int block,CMFLinearCudaPiece *out);

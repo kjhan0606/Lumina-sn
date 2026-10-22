@@ -34,4 +34,12 @@ Astra `01a16196-487e-78a3-b322-d14fbcdc00c7`의 공개 추상 계획 검토는 �
 
 고정 root에서 `bash compile.sh "$PWD"`로 기존 바이너리 해시를 검증한다. CPU 준비는 lageunha에서 `PYTHONPATH="$PWD/scripts" python3 -B scripts/lumina_gpu_endpoint_long.py prepare "$PWD"`로 수행한다. 실행은 `sbatch --output="$PWD/slurm-%j.out" actual.sh "$PWD" <gpu-local-plan.json의 SHA256>` 단회다. 결과 재현은 봉인 계획/manifest와 NPY 해시·기존 독립3열 차이·sacct 본할당을 대조하는 것이며 수송을 자동 재실행하는 명령이 아니다.
 
-계획 SHA256 `35714139374666e490ca5e1f8e68a0e9be7ca3ff53dd2a61bb1198dea3204b1d`로 봉인했다. Slurm **433944**를 단 한 번 제출했으며 최초 상태는 **PENDING/Resources**다. 아직 수송 결과는 없다. 현재 판정은 준비 완료/물리 목표 미완이다.
+계획 SHA256 `35714139374666e490ca5e1f8e68a0e9be7ca3ff53dd2a61bb1198dea3204b1d`로 봉인했다. Slurm **433944**를 단 한 번 제출했다. 최초 PENDING 뒤 syn103/A10080PCIe에서12:20:27~12:23:51 실행, **204초/FAILED/1:0**으로 종료했다. Python202.8919646초이며 완성벡터는 없다.
+
+### 종료 판단: 시간 부족이 아니라 원천 적분의 분할 표현 한도
+
+장치205는 `cmf_gpu_sync`의100 + `source_maps`의100 + `SUBDIVISION_PRECISION_LIMIT`5다. 내부 분할 깊이/구간 표현 한도이며 CUDA 자체 오류205나3600초 시간 제한이 아니다. 최종 작업량24069512는512NF=570890240보다 작고, peak RSS3007260KiB/수송 전 활성1048771496B와 예약+live13540089348B도 한도 이내였다. 최종 계산 중 장치peak는 미측정이다. 실패한 열/조각은 기존 상태값에 없어 아직 특정하지 못했다. 최초 coarse/양쪽 half-map3개가 비동기 제출된 뒤 동기화에서 오류를 읽었으며 초기 replay 완료 증거도 없다.
+
+최종 정확도·독립3열·CMFGEN 물리 목표는 **미판정/미완**, 전주파수 완결은 **미달**이다. 단순히 시간을 더 늘려 고칠 문제가 아니다. 동일 계산 자동 재시작 없이 원본과 실패를 보존한다. 반환 오차 기준을 완화하거나 실패 부분장을 정상 결과로 쓰지 않는다. 자체 종료판정은 **REWORK**다.
+
+종료 후 실행 manifest 검증의 불일치는0이다. 결과 SHA256 `cdc95be2d70f706774da2de55dda45634576490984369802046b6f0108563d90`, 본할당 기록 `ed4285d3a75cd7bed46809d2a07a09dbe6ab755d7df885b4cf5c51e010e87352`를 확인했다. 본할당204초만 한 번 정산해 준비 누적1051초·전역 잔여73.1962777778GPUh/예약0이다. 재현 상태는 **오류 반환 경로/봉인 입력/할당 정산 확인**, 실패 열별 수치 재현은 아직 미완이다.

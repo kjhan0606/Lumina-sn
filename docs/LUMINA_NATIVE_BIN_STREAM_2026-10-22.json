@@ -1,0 +1,76 @@
+{
+  "schema": "lumina-native-bin-stream-candidate-v1",
+  "status": "REWORK_GPU_SUBDIVISION_PRECISION_LIMIT_NO_COMPLETE_VECTOR",
+  "final_goal": "ACTIVE_NOT_MET",
+  "root": "/gpfs/kjhan/cmfgen_runs/lumina_native_bin_GPU_20261022-4EK39T",
+  "initial_CPU_trial": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_native_bin_stream_20261022-qTtJh2",
+    "status": "PRESERVED_ACTUAL35_SIX_MAP_FAILURES",
+    "direct_tests": "23통과지만 실제35열 중575494/624712/624968/625223/719367은분할표현한도105,755335는작업한도103으로실패했다. 합성통과를실제통과로표시하지않았다.",
+    "cause": "최종 출력의 상대오차 기준을 각 작은 내부 bin에도 강제하면서 감쇠된 미소 기여에 과도한 분할이 필요했다. 첫 시험 결과를 덮어쓰지 않았다."
+  },
+  "corrected_CPU_trial": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_native_bin_budget_20261022-KdVw2W",
+    "status": "CPU_COARSE_COMPARISON_MET_NOT_FIELD",
+    "direct_tests": "25통과/1.91초. 같은 출력 내 매우 불투명한 상류 및1e-80약한원천 시험을 포함했다.",
+    "actual": "원 고정35열 전부 T/S 상대차3e-10·합산 반환오차·각 E<=1e-8 S를 충족했다. coarse만이며 독립 공간미세/전주파수/전체장/CMFGEN 수용이 아니다.",
+    "source_budget": "같은 출력의8개 구간 원천하한·이미 누적된 원천을 사용한다. 출력 절대예산을 du로 배분하고 하류T상계로 나누어 내부 허용량을 정한다. 나눗셈은 독립 Positive scale이며 안전하게 반으로 줄인다. 다른 주파수 밝기나 intensity floor는 쓰지 않고 버린상계·합성오차를 전부 포함해 마지막 E<=rtol I를 유지한다.",
+    "query_seconds_before": 0.122842523,
+    "query_seconds_after": 0.061485547,
+    "query_readers_before": 1205042,
+    "query_readers_after": 582644,
+    "elapsed_seconds": 13.502889264374971,
+    "comparison_sha256": "2dc5aa8a4aa57298c373090023ca3b7fbb6e4c861698d4fa7a530d09526d4a1f",
+    "library_sha256": "904a7b0033503746d4ad6c207e358654f38634231029c4bf3c23cfb55edb700a",
+    "limits": "공유 CPU 단발 표본 관측이므로2배 변화는GPU/전주파수 속도보장이 아니다. 투명영역의1패널을1414bin으로나누는비용은오히려커질수있다. 기존205 GPU실패의열/조각은미특정이며이번35통과가그실패해결을증명하지않는다."
+  },
+  "GPU_candidate": {
+    "state": "TERMINAL_FAILED_SUBDIVISION_PRECISION_LIMIT",
+    "job_id": "433954",
+    "terminal_state": "FAILED/1:0",
+    "actual_python_seconds": 11.564328830689192,
+    "allocated_gpu_seconds": 13,
+    "device_tests": "13통과/0.48초. 이후동일할당실제수송은205분할표현한도오류로종료했다. 소형통과를원수송통과로표시하지않는다.",
+    "completion": "완성벡터/최종출력별오차비/독립미세3열은미판정이며시간·512NF·메모리상한도달이아니다. 같은전체계산자동재시작없이원본과실패를보존한다.",
+    "reproducibility": "봉인manifest불일치0·실제할당13초정산·205상태코드경로확인. 특정실패열/조각은아직미특정이다. coarse만검증했던CPU35열을양쪽half로넓혀재현중이다.",
+    "result_sha256": "eda4e77ced1813c93036820c76ae71706419add030a7f7b4a61b983bf7ba4a88",
+    "device_test_sha256": "b94c4fc9491fb942e308345ad71f21165b85236fa60db7a0af78fa746bc64a50",
+    "host_tests": "230통과/5장치전용skip·10.54초. 초기 파일명 오타로0시험인 로그와 무관한협력경로 격리 전230통과 로그도 보존했다.",
+    "plan_sha256": "079416a686d931b4789a807c27ee2dfdcc3a82dd537165abbcd6427c7f4e99c6",
+    "library_sha256": "d2d219cc6c19508993daed0b2db2780be45677d5f11c7782148d51be491b7e6a",
+    "build": "lageunha CPU1·16GiB에서 기본경로와 선택경로 strict sm80/ffp-contract=off/fmad=false/ftz=false/prec-div/prec-sqrt 컴파일을 완료했다. GPU 계산은 아직 실행하지 않았다.",
+    "kernel_resources": "source_maps stack4064B(이전8528B), register255, spill store45558B/load31028B. 지역 상태 감소가실제성능통과를뜻하지않는다.",
+    "integration": "CMF_GPU_NATIVE_BIN_STREAM과 source_integrator=1인 명시 driver만 연결한다. 기존0/옛symbol없음과 새1의혼용은할당전거부한다. 진행중인warp협력구현은격리실행소스에서제외했고기존작업트리변경은보존한다.",
+    "planned_envelope": "GPU1/CPU1/host-device16GiB/활성1048771496B<1GiB/원512NF. 기존준비1051초를보존하고새할당3600초까지누적4651초로명시확대한다. 컴파일은CPU-only이고장치직접시험과수송을한할당3600초안에포함한다. 구간3400/내부3500/외부3550은중첩상한이다. 10초는보고하되이번국소정확도차단과분리하고전체장/SE_RE/자동재시도0이다.",
+    "planning": "Astra01a161a5-e993-7990-9eda-3395417b1ccf 공개추상계획자문완료·종료. 실제35통과와원GPU실패해결을구별하고누적시간상한/시험포함/비용정산을명시하며전체장제외의수용범위를지적했다. 실행승인/수치수용판정이아니다.",
+    "decision_enabled": "원 전주파수 공간적응 완결과 독립3열·출력별오차·실측비용을 근거로 후속 자기일관 계산에 사용할 후보인지 판단한다. 최종 물리목표 달성으로 대체하지 않는다."
+  },
+  "objective": "원13003 전주파수 공간적응 수송을 원 정확도와 완결 비용으로 실행할 수 있도록 반복 범위/누적 광학깊이 질의를 줄인다. 최종 목표는 자체 복사장·Si/S 이온분포·스펙트럼·물리량의 CMFGEN 동질성이다.",
+  "scope": "원 native logν-index 보간·공간선형 재구성·원 Reader/반경/ES×J·signedχ·fullSR를 보존한다. native 경계마다 정확한χ/η quadratic과τ cubic을 만들고, 한 bin 안의 적응 양의 원천 적분과 순서맵을 합성한다. 최종 계수 양끝의 직선 근사를 새로 넣지 않는다.",
+  "planning": {
+    "agent": "Astra 01a16184-823e-7bc2-abe2-4be90cb21170",
+    "state": "COMPLETED_CLOSED",
+    "assessment": "native 경계 분리/동일 수송맵 합성은 물리를 바꾸지 않는다. 다만ν/logν 보간 좌표를 구별하고 작은 값/이득 회복·전달률 불확실성을 포함한 합성 오차·두꺼운 bin 내부 세분화를 보존해야 한다. 실행 승인/수치 수용 판정은 아니다.",
+    "coordinate_resolution": "현재 cmf_linear_moments.hpp의 at는 position.bin/fraction으로 native 값을 선형 혼합한다. Profile.position은 offset+span*u를 해당 인덱스로 바꾸며 CUDA plan은 shift=db/h,span=(da-db)/h를 사용한다. 즉 새 코드의 quadratic 전제는 기존logν-index 선형 보간에만 적용한다. 실제ν에서 새 선형 보간을 한 것이 아니다.",
+    "information_scope": "공개 추상 수학 문제만 전달했다. 원 소스/실험 자료/공유문맥 열람이나 도구 사용은 의뢰하지 않았다."
+  },
+  "changes": ["한 bin의 phase와 양의 source control을 한 번 구성", "패널마다 범위트리/누적τ를 재질의하는 대신 작은 cubic/quadratic을 제한", "두꺼운 bin은 기존 깊이/작업 한도에서 내부 세분화하고 버린 상계를 오차에 포함", "출구u0→입구u1로 만나는 새 상류맵을 compose(upstream,downstream) 순서로 합성", "하류T상계·τ오차·합성반올림과 제거원천 오차를 함께 전파", "원 전체τ 한 번으로 T의 기존 표현과 오차를 보존"],
+  "owner": "운전자 Codex",
+  "inputs": "기존 M70/native90/NF1115020/epoch1683072/J0=I0=0/fullSR13003·고정35열 및8192공간분할 독립3열. 원 입력·기하·실패·참조는 변경하지 않는다.",
+  "acceptance": {
+    "direct": "독립 native-bin Gauss/Decimal 극한·signedχ·약한 원천/가변subnormal 회복·순서·참0·실패canary를 확인한다. CPU 고정35열에서 원 T/S 상대차3e-10·합산 반환오차·각 원천1e-8을 충족해야 한다. 패널 수/같은bit는 새 분할 알고리즘의 수용 기준이 아니다.",
+    "outcome": "실제 전주파수 완성 벡터·주파수별 최종 추정오차비1 이하·독립 참조3열 각각/최대정규화차1e-4·D2H10초를 구분해 보고한다. 작은 통과는 전체장/SE/RE·생산Si/S율·CMFGEN 최종 목표를 대신하지 않는다.",
+    "unchanged": "원천1e-8·공간1e-5·host/device16GiB·활성 적분1GiB·원512NF 구조예산·자동재시도0을 보존한다. 최초CPU계획의 내부140/구간120/외부150/준비1800초는 이후 사용자 시간확대 지시로 대체됐다. GPU_candidate.planned_envelope가 이 단회의 최신시간/비용판정이다."
+  },
+  "resource_envelope": {
+    "CPU_direct": "lageunha CPU1·4GiB·180초 이내",
+    "CPU_actual": "lageunha CPU1·16GiB·기존270초 내부/300초 외부·고정35열 단회",
+    "GPU_started": true,
+    "current_GPU_attempt": "433954·새후보단회제출. 실제결과는아직미판정이다. 아래705/1095는최초CPU조사당시이력이며현자원정본은LUMINA_GPU_RESOURCE_LEDGER_2026-10-21.json이다.",
+    "combined_preparation_GPU_seconds_before": 705,
+    "remaining_preparation_seconds_before": 1095,
+    "reserved_GPUh": 0
+  },
+  "preservation": "새 root/명시적 선택 후보만 변경한다. 기본 코어·기존 실패·물리 입력은 보존한다. CPU 정확도/실제 비용을 먼저 대조하고 같은 실패 수송을 자동 반복하거나 시간·오차 기준을 완화하지 않는다.",
+  "reproduce": "tests/native_bin_stream_probe.cpp를 strict C++17/ffp-contract=off로 빌드해 test_lumina_native_bin_stream.py를 실행한다. 같은 tests/native_cost_probe.cpp의 CMF_GPU_NATIVE_BIN_STREAM 선택으로 원 실제35열을 lumina_native_cost_diag.py cpu에서 계산하고 compare_lumina_native_cost.py로 대조한다. GPU는 아직 실행하지 않았다."
+}
