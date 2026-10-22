@@ -40,3 +40,40 @@ def bdf_p0_segment(dlognu, length, drift, chi, eta, incident,
             np.any(result.y[:, -1] < 0):
         raise ValueError('강성 상풍 기준해 실패 또는 음수')
     return result.y[:, -1], dict(nfev=result.nfev, nlu=result.nlu)
+
+
+def bdf_p0_segment_nonuniform(log_frequency, length, drift, chi, eta, incident,
+                              rtol=1e-8, atol=1e-15):
+    """증가하는 실제 logν 격자의 한 고정계수 P0 구간 기준해.
+
+    청색 이웃 결합은 각 적색 빈 k의 실제 간격 x[k+1]-x[k]를 쓴다.
+    이 함수는 CMFGEN의 Bézier 공간 SC나 전체 경로를 대체하지 않는다.
+    """
+    x = np.asarray(log_frequency, dtype='f8')
+    chi = np.asarray(chi, dtype='f8')
+    eta = np.asarray(eta, dtype='f8')
+    incident = np.asarray(incident, dtype='f8')
+    n = len(incident)
+    if (n < 2 or n > 8192 or any(a.shape != (n,) for a in (x, chi, eta)) or
+            not all(np.isfinite(a).all() for a in (x, chi, eta, incident)) or
+            np.any(np.diff(x) <= 0) or np.any(eta < 0) or
+            np.any(incident < 0) or
+            not np.isfinite([length, drift, rtol, atol]).all() or
+            length < 0 or drift < 0 or (length == 0 and drift != 0) or
+            not 0 < rtol <= 1e-3 or not 0 < atol <= 1e-8):
+        raise ValueError('소형 유한 비등간격 P0 상풍 기준 입력 필요')
+    if length == 0:
+        return incident.copy(), dict(nfev=0, nlu=0)
+    coupling = drift / np.diff(x)
+    diagonal = -(chi * length + 3 * drift)
+    diagonal[:-1] -= coupling
+    matrix = diags((diagonal, coupling), (0, 1), shape=(n, n), format='csc')
+    source = eta * length
+    if not np.isfinite(matrix.data).all() or not np.isfinite(source).all():
+        raise ValueError('비등간격 이산 연산자 비유한')
+    result = solve_ivp(lambda _, y: matrix @ y + source, (0., 1.), incident,
+                       method='BDF', jac=matrix, rtol=rtol, atol=atol)
+    if not result.success or not np.isfinite(result.y).all() or \
+            np.any(result.y[:, -1] < 0):
+        raise ValueError('비등간격 상풍 기준해 실패 또는 음수')
+    return result.y[:, -1], dict(nfev=result.nfev, nlu=result.nlu)

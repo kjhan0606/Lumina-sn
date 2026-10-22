@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from lumina_upwind_p0_bdf import bdf_p0_segment
+from lumina_upwind_p0_bdf import bdf_p0_segment, bdf_p0_segment_nonuniform
 from lumina_upwind_p0_oracle import exact_p0_segment
 
 
@@ -49,3 +49,35 @@ def test_invalid_negative_emission_rejected():
     with pytest.raises(ValueError):
         bdf_p0_segment(.01, 1., 0., np.zeros(3), -np.ones(3),
                        np.ones(3))
+
+
+def test_nonuniform_bdf_reduces_to_existing_uniform_operator():
+    n = 24
+    x = np.arange(n, dtype='f8') * .01
+    chi = np.linspace(.05, 2., n)
+    eta = np.full(n, .02)
+    incident = 1. + .2 * np.sin(np.arange(n))**2
+    old, _ = bdf_p0_segment(.01, 1., .04, chi, eta, incident,
+                            rtol=1e-10, atol=1e-14)
+    new, _ = bdf_p0_segment_nonuniform(x, 1., .04, chi, eta, incident,
+                                       rtol=1e-10, atol=1e-14)
+    np.testing.assert_allclose(new, old, rtol=2e-12, atol=2e-12)
+
+
+def test_nonuniform_two_bin_transient_matches_analytic_solution():
+    x = np.array([0., .037])
+    drift, length = .019, 1.
+    chi = np.array([.1, 4.])
+    lam = drift / (x[1] - x[0])
+    low, blue = chi[0] + 3 * drift + lam, chi[1] + 3 * drift
+    expected = lam * (math.exp(-blue) - math.exp(-low)) / (low - blue)
+    got, _ = bdf_p0_segment_nonuniform(x, length, drift, chi,
+                                       np.zeros(2), np.array([0., 1.]),
+                                       rtol=1e-10, atol=1e-14)
+    assert got[0] == pytest.approx(expected, rel=2e-8)
+
+
+def test_nonuniform_frequency_order_is_required():
+    with pytest.raises(ValueError, match='비등간격'):
+        bdf_p0_segment_nonuniform([0., .02, .02], 1., .1,
+                                  np.ones(3), np.ones(3), np.ones(3))
