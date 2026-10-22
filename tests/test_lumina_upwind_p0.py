@@ -60,3 +60,20 @@ def test_blue_first_bin_has_zero_previous_frequency_coupling(segment):
 def test_invalid_emission_is_not_clipped(segment):
     with pytest.raises(ValueError):
         segment(.01,1.,0.,np.zeros(8),np.full(8,-1.),np.zeros(8))
+
+
+def test_vacuum_blue_to_red_drift_converges_under_frequency_refinement(segment):
+    drift=.1;steps=256;length=1e12
+    def profile(x):
+        return 2.+.5*np.exp(-((x-.4)/.06)**2)
+    errors=[]
+    for nf in (64,128,256):
+        x=np.linspace(0.,1.,nf);h=x[1]-x[0]
+        value=profile(x)
+        zero=np.zeros(nf)
+        for _ in range(steps):
+            value=segment(h,length/steps,drift/steps,zero,zero,value)
+        expected=np.exp(-3*drift)*profile(x+drift)
+        errors.append(float(np.max(np.abs(value-expected))/np.max(expected)))
+    assert errors[0]>errors[1]>errors[2]
+    assert errors[-1]<.03
