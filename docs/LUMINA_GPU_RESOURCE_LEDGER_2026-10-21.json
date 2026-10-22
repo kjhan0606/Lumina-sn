@@ -100,6 +100,18 @@
   "remaining_before_new_reservations_GPUh": 72.21433333334441,
   "current_reserved_GPUh": 0.9486111111111111,
   "remaining_after_current_reservations_GPUh": 71.2657222222333,
+  "next_full_frequency_execution_policy": {
+    "state": "USER_AUTHORIZED_CODE_TESTED_NOT_LAUNCHED_NOT_RESERVED",
+    "interval_seconds": 14400,
+    "local_internal_seconds": 14500,
+    "external_wall_seconds": 14600,
+    "maximum_parent_seconds": 14700,
+    "maximum_parent_GPUh": 4.083333333333333,
+    "local_full_vectors_total": 4096,
+    "new_reserved_GPUh": 0,
+    "condition": "현재 flx1en은 변경/중단/중복하지 않는다. 종료 후 실제 누적 GPU초를 명시하고 새 실행 직전에 총144GPUh 안에서 예약한다. 성공한 동일 계산은 재실행하지 않는다.",
+    "preserved": "GPU1/CPU1/host-device16GiB/활성1GiB/원정확도/원입력/패널상한/자동재시도0.4096NF는 누적 작업량이며 동시 할당량이 아니다."
+  },
   "collapsed_frequency_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_collapse_GPU_20261022-flx1en",
     "state": "DEVICE30_AND_ACTUAL541362_FALLBACK_MET_FULL_INTERVAL_RUNNING",

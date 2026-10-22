@@ -1,5 +1,5 @@
 #!/bin/bash
-# 호출자는 부모전체를 timeout -k5 3410으로 제한한다. 총3415초 이내다.
+# 기본 부모 timeout -k5 3410. 세 번째 인자가 있으면 -k5 14695(총14700초).
 source /etc/profile
 module purge
 module load gnu13 cuda/13.0.2
@@ -11,6 +11,13 @@ test ! -e gpu-local.started
 exec 9>/tmp/lumina_hybrid_ada_GPU-42b3367f.lock
 flock -n 9
 plan_sha=$2
+extended_args=()
+actual_seconds=3350
+if test "$#" -eq 3; then
+    extended_args=(--extended-after-gpu-seconds "$3")
+    actual_seconds=14600
+fi
+test "$#" -ge 2 && test "$#" -le 3
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CUDA_MODULE_LOADING=EAGER
 export CUDA_VISIBLE_DEVICES=0 PYTHONPATH="$PWD/scripts"
@@ -30,9 +37,9 @@ timeout -k 5 20 python3 -B -m pytest -x -p no:cacheprovider -q \
     tests/test_lumina_gpu_compact_device.py tests/test_lumina_gpu_hybrid_device.py >device-test.log 2>&1
 code=$?;printf '%s\n' "$code" >device-test.exit
 if test "$code" -ne 0; then printf '%s\n' "$code" >parent.exit;exit "$code";fi
-timeout -k 5 35 python3 -B scripts/lumina_gpu_collapse_actual.py check "$PWD" >gpu-cost.log 2>&1
+timeout -k 5 35 python3 -B scripts/lumina_gpu_collapse_actual.py check "$PWD" "${extended_args[@]}" >gpu-cost.log 2>&1
 code=$?;printf '%s\n' "$code" >checks.exit
 if test "$code" -ne 0; then printf '%s\n' "$code" >parent.exit;exit "$code";fi
-timeout -k 10 3350 python3 -B scripts/lumina_gpu_collapse_actual.py run gpu-local-plan.json --sha256 "$plan_sha"
+timeout -k 10 "$actual_seconds" python3 -B scripts/lumina_gpu_collapse_actual.py run gpu-local-plan.json --sha256 "$plan_sha" "${extended_args[@]}"
 code=$?;printf '%s\n' "$code" >parent.exit
 exit "$code"

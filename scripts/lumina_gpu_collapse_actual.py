@@ -19,6 +19,22 @@ CPU=Path('/gpfs/kjhan/cmfgen_runs/lumina_collapse_fix_20261022-r7el0K')
 CPU_SHA='7e1736a1d4c2a9bd7c1a4facf6a6d176aa38f4cc1aa96fa4770edbb429cd1729'
 
 
+def extend_execution_limits(previous_gpu_seconds):
+    """다음 봉인 실행만 확대한다. 이전 부모의 실제 정산초를 명시한다."""
+    if type(previous_gpu_seconds) is not int or previous_gpu_seconds<4586:
+        raise ValueError('이전 준비 계산의 실제 누적 GPU초가 필요하다')
+    class ExtendedDriver(base.HybridDriver):
+        interval_limit_seconds=14400.
+    local.GpuDriver=ExtendedDriver
+    local.SCHEMA='lumina-collapsed-frequency-position-user-extended-4h-v1'
+    local.LIMITS=dict(local.LIMITS,prep_window_seconds=14700,
+        already_allocated_gpu_seconds=previous_gpu_seconds,
+        cumulative_preparation_limit_seconds=previous_gpu_seconds+14700,
+        interval_seconds=14400,local_internal_seconds=14500,external_wall_seconds=14600,
+        slurm_allocation_seconds=14700,local_full_vectors_total=4096,
+        user_extended_full_frequency=True)
+
+
 def evidence(root):
     base.evidence(root)
     path=CPU/'cpu-three-pieces.json'
@@ -41,13 +57,20 @@ def prepare(root):
             correction='u0<u1/span>0인데두native좌표가완전히같을때만기존PRECISION_LIMIT4. 일반INVALID는2유지.',
             direct='원35열/867질의+실제541362세조각/CPU-native3질의. 후자는구현대조이지독립물리참조가아님.',
             accuracy='원천1e-8/공간1e-5/완성출력별추정오차비1/독립미세3열각1e-4유지.10초는비용보고.',
-            resources='이전4586GPU초+이번최대3415=누적8001초. 장치시험/대조/수송은같은부모안.32NF준비를원512NF에서차감.',
+            resources=(f"이전{local.LIMITS['already_allocated_gpu_seconds']}GPU초+"
+                f"이번최대{local.LIMITS['prep_window_seconds']}="
+                f"누적{local.LIMITS['cumulative_preparation_limit_seconds']}초. "
+                f"장치시험/대조/수송은같은부모안.32NF준비를"
+                f"{local.LIMITS['local_full_vectors_total']}NF에서차감."),
             field_calls=0,SE_RE_updates=0,no_automatic_retry=True))
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('mode',choices=('prepare','check','run'));parser.add_argument('path')
+    parser.add_argument('--extended-after-gpu-seconds',type=int,
+        help='이전 부모 종료 후 정산한 누적 GPU초. 다음 봉인 단회에 4시간/4096NF 적용')
     parser.add_argument('--sha256');a=parser.parse_args();root=Path(a.path).resolve()
+    if a.extended_after_gpu_seconds is not None:extend_execution_limits(a.extended_after_gpu_seconds)
     if a.mode=='prepare':prepare(root)
     elif a.mode=='check':
         evidence(root)
