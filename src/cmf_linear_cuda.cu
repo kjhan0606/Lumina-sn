@@ -483,7 +483,8 @@ __global__ static void forward(int n,int width,int stride,int first,int count,co
     }
 }
 __global__ static void backward(int n,int width,int block_width,double relative,int first,int count,
-    const Local *results,double *output,double *scores,double *ratios,Positive *frequency_errors,int *status)
+    const Local *results,double *output,double *scores,double *ratios,Positive *frequency_errors,
+    const CMFLinearPositive *incident_errors,int *status)
 {
     int f=first+blockIdx.x*blockDim.x+threadIdx.x;if(f>=first+count||*status)return;
     Local last=results[(size_t)(n-1)*width+f];Positive tolerance,tail=Positive::one(),geometry=Positive::zero(),a,b;
@@ -499,12 +500,15 @@ __global__ static void backward(int n,int width,int block_width,double relative,
         atomicCAS(status,0,46);return;
     }
     double value=last.value.value();if(!lumina_ordered::finite(value)){atomicCAS(status,0,46);return;}
-    output[f]=value;frequency_errors[f]=a;
     maximum(ratios+f/block_width,lumina_linear_affine::ratio(a,tolerance));
+    if(incident_errors&&!lumina_linear_affine::carry_incident_error(a,tail,incident_errors[f],a)){
+        atomicCAS(status,0,46);return;
+    }
+    output[f]=value;frequency_errors[f]=a;
 }
-extern "C" int lumina_linear_cuda_replay(int n,int width,int stride,int block_width,double relative,
+static int replay_impl(int n,int width,int stride,int block_width,double relative,
     const void *const *maps,const double *initial,double *output,void *raw_results,double *scores,
-    double *ratios,void *errors,int *status)
+    double *ratios,void *errors,const void *incident_errors,int *status)
 {
     using lumina_ordered::finite;
     if(n<1||n>4096||width<1||width>2000000||stride<width||stride>2000000||
@@ -522,10 +526,25 @@ extern "C" int lumina_linear_cuda_replay(int n,int width,int stride,int block_wi
     for(int first=0;first<width;first+=chunk){
         int count=std::min(chunk,width-first);
         backward<<<(count+threads-1)/threads,threads>>>(n,width,block_width,relative,first,count,results,output,scores,
-            ratios,static_cast<Positive *>(errors),status);
+            ratios,static_cast<Positive *>(errors),static_cast<const CMFLinearPositive *>(incident_errors),status);
         if(cudaGetLastError()!=cudaSuccess)return 2;
     }
     return 0;
+}
+extern "C" int lumina_linear_cuda_replay(int n,int width,int stride,int block_width,double relative,
+    const void *const *maps,const double *initial,double *output,void *raw_results,double *scores,
+    double *ratios,void *errors,int *status)
+{
+    return replay_impl(n,width,stride,block_width,relative,maps,initial,output,raw_results,scores,
+        ratios,errors,nullptr,status);
+}
+extern "C" int lumina_linear_cuda_replay_uncertain(int n,int width,int stride,int block_width,double relative,
+    const void *const *maps,const double *initial,double *output,void *raw_results,double *scores,
+    double *ratios,void *errors,const void *incident_errors,int *status)
+{
+    if(!incident_errors)return 1;
+    return replay_impl(n,width,stride,block_width,relative,maps,initial,output,raw_results,scores,
+        ratios,errors,incident_errors,status);
 }
 __global__ static void weighted(int nf,const double *weights,const double *intensity,const Positive *errors,
     Positive *pairs,int *status)

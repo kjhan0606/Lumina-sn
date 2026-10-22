@@ -38,6 +38,12 @@ int lumina_linear_cuda_query_range(const CMFLinearCudaPiece *piece,const void *n
 int lumina_linear_cuda_replay(int n,int width,int stride,int block_width,double relative,
     const void *const *maps,const double *initial,double *output,void *results,
     double *scores,double *slab_ratios,void *frequency_errors,int *status);
+/* incident_errors는 재구성까지 반영한 width개의 CMFLinearPositive 절대 오차다.
+ * scores/slab_ratios는 국소 mesh 오차만, frequency_errors는 전달된 입사 오차까지
+ * 포함한다. 이 API만으로 재구성/관측/전체장 오차까지 검증됐다고 할 수 없다. */
+int lumina_linear_cuda_replay_uncertain(int n,int width,int stride,int block_width,double relative,
+    const void *const *maps,const double *initial,double *output,void *results,
+    double *scores,double *slab_ratios,void *frequency_errors,const void *incident_errors,int *status);
 /* 임의 양의 가중치의 기계적 축약이다. 생산 PHOT 계수 여부는 caller가 봉인한다.
  * pairs는 ceil(nf/4096)×2개의 scaled(value,error); 실제 광흡수율은 완성 J에서만 산출한다. */
 int lumina_linear_cuda_weighted(int nf,const double *weights,const double *intensity,const void *errors,void *pairs,int *status);

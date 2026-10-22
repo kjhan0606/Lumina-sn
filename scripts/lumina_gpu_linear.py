@@ -155,16 +155,24 @@ class LinearDriver(GpuDriver):
             check(self.lib.lumina_linear_cuda_query(ct.byref(p), self.tree.address, 1e-8, 100000,
                 target.part(k*width*self.map_bytes, width*self.map_bytes).address, self.rt.status))
 
-    def replay(self, current, begin, width, work):
+    def replay(self, current, begin, width, work, *, incident_errors=None):
         if len(current)*width*LOCAL_BYTES > self.results.size or len(current)*width > 2097152:
             raise MemoryError('B 순서 replay 작업공간 한도')
         pointers = np.array([x.cache[1].address for x in current], dtype='u8'); self.rt.upload(self.pointers, pointers)
         work.take('replay_leaf_columns', len(current)*width)
-        check(self.lib.lumina_linear_cuda_replay(len(current), width, width, self.width, 1e-5,
+        arguments=(len(current), width, width, self.width, 1e-5,
             self.pointers.address, self.characteristic.part(begin*8, width*8).address,
             self.candidate.part(begin*8, width*8).address, self.results.address, self.scores.address,
             self.errors.part((begin//self.width)*8, ((width+self.width-1)//self.width)*8).address,
-            self.frequency_errors.part(begin*16, width*16).address, self.rt.status))
+            self.frequency_errors.part(begin*16, width*16).address)
+        if incident_errors is None:
+            check(self.lib.lumina_linear_cuda_replay(*arguments,self.rt.status))
+        else:
+            uncertain=getattr(self.lib,'lumina_linear_cuda_replay_uncertain',None)
+            if uncertain is None or incident_errors.owner is not self.rt:
+                raise ValueError('동일 장치의 입사 절대오차 버퍼와 지원 replay가 필요하다')
+            uncertain.argtypes=[I]*4+[D]+[P]*9;uncertain.restype=I
+            check(uncertain(*arguments,incident_errors.part(begin*16,width*16).address,self.rt.status))
 
     def interval(self, plan, index, work, *, max_seconds=60.):
         self.bound()

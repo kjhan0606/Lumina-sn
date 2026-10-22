@@ -3,7 +3,8 @@
 #include <vector>
 #include <cstring>
 template<class Raw> static int probe(int n,int width,const Raw *maps,const double *initial,
-    double relative,double *output,double *errors,double *ratios,double *scores)
+    double relative,double *output,double *errors,double *ratios,double *scores,
+    const CMFLinearPositive *incident=nullptr)
 {
     using namespace lumina_linear_affine;
     using lumina_ordered::finite;
@@ -28,7 +29,9 @@ template<class Raw> static int probe(int n,int width,const Raw *maps,const doubl
                 s[(size_t)row*width+f]=ratio(a,tol);
             }
             if(!sum(geometry,numerical,a)||!scale(value,64.*(n+1)*DBL_EPSILON,b)||!sum(a,b,a))return 2;
-            o[f]=value.value();e[f]=a.value();r[f]=ratio(a,tol);
+            o[f]=value.value();r[f]=ratio(a,tol);
+            if(incident&&!carry_incident_error(a,tail,incident[f],a))return 2;
+            e[f]=a.value();
         }
         std::memcpy(output,o.data(),width*sizeof(double));std::memcpy(errors,e.data(),width*sizeof(double));
         std::memcpy(ratios,r.data(),width*sizeof(double));std::memcpy(scores,s.data(),s.size()*sizeof(double));return 0;
@@ -41,4 +44,10 @@ extern "C" int lumina_linear_affine_probe(int n,int width,const CMFLinearNativeM
 extern "C" int lumina_compact_affine_probe(int n,int width,const lumina_linear_compact::Map *maps,const double *initial,
     double relative,double *output,double *errors,double *ratios,double *scores){
     return probe(n,width,maps,initial,relative,output,errors,ratios,scores);
+}
+extern "C" int lumina_compact_affine_uncertain_probe(int n,int width,const lumina_linear_compact::Map *maps,
+    const double *initial,double relative,double *output,double *errors,double *ratios,double *scores,
+    const CMFLinearPositive *incident){
+    if(!incident)return 1;
+    return probe(n,width,maps,initial,relative,output,errors,ratios,scores,incident);
 }

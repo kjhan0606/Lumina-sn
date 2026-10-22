@@ -19,6 +19,15 @@ LUMINA_AFFINE bool decode(CMFLinearPositive a,Positive &out){
     out={a.mantissa,a.exponent};return true;
 }
 LUMINA_AFFINE CMFLinearPositive encode(Positive a){return {a.mantissa,a.exponent};}
+/* 입사 오차는 현재 구간을 더 분할해도 사라지지 않는다. 국소 mesh 판정과
+ * 구별해, 완성 전달률 상계로 전파한 절대 오차에만 더한다. */
+LUMINA_AFFINE bool carry_incident_error(Positive local,Positive upper,
+    CMFLinearPositive incident,Positive &out){
+    Positive incoming,propagated,total;
+    if(!decode(incident,incoming)||!product(upper,incoming,propagated)||
+       !sum(local,propagated,total))return false;
+    out=total;return true;
+}
 LUMINA_AFFINE bool difference(Positive a,Positive b,Positive &out){
     if(a.mantissa==0){out=b;return true;}if(b.mantissa==0){out=a;return true;}
     if(a.exponent<b.exponent||(a.exponent==b.exponent&&a.mantissa<b.mantissa)){Positive t=a;a=b;b=t;}

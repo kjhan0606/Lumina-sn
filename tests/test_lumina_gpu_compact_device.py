@@ -133,6 +133,36 @@ def test_compact_device_replay_preserves_order_recovery_and_weak_failure(gpu):
         for b in reversed(buffers):b.close()
 
 
+def test_device_replay_carries_incident_absolute_error_without_changing_local_mesh_ratio(gpu):
+    uncertain=gpu.lib.lumina_linear_cuda_replay_uncertain
+    uncertain.argtypes=[ct.c_int]*4+[ct.c_double]+[ct.c_void_p]*9;uncertain.restype=ct.c_int
+    one=CPositive(.5,1);zero=CPositive()
+    maps=(CompactMap*6)(*[CompactMap(one,zero,zero,0.) for _ in range(6)])
+    buffers=[]
+    def allocate(size):
+        b=gpu.allocate(size);buffers.append(b);return b
+    try:
+        raw=np.frombuffer(maps,dtype='u1').copy();m=allocate(raw.nbytes);gpu.upload(m,raw)
+        pointers=allocate(8);gpu.upload(pointers,np.array([m.address],dtype='u8'))
+        initial=allocate(16);gpu.upload(initial,np.array([3.,0.]));out=allocate(16)
+        local=allocate(2*LOCAL_BYTES);scores=allocate(8);ratios=allocate(16);errors=allocate(32)
+        args=(1,2,2,1,1e-5,pointers.address,initial.address,out.address,
+            local.address,scores.address,ratios.address,errors.address)
+        check(gpu.lib.lumina_linear_cuda_replay(*args,gpu.status))
+        before=gpu.download(ratios,2)
+        m,e=np.frexp(1e-200)
+        raw_incoming=(CPositive*2)(CPositive(.875,3),CPositive(m,e))
+        incoming=allocate(32);gpu.upload(incoming,np.frombuffer(raw_incoming,dtype='u1').copy())
+        check(uncertain(*args,incoming.address,gpu.status))
+        np.testing.assert_array_equal(gpu.download(out,2),[3.,0.])
+        np.testing.assert_array_equal(gpu.download(ratios,2),before)
+        result=gpu.download(errors,(2,16),'u1')
+        bound=[CPositive.from_buffer_copy(row.tobytes()).positive().value() for row in result]
+        assert bound[0]>=7. and bound[1]>=raw_incoming[1].positive().value()>0.
+    finally:
+        for b in reversed(buffers):b.close()
+
+
 @pytest.mark.skipif(os.environ.get('LUMINA_COMPACT_RANGE_TEST')!='1',reason='범위 진단 바이너리 명시 선택 필요')
 def test_range_query_retains_original_indices_and_does_not_publish_outside_range(gpu):
     data=Input(gpu,70);p=Piece();buffers=[]
