@@ -13,8 +13,8 @@ from run_cmfgen_formal_primary import fields
 def compare(previous, captured, out, frequency_indices=(60714,60715)):
     if out.exists():
         raise FileExistsError('기존 장 비교 결과 보존')
-    if tuple(frequency_indices) not in ((60714,60715),(44360,44361)):
-        raise ValueError('검증하지 않은 formal packet 주파수 쌍')
+    if tuple(frequency_indices) not in ((60714,60715),(44360,44361),(40286,45481)):
+        raise ValueError('검증하지 않은 formal 계측 주파수 범위')
     g_old, old = fields(previous)
     g_new, new = fields(captured)
     try:

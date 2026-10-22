@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+import compare_cmfgen_center_fields as field_comparison
 from analyze_cmfgen_siii_compact_capture import BOUNDARY, BLUE_HEADER, HEADER, POINT, blue_state, records
 from prepare_cmfgen_formal_capture import module_source
 from prepare_cmfgen_siii_compact_capture import FIRST, LAST, compact_source, replace_subroutine
@@ -19,6 +20,15 @@ def test_compact_source_keeps_one_geometry_and_one_stream():
     assert source.count("FILE='siii_compact.bin'")==2
     assert source.count('LUMINASIIIRAYV1')==1
     assert source.count('IF(READING)STOP 86')==2
+
+
+def test_existing_numeric_field_comparison_accepts_siii_band(tmp_path,monkeypatch):
+    def entered(_):
+        raise RuntimeError('field-reader-reached')
+    monkeypatch.setattr(field_comparison,'fields',entered)
+    with pytest.raises(RuntimeError,match='field-reader-reached'):
+        field_comparison.compare(tmp_path/'old',tmp_path/'new',tmp_path/'result.json',
+                                 (FIRST,LAST))
 
 
 def test_subroutine_replacement_refuses_missing_or_ambiguous_target():
