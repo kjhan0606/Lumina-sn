@@ -84,6 +84,13 @@
     "result": "원 Reader의 동일 binary64 값 재사용은 물리 근사를 추가하지 않는다. 세대/기하 변경 때 재채움, query 종료 전 덮어쓰기 금지, 모든 동시 메모리 비용 포함이 필수다. 작은 통과는 원 전주파수/물리 목표를 대신하지 않는다.",
     "scope": "공개 추상 알고리즘 문제만 전달했다. 도구·로컬열람·원소스·실험자료는 제공하지 않았다. 실행 승인/실제 수치 수용이 아니다."
   },
+  "next_structure_evaluation": {
+    "agent": "Astra 01a1617f-a077-7f81-9471-a31aafa2e06d",
+    "status": "COMPLETED_CLOSED",
+    "scope": "도구·로컬 열람·사적 소스/실험자료 없는 공개 추상 알고리즘 계획 의견이다. 실제 코드 감사·병목 확인·물리 수용 판정이 아니다.",
+    "conditional_priority": "같은 노드·병합 순서를 쓰는 χ-only τ 질의가 먼저다. η 정보가 τ의 세분/중단/실패에 관여하지 않는지 운전자가 확인하고 signedχ·절댓값 오차·범위/기울기·깊이를 보존한다. warp 협력/작업 큐는 더 큰 후속 구조이며 우선순위가 뒤다.",
+    "outcome": "같은 물리·정확도·자원 계약에서 전범위 계산을 완결하고 독립 참조/총비용을 함께 판정하는 한 묶음으로 진행한다. 소형 시험이나 국소 가속만으로 완료하지 않는다."
+  },
   "preservation": "기존 root/실패/입력은 수정하지 않는다. 새 root에서만 증거를 만들고, 실패 시 같은 후보를 자동 반복하거나 시간·기준을 바꾸지 않는다.",
   "expected_evidence": ["CPU 직접시험", "원경로/선택 CUDA compile.log", "같은 실제35열 CPU 대조", "선택 장치 직접시험", "조건부 원13003 완성/종료 및 정확도/비용 분리 판정"],
   "reproduction": "격리 root의 scripts/build_lumina_endpoint_cache.sh로 strict sm80을 빌드한다. host 시험과 lumina_native_cost_diag.py cpu 및 compare_lumina_native_cost.py를 같은 source identity로 수행한다. GPU는 봉인된 계획·스크립트와 단회 한도에서만 실행한다.",
