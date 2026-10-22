@@ -115,6 +115,41 @@ LUMINA_MEASURE bool exponential_polynomial(const double *phase,double *coeff,dou
 }
 struct Integral {Positive value,error;int nodes;};
 
+/* 원래 한 bin의 감쇠 적분 전용이다. 기존8차 Taylor의 최대 차수와
+ * 양의 Bernstein 산술을 유지하며, 나머지가32eps 이하면 낮은 차수를 쓴다.
+ * 범위 끝에서8차로 끝나면 원래와 같은 나머지를 반환한다. 오차를 버리거나
+ * 외부 상대오차 기준을 바꾸지 않는다. 고차 측도 노드는 기존 경로다. */
+LUMINA_MEASURE bool exponential_polynomial_adaptive(const double *phase,double *coeff,int &polynomial_degree,
+    double &shift,double &tail){
+    double low=phase[0],high=phase[0];
+    for(int k=0;k<4;k++){
+        if(!finite(phase[k]))return false;
+        low=::fmin(low,phase[k]);high=::fmax(high,phase[k]);
+    }
+    double width=high-low;if(!finite(width)||width>.125)return false;
+    double exponential=::exp(width),remainder=width;int order=0;
+    while(order<8&&exponential*remainder>32.*DBL_EPSILON){
+        ++order;remainder*=width/(order+1.);
+    }
+    double h[4]={phase[0]-low,phase[1]-low,phase[2]-low,phase[3]-low};
+    double a[25]={1.},b[25];int m=0;
+    for(int level=order;level>=1;level--){
+        for(int k=0;k<=m+3;k++)b[k]=1.;
+        double denominator=(m+1.)*(m+2.)*(m+3.);
+        for(int k=0;k<=m;k++){
+            double weights[4]={
+                (m-k+1.)*(m-k+2.)*(m-k+3.)/denominator,
+                3.*(k+1.)*(m-k+1.)*(m-k+2.)/denominator,
+                3.*(k+1.)*(k+2.)*(m-k+1.)/denominator,
+                (k+1.)*(k+2.)*(k+3.)/denominator};
+            for(int j=0;j<4;j++)b[k+j]+=a[k]*(h[j]/level)*weights[j];
+        }
+        m+=3;for(int k=0;k<=m;k++)a[k]=b[k];
+    }
+    for(int k=0;k<=m;k++)coeff[k]=a[k];
+    polynomial_degree=m;shift=low;tail=exponential*remainder;return finite(tail);
+}
+
 /* pruning 전용 점별 상계다. 실제 감쇠 적분/원천 모멘트는 바꾸지 않는다.
  * 비음수 선형 보간의 hi와 공간 혼합을 쓴다. 보간/양의 산술의 경로는
  * 32회 미만이며256eps와 절대256*TRUE_MIN으로 보수적으로 감싼다.
@@ -183,12 +218,18 @@ LUMINA_MEASURE bool consume_linear(const Positive *a,const Positive *b,double t0
        !scaled(x,.5,x)||!scaled(y,.5,y)||!sum(x,y,e[1]))return false;
     double w[3]={1./3.,1./3.,1./3.};
     if(!constant){
-        if(!restrict_cubic(phase,t0,t1,local)||!exponential_polynomial(local,p,shift,tail))return false;
+        if(!restrict_cubic(phase,t0,t1,local))return false;
+        int polynomial_degree=24;
+#ifdef CMF_GPU_ADAPTIVE_LINEAR_EXP
+        if(!exponential_polynomial_adaptive(local,p,polynomial_degree,shift,tail))return false;
+#else
+        if(!exponential_polynomial(local,p,shift,tail))return false;
+#endif
         w[0]=w[1]=w[2]=0.;
-        constexpr double denominator=25.*26.*27.;
-        for(int k=0;k<25;k++){
-            w[0]+=p[k]*(25.-k)*(26.-k)/denominator;
-            w[1]+=p[k]*2.*(k+1.)*(25.-k)/denominator;
+        double denominator=(polynomial_degree+1.)*(polynomial_degree+2.)*(polynomial_degree+3.);
+        for(int k=0;k<=polynomial_degree;k++){
+            w[0]+=p[k]*(polynomial_degree-k+1.)*(polynomial_degree-k+2.)/denominator;
+            w[1]+=p[k]*2.*(k+1.)*(polynomial_degree-k+1.)/denominator;
             w[2]+=p[k]*(k+1.)*(k+2.)/denominator;
         }
     }

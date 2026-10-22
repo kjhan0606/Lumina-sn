@@ -112,3 +112,10 @@ extern "C" int source_envelope_upper_probe(double length,double u0,double u1,dou
     if(!mantissa||!exponent||!lumina_source_measure::envelope_upper(length,u0,u1,hi0,hi1,result))return 1;
     *mantissa=result.mantissa;*exponent=result.exponent;return 0;
 }
+extern "C" int source_adaptive_exponential_probe(const double *phase,double *coeff,int *degree,double *shift,double *tail){
+    if(!phase||!coeff||!degree||!shift||!tail)return 1;
+    double p[25],s,t;int m;
+    if(!lumina_source_measure::exponential_polynomial_adaptive(phase,p,m,s,t))return 1;
+    for(int k=0;k<=m;k++)coeff[k]=p[k];
+    *degree=m;*shift=s;*tail=t;return 0;
+}

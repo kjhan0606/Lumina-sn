@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 09:43",
+  "as_of_KST": "2026-10-22 10:15",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,9 +96,24 @@
       }
     ]
   },
-  "used_upper_GPUh": 70.61316666665555,
-  "remaining_before_new_reservations_GPUh": 73.38683333334445,
+  "used_upper_GPUh": 70.62122222221111,
+  "remaining_before_new_reservations_GPUh": 73.37877777778889,
   "current_reserved_GPUh": 0,
+  "adaptive_linear_exp_candidate": {
+    "root": "/gpfs/kjhan/cmfgen_runs/lumina_adaptive_exp_20261022-dqpNi8",
+    "state": "SETTLED_LIMITED_GPU_ACCURACY_MET_NOT_FULL_NU",
+    "max_allocation_seconds": 148,
+    "reserved_GPUh": 0,
+    "allocated_gpu_seconds": 29,
+    "allocated_GPUh": 0.008055555555555555,
+    "terminal_sha256": "99dcdb55b60338e46ae630ef589acb17e837e16a88a3924e072468826e6e2570",
+    "GPU_evidence_sha256": "4df92525ec01031fc6570c7f79917058e50df79c09f475b1acd413beb6f47f67",
+    "cumulative_source_measure_gpu_seconds": 394,
+    "remaining_preparation_seconds_not_retry_authority": 1406,
+    "settlement": "28.541초·exit0을 보수29초로 한 번 차감하고148초 예약을 모두 해제했다. 작은 GPU9통과·867열 제한 질의/41대조 통과다. 전체전ν·공간적응·전체장은0이며 최종 물리 목표는 미완이다.",
+    "library_sha256": "a3b76fd1e09583214c8db30e782899105ec8558b7fc6094e639f7759c7616cb2",
+    "scope": "CPU199통과·실제35열 대조 통과 후 새 native-bin 급수의 장치9시험/트리1회/867열 이하 질의만 확인한다. GPU0/CPU1/host·device16GiB/free24GiB/활성1GiB·외부148초 단회다. 전체전ν·공간적응·전체장·SE/RE는0이며 같은 실패 계산 재시작이 아니다. 기존누적365초·준비1435초를 보존한다."
+  },
   "envelope_query_candidate": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_envelope_query_20261022-cwIcgC",
     "state": "SETTLED_LIMITED_GPU_ACCURACY_MET_NOT_FULL_NU",

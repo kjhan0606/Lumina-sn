@@ -13,11 +13,13 @@ from test_lumina_characteristic_linear import run,decoded,reference
 ROOT=Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope='module',params=[False,True],ids=['original-upper','envelope-upper'])
+@pytest.fixture(scope='module',params=[(),('CMF_GPU_ENVELOPE_UPPER',),
+    ('CMF_GPU_ENVELOPE_UPPER','CMF_GPU_ADAPTIVE_LINEAR_EXP')],
+    ids=['original-upper','envelope-upper','adaptive-linear-exp'])
 def source_measure(tmp_path_factory,request):
     path=tmp_path_factory.mktemp('source-measure')/'measure.so'
     proc=subprocess.run([os.environ.get('CXX','c++'),'-O2','-std=c++17','-ffp-contract=off',
-        '-Wall','-Wextra','-Werror','-fPIC','-shared',*(['-DCMF_GPU_ENVELOPE_UPPER'] if request.param else []),'-I'+str(ROOT/'src'),
+        '-Wall','-Wextra','-Werror','-fPIC','-shared',*['-D'+name for name in request.param],'-I'+str(ROOT/'src'),
         str(ROOT/'tests/source_measure_probe.cpp'),'-o',str(path)],capture_output=True,text=True,timeout=60)
     assert proc.returncode==0,proc.stderr
     lib=ct.CDLL(str(path));f=lib.source_measure_probe
@@ -27,6 +29,37 @@ def source_measure(tmp_path_factory,request):
     f.argtypes=[ct.c_int,ct.c_int,p,p,ct.c_int,p,e,i];f.restype=ct.c_int
     f._library=lib
     return f
+
+
+@pytest.mark.parametrize('width',[0.,1e-15,1e-8,1e-4,.01,.125])
+def test_adaptive_exponential_positive_degree_and_independent_pointwise_tail(source_measure,width):
+    f=source_measure._library.source_adaptive_exponential_probe
+    f.argtypes=[ct.c_void_p]*5;f.restype=ct.c_int
+    phase=np.array([-.7*width,-.1*width,.3*width,-.4*width],dtype='f8')
+    coeff=np.full(25,-17.);degree=ct.c_int(-17);shift=ct.c_double(-17.);tail=ct.c_double(-17.)
+    assert f(phase.ctypes.data,coeff.ctypes.data,ct.byref(degree),ct.byref(shift),ct.byref(tail))==0
+    m=degree.value
+    assert m in range(0,25,3) and np.all(coeff[:m+1]>=1.)
+    if width<=1e-4:assert m<24
+    with localcontext() as context:
+        context.prec=90;D=Decimal.from_float
+        def basis(n,k,t):
+            return Decimal(comb(n,k))*(t**k if k else Decimal(1))*((1-t)**(n-k) if n!=k else Decimal(1))
+        for t0 in (0.,.03125,.27,.5,.91,1.):
+            t=D(t0);phase_at=sum(D(float(phase[k]))*basis(3,k,t) for k in range(4))
+            value=sum(D(float(coeff[k]))*basis(m,k,t) for k in range(m+1))
+            expected=(phase_at-D(shift.value)).exp()
+            assert abs(value-expected)<=D(tail.value)+Decimal('3e-13')*expected
+
+
+@pytest.mark.parametrize('phase',[[0.,float('nan'),0.,0.],[0.,0.,.126,0.]])
+def test_adaptive_exponential_failure_preserves_outputs(source_measure,phase):
+    f=source_measure._library.source_adaptive_exponential_probe
+    f.argtypes=[ct.c_void_p]*5;f.restype=ct.c_int
+    values=np.array(phase,dtype='f8');coeff=np.full(25,-17.)
+    degree=ct.c_int(-17);shift=ct.c_double(-17.);tail=ct.c_double(-17.)
+    assert f(values.ctypes.data,coeff.ctypes.data,ct.byref(degree),ct.byref(shift),ct.byref(tail))==1
+    assert np.all(coeff==-17.) and degree.value==-17 and shift.value==tail.value==-17.
 
 
 @pytest.mark.parametrize('length,u0,u1,hi0,hi1',[
