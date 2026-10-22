@@ -634,6 +634,20 @@ GPU1, 벽1시간, 재대기0이며 원 formal 실행은 최대1회다.
 이는 **제출·시작 증거**만이며 포획 완성, 원 장 무간섭,
 전대역 광선 재현 또는 최종 물리 동질성의 판정이 아니다.
 
+작업 `435129`는 `FAILED/exit1`, 경과65초로 끝났다. 보존 root의
+`capture/siii-compact-run.json`은 CMFGEN 자식 반환코드0과
+`STOP97` 미도달을 기록하며, `field/OUTGEN`은
+`SET_VAR_RAD_MOD_V2`의 배열 할당 실패(`IOS=5020`)를 명시한다.
+Slurm 배치 최대 RSS는 `79316 KiB`였고 `FORMAL_PRIMARY_*`와
+`siii_compact.bin`은 생기지 않았다. 따라서 이 시도는 목표 formal
+sweep를 실행·완성한 증거가 아니며 원인 기여율에도 쓰지 않는다.
+원인은 신규 runner만 자식 프로세스에 부과한 `RLIMIT_AS=64GiB`가
+초기 대형 가상주소 예약을 차단한 것으로 판단한다. 같은 바이너리의
+이전 성공 packet runner에는 이 제한이 없었다. 다음 단일 재시도는
+가상주소 제한만 없애고 a10 Slurm의 **실메모리 cgroup 64GiB**,
+CPU16·GPU1 예약·벽1시간과 파일 크기 제한을 유지한다.
+실패 root와 로그는 덮어쓰지 않는다.
+
 ## 이전 포획 검토 이력
 
 아래는 원격자 비등간격 확인 **전**의 계획이다. 위 수정 묶음이

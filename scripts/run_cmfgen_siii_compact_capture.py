@@ -24,6 +24,8 @@ def run(previous, build, root):
         raise FileExistsError('기존 실행 root 보존')
     if os.environ.get('OMP_NUM_THREADS')!='16':
         raise ValueError('원 CMFGEN formal OMP16 계약')
+    if not os.environ.get('SLURM_JOB_ID'):
+        raise ValueError('가상주소 예약을 허용하면서 64GiB 실메모리를 제한할 Slurm 작업이 필요')
     prior_inputs=json.loads((previous/'seq_logs/feedback-inputs.json').read_text())
     prior_runtime=json.loads((previous/'seq_logs/feedback-runtime.json').read_text())
     if (not prior_runtime['field_complete'] or
@@ -69,7 +71,6 @@ def run(previous, build, root):
              (field/'seq_logs/cmfgen.stderr').open('xb') as stderr:
             def limits():
                 resource.setrlimit(resource.RLIMIT_FSIZE,(8*1024**3,8*1024**3))
-                resource.setrlimit(resource.RLIMIT_AS,(64*1024**3,64*1024**3))
             process=subprocess.Popen([str(build/'cmfgen_siii_compact.exe')],cwd=field,
                                      env=env,stdin=subprocess.DEVNULL,stdout=stdout,
                                      stderr=stderr,start_new_session=True,preexec_fn=limits)
