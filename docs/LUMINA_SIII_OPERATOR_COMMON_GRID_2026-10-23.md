@@ -619,6 +619,21 @@ Muse에 전달한 최신 Astra 조건부 의견에 대해 Muse는 원 광선·J�
 서로 다른 상태로 보존하며, 실제 포획 전에는 어느 것도 통과로
 기록하지 않는다.
 
+### a10 전대역 포획 단일 작업 제출 — 2026-10-23 04:58 KST
+
+사용자는 Lageunha CPU 과부하(32코어에 부하 약36) 대신 a10에서
+GPU 1장을 **예약만** 하는 실행을 승인했다. CPU 전용 formal 계산이며
+GPU 커널은 사용하지 않는다. `scripts/run_cmfgen_siii_compact_capture.slurm`로
+Slurm 작업 `435129`를 제출했고, 04:58:28 KST에 a10 `syn02`에서
+`RUNNING`을 확인했다. 요청·할당 자원은 CPU16, 메모리64GiB,
+GPU1, 벽1시간, 재대기0이며 원 formal 실행은 최대1회다.
+고유 출력 부모는
+`/gpfs/kjhan/cmfgen_runs/lumina_siii_compact_a10_20261023-ZA9Gp9`,
+포획 root는 그 아래 `capture/`이다. 봉인 바이너리 SHA256은
+`8ff3fb14fd7d51d878228cc59e950aef3c98bbacc269fe4edc4da29e75f0039d`다.
+이는 **제출·시작 증거**만이며 포획 완성, 원 장 무간섭,
+전대역 광선 재현 또는 최종 물리 동질성의 판정이 아니다.
+
 ## 이전 포획 검토 이력
 
 아래는 원격자 비등간격 확인 **전**의 계획이다. 위 수정 묶음이
