@@ -161,33 +161,42 @@ def extended_material(args,g):
     return chi_ext,eta_ext
 
 
-def replay_ray(args,geom,previous,chi,eta,ip):
+def replay_ray(args,geom,previous,chi,eta,ip,inner_plus=None):
     """봉인 Bézier·사다리꼴 tau·DIFFUSION 경계의 실제 한 광선 호출."""
     n=len(geom['R']);dlognu=float(args['dLOG_NU'])
     chi=chi[:n];eta=eta[:n]
     im=np.zeros(n);plus=np.zeros(n)
     with np.errstate(invalid='ignore',divide='ignore',over='ignore'):
-        for k in range(1,n-1):
-            im[k]=local_sc(chi,eta,previous['I_M'],geom,im,k,dlognu,'M')
-        b=geom['B_M'][:n];alpha=1/dlognu
+        alpha=1/dlognu
+        b=geom['B_M'][:n]
         effective=chi+(alpha+3)*b
         source=(eta+alpha*b*previous['I_M'][:n])/effective
-        tau=.5*(geom['S_M'][n-1]-geom['S_M'][n-2])*(effective[n-1]+effective[n-2])
+        dtau=.5*(geom['S_M'][1:n]-geom['S_M'][:n-1])*(effective[1:n]+effective[:n-1])
+        for k in range(1,n-1):
+            tau=dtau[k-1]
+            ee=e_coeff(tau)[0]
+            im[k]=im[k-1]*ee+bezier_source(source[k-1],source[k],source[k+1],tau,dtau[k])
+        tau=dtau[n-2]
         ee,e0,e1,_=e_coeff(tau)
         im[n-1]=im[n-2]*ee+(e0-e1/tau)*source[n-2]+(e1/tau)*source[n-1]
-        if ip<=args['NC']:
+        if inner_plus is not None:
+            plus[n-1]=inner_plus
+        elif ip<=args['NC']:
             if args['INNER_BND_METH'].strip()!='DIFFUSION':
                 raise ValueError('봉인 광선 경계가 DIFFUSION이 아님')
             plus[n-1]=args['B_PLANCK']+geom['MU_P'][n-1]*args['DBB']/args['CHI'][-1]
         else:
             plus[n-1]=im[n-1]
-        for k in range(n-2,1,-1):
-            plus[k]=local_sc(chi,eta,previous['I_P'],geom,plus,k,dlognu,'P')
         b=geom['B_P'][:n]
         effective=chi+(alpha+3)*b
         source=(eta+alpha*b*previous['I_P'][:n])/effective
+        dtau=.5*(geom['S_P'][:n-1]-geom['S_P'][1:n])*(effective[:n-1]+effective[1:n])
+        for k in range(n-2,1,-1):
+            tau=dtau[k]
+            ee=e_coeff(tau)[0]
+            plus[k]=plus[k+1]*ee+bezier_source(source[k+1],source[k],source[k-1],tau,dtau[k-1])
         for k in (1,0):
-            tau=.5*(geom['S_P'][k]-geom['S_P'][k+1])*(effective[k]+effective[k+1])
+            tau=dtau[k]
             ee,e0,e1,_=e_coeff(tau)
             plus[k]=plus[k+1]*ee+(e1/tau)*source[k]+(e0-e1/tau)*source[k+1]
     if not np.isfinite(im).all() or not np.isfinite(plus).all():
@@ -195,11 +204,13 @@ def replay_ray(args,geom,previous,chi,eta,ip):
     return plus,im
 
 
-def check(packet, out=None, full_ray=False, all_jit=False):
+def check(packet, out=None, full_ray=False, all_jit=False, propagate_blue=False):
     if out is not None and out.exists():
         raise FileExistsError('기존 packet 대조 결과 보존')
+    if propagate_blue and not (full_ray and all_jit):
+        raise ValueError('청색 연쇄 재현에는 모든 호출의 전체 광선이 필요')
     inventory=json.loads(INVENTORY.read_text())['ray_inventory']
-    cases=[]
+    cases=[];carried=None;last_replayed=None;previous_index=None
     phases=tuple((index,jit) for index in (44360,44361)
                  for jit in ((0,1,2) if all_jit else (2,)))
     for index,jit in phases:
@@ -208,6 +219,16 @@ def check(packet, out=None, full_ray=False, all_jit=False):
         g=geometry(Path(str(prefix)+'_geometry.bin'))
         previous=rays(Path(str(prefix)+'_rays_in.bin'))
         actual=rays(Path(str(prefix)+'_rays_out.bin'))
+        if propagate_blue:
+            if carried is None:
+                carried=previous['rays']
+            elif index!=previous_index:
+                carried=last_replayed
+            for saved,accepted in zip(carried,previous['rays']):
+                if not all(np.array_equal(saved[name],accepted[name])
+                           for name in ('I_P','I_M')):
+                    raise ValueError('실제 packet의 주파수 청색 연쇄와 재생 상태 불일치')
+            previous_index=index
         if g['RAY_POINTS_INSERTED'] or state['args']['INITIALIZE']:
             raise ValueError('이 검사는 삽입 없는 실제 packet만 지원')
         chi=np.full(g['ND_EXT'],np.nan)
@@ -253,9 +274,12 @@ def check(packet, out=None, full_ray=False, all_jit=False):
                                                parabolic=float(worst[5]),actual=float(worst[6])))
         if full_ray:
             chi_ext,eta_ext=extended_material(state['args'],g)
-            ray_errors=[];ray_relative=[]
+            ray_errors=[];ray_relative=[];last_replayed=[]
             for ip,(geom,prior,now) in enumerate(zip(g['rays'],previous['rays'],actual['rays']),1):
+                if propagate_blue:
+                    prior=carried[ip-1]
                 calculated=replay_ray(state['args'],geom,prior,chi_ext,eta_ext,ip)
+                last_replayed.append(dict(I_P=calculated[0],I_M=calculated[1]))
                 for direction,value in zip(('I_P','I_M'),calculated):
                     error=np.abs(value-now[direction])
                     ray_errors.append(float(np.max(error)))
@@ -263,6 +287,7 @@ def check(packet, out=None, full_ray=False, all_jit=False):
                         np.maximum(abs(value),abs(now[direction])),1e-30))))
             case['full_ray_max_absolute_error']=max(ray_errors)
             case['full_ray_max_scaled_error']=max(ray_relative)
+            case['blue_state_propagated']=propagate_blue
             if case['full_ray_max_scaled_error']>1e-10:
                 raise ValueError('봉인 Bézier 전체 광선 재현 실패')
         cases.append(case)
@@ -292,6 +317,7 @@ if __name__=='__main__':
     parser.add_argument('--out',type=Path)
     parser.add_argument('--full-ray',action='store_true')
     parser.add_argument('--all-jit',action='store_true')
+    parser.add_argument('--propagate-blue',action='store_true')
     args=parser.parse_args()
     check(args.packet.resolve(),args.out.resolve() if args.out else None,
-          args.full_ray,args.all_jit)
+          args.full_ray,args.all_jit,args.propagate_blue)

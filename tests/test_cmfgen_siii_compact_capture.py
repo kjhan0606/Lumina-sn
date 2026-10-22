@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from analyze_cmfgen_siii_compact_capture import BOUNDARY, HEADER, POINT, records
+from analyze_cmfgen_siii_compact_capture import BOUNDARY, BLUE_HEADER, HEADER, POINT, blue_state, records
 from prepare_cmfgen_formal_capture import module_source
 from prepare_cmfgen_siii_compact_capture import FIRST, LAST, compact_source, replace_subroutine
 
@@ -42,10 +42,32 @@ def test_compact_record_reconstructs_native_angular_sum(tmp_path):
                     for ip in range(1,np_-id_+2))
     path=tmp_path/'siii_compact.bin'
     path.write_bytes(header+coefficients+boundary+points+struct.pack('<16s',b'LUMINASIIIEND1'.ljust(16,b' ')))
-    result=list(records(path,g))
+    result=list(records(path,g,include_rays=True))
     assert len(result)==1
     np.testing.assert_array_equal(result[0]['native'],[4.,3.,2.,1.])
     assert result[0]['max_roundoff_fraction']==0
+    assert result[0]['np_limit']==np_-1
+    assert result[0]['new_freq']
+    assert result[0]['dlognu']==.01
+    np.testing.assert_array_equal(result[0]['chi_ext'],np.zeros(nd))
+    np.testing.assert_array_equal(result[0]['eta_ext'],np.zeros(nd))
+    assert result[0]['boundary'][0]==(1.,0.,1.,0.)
+    assert result[0]['points'][0][0]==(1.,0.,1.,0.,.01,.01)
+
+
+def test_blue_state_returns_separate_previous_directions(tmp_path):
+    np_=52;nd=52;limit=np_-1
+    g=dict(ND=nd,NP=np_,rays=[dict(R=np.ones(2)) for _ in range(np_)])
+    header=BLUE_HEADER.pack(b'LUMINASIIIBLUE1'.ljust(16,b' '),71,FIRST,1,np_,nd,limit)
+    body=b''.join(struct.pack('<2i4d',ip,2,ip,ip+1,ip+2,ip+3)
+                  for ip in range(1,limit+1))
+    path=tmp_path/'siii_blue_in.bin'
+    path.write_bytes(header+body+struct.pack('<16s',b'LUMINASIIIBLEND'.ljust(16,b' ')))
+    jit,rays=blue_state(path,g,include_rays=True)
+    assert jit==1 and len(rays)==limit
+    np.testing.assert_array_equal(rays[0]['I_P'],[1.,2.])
+    np.testing.assert_array_equal(rays[0]['I_M'],[3.,4.])
+    assert blue_state(path,g)==1
 
 
 def test_compact_record_rejects_wrong_native_j(tmp_path):

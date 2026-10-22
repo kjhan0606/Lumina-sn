@@ -27,7 +27,7 @@ def take(stream, size):
     return raw
 
 
-def blue_state(path, g):
+def blue_state(path, g, include_rays=False):
     if path.stat().st_size > 64 * 1024**2:
         raise ValueError('청색 초기 광선 상태가 과대함')
     with path.open('rb') as stream:
@@ -36,6 +36,7 @@ def blue_state(path, g):
                 (outer,index,np_,nd) != (71,FIRST,g['NP'],g['ND']) or
                 np_limit not in (np_,np_-1)):
             raise ValueError('청색 초기 광선 헤더 불일치')
+        rays=[]
         for ip in range(1,np_limit+1):
             written_ip, nz = struct.unpack('<2i', take(stream, 8))
             if written_ip != ip or nz != len(g['rays'][ip-1]['R']):
@@ -43,12 +44,14 @@ def blue_state(path, g):
             values = np.frombuffer(take(stream, 16*nz), dtype='<f8')
             if not np.isfinite(values).all():
                 raise ValueError('청색 초기 강도 비유한')
+            if include_rays:
+                rays.append(dict(I_P=values[:nz].copy(),I_M=values[nz:].copy()))
         if take(stream,16).rstrip() != b'LUMINASIIIBLEND' or stream.read(1):
             raise ValueError('청색 초기 상태 끝/후행 오류')
-    return jit
+    return (jit,rays) if include_rays else jit
 
 
-def records(path, g):
+def records(path, g, include_rays=False):
     if not 0 < path.stat().st_size <= 512 * 1024**2:
         raise ValueError('압축 광선 기록 크기 위반')
     with path.open('rb') as stream:
@@ -69,14 +72,19 @@ def records(path, g):
             if not np.isfinite(arrays).all():
                 raise ValueError('압축 formal 계수 비유한')
             native=arrays[:4]
+            boundary=[]
             for ip in range(1,np_limit+1):
                 row=BOUNDARY.unpack(take(stream,BOUNDARY.size))
                 if row[:2]!=(ip,len(g['rays'][ip-1]['R'])) or not np.isfinite(row[2:]).all():
                     raise ValueError('경계 광선 불일치')
+                if include_rays:
+                    boundary.append(row[2:])
             observed=np.zeros(4)
             bound=np.zeros(4)
+            point_rows=[]
             for id_ in range(49,53):
                 terms=[];magnitudes=[]
+                nodes=[]
                 for ip in range(1,min(np_limit,np_-id_+1)+1):
                     row=POINT.unpack(take(stream,POINT.size))
                     expected_link=int(g['rays'][ip-1]['LNK'][id_-1])
@@ -86,6 +94,10 @@ def records(path, g):
                     minus=row[4]*g['weights']['JQW_M'][id_-1,ip-1]
                     terms.append(float(plus+minus))
                     magnitudes.extend((abs(float(plus)),abs(float(minus))))
+                    if include_rays:
+                        nodes.append(row[3:])
+                if include_rays:
+                    point_rows.append(nodes)
                 k=id_-49
                 observed[k]=math.fsum(terms)
                 gamma=(3*len(terms)+8)*np.finfo(float).eps
@@ -95,9 +107,15 @@ def records(path, g):
             error=np.abs(native-observed)
             if np.any(error>bound):
                 raise ValueError('원 formal 광선합 재현 실패')
-            yield dict(index=index,jit=jit,freq=freq,native=native.copy(),
-                       max_roundoff_fraction=float(np.max(np.divide(
-                           error,bound,out=np.zeros_like(error),where=bound>0))))
+            result=dict(index=index,jit=jit,freq=freq,native=native.copy(),
+                        max_roundoff_fraction=float(np.max(np.divide(
+                            error,bound,out=np.zeros_like(error),where=bound>0))))
+            if include_rays:
+                result.update(dlognu=dlognu,np_limit=np_limit,new_freq=bool(new_freq),
+                              chi_ext=arrays[4:4+nd_ext].copy(),
+                              eta_ext=arrays[4+nd_ext:].copy(),
+                              boundary=boundary,points=point_rows)
+            yield result
 
 
 def analyze(capture, original_field, out):
