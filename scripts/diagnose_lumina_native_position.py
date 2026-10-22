@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """물질70/J71의 Lumina F를 CMFGEN native 두 반경에 직접 표본화한다.
 
-원 native-spatial C 물리식/계수/경계와 전주파수 고정 J를 유지한다.
-선택한 상풍 비교기에서는 구간 주파수 연산자만 격리 교체한다. 한 번의 F이며,
-두 코드의 각도·주파수 연산자 동등성이나
+원 native-spatial C 물리식/계수/경계와 전주파수 고정 J를 유지한다. 출력
+위치만 바꾼 한 번의 F이며, 두 코드의 각도·주파수 연산자 동등성이나
 자기일관 Si/S 이온화 분포를 증명하지 않는다.
 """
 import argparse
@@ -20,7 +19,6 @@ from diagnose_lumina_native_spatial_fixed import (_operator,project_native_scatt
 from diagnose_lumina_outer_fixed_point import PROJECT,INPUT,LIBRARY
 from diagnose_lumina_shell37_endpoint_sensitivity import PAIR,SOURCE,save_array,save_record
 from lumina_outer_native_spatial import NativeSpatialGeometry,set_native_fixed
-from lumina_upwind_outer_variant import build_variant as build_upwind_variant
 from lumina_outer_prepared import PreparedInputs
 from prepare_lumina_outer_input import read_auxiliary,sha
 from run_cmfgen_formal_primary import fields
@@ -34,11 +32,10 @@ def photon_band(nu,value,mask):
     return float(np.trapezoid(value[mask]/nu[mask],nu[mask]))
 
 
-def run(root,shell,subdivisions=4,upwind_p0=False):
+def run(root,shell,subdivisions=4):
     root=Path(root).resolve()
     if (socket.gethostname().lower()!='lageunha' or Path.cwd().resolve()!=PROJECT or
             shell not in (37,39) or subdivisions not in (4,8) or
-            type(upwind_p0) is not bool or
             not root.is_dir() or list(root.iterdir())):
         raise ValueError('Lageunha·프로젝트·셀37/39·빈 새 root 필요')
     if shutil.disk_usage(root).free<2*1024**3:
@@ -80,15 +77,7 @@ def run(root,shell,subdivisions=4,upwind_p0=False):
             str(Path(__file__).with_name('lumina_outer_native_spatial.py')):
                 sha(Path(__file__).with_name('lumina_outer_native_spatial.py'))})
     save_record(root/'execution.json',record)
-    if upwind_p0:
-        library=build_upwind_variant(root/'src')
-        record['operator_scheme']='C-path P0 CMF first-order blue upwind; linear blue intensity within each subsegment; not CMFGEN 3-point SC'
-        record['operator_library_sha256']=sha(library)
-        for path in (Path(__file__).with_name('lumina_upwind_outer_variant.py'),
-                     Path(__file__).resolve().parents[1]/'src/lumina_upwind_p0.c'):
-            record['source_sha256'][str(path)]=sha(path)
-    else:
-        record['operator_scheme']='continuous characteristic raw positive; original native-spatial comparison'
+    record['operator_scheme']='continuous characteristic raw positive; original native-spatial comparison'
     save_record(root/'execution.json',record)
     with PreparedInputs(LIBRARY,INPUT/'boundary',INPUT/'cells') as loaded:
         if loaded.plan.n!=89 or len(loaded.nu)!=1115020:
@@ -162,9 +151,7 @@ if __name__=='__main__':
     parser.add_argument('--out-root',type=Path,required=True)
     parser.add_argument('--shell',type=int,choices=(37,39),required=True)
     parser.add_argument('--subdivisions',type=int,choices=(4,8),default=4)
-    parser.add_argument('--upwind-p0',action='store_true',
-                        help='같은 C 경로의 격리 1차 청색 상풍 P0 비교기; CMFGEN 3점 SC 아님')
     args=parser.parse_args()
-    result=run(args.out_root,args.shell,args.subdivisions,args.upwind_p0)
+    result=run(args.out_root,args.shell,args.subdivisions)
     print(json.dumps(dict(root=str(args.out_root),status=result['status'],
         elapsed_seconds=result['elapsed_seconds'],bands=result['bands']),ensure_ascii=False))

@@ -1,5 +1,6 @@
 """공통 P0 구간 이산 상풍의 합성 직접시험; 물리 분포 수용은 아니다."""
 import ctypes as ct
+import math
 from pathlib import Path
 import subprocess
 
@@ -77,3 +78,25 @@ def test_vacuum_blue_to_red_drift_converges_under_frequency_refinement(segment):
         errors.append(float(np.max(np.abs(value-expected))/np.max(expected)))
     assert errors[0]>errors[1]>errors[2]
     assert errors[-1]<.03
+
+
+def test_actual_cell_drift_resolves_blue_history_with_spatial_refinement(segment):
+    """715Å 실제 C 한 셀 이동량에서 P0 이산계의 정확한 Poisson 해와 대조."""
+    nf=512;peak=350;h=1.1267110173509078e-5
+    drift=.0018759549664;material_tau=3.2;length=1e12
+    lam=drift/h
+    incident=np.zeros(nf);incident[peak]=1.
+    exact=np.zeros(nf)
+    for k in range(peak+1):
+        r=peak-k
+        exact[k]=math.exp(-material_tau-3*drift-lam+r*math.log(lam)-math.lgamma(r+1))
+    errors=[]
+    for pieces in (8,32,128):
+        value=incident.copy()
+        chi=np.full(nf,material_tau/length)
+        eta=np.zeros(nf)
+        for _ in range(pieces):
+            value=segment(h,length/pieces,drift/pieces,chi,eta,value)
+        errors.append(float(np.max(np.abs(value-exact))/np.max(exact)))
+    assert errors[0]>.5
+    assert errors[0]>errors[1]>errors[2]
