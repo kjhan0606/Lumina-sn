@@ -8,7 +8,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import compare_cmfgen_siii_ray_segment as C
 from compare_cmfgen_siii_ray_segment import (cmfgen_linear_spatial_exit,
-                                              continuous_scalar_reference)
+                                              continuous_scalar_reference,
+                                              native_segment_rows)
+
+
+def test_native_segment_rows_make_fortran_and_python_offset_explicit():
+    assert native_segment_rows(48, 105) == (0, 1, 56)  # Fortran ID49→50
+    assert native_segment_rows(49, 105) == (1, 2, 55)  # 실제 F/J 인덱스49→50
+    assert native_segment_rows(50, 105) == (2, 3, 54)
+    with pytest.raises(ValueError):
+        native_segment_rows(47, 105)
 
 
 def test_scalar_knot_split_reference_matches_constant_medium_analytic_solution():
@@ -71,6 +80,7 @@ def test_spot_report_preserves_conditional_scope(tmp_path, monkeypatch):
     C.compare_spot(tmp_path, out, 1, 15)
     report = __import__('json').loads(out.read_text())
     assert report['status'] == 'LOCAL_CONDITIONAL_ONLY'
+    assert report['outer_native_zero_index'] == 49
     assert report['operator_contribution'] == 'NOT_DETERMINED'
     assert report['final_goal'] == 'NOT_MET'
     assert report['continuous_frequency_pieces'] >= 2

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""실제 CMFGEN 한 광선의 native50→49 구간에서 주파수 연산자를 조건부 대조한다.
+"""실제 CMFGEN 한 광선의 지정 native 구간에서 주파수 연산자를 조건부 대조한다.
 
 두 후보는 같은 입사 강도와 구간 평균 χ/η/b를 사용한다. 이 구간 평균은
 원 CMFGEN Bézier 공간 SC나 전체 Lumina 수송의 계수 복원이 아니다.
@@ -20,17 +20,29 @@ from prepare_cmfgen_mom_capture import sha
 from prepare_cmfgen_siii_compact_capture import FIRST, LAST
 
 
-def actual_ray(capture, ray_number):
+def native_segment_rows(outer_native_zero_index, np_rays):
+    """포획 ID49–52와 Python native 배열의 0-based 인덱스를 연결한다."""
+    if (type(outer_native_zero_index) is not int or
+            outer_native_zero_index not in (48, 49, 50) or
+            type(np_rays) is not int or np_rays <= outer_native_zero_index + 1):
+        raise ValueError('포획 범위의 인접 native 구간 필요')
+    outer_row = outer_native_zero_index - 48
+    return outer_row, outer_row + 1, np_rays - outer_native_zero_index - 1
+
+
+def actual_ray(capture, ray_number, outer_native_zero_index=49):
     field = capture / 'field'
     geometry_files = list(field.glob(f'FORMAL_{FIRST}_*_geometry.bin'))
     if len(geometry_files) != 1:
         raise ValueError('봉인 첫 주파수 기하가 유일하지 않음')
     g = geometry(geometry_files[0])
-    if not 1 <= ray_number <= g['NP'] - 49:
-        raise ValueError('native49/50을 지나는 광선 번호 필요')
+    outer_row, inner_row, crossing_rays = native_segment_rows(
+        outer_native_zero_index, g['NP'])
+    if not 1 <= ray_number <= crossing_rays:
+        raise ValueError('선택한 native 두 점을 지나는 광선 번호 필요')
     ray = g['rays'][ray_number - 1]
-    outer = int(ray['LNK'][48]) - 1
-    inner = int(ray['LNK'][49]) - 1
+    outer = int(ray['LNK'][outer_native_zero_index]) - 1
+    inner = int(ray['LNK'][outer_native_zero_index + 1]) - 1
     if not (0 <= outer < inner < len(ray['S_P'])):
         raise ValueError('외향 광선 native49/50 링크 순서 오류')
     length = float(ray['S_P'][outer] - ray['S_P'][inner])
@@ -41,8 +53,8 @@ def actual_ray(capture, ray_number):
     indices = []
 
     def keep(row):
-        p_outer = row['points'][0][ray_number - 1]
-        p_inner = row['points'][1][ray_number - 1]
+        p_outer = row['points'][outer_row][ray_number - 1]
+        p_inner = row['points'][inner_row][ray_number - 1]
         indices.append(row['index'])
         values.append((row['freq'], p_inner[0], p_outer[0],
                        .5 * (row['chi_ext'][outer] + row['chi_ext'][inner]),
@@ -76,6 +88,7 @@ def actual_ray(capture, ray_number):
                 chi_inner=data[:, 9], eta_outer=data[:, 10],
                 eta_inner=data[:, 11], b_outer=float(ray['B_P'][outer]),
                 b_inner=float(ray['B_P'][inner]),
+                outer_native_zero_index=outer_native_zero_index,
                 length=length, drift=drift, geometry=geometry_files[0],
                 compact=field / 'siii_compact.bin')
 
@@ -160,12 +173,13 @@ def continuous_scalar_reference(log_frequency, length, drift, chi, eta,
     return intensity, len(boundaries) - 1
 
 
-def compare_spot(capture, out, ray_number, target_index):
+def compare_spot(capture, out, ray_number, target_index,
+                 outer_native_zero_index=49):
     """원격자 접점별 강성 연속해와 P0를 실제 한 광선·한 ν에서 대조한다."""
     script_sha256 = sha(Path(__file__))
     if out.exists():
         raise FileExistsError('기존 실제 광선 표본 결과 보존')
-    data = actual_ray(capture, ray_number)
+    data = actual_ray(capture, ray_number, outer_native_zero_index)
     x = data['log_frequency']
     if (type(target_index) is not int or not 0 <= target_index < len(x) or
             x[target_index] + 2 * data['drift'] > x[-1]):
@@ -190,6 +204,9 @@ def compare_spot(capture, out, ray_number, target_index):
     norm = max(abs(continuous_tight), abs(p0), 1e-300)
     report = dict(scope=__doc__, status='LOCAL_CONDITIONAL_ONLY',
                   ray_number=ray_number, reverse_band_index=target_index,
+                  outer_native_zero_index=outer_native_zero_index,
+                  fortran_outer_id=outer_native_zero_index+1,
+                  fortran_inner_id=outer_native_zero_index+2,
                   frequency_Hz=float(np.exp(x[target_index]) * 1e15),
                   wavelength_A=float(2.99792458e18 / (np.exp(x[target_index]) * 1e15)),
                   length=data['length'], drift_log_frequency=data['drift'],
@@ -205,7 +222,7 @@ def compare_spot(capture, out, ray_number, target_index):
                   continuous_tolerance_change=abs(continuous_loose-continuous_tight),
                   continuous_frequency_pieces=pieces,
                   p0_bdf_nfev=[info_loose['nfev'], info_tight['nfev']],
-                  coefficient_rule='same captured incident spectrum, endpoint-mean chi/eta, one native50->49 ray segment',
+                  coefficient_rule='same captured incident spectrum, endpoint-mean chi/eta, one specified native ray segment',
                   interpretation='original CMFGEN Bezier SC uses a different spatial stencil; original-minus-model is not a pure frequency-operator effect',
                   file_sha256={str(data['geometry']): sha(data['geometry']),
                                str(data['compact']): sha(data['compact']),
@@ -225,7 +242,10 @@ if __name__ == '__main__':
     parser.add_argument('--capture', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--ray', type=int, default=1)
+    parser.add_argument('--outer-native-index', type=int, default=49,
+                        help='Python 0-based 바깥 native 인덱스; 48,49,50 중 선택')
     parser.add_argument('--spot-index', type=int, required=True,
                         help='증가하는 주파수 순서의 0-based 표본 인덱스')
     args = parser.parse_args()
-    compare_spot(args.capture.resolve(), args.out.resolve(), args.ray, args.spot_index)
+    compare_spot(args.capture.resolve(), args.out.resolve(), args.ray,
+                 args.spot_index, args.outer_native_index)
