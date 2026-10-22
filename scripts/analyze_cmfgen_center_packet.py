@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""물질70/J71의 실제 1450Å formal packet·광선합·기존 완료 장을 비교한다.
+"""물질70/J71의 선택된 formal packet·광선합·기존 완료 장을 비교한다.
 
 native 노드 검증이며 CMFGEN 셀중심 J나 자기일관 이온분포 판정은 아니다.
 """
@@ -28,13 +28,16 @@ def analyze(root, out=None, comparison=None):
         not all(comparison[k] for k in ('geometry_equal','frequency_equal','weights_equal')) or
         max(comparison['component_max_frequency_normalized_difference']) > 1e-10):
         raise ValueError('전체 장의 수치적 계측 무간섭 조건 미충족')
+    indices=report.get('frequency_indices',[60714,60715])
+    if indices not in ([60714,60715],[44360,44361]):
+        raise ValueError('목표 formal packet 주파수 쌍 불일치')
     target = out if out is not None else root/'center-packet-analysis.json'
     if target.exists():
         raise FileExistsError('기존 포획 판독 보존')
     inventory = json.loads(INVENTORY.read_text())['ray_inventory']
     _, original = fields(Path(report['original_field'])/'FORMAL_PRIMARY_FIELDS.bin')
     rows = []
-    for index in (60714, 60715):
+    for index in indices:
         stems = sorted(p.name[:-8] for p in field.iterdir()
                        if p.name.startswith(f'FORMAL_{index}_') and p.name.endswith('_out.bin')
                        and not p.name.endswith('_rays_out.bin'))

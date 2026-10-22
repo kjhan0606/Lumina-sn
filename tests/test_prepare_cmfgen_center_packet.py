@@ -11,3 +11,12 @@ def test_exact_old_selection_only():
         selected_source(source + OLD_SELECTION)
     with pytest.raises(ValueError):
         selected_source('FORMAL_SELECTED=.TRUE.')
+
+
+def test_715a_selection_stays_in_isolated_instrumentation():
+    source = 'before\n' + OLD_SELECTION + '\nafter\n'
+    updated = selected_source(source,(44360,44361))
+    assert 'LUMINA_FREQ_INDEX>=44360.AND.LUMINA_FREQ_INDEX<=44361' in updated
+    assert OLD_SELECTION not in updated
+    with pytest.raises(ValueError):
+        selected_source(source,(44359,44361))

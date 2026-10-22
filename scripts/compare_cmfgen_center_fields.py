@@ -10,9 +10,11 @@ from prepare_cmfgen_mom_capture import sha
 from run_cmfgen_formal_primary import fields
 
 
-def compare(previous, captured, out):
+def compare(previous, captured, out, frequency_indices=(60714,60715)):
     if out.exists():
         raise FileExistsError('기존 장 비교 결과 보존')
+    if tuple(frequency_indices) not in ((60714,60715),(44360,44361)):
+        raise ValueError('검증하지 않은 formal packet 주파수 쌍')
     g_old, old = fields(previous)
     g_new, new = fields(captured)
     try:
@@ -41,7 +43,7 @@ def compare(previous, captured, out):
             j_frequencies[begin:end] = normalized[:, 0]
             if first_difference is None and np.any(a != b):
                 first_difference = int(begin+np.where(np.any(a != b, axis=(1, 2)))[0][0]+1)
-            for index in (60714, 60715):
+            for index in frequency_indices:
                 if begin < index <= end:
                     local = index-1-begin
                     target[str(index)] = dict(frequency_Hz=float(old['freq'][index-1]*1e15),
@@ -60,7 +62,8 @@ def compare(previous, captured, out):
                       J_p95_frequency_max_relative=float(np.percentile(j_frequencies, 95)),
                       J_max_frequency_max_relative=float(np.max(j_frequencies)),
                       J_frequency_max_relative_index=int(np.argmax(j_frequencies)+1),
-                      target=target, native_nodes_zero_based=[49,50],
+                      target=target,frequency_indices=list(frequency_indices),
+                      native_nodes_zero_based=[49,50],
                       original_sha256=sha(previous), captured_sha256=sha(captured),
                       final_goal='NOT_MET')
         with out.open('x') as stream:
@@ -76,5 +79,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('previous', 'captured', 'out'):
         parser.add_argument('--'+name, type=Path, required=True)
+    parser.add_argument('--frequency-pair',type=int,nargs=2,default=[60714,60715],
+                        metavar=('FIRST','LAST'))
     args = parser.parse_args()
-    compare(*(getattr(args, name).resolve() for name in ('previous', 'captured', 'out')))
+    compare(*(getattr(args, name).resolve() for name in ('previous', 'captured', 'out')),
+            args.frequency_pair)

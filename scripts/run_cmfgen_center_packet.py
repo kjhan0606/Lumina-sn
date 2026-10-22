@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""기존 물질70을 새 격리 장에 복제하여 1450Å 실제 CMFGEN formal 광선을 포획한다.
+"""기존 물질70을 새 격리 장에 복제하여 선택된 실제 formal 광선을 포획한다.
 
 원 장/물질은 read-only 입력이며 새 native 갱신이나 SE/RE 반복은 없다.
 """
@@ -17,9 +17,6 @@ from run_cmfgen_lambda_probe import stop_child
 
 
 EXPECTED_ORIGINAL_FIELD = 'd9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563'
-PACKET_PREFIXES = ('FORMAL_60714_', 'FORMAL_60715_')
-
-
 def run(previous, build, root):
     if root.exists():
         raise FileExistsError('기존 포획 실행 보존')
@@ -40,9 +37,10 @@ def run(previous, build, root):
         if sha(Path(name)) != digest:
             raise ValueError('기준 물질 또는 계약 신원 변경: ' + name)
     bm = json.loads((build/'center-packet-build.json').read_text())
-    if bm['outer'] != 71 or bm['frequency_indices'] != [60714, 60715] or \
+    indices=bm['frequency_indices']
+    if bm['outer'] != 71 or indices not in ([60714,60715],[44360,44361]) or \
        not bm['formal_kernel_unchanged'] or bm['pre_population_stop'] != 97:
-        raise ValueError('1450Å formal 전용 빌드가 아님')
+        raise ValueError('승인된 물질70/J71 formal packet 빌드가 아님')
     for name, digest in {**bm['input_sha256'], **bm['output_sha256']}.items():
         if sha(Path(name)) != digest:
             raise ValueError('포획 빌드 신원 변경: ' + name)
@@ -51,6 +49,7 @@ def run(previous, build, root):
     field = root/'field'
     report = dict(scope=__doc__, original_field=str(previous/'field'), source=str(source),
                   build=str(build), CPU=16, GPU=0, wall_limit_seconds=2400,
+                  frequency_indices=indices,
                   physical_field_calls=1, native_updates=0, SE_RE_updates=0,
                   baseline_field_sha256=EXPECTED_ORIGINAL_FIELD, final_goal='NOT_MET')
     try:
@@ -85,8 +84,9 @@ def run(previous, build, root):
         report['field_byte_identical'] = report['new_field_sha256'] == EXPECTED_ORIGINAL_FIELD
         if not report['field_byte_identical']:
             raise ValueError('계측 활성화가 원래 완성 formal 장을 바꿈')
-        packets = sorted(p for p in field.iterdir() if p.is_file() and p.name.startswith(PACKET_PREFIXES))
-        for index in (60714, 60715):
+        packets = sorted(p for p in field.iterdir() if p.is_file() and
+                         any(p.name.startswith(f'FORMAL_{index}_') for index in indices))
+        for index in indices:
             if not any(p.name.startswith(f'FORMAL_{index}_') and p.name.endswith('_rays_out.bin')
                        for p in packets):
                 raise ValueError(f'{index} 실제 ray packet 누락')

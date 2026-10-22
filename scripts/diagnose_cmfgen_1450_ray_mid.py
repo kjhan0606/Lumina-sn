@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""물질70/J71의 1450Å 중앙 광선에서 native49–50 내부 강도만 조건부 재구성한다.
+"""물질70/J71의 선택된 formal 중앙 광선에서 native49–50을 조건부 재구성한다.
 
 원 광선 endpoint를 재현하되 전체 각도 적분 J나 원래 코드의 실제 midpoint 출력으로 표시하지 않는다.
 """
@@ -18,11 +18,13 @@ INVENTORY = Path('/gpfs/kjhan/cmfgen_runs/lumina_mom_capture_build_20261019-RbUe
 NATIVE = Path('/gpfs/kjhan/cmfgen_src/cur_cmf')
 
 
-def diagnose(packet_root, out):
+def diagnose(packet_root, out, frequency_index=60715):
     if out.exists():
         raise FileExistsError('기존 중앙 광선 진단 보존')
+    if frequency_index not in (60715,44361):
+        raise ValueError('승인된 1450Å/715Å packet 주파수만 선택')
     packet = packet_root/'field'
-    stem = 'FORMAL_60715_02'
+    stem = f'FORMAL_{frequency_index}_02'
     paths = {suffix:packet/(stem+suffix) for suffix in (
         '_in.bin','_out.bin','_geometry.bin','_rays_in.bin','_rays_out.bin')}
     inventory = json.loads(INVENTORY.read_text())['ray_inventory']
@@ -30,7 +32,7 @@ def diagnose(packet_root, out):
     g = geometry(paths['_geometry.bin'])
     blue = rays(paths['_rays_in.bin'])
     actual = rays(paths['_rays_out.bin'])
-    if state['phase'] != (71,60715,2,0,0) or g['RAY_POINTS_INSERTED'] or \
+    if state['phase'] != (71,frequency_index,2,0,0) or g['RAY_POINTS_INSERTED'] or \
        g['rays'][0]['LNK'][49] < 1 or g['rays'][0]['LNK'][50] < 1:
         raise ValueError('목표 native49–50 원 광선·최종 호출이 아님')
     args = state['args']
@@ -100,7 +102,8 @@ def diagnose(packet_root, out):
                             material_mid_over_SC_mid=linear_mid/sc_mid,
                             linear_mid_error=linear_mid_error,
                             linear_end_error=linear_end_error))
-    result = dict(scope=__doc__, wavelength_A=float(2.99792458e18/(args['FREQ']*1e15)),
+    result = dict(scope=__doc__, formal_frequency_index_one_based=frequency_index,
+                  wavelength_A=float(2.99792458e18/(args['FREQ']*1e15)),
                   central_ray_only=True, native_nodes_zero_based=[49,50],
                   result=entries, input_sha256={str(p):sha(p) for p in (
                       *paths.values(),INVENTORY,*producers)},
@@ -113,5 +116,6 @@ if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--packet-root',type=Path,required=True)
     parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--frequency-index',type=int,default=60715)
     args=parser.parse_args()
-    diagnose(args.packet_root.resolve(),args.out.resolve())
+    diagnose(args.packet_root.resolve(),args.out.resolve(),args.frequency_index)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""물질70/J71의 1450Å formal 광선만 포획하는 격리 CMFGEN 빌드.
+"""물질70/J71의 선택된 1450Å/715Å formal 광선만 포획하는 격리 빌드.
 
 원 formal 커널·수송 지원 객체는 재사용하고 계측 선택 함수만 바꾼다.
 """
@@ -14,13 +14,19 @@ OLD_SELECTION = ("FORMAL_SELECTED=MODE=='CAPTURE_FORMAL'.AND.LUMINA_OUTER==60."
                  "AND.LUMINA_FREQ_INDEX>=23731.AND.LUMINA_FREQ_INDEX<=23732")
 NEW_SELECTION = ("FORMAL_SELECTED=MODE=='CAPTURE_FORMAL'.AND.LUMINA_OUTER==71."
                  "AND.LUMINA_FREQ_INDEX>=60714.AND.LUMINA_FREQ_INDEX<=60715")
+ALLOWED_PAIRS = ((60714, 60715), (44360, 44361))
 
 
-def selected_source(source):
-    return once(source, OLD_SELECTION, NEW_SELECTION)
+def selected_source(source, frequency_indices=(60714,60715)):
+    pair = tuple(frequency_indices)
+    if pair not in ALLOWED_PAIRS:
+        raise ValueError('검증하지 않은 formal packet 주파수 쌍')
+    selection = ("FORMAL_SELECTED=MODE=='CAPTURE_FORMAL'.AND.LUMINA_OUTER==71."
+                 f"AND.LUMINA_FREQ_INDEX>={pair[0]}.AND.LUMINA_FREQ_INDEX<={pair[1]}")
+    return once(source, OLD_SELECTION, selection)
 
 
-def build(feedback, out):
+def build(feedback, out, frequency_indices=(60714,60715)):
     if out.exists():
         raise FileExistsError('격리 빌드 대상이 이미 존재함')
     manifest_path = feedback / 'feedback-build.json'
@@ -40,7 +46,7 @@ def build(feedback, out):
        kernel_source.count('STOP 96') != 1 or \
        kernel_source.count('LUM_CAPTURE=FORMAL_SELECTED()') != 1:
         raise ValueError('원 formal 포획 커널의 조건부 종료 경로 변경')
-    source = selected_source(diag_source.read_text())
+    source = selected_source(diag_source.read_text(),frequency_indices)
     objects = [native/'new_main/cmfgen.o', parent/'cmfgen_sub.o',
                parent/'cmfgen_formal_primary.o', parent/'cmfgen_positive_sc.o',
                feedback/'cmfgen_formal_primary_whole.o']
@@ -74,7 +80,7 @@ def build(feedback, out):
     if any(sha(Path(path)) != digest for path, digest in before.items()):
         raise ValueError('빌드 중 봉인 입력 변경')
     report = dict(scope=__doc__, feedback=str(feedback), outer=71,
-                  frequency_indices=[60714, 60715], formal_kernel_unchanged=True,
+                  frequency_indices=list(frequency_indices), formal_kernel_unchanged=True,
                   pre_population_stop=97, input_sha256=before,
                   output_sha256={str(path): sha(path) for path in (
                       out/'lumina_formal_diag.f90', out/'lumina_formal_diag.o', executable)},
@@ -87,5 +93,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--feedback', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--frequency-pair',type=int,nargs=2,default=[60714,60715],
+                        metavar=('FIRST','LAST'))
     args = parser.parse_args()
-    build(args.feedback.resolve(), args.out.resolve())
+    build(args.feedback.resolve(), args.out.resolve(),args.frequency_pair)
