@@ -27,7 +27,7 @@
     "초기 CMFGEN J는 동일물질 대조에만 사용한다. 이후 Lumina 권위장을 외부 J 또는 beta*B로 대체하지 않는다."
   ],
   "driver_confirmed_source_findings": [
-    "src/lumina_atomic.c:1060에서 opacity->t_electrons[i]=config->T_inner로 초기화하고 main은 이를 plasma.T_e에 복사한다. 원래 깊이별 상태를 받는 재시작 연결이 필요하다.",
+    "현행 src/lumina_atomic.c:1113은 load_material_temperature_profile을 호출한다. electron_temperatures.csv가 있으면 깊이별 T_e를 읽고, 파일이 없을 때만 경계 T_inner를 사용한다. 이 로더를 다시 구현할 필요는 없다. 원90점 상태를 새 권위장과 함께 생산 운전에 연결하는 일은 별개다.",
     "src/lumina_plasma.c의 lumina_r7_publish_and_solve_te는 !solve_te이면 A208/A209 게시 뒤 return한다. 단순 false 설정으로 고정T 물질/ne 갱신을 구현할 수 없다.",
     "src/lumina_cmfgen.c는 continuum cs와 별도 cmfgen_fine_jbar 결과를 하나의 generation에 게시한다. 실제 동일 수송해에서 파생됐는지 소비자 연결을 확인해야 한다.",
     "observer writer는 cs의 chi_tot/chi_es/S_fixed/J와 현재 opac/Te를 함께 사용한다. 마지막 물질 갱신 뒤 같은 물질로 장을 다시 닫아야 상태 혼합을 피한다."
@@ -38,8 +38,24 @@
     "source_sha256": "ac2b53e702dafd9bf44c20e309eb13a77f90a71d85a43553939d60363665e1ec",
     "finding": "고정T 물질 해법 자체가 전혀 없는 것은 아니다. a210_production_solve의 LUMINA_FIXED_TE_PROFILE 분기는 pinned_te로 a210_production_bundle_ledger를 호출하고 replay.electron_density와 개체수 후보를 nlte_population_candidate_commit_bundle로 함께 반영한다. RE 근을 구한 것으로 표시하지 않고 고정T 잔차를 별도로 기록한다.",
     "call_policy": "lumina_r7_publish_and_solve_te의 solve_te=false는 여전히 물질 갱신 경로가 아니다. 기존 고정T 분기는 solve_te=true를 통해 진입한다. 온도 고정을 이유로 이 호출을 생략하거나 동일한 물질 트랜잭션을 중복 구현하지 않는다.",
-    "remaining_integration": "native90 재시작·전 model-atom 매핑·새 권위장의 continuum/line 연결은 여전히 미완이다. 이 생산 경로는 n_shells+1 shell 경계와 중간속도/반경을 사용하므로 CMFGEN native 점을 shell 평균으로 바꾸지 않는 좌표 대응을 확인해야 한다. 기존 코드 존재만으로 같은90점/전원소 갱신의 실제 성공을 주장하지 않는다.",
+    "remaining_integration": "native90 초기 인구 복원과 전 model-atom 등록은 기존 구현 및 실제 자료 시험이 있다. 미완인 것은 이를 새 권위장의 continuum/line 소비 및 후속 전원소 물질 갱신과 연결하는 생산 운전이다. 이 생산 경로는 n_shells+1 shell 경계와 중간속도/반경을 사용하므로 CMFGEN native 점을 shell 평균으로 바꾸지 않는 좌표 대응을 확인해야 한다. 초기 복원 성공을 같은90점/전원소 SE·RE 갱신 성공으로 표시하지 않는다.",
     "execution_change": "현재434043의 입력·바이너리·한도를 변경하지 않고 새 물리 실행도 추가하지 않았다. 실제 첫 동일물질 대조가 설명되기 전 물질 피드백을 시작하지 않는 기존 종료 규칙을 유지한다."
+  },
+  "existing_native_material_import_2026_10_22": {
+    "verification": "운전자가 현행 로더·등록·인구 복원 호출과 기존 실제90점 시험 로그의 해시를 확인했다. 이번 확인은 재실행이나 새 물질 계산이 아니다.",
+    "source_sha256": {
+      "src/lumina_atomic.c": "37adc488e429850aebab68f02517688d1e6c775a0856ee0103f2f744f872c927",
+      "src/lumina_plasma.c": "ac2b53e702dafd9bf44c20e309eb13a77f90a71d85a43553939d60363665e1ec"
+    },
+    "reuse": "load_material_temperature_profile, load_element_number_density_profile, nlte_init_model_atom, lumina_import_superlevel_material_with_occupation을 재사용한다. 원90점 native_material_nodes.bin과 LUMNOD01 직접 시험이 이미 있으며 별도 재시작 로더나 축약 원자모형을 만들지 않는다.",
+    "actual_90_point_log": "/gpfs/kjhan/cmfgen_runs/lumina_cell_import_20261020-kcuAIa/native_import.log",
+    "actual_90_point_log_sha256": "64d82591075d080395fe8249a3c4e0149a0d01920b16eea51aeb761a5e07c420",
+    "observed": "90점·SL/terminal1798변수, 총수잔차1.3322676295501878e-15, 전하잔차9.9920072216264089e-16, FL 이온합잔차1.6170875402621299e-15. T/ne/rho 불변, 6원소 선 인구 소비 정확, 미소유 세대 거부. 기존 로그의 물질 갱신·RE 횟수는0이다.",
+    "integration_boundary": "nlte_init_model_atom 및 인구 import의 현재 호출자는 tests/model_atom_projection_selftest.c다. 직접 복원과 생산 main 연결을 구별한다. 또한 a210_production_solve는 여전히 shell 경계 중간점을 쓰므로 원90점 복사장을 단순히 같은 길이의 shell 배열로 넘기지 않는다.",
+    "next_action": "수송 결과를 원90점 좌표 그대로 평가한 뒤, 기존 물질 복원을 재사용해 같은 좌표의 자체장·전원소 물질 응답을 연결한다. 첫 동일물질 대조가 설명되기 전 후속 물질 갱신을 시작하지 않는다.",
+    "GPU_executions": 0,
+    "material_updates": 0,
+    "final_goal_complete": false
   },
   "implementation_scope": [
     "실제 전 원소 인구·비균일 T/ne·물리 프로필의 재시작 입력과 정확한 model-atom 대응.",
