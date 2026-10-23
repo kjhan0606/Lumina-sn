@@ -64,3 +64,14 @@ def test_initial_interior_blue_profile_changes_near_blue_edge_only():
     assert outer[-1] > inner[-1]
     with pytest.raises(ValueError, match='세분'):
         sc_sweep(data, 4, initial_profile='invented')
+
+
+def test_terminal_inward_segment_uses_linear_last_step():
+    data = make_data(1., 1., 0., np.zeros(4), np.zeros(4))
+    data['eta_inner'][:] = 0.
+    data['eta_outer'][:] = 1.
+    for pieces in (1, 8):
+        got = sc_sweep(data, pieces, mode='bezier', terminal_linear=True)
+        np.testing.assert_allclose(got, np.exp(-1.), rtol=1e-12)
+    with pytest.raises(ValueError, match='세분'):
+        sc_sweep(data, 1, mode='bezier')

@@ -17,14 +17,18 @@ from prepare_cmfgen_mom_capture import sha
 
 
 def sc_sweep(data, subdivisions, minimum_index=0, mode='linear',
-             initial_profile='linear'):
+             initial_profile='linear', terminal_linear=False):
     """원 ν간격의 상풍 source와 선형 또는 Bézier 공간 SC를 연쇄한다."""
     if (type(subdivisions) is not int or not 1 <= subdivisions <= 64 or
             type(minimum_index) is not int or
             not 0 <= minimum_index < len(data['incoming']) or
             mode not in ('linear', 'bezier') or
             initial_profile not in ('linear', 'inner', 'outer') or
-            (mode == 'bezier' and data.get('far_neighbor') is None)):
+            (type(terminal_linear) is not bool or
+             (terminal_linear and (mode != 'bezier' or
+                                   data.get('far_neighbor') is not None)) or
+             (mode == 'bezier' and data.get('far_neighbor') is None and
+              not terminal_linear))):
         raise ValueError('원 광선 세분·주파수 범위 오류')
     n = len(data['incoming'])
     fraction = np.linspace(0., 1., subdivisions + 1)
@@ -50,7 +54,7 @@ def sc_sweep(data, subdivisions, minimum_index=0, mode='linear',
         if np.any(effective <= 0):
             raise ValueError('원 상풍 유효 χ 비양수')
         source = (eta + alpha * b * previous) / effective
-        if mode == 'bezier':
+        if mode == 'bezier' and not terminal_linear:
             far = data['far_neighbor']
             effective_far = far['chi'][k] + (alpha + 3.) * far['b']
             if effective_far <= 0:
@@ -63,7 +67,7 @@ def sc_sweep(data, subdivisions, minimum_index=0, mode='linear',
         for j in range(1, subdivisions + 1):
             tau = tau_nodes[j-1]
             ee, e0, e1, _ = e_coeff(tau)
-            if mode == 'bezier':
+            if mode == 'bezier' and not (terminal_linear and j == subdivisions):
                 next_source = source[j+1] if j < subdivisions else source_far
                 next_tau = tau_nodes[j] if j < subdivisions else outer_tau
                 current[j] = (current[j-1] * ee +
