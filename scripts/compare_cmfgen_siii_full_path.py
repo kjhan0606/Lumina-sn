@@ -24,7 +24,7 @@ def run(capture, out, subdivisions=8, max_calls=6,
     delta_path = out.with_suffix('.npy')
     if out.exists() or (full_band and delta_path.exists()):
         raise FileExistsError('기존 전체 공간경로 결과 보존')
-    if (type(subdivisions) is not int or not 2 <= subdivisions <= 64 or
+    if (type(subdivisions) is not int or not 2 <= subdivisions <= 128 or
             (not full_band and
              (type(max_calls) is not int or not 1 <= max_calls <= 12)) or
             (full_band and (transport_root is None or baseline_rates is None))):

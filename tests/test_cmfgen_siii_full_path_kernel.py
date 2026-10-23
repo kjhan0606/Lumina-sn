@@ -19,7 +19,7 @@ def test_full_path_native_matches_existing_replay_and_refined_constant_source():
     previous = dict(I_M=np.zeros(n), I_P=np.zeros(n))
     native_p,native_m = replay_ray(dict(dLOG_NU=.01), geom, previous,
                                    chi, eta, 1, inner_plus=0.)
-    for pieces in (1, 2, 8):
+    for pieces in (1, 2, 8, 128):
         args = (chi, eta, refine_nodes(geom['S_M'],pieces),
                 refine_nodes(geom['S_P'],pieces),
                 refine_nodes(geom['B_M'],pieces),

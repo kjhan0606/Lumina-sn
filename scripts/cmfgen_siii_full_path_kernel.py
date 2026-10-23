@@ -77,9 +77,9 @@ def bezier_source(sup, target, far, tau, neighbor):
 
 def refine_nodes(coarse, subdivisions):
     coarse = np.asarray(coarse, dtype='f8')
-    if (type(subdivisions) is not int or not 1 <= subdivisions <= 64 or
+    if (type(subdivisions) is not int or not 1 <= subdivisions <= 128 or
             coarse.ndim != 1 or len(coarse) < 4 or not np.isfinite(coarse).all()):
-        raise ValueError('유한 native 광선과 1–64분할 필요')
+        raise ValueError('유한 native 광선과 1–128분할 필요')
     fine_index = np.arange((len(coarse)-1)*subdivisions+1)/subdivisions
     return np.interp(fine_index, np.arange(len(coarse)), coarse)
 
