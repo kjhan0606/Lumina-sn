@@ -1094,6 +1094,67 @@ Lageunha CPU1·GPU0·자동재시도0, 직접시험 8개 통과.
 다음 물리 작업은 한 구간을 넘어 원 공간 경로 전체의 재수송이
 같은 효과를 유지하는지 확인하는 것이다. 최종 목표는 `NOT_MET`다.
 
+### 최종 호출 방출계수와 원 J_source의 직접 대응
+
+전체 경로 세분 결과를 해석하기 전에, compact 포획의 최종 호출
+계수가 기존 C 고정장 비교와 같은 원 source를 나타내는지 확인했다.
+600–750Å의 `5196`개 주파수 각각에서 **마지막 formal 호출**의
+전체 native `90`점 χ/η를 원 `FORMAL_PRIMARY_FIELDS.bin`과
+대조했다. 중앙광선 `LNK`로 확장 배열의 native 위치를 찾았고,
+포획 주파수와 원 장의 호출 횟수도 일치했다. 원 χ와의 최대
+상대차는 `6.048719540616944e-16`, 원
+`eta_true + chi_scat * J_source`와의 최대 상대차는
+`4.6061734557261e-14`였다. 같은 원 source의 native 값이라는
+증거이며 내부 세분점의 보간·외부 보간·새 산란 고정점의
+동일성이나 최종 Si/S 물리 동질성 증거는 아니다.
+
+같은 주파수의 첫→마지막 호출에서는 χ가 전대역에서 불변인 반면,
+η는 모든 `5196`점에서 달랐다. 최대 상대변화는 확장 맨 바깥점에서
+`0.2861587752`, native49/50에서는 각각
+`0.02710745947 / 0.04038227296`다. 따라서 첫 호출 source를
+완성 장과 비교하면 안 된다. 현재 전체 경로 코드에서는 같은
+주파수의 출력을 이전 주파수 상태로 즉시 덮어쓰지 않고, 주파수가
+바뀔 때 **마지막 호출 출력**만 전달한다. 각 호출의 η가 다르다는
+사실 자체는 그 최종 결과에 초기 호출 source가 누적됐다는 뜻이 아니다.
+
+입력은 위 compact root의 `field/siii_compact.bin` (SHA256
+`4f00371063be1448aeb23caf5f3ab446c91c43755e2dff8d65523afc3a8919f7`)과
+원 장 `toy06_19p48d_field_feedback_429062/field/FORMAL_PRIMARY_FIELDS.bin`
+(SHA256 `d9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563`)이다.
+Lageunha CPU1·GPU0·메모리 상한4GiB·벽시간 상한150초에서
+최종 source 대조가 `18.98초`에 완료됐다. 새 수송·SE/RE 갱신은 0이다.
+재현은 저장소 루트에서 다음 명령을 사용한다.
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 taskset -c 26 timeout 150s python3 - <<'PY'
+import sys, resource
+from pathlib import Path
+from itertools import groupby
+from collections import deque
+resource.setrlimit(resource.RLIMIT_AS, (4*1024**3, 4*1024**3))
+import numpy as np
+sys.path.insert(0, 'scripts')
+from analyze_cmfgen_formal_capture import geometry
+from analyze_cmfgen_siii_compact_capture import records
+from run_cmfgen_formal_primary import fields
+p = Path('/gpfs/kjhan/cmfgen_runs/lumina_siii_compact_a10_retry_20261023-Yl7Pev/capture/field')
+g = geometry(p/'FORMAL_40286_00_geometry.bin')
+_, original = fields(Path('/gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429062/field/FORMAL_PRIMARY_FIELDS.bin'))
+links = np.asarray(g['rays'][0]['LNK'], dtype='i8')-1
+maximum = np.zeros(2); count = 0
+for index, group in groupby(records(p/'siii_compact.bin', g, include_rays=True), key=lambda row: row['index']):
+    row = deque(group, maxlen=1)[0]; ref = original[index-1]
+    assert ref['freq'] == row['freq'] and ref['calls'] == row['jit']+1
+    raw = ref['field']; count += 1
+    for k, (key, truth) in enumerate((('chi_ext', raw[4]), ('eta_ext', raw[5]+raw[6]*raw[7]))):
+        observed = row[key][links]; scale = np.maximum(abs(observed), abs(truth))
+        error = np.divide(abs(observed-truth), scale, out=np.zeros_like(scale), where=scale>0)
+        maximum[k] = max(maximum[k], float(error.max()))
+assert count == 5196 and len(links) == 90 and np.max(maximum) < 1e-12
+print(count, maximum)
+PY
+```
+
 ## 이전 포획 검토 이력
 
 아래는 원격자 비등간격 확인 **전**의 계획이다. 위 수정 묶음이

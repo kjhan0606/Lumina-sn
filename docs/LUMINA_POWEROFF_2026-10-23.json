@@ -1,0 +1,15 @@
+{
+  "status": "SCHEDULED",
+  "timer_unit": "lumina-poweroff-stop-20261023.timer",
+  "timer_verified": "active/waiting, NextElapseUSecRealtime=Fri 2026-10-23 10:50:00 KST, AccuracySec=1",
+  "remote_access_verified": "비대화형 git ls-remote origin 성공; 등록 시 원격 HEAD 763fd8c06982e1a4b60d6f07fcc396d03b64a0f0",
+  "requested_by": "user",
+  "stop_at": "2026-10-23T10:50:00+09:00",
+  "poweroff_at": "2026-10-23T11:00:00+09:00",
+  "poweroff_owner": "user",
+  "scope": "Lumina-sn 작업 중단, 관련 변경 커밋 및 푸시, 이후 재개 지시 대기",
+  "preservation": "부분 출력과 다른 프로젝트 작업을 보존한다. 기존 무관한 미추적 파일과 .claude/settings.json은 자동 커밋하지 않는다.",
+  "scientific_goal": "NOT_MET",
+  "goal_pause": "10:50 이후 운전자가 paused로 전환한다. OS 타이머는 goal API를 호출하지 않는다.",
+  "initial_slurm_check": "2026-10-23 09:41 KST syntax 조회에서 Lumina-sn 작업 없음"
+}
