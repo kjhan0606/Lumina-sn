@@ -23,8 +23,24 @@ typedef enum {
     CMF_EXACT_NONFINITE = 3,
     CMF_EXACT_NEGATIVE_RECURRENCE = 4,
     CMF_EXACT_NOT_CONVERGED = 5,
-    CMF_EXACT_ERROR_ENVELOPE_FAILED = 6
+    CMF_EXACT_ERROR_ENVELOPE_FAILED = 6,
+    CMF_EXACT_CHECKPOINT_FAILED = 7
 } CMFExactStatus;
+
+/* 일반 속도장을 세분화한 상수 구간 후보에서 기존 raw positive formal을
+ * 재사용한다. 공간/속도 변화의 구간 오차를 인증하지 않는다. scratch는
+ * 최소4*n_bins doubles이며 입력/출력 배열과 별개다. signed chi는 보존한다.
+ * 구간 실패 시 output은 부분 결과일 수 있다. 기존 solver ABI는 불변이다. */
+CMFExactStatus cmf_exact_positive_raw_segment(int n_bins,double dlognu,
+    double length_cm,double delta_log_nu,const double *chi,const double *eta,
+    const double *incident,double *output,double *scratch,size_t scratch_count);
+
+/* 기존 full-SR 후보와 같은 Planck+mu*gradient 경계 준비. 원래 최내곽
+ * nodal chi와 log bin 폭을 사용하며 J 의존 경계 산란항을 추가하지 않는다.
+ * 두 출력은 입력 및 서로와 별개여야 한다. 실패 시 출력은 보존한다. */
+CMFExactStatus cmf_exact_planck_diffusion_boundary(int n_bins,double dlognu,
+    const double *nu,double temperature,double luminosity,double radius,
+    const double *chi,double *planck,double *gradient_over_chi);
 
 typedef struct {
     CMFExactStatus status;
@@ -53,6 +69,20 @@ typedef struct {
     /* 실제 할당한 방향별 광선 표본 슬롯. segment_slots는 전체 기하다. */
     size_t ray_buffer_slots;
 } CMFExactReport;
+
+/* 주 스레드의 안전 지점에서만 호출한다. J는 읽기 전용이다.
+ * phase:0=반복 시작,1=반복 완료,2/3=K 시작/완료,4/5=오차 확인 시작/완료.
+ * 비영 반환은 저장 실패로 중단한다. 전체 반복 상한은 재개해도 유지한다. */
+typedef int (*CMFExactProgressCallback)(int phase,int completed_iterations,
+    double relative_change,double absolute_change,double K_upper,
+    const double *J,size_t cells,void *context);
+typedef struct {
+    CMFExactProgressCallback callback;
+    void *context;
+    int completed_iterations;
+    double relative_change;
+    double absolute_change;
+} CMFExactProgress;
 
 typedef enum {
     CMF_EXACT_INNER_BLACKBODY = 1,
@@ -127,6 +157,28 @@ CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources(
     double *J,double *componentwise_error_upper,
     size_t envelope_refinement_iterations,
     int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report);
+
+/* 위 ABI/기본8GiB를 보존하는 별도 진입점. 버퍼만 변경하며 합산 순서는
+ * 유지한다. 양의 바이트 한도<=24GiB, 최대16광선이며 최소 한 광선은 필요하다. */
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources_buffered(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report,
+    size_t ray_buffer_bytes);
+
+/* 새 복구 경로: 실제 J 반복을 먼저 수행·저장하고 최종 K/오차 확인을
+ * 수행한다. 기존 ABI/기본 경로는 그대로다. 입력 J는 마지막 완료 반복이다. */
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources_checkpointed(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report,
+    size_t ray_buffer_bytes,const CMFExactProgress *progress);
 
 /* Exact homologous drifting-characteristic formal solution.
  *

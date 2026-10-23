@@ -15,6 +15,15 @@ import cmfgen_model_sources as S
 import cmfgen_model_continuum as B
 
 
+def test_full_pair_known_memory_includes_both_states_and_postprocessing():
+    result=S.paired_memory_inventory([89,90],1115020,24667)
+    assert result['known_allocation_bound_bytes']==21123862912
+    assert result['known_allocation_bound_bytes']<32*1024**3
+    assert not result['whole_process_peak_RSS_verified']
+    assert result['sequential_state_postprocessing']
+    assert result['parts']['both_states_BF']==4*179*1115020*8
+
+
 @pytest.fixture(scope='module')
 def kernels(tmp_path_factory):
     supplied=os.environ.get('CMFGEN_SOURCE_TEST_LIB')

@@ -49,6 +49,7 @@ typedef struct {
     double *core_mu;
     int raw_emissivity;
     int relativistic;
+    size_t ray_buffer_bytes;
     double *rel_length;
     double *rel_drift;
 } ExactProblem;
@@ -65,9 +66,10 @@ static int exact_cell_streams(const ExactProblem *p)
 static size_t exact_buffer_rays(const ExactProblem *p)
 {
     if(!exact_cell_streams(p))return (size_t)p->nr;
-    /* 두 방향 광선 버퍼 합8GiB 이내, 동시에 최대16광선. 한 광선조차
+    /* 두 방향 광선 버퍼 합의 명시 한도(기존 기본8GiB), 최대16광선. 한 광선조차
      * 한도를 넘으면 최소 한 광선이 필요하며 실제 할당 실패를 숨기지 않는다. */
-    size_t limit=(size_t)8*1024*1024*1024/sizeof(double)/2/
+    size_t budget=p->ray_buffer_bytes ? p->ray_buffer_bytes : (size_t)8*1024*1024*1024;
+    size_t limit=budget/sizeof(double)/2/
                  (size_t)p->nb/p->ray_stride;
     if(limit<1)limit=1;
     if(limit>16)limit=16;
@@ -136,6 +138,31 @@ CMFExactStatus cmf_exact_diffusion_gradient(
 done:
     free(weight);
     return status;
+}
+
+CMFExactStatus cmf_exact_planck_diffusion_boundary(int n_bins,double dlognu,
+    const double *nu,double temperature,double luminosity,double radius,
+    const double *chi,double *planck,double *gradient_over_chi)
+{
+    if(n_bins<2||!(dlognu>0)||!isfinite(dlognu)||!nu||!chi||!planck||
+       !gradient_over_chi||planck==gradient_over_chi||
+       (size_t)n_bins>SIZE_MAX/sizeof(double)/3)return CMF_EXACT_INVALID_INPUT;
+    double *temporary=malloc(3*(size_t)n_bins*sizeof(double));
+    if(!temporary)return CMF_EXACT_ALLOCATION_FAILED;
+    double *width=temporary,*intensity=width+n_bins,*gradient=intensity+n_bins;
+    CMFExactStatus status=CMF_EXACT_INVALID_INPUT;
+    for(int b=0;b<n_bins;b++){
+        width[b]=2*nu[b]*sinh(.5*dlognu);
+        intensity[b]=exact_planck(nu[b],temperature);
+        if(!isfinite(intensity[b]))goto done;
+    }
+    status=cmf_exact_diffusion_gradient(n_bins,nu,width,temperature,luminosity,
+                                       radius,chi,gradient);
+    if(status!=CMF_EXACT_OK)goto done;
+    memcpy(planck,intensity,(size_t)n_bins*sizeof(double));
+    memcpy(gradient_over_chi,gradient,(size_t)n_bins*sizeof(double));
+done:
+    free(temporary);return status;
 }
 
 const char *cmf_exact_status_name(CMFExactStatus status)
@@ -584,7 +611,7 @@ static int exact_segment_positive_sliding(
         PositiveTransform value = {t1[mm], source_cell[mm]};
         if (positive_window_push_back(&window, value) != 0) {
             positive_window_free(&window);
-            return -2;
+            return raw ? -3 : -2;
         }
     }
     for (; b >= 0; --b) {
@@ -600,7 +627,7 @@ static int exact_segment_positive_sliding(
         PositiveTransform aggregate;
         if (positive_window_aggregate(&window, &aggregate) != 0) {
             positive_window_free(&window);
-            return -2;
+            return raw ? -3 : -2;
         }
         intensity = intensity * aggregate.transmission + aggregate.emission;
         double half = raw ? exp(-.5*dt1[b]) : sqrt(t1[b]);
@@ -608,17 +635,17 @@ static int exact_segment_positive_sliding(
             exact_emission_factor(dt1[b],half,.5,raw) * source[b];
         if (!(output[b] >= 0.0) || !isfinite(output[b])) {
             positive_window_free(&window);
-            return -2;
+            return raw ? -3 : -2;
         }
         if (b == 0 || window_count == 0) continue;
         if (positive_window_pop_front(&window) != 0) {
             positive_window_free(&window);
-            return -2;
+            return raw ? -3 : -2;
         }
         PositiveTransform incoming = {t1[b], source_cell[b]};
         if (positive_window_push_back(&window, incoming) != 0) {
             positive_window_free(&window);
-            return -2;
+            return raw ? -3 : -2;
         }
     }
     positive_window_free(&window);
@@ -753,7 +780,7 @@ static int exact_segment(int nb, const double *dt1, const double *t1,
             double dt = dt1[b] * beta, transmission = exp(-dt);
             output[b] = intensity * transmission +
                         exact_emission_factor(dt1[b],transmission,beta,raw) * source[b];
-            if(raw&&(!(output[b]>=0)||!isfinite(output[b])))return -2;
+            if(raw&&(!(output[b]>=0)||!isfinite(output[b])))return -3;
         }
         return 0;
     }
@@ -786,7 +813,7 @@ static int exact_segment(int nb, const double *dt1, const double *t1,
                 --m;
             }
             output[b] = intensity;
-            if(raw&&(!(output[b]>=0)||!isfinite(output[b])))return -2;
+            if(raw&&(!(output[b]>=0)||!isfinite(output[b])))return -3;
         }
         return 0;
     }
@@ -937,6 +964,28 @@ static int exact_rel_segment(const ExactProblem *p,size_t geometry,size_t cell,
                              zero,output,mode,negative,1);
     return exact_segment_positive_bound(nb,depth,transmission,density,full,
                                        beta,upstream,zero,output,rounding,1) ? -3 : 0;
+}
+
+CMFExactStatus cmf_exact_positive_raw_segment(int n_bins,double dlognu,
+    double length_cm,double delta_log_nu,const double *chi,const double *eta,
+    const double *incident,double *output,double *scratch,size_t scratch_count)
+{
+    if(n_bins<2||n_bins>INT_MAX-2||!(dlognu>0)||!isfinite(dlognu)||
+       !isfinite(length_cm)||length_cm<0||!isfinite(delta_log_nu)||delta_log_nu<0||
+       (length_cm==0&&delta_log_nu!=0)||!chi||!eta||!incident||!output||!scratch||
+       (size_t)n_bins>SIZE_MAX/4||scratch_count<4*(size_t)n_bins)
+        return CMF_EXACT_INVALID_INPUT;
+    for(int i=0;i<n_bins;i++)
+        if(!isfinite(chi[i])||!isfinite(eta[i])||eta[i]<0||
+           !isfinite(incident[i])||incident[i]<0)return CMF_EXACT_INVALID_INPUT;
+    ExactProblem p={0};
+    p.nb=n_bins;p.dlognu=dlognu;p.chi_tot=chi;
+    p.rel_length=&length_cm;p.rel_drift=&delta_log_nu;p.raw_emissivity=1;
+    double negative=NAN;
+    int status=exact_rel_segment(&p,0,0,eta,incident,0,output,
+        CMF_EXACT_MODE_POSITIVE_SLIDING,POSITIVE_ROUND_NEAREST,&negative,scratch);
+    return status==0 ? CMF_EXACT_OK : status==-2 ?
+        CMF_EXACT_ALLOCATION_FAILED : CMF_EXACT_NONFINITE;
 }
 
 /* 한 실제 셀의 두 절반을 별도로 통과한다. in/out은 중심에서 저장하고
@@ -1585,6 +1634,23 @@ static int exact_absolute_difference_upper(double a, double b, double *upper)
                               POSITIVE_ROUND_UPPER, upper);
 }
 
+static int exact_scattering_norm_upper(ExactEnvelopeOperator *op,double *work,double *norm)
+{
+    for(size_t idx=0;idx<op->cells;idx++)work[idx]=1.0;
+    if(exact_apply_scattering_upper(work,work,op->cells,op)!=0)return -1;
+    *norm=0;
+    for(size_t idx=0;idx<op->cells;idx++)if(work[idx]>*norm)*norm=work[idx];
+    return 0;
+}
+
+static int exact_publish_progress(const CMFExactProgress *progress,int phase,
+    const CMFExactReport *report,const double *J,size_t cells)
+{
+    return progress&&progress->callback(phase,report->iterations_used,
+        report->final_max_relative_change,report->final_max_absolute_change,
+        report->max_scattering_ratio,J,cells,progress->context);
+}
+
 static int exact_componentwise_error_envelope(
     const ExactProblem *p, size_t cells,
     const double *dt1, const double *t1,
@@ -1706,7 +1772,8 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     size_t envelope_refinement_iterations,
     int iteration_cap, double tolerance, CMFExactMode mode,
     CMFExactReport *report, int physical_cells,
-    const CMFExactInnerBoundary *boundary,int raw_emissivity,int relativistic)
+    const CMFExactInnerBoundary *boundary,int raw_emissivity,int relativistic,
+    size_t ray_buffer_bytes,const CMFExactProgress *progress)
 {
     CMFExactReport local;
     memset(&local, 0, sizeof(local));
@@ -1744,7 +1811,13 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         (componentwise_error_upper &&
          mode != CMF_EXACT_MODE_POSITIVE_SLIDING) ||
         (raw_emissivity && (!physical_cells || mode==CMF_EXACT_MODE_SLIDING)) ||
-        (relativistic&&!raw_emissivity))
+        (relativistic&&!raw_emissivity) ||
+        ray_buffer_bytes>(size_t)24*1024*1024*1024 ||
+        (progress&&(!relativistic||!progress->callback||progress->completed_iterations<0||
+         progress->completed_iterations>iteration_cap||
+         (progress->completed_iterations>0&&
+          (!(progress->relative_change>=0)||!(progress->absolute_change>=0)||
+           !isfinite(progress->absolute_change))))))
         return CMF_EXACT_INVALID_INPUT;
 
     ExactProblem p;
@@ -1757,6 +1830,7 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         return status;
     }
     p.raw_emissivity=raw_emissivity;
+    p.ray_buffer_bytes=ray_buffer_bytes;
     if(relativistic){
         status=exact_rel_problem_init(&p,time_explosion,r_inner[0]);
         if(status!=CMF_EXACT_OK){
@@ -1857,19 +1931,16 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             if (ratio > max_scattering_ratio) max_scattering_ratio = ratio;
         }
     }
-    if(raw_emissivity){
+    if(raw_emissivity&&!progress){
         /* 증폭이 있으면 max(χ_es/χ)는 K의 상한이 아니다. 같은 실제
          * 경계·수송의 양의 K(1)을 상향 평가해 반복 연산의 norm을 구한다. */
-        for(size_t idx=0;idx<cells;idx++)Jnew[idx]=1.0;
         ExactEnvelopeOperator op={&p,dt1,t1,chi_tot,chi_es,source,source_cell,
             inner,in,out,cells};
-        if(exact_apply_scattering_upper(Jnew,Jnew,cells,&op)!=0){
+        if(exact_scattering_norm_upper(&op,Jnew,&max_scattering_ratio)!=0){
             status=CMF_EXACT_ERROR_ENVELOPE_FAILED;goto cleanup;
         }
-        max_scattering_ratio=0;
-        for(size_t idx=0;idx<cells;idx++)
-            if(Jnew[idx]>max_scattering_ratio)max_scattering_ratio=Jnew[idx];
     }
+    if(progress)max_scattering_ratio=INFINITY;
     local.max_scattering_ratio = max_scattering_ratio;
 
     for (int k = 0; k < p.nr; ++k) {
@@ -1889,7 +1960,17 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
     }
 
     status = CMF_EXACT_NOT_CONVERGED;
-    for (int iteration = 0; iteration < iteration_cap; ++iteration) {
+    int start=progress ? progress->completed_iterations : 0;
+    if(start){
+        local.iterations_used=start;
+        local.final_max_relative_change=progress->relative_change;
+        local.final_max_absolute_change=progress->absolute_change;
+        if(start>1&&progress->relative_change<tolerance)status=CMF_EXACT_OK;
+    }
+    if(exact_publish_progress(progress,0,&local,J,cells)){
+        status=CMF_EXACT_CHECKPOINT_FAILED;goto cleanup;
+    }
+    for (int iteration = start; status!=CMF_EXACT_OK&&iteration < iteration_cap; ++iteration) {
         if (exact_fill_inner(&p,T_inner,inner_boundary_scale,J,0,
                              POSITIVE_ROUND_NEAREST,inner) != 0) {
             status = CMF_EXACT_NONFINITE;
@@ -1948,10 +2029,35 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
         } else {
             local.fixed_point_absolute_error_bound = INFINITY;
         }
+        if(exact_publish_progress(progress,1,&local,J,cells)){
+            status=CMF_EXACT_CHECKPOINT_FAILED;break;
+        }
         if (iteration > 0 && max_relative < tolerance) {
             status = CMF_EXACT_OK;
             break;
         }
+    }
+
+    if(status==CMF_EXACT_OK&&progress){
+        if(exact_publish_progress(progress,2,&local,J,cells)){
+            status=CMF_EXACT_CHECKPOINT_FAILED;goto cleanup;
+        }
+        ExactEnvelopeOperator op={&p,dt1,t1,chi_tot,chi_es,source,source_cell,
+            inner,in,out,cells};
+        if(exact_scattering_norm_upper(&op,Jnew,&max_scattering_ratio)!=0){
+            status=CMF_EXACT_ERROR_ENVELOPE_FAILED;goto cleanup;
+        }
+        local.max_scattering_ratio=max_scattering_ratio;
+        local.fixed_point_absolute_error_bound=max_scattering_ratio<1 ?
+            max_scattering_ratio/(1-max_scattering_ratio)*local.final_max_absolute_change : INFINITY;
+        if(exact_publish_progress(progress,3,&local,J,cells)){
+            status=CMF_EXACT_CHECKPOINT_FAILED;goto cleanup;
+        }
+    }
+
+    if(status==CMF_EXACT_OK&&componentwise_error_upper&&
+       exact_publish_progress(progress,4,&local,J,cells)){
+        status=CMF_EXACT_CHECKPOINT_FAILED;goto cleanup;
     }
 
     if (status == CMF_EXACT_OK && componentwise_error_upper &&
@@ -1962,6 +2068,8 @@ static CMFExactStatus cmf_exact_characteristic_solve_impl(
             &local) != 0) {
         status = CMF_EXACT_ERROR_ENVELOPE_FAILED;
     }
+    if(status==CMF_EXACT_OK&&exact_publish_progress(progress,5,&local,J,cells))
+        status=CMF_EXACT_CHECKPOINT_FAILED;
 
 cleanup:
     free(dt1); free(t1); free(in); free(out); free(source);
@@ -1984,7 +2092,7 @@ CMFExactStatus cmf_exact_characteristic_solve(
     return cmf_exact_characteristic_solve_impl(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
-        NULL, 0, iteration_cap, tolerance, mode, report, 0, NULL,0,0);
+        NULL, 0, iteration_cap, tolerance, mode, report, 0, NULL,0,0,0,NULL);
 }
 
 CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
@@ -2002,7 +2110,7 @@ CMFExactStatus cmf_exact_characteristic_solve_with_envelope(
         n_shells, n_bins, dlognu, nu, r_inner, r_outer, time_explosion,
         T_inner, inner_boundary_scale, chi_tot, chi_es, S_fixed, J,
         componentwise_error_upper, envelope_refinement_iterations,
-        iteration_cap, tolerance, mode, report, 0, NULL,0,0);
+        iteration_cap, tolerance, mode, report, 0, NULL,0,0,0,NULL);
 }
 
 CMFExactStatus cmf_exact_cell_solve(
@@ -2020,7 +2128,7 @@ CMFExactStatus cmf_exact_cell_solve(
         n_shells,n_bins,dlognu,nu,r_inner,r_outer,time_explosion,
         boundary->temperature,boundary->blackbody_scale,chi_tot,chi_es,S_fixed,J,
         componentwise_error_upper,envelope_refinement_iterations,
-        iteration_cap,tolerance,mode,report,1,boundary,0,0);
+        iteration_cap,tolerance,mode,report,1,boundary,0,0,0,NULL);
 }
 
 CMFExactStatus cmf_exact_cell_solve_raw_sources(
@@ -2036,7 +2144,7 @@ CMFExactStatus cmf_exact_cell_solve_raw_sources(
     return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
         r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
         chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
-        iteration_cap,tolerance,mode,report,1,boundary,1,0);
+        iteration_cap,tolerance,mode,report,1,boundary,1,0,0,NULL);
 }
 
 CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources(
@@ -2051,5 +2159,37 @@ CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources(
     return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
         r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
         chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
-        iteration_cap,tolerance,mode,report,1,boundary,1,1);
+        iteration_cap,tolerance,mode,report,1,boundary,1,1,0,NULL);
+}
+
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources_buffered(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report,
+    size_t ray_buffer_bytes)
+{
+    if(!boundary||!ray_buffer_bytes)return CMF_EXACT_INVALID_INPUT;
+    return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
+        r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
+        chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
+        iteration_cap,tolerance,mode,report,1,boundary,1,1,ray_buffer_bytes,NULL);
+}
+
+CMFExactStatus cmf_exact_cell_solve_relativistic_raw_sources_checkpointed(
+    int n_shells,int n_bins,double dlognu,const double *nu,
+    const double *r_inner,const double *r_outer,double time_explosion,
+    const CMFExactInnerBoundary *boundary,
+    const double *chi_tot,const double *chi_es,const double *eta_true,
+    double *J,double *componentwise_error_upper,size_t envelope_refinement_iterations,
+    int iteration_cap,double tolerance,CMFExactMode mode,CMFExactReport *report,
+    size_t ray_buffer_bytes,const CMFExactProgress *progress)
+{
+    if(!boundary||!ray_buffer_bytes||!progress)return CMF_EXACT_INVALID_INPUT;
+    return cmf_exact_characteristic_solve_impl(n_shells,n_bins,dlognu,nu,
+        r_inner,r_outer,time_explosion,boundary->temperature,boundary->blackbody_scale,
+        chi_tot,chi_es,eta_true,J,componentwise_error_upper,envelope_refinement_iterations,
+        iteration_cap,tolerance,mode,report,1,boundary,1,1,ray_buffer_bytes,progress);
 }

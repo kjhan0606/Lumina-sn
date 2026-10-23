@@ -149,6 +149,82 @@ def test_production_blocks_match_direct_target_sum(block_bins):
     for name in expected:np.testing.assert_allclose(result[name],expected[name],rtol=5e-13,atol=0)
 
 
+def test_exact_zero_support_is_skipped_without_a_small_population_cutoff(monkeypatch):
+    rows=[dict(g='2'),dict(g='2')]
+    state=dict(temperature=np.array([1e4]),ne=np.array([1e8]),
+        full=np.array([[1e-200],[1e-190]]),superlevel=np.zeros((0,1)),sl_index={})
+    edge=1e14
+    routes=[M.Route(14,2,0,1,0,0,1.,2.,0.,edge,
+        ((lambda x:np.full_like(x,1e-18),np.array([edge]),start,'tab'),))
+        for start in (edge,1e17)]
+    nu=np.array([1e12,edge,edge*1.01])
+    expected=M.continuum_block(routes,rows,state,nu)
+    calls=[];original=M.Route.sigma
+    def counted(route,frequency):
+        calls.append((route.models[0][2],frequency.copy()))
+        return original(route,frequency)
+    monkeypatch.setattr(M.Route,'sigma',counted)
+    result=M.continuum_grid(routes,rows,state,nu,block_bins=1)
+    assert len(calls)==2 and all(start==edge for start,_ in calls)
+    assert np.all(result['chi_abs'][:,0]==0) and np.all(result['chi_abs'][:,1:]>0)
+    for name in expected:
+        np.testing.assert_allclose(result[name],expected[name],rtol=5e-13,atol=0)
+
+
+@pytest.mark.parametrize('block_bins',[1,7,32,1024])
+def test_shared_sigma_keeps_each_material_block_and_values(block_bins):
+    rows=[dict(g='2'),dict(g='4')]
+    states=[]
+    for t,ne,lo,hi in [([1500.,1e4],[1e9,1e8],[0.,2.],[7.,8.]),
+                       ([2100.,2e4,8e3],[3e8,1e7,2e9],[3.,4.,5.],[6.,7.,8.])]:
+        states.append(dict(temperature=np.array(t),ne=np.array(ne),full=np.array([lo,hi]),
+            superlevel=np.zeros((0,len(t))),sl_index={},
+            occupation=np.array([np.full(len(t),.8),np.full(len(t),.9)])))
+    routes=[]
+    for edge in (1e13,1e15,3e16):
+        routes.append(M.Route(14,2,0,1,0,0,.25,4.,0.,edge,
+            ((lambda x,e=edge:1e-18*(e/x)**3,np.array([edge]),edge,'analytic'),)))
+    nu=np.unique(np.r_[np.geomspace(1e12,1e18,89),[1e13,1e15,3e16]])
+    expected=[M.continuum_grid(routes,rows,s,nu,block_bins) for s in states]
+    stats={};actual=M.continuum_grids_shared(routes,rows,states,nu,block_bins,stats)
+    assert stats['peak_blocks']<=2
+    assert stats['cache_bound_bytes']==2*len(routes)*block_bins*8
+    for a,b in zip(actual,expected,strict=True):
+        for key in a:np.testing.assert_array_equal(a[key],b[key])
+
+
+def test_dissolution_search_keeps_every_original_positive_term():
+    k=np.geomspace(1e3,1e-30,4096)
+    x=np.array([0.,1e8,1e16]);y=np.array([1e4,1e24,1e36])
+    start=M._dissolution_candidate_start(k,x,y)
+    first=7.782+x[:,None]*k
+    fraction=first/(first+y[:,None]*k*k)
+    assert 0<start<len(k)
+    assert not np.any(fraction[:,:start]>1e-4)
+    a=np.zeros_like(fraction);a[:,start:]=np.where(fraction[:,start:]>1e-4,
+                                                fraction[:,start:],0.)
+    np.testing.assert_array_equal(a,np.where(fraction>1e-4,fraction,0.))
+
+
+def test_dissolution_search_preserves_ulp_neighbors_of_support_boundary():
+    # B=0일 때 f=1/(1+k²). 경계 근방의 양쪽 부동소수점 이웃을 모두 남긴다.
+    edge=np.sqrt(1e4-1);neighbors=[edge]
+    for _ in range(128):neighbors.insert(0,np.nextafter(neighbors[0],np.inf))
+    for _ in range(128):neighbors.append(np.nextafter(neighbors[-1],0.))
+    k=np.array(neighbors);x=np.array([0.]);y=np.array([7.782])
+    start=M._dissolution_candidate_start(k,x,y)
+    first=7.782+x[:,None]*k
+    fraction=first/(first+y[:,None]*k**2)
+    assert not np.any(fraction[:,:start]>1e-4)
+    assert np.any(fraction>1e-4)
+
+
+@pytest.mark.parametrize('k,x,y',[
+    ([1.,2.],[1.],[1.]),([2.,1.],[1e308],[1e308]),([np.nan],[1.],[1.])])
+def test_dissolution_search_falls_back_if_bound_does_not_apply(k,x,y):
+    assert M._dissolution_candidate_start(np.array(k),np.array(x),np.array(y))==0
+
+
 def test_material_full_level_reconstruction_and_terminal_consumer(tmp_path):
     path=tmp_path/'material.bin'
     rows=[dict(atomic_number='20',ion_number='4',super_level='0',energy_eV='0',g='2'),

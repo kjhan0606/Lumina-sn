@@ -11,12 +11,14 @@ import ctypes as ct
 import hashlib
 import json
 from pathlib import Path
+import re
 import struct
 
 import numpy as np
 
 from cmfgen_model_sources import control
 from analyze_cmfgen_material_inventory import block
+from lumina_field_checkpoint import FieldCheckpoint,read_checkpoint
 
 FRAME='STATIONARY_HOMOLOGOUS_I_NU_3A'
 REL_FRAME='STATIONARY_HOMOLOGOUS_FULL_SR_I_NU'
@@ -38,9 +40,16 @@ def sha(path):
 
 
 def identity(report,path):
-    path=Path(path).resolve()
-    if report['input_sha256'].get(str(path))!=sha(path):
-        raise ValueError(f'계수와 입력 신원 불일치: {path}')
+    declared=Path(path);resolved=declared.resolve();inputs=report['input_sha256']
+    # 생산자는 원래 심볼릭 링크 이름을 봉인할 수 있다. 이름을 먼저 resolve해
+    # 선언된 key를 잃지 않는다. 같은 내용의 다른 파일로 대신하는 것은 금지한다.
+    keys={str(declared),str(resolved)}
+    expected=[inputs[k] for k in keys if k in inputs]
+    if not expected:
+        expected=[h for p,h in inputs.items() if Path(p).resolve()==resolved]
+    actual=sha(resolved)
+    if not expected or any(h!=actual for h in expected):
+        raise ValueError(f'계수와 입력 신원 불일치: {resolved}')
 
 
 def read_material(path,magic):
@@ -96,15 +105,24 @@ def read_sources(folder,material,model):
     return dict(folder=folder,binary=binary,report=report,ns=ns,nf=nf,nu=nu,dlog=dlog,component=component)
 
 
-def memory_inventory(material,sources,boundary_material,boundary_sources,relativistic=False):
+def ray_buffer_bytes(gib):
+    if not np.isfinite(gib) or not 0<gib<=24 or int(gib*1024**3)<1:
+        raise ValueError('광선 버퍼는 양의 바이트 한도이고24GiB 이하여야 함')
+    return int(gib*1024**3)
+
+
+def memory_inventory(material,sources,boundary_material,boundary_sources,relativistic=False,ray_buffer_gib=8):
     return memory_inventory_sizes(material,sources['ns'],sources['nf'],sources['dlog'],
         boundary_material,sources['binary'].stat().st_size,
-        boundary_sources['binary'].stat().st_size,relativistic)
+        boundary_sources['binary'].stat().st_size,relativistic,ray_buffer_gib)
 
 
-def memory_inventory_sizes(material,ns,nf,dlog,boundary_material,source_bytes,boundary_bytes,relativistic=False):
+def memory_inventory_sizes(material,ns,nf,dlog,boundary_material,source_bytes,boundary_bytes,relativistic=False,
+                           ray_buffer_gib=8):
     nr=ns+17;stride=ns+1;n=ns*nf
-    batch=max(1,min(16,nr,(8*1024**3)//8//2//nf//stride))
+    budget=ray_buffer_bytes(ray_buffer_gib)
+    if not relativistic and ray_buffer_gib!=8:raise ValueError('변경 광선 버퍼는 full-SR 경로 전용')
+    batch=max(1,min(16,nr,budget//8//2//nf//stride))
     outer_beta=float(material['physical'][-1,1])/(2.99792458e10*material['epoch'])
     if relativistic and not 0<outer_beta<1:raise ValueError('상대론 속도 표현 범위 초과')
     beta=(2*np.arctanh(outer_beta) if relativistic else 2*outer_beta)/dlog
@@ -120,14 +138,83 @@ def memory_inventory_sizes(material,ns,nf,dlog,boundary_material,source_bytes,bo
         boundary_work_and_quadrature=8*nf*8,geometry_reserve=(128 if relativistic else 64)*nr*stride+64*(ns+nr),
         validation_chunk_reserve=8*1024**2,runtime_reserve=256*1024**2)
     return dict(known_allocation_bound_bytes=sum(parts.values()),parts=parts,ray_batch=batch,
+        ray_buffer_budget_bytes=budget,
         whole_process_peak_RSS_verified=False,includes_full_readonly_maps=True,
         approximation='conservative simultaneous known allocations plus explicit runtime reserve')
 
 
-def prepare(cells,sources,seed,boundary_sources,model,memory_gib=32):
+def radius_serialization_contract(rvtj,native_radius):
+    """바이너리 좌표는 바꾸지 않고 실제 RVTJ의 1P E형 소수10자리 출력을 대조한다."""
+    text=Path(rvtj).read_text()
+    if text.count('Radius (10^10 cm)')!=1 or text.count('Velocity (km/s)')!=1:
+        raise ValueError('RVTJ 반경/속도 구획 누락 또는 중복')
+    section=text.split('Radius (10^10 cm)',1)[1].split('Velocity (km/s)',1)[0]
+    tokens=section.split()
+    if len(tokens)!=len(native_radius):raise ValueError('RVTJ 반경 표본 수 불일치')
+    units=np.asarray([float(t.replace('D','E').replace('d','e')) for t in tokens])
+    r=units*1e10
+    if not np.isfinite(r).all() or np.any(r<=0):raise ValueError('RVTJ 반경 비유한/비양수')
+    exact=np.array_equal(r,native_radius)
+    declared=all(re.fullmatch(r'[+-]?\d\.\d{10}[EeDd][+-]\d+',t) for t in tokens)
+    rounded=np.asarray([float(format(float(v/1e10),'.10E')) for v in native_radius])
+    serialized=declared and np.array_equal(units,rounded)
+    return dict(matches=bool(exact or serialized),binary_exact=bool(exact),
+        printed_decimal_places=10 if declared else None,
+        serialized_exact=bool(serialized),
+        max_relative_difference=float(np.max(abs(r-native_radius)/native_radius)),
+        max_absolute_difference_cm=float(np.max(abs(r-native_radius))),
+        authority='unchanged binary seed radius; RVTJ is a serialized witness')
+
+
+def frame_contract(model,native,epoch):
+    """계수 파일을 열지 않는 저비용 프레임/좌표 확인. 생산 전과 소비 시 같은 검사를 쓴다."""
+    model=Path(model)
+    flags={key:control(model,key) for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS','COH_ES')}
+    if any(value not in ('T','F') for value in flags.values()):raise ValueError('MODEL 논리값 손상')
+    reasons=[]
+    for key in ('THK_CONT','THK_LINE'):
+        flags[key]=control(model,key,'UNSPECIFIED')
+        if flags[key] not in ('T','F','UNSPECIFIED'):
+            raise ValueError(f'MODEL [{key}] 논리값 손상')
+    # 현재 참조의 CMF_FORMAL_REL_V4는 THK_CONT로 외부 대기를 연장한다.
+    # 원래 도메인 끝의 vacuum을 같은 경계로 표시하지 않는다. THK_LINE은
+    # 별도 선/observer 제어이므로 기록하되 이 continuum formal의 분기로 쓰지 않는다.
+    if flags['THK_CONT']=='T':
+        reasons.append('OUTER_BOUNDARY_NOT_IMPLEMENTED: THK_CONT의 연장 대기/유입 수송 누락')
+    relativistic=all(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
+    requested=any(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
+    velocity=None;rvtj=model.parent/'RVTJ'
+    if requested:
+        flags['INCL_DJDT']=control(model,'INCL_DJDT','UNSPECIFIED')
+        if not relativistic or flags['INCL_DJDT']!='F':
+            reasons.append('FRAME_NOT_IMPLEMENTED: 부분 상대론 설정/시간미분/미지정 모드')
+        if not rvtj.is_file():
+            reasons.append('FRAME_NOT_IMPLEMENTED: 실제 homologous RVTJ 속도장 미확인')
+        else:
+            r=native['physical'][:,0]
+            radius=radius_serialization_contract(rvtj,r)
+            v=block(rvtj,'Velocity (km/s)',native['ns'])*1e5
+            sigma=block(rvtj,'dlnV/dlnr-1',native['ns'])
+            if not np.isfinite(v).all() or not np.isfinite(sigma).all():
+                raise ValueError('RVTJ 속도장 비유한')
+            error=float(np.max(np.abs(v-r/epoch)/(r/epoch)))
+            velocity=dict(path=str(rvtj),sha256=sha(rvtj),max_relative_v_vs_r_over_t=error,
+                sigma_exact_zero=bool(np.all(sigma==0)),max_beta=float(np.max(v)/2.99792458e10),
+                serialized_velocity_relative_tolerance=2e-10,radius_serialization=radius,
+                velocity_reference='binary seed radius / epoch')
+            if not radius['matches'] or not np.all(sigma==0) or error>2e-10 or epoch!=native['epoch']:
+                reasons.append('FRAME_NOT_IMPLEMENTED: 원래 반경/epoch와 homologous 속도장 불일치')
+    if flags['COH_ES']!='T':reasons.append('NONCOHERENT_SCATTERING_NOT_IMPLEMENTED')
+    return flags,relativistic,velocity,reasons
+
+
+def prepare(cells,sources,seed,boundary_sources,model,memory_gib=32,ray_buffer_gib=8):
     model=Path(model).resolve();cells=Path(cells).resolve();seed=Path(seed).resolve()
     material=read_material(cells/'material_cells.bin',b'LUMCEL01')
     native=read_material(seed/'native_material_nodes.bin',b'LUMNOD01')
+    flags,relativistic,velocity,reasons=frame_contract(model,native,material['epoch'])
+    requested=any(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
+    rvtj=model.parent/'RVTJ'
     manifest=json.loads((cells/'material-cells.json').read_text())
     if sha(material['path'])!=manifest['output_sha256']['material_cells.bin']:
         raise ValueError('셀 물질 manifest 신원 불일치')
@@ -141,32 +228,9 @@ def prepare(cells,sources,seed,boundary_sources,model,memory_gib=32):
     if manifest['boundary_method']!='DIFFUSION' or temperature!=float(native['t'][-1]):
         raise ValueError('원래 확산 경계/온도 불일치')
     if not np.isfinite(luminosity) or luminosity<=0:raise ValueError('경계 광도 손상')
-    flags={key:control(model,key) for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS','COH_ES')}
-    if any(value not in ('T','F') for value in flags.values()):raise ValueError('MODEL 논리값 손상')
-    reasons=[]
-    relativistic=all(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
-    requested=any(flags[key]=='T' for key in ('USE_J_REL','INCL_REL','INCL_ADV_TRANS'))
-    velocity=None;rvtj=model.parent/'RVTJ'
-    if requested:
-        flags['INCL_DJDT']=control(model,'INCL_DJDT','UNSPECIFIED')
-        if not relativistic or flags['INCL_DJDT']!='F':
-            reasons.append('FRAME_NOT_IMPLEMENTED: 부분 상대론 설정/시간미분/미지정 모드')
-        if not rvtj.is_file():
-            reasons.append('FRAME_NOT_IMPLEMENTED: 실제 homologous RVTJ 속도장 미확인')
-        else:
-            r=block(rvtj,'Radius (10^10 cm)',native['ns'])*1e10
-            v=block(rvtj,'Velocity (km/s)',native['ns'])*1e5
-            sigma=block(rvtj,'dlnV/dlnr-1',native['ns'])
-            error=float(np.max(np.abs(v-r/material['epoch'])/(r/material['epoch'])))
-            velocity=dict(path=str(rvtj),sha256=sha(rvtj),max_relative_v_vs_r_over_t=error,
-                sigma_exact_zero=bool(np.all(sigma==0)),max_beta=float(np.max(v)/2.99792458e10),
-                serialized_velocity_relative_tolerance=2e-10)
-            if not np.array_equal(r,native['physical'][:,0]) or not np.all(sigma==0) or error>2e-10:
-                reasons.append('FRAME_NOT_IMPLEMENTED: 원래 반경/epoch와 homologous 속도장 불일치')
-    if flags['COH_ES']!='T':reasons.append('NONCOHERENT_SCATTERING_NOT_IMPLEMENTED')
-    memory=memory_inventory(material,cell_source,native,inner_source,relativistic)
-    if not np.isfinite(memory_gib) or memory_gib<=0 or memory_gib>32:
-        raise ValueError('봉인32GiB 이내의 양의 메모리 한도 필요')
+    memory=memory_inventory(material,cell_source,native,inner_source,relativistic,ray_buffer_gib)
+    if not np.isfinite(memory_gib) or memory_gib<=0 or memory_gib>64:
+        raise ValueError('명시64GiB 이내의 양의 메모리 한도 필요')
     if memory['known_allocation_bound_bytes']>memory_gib*1024**3:reasons.append('MEMORY_BUDGET_EXCEEDED')
     input_paths=[model,material['path'],native['path'],cells/'material-cells.json',
         cell_source['folder']/'sources.json',cell_source['binary'],
@@ -180,14 +244,18 @@ def prepare(cells,sources,seed,boundary_sources,model,memory_gib=32):
         boundary_sample='original innermost native node; not first-cell averaged material',
         boundary_intensity='B_nu(T_inner)+mu_cmf*dBdtau' if relativistic else 'source_fixed+scattering_ratio*J_inner+mu*dBdtau',
         blue_frequency_boundary='zero log-frequency derivative; retains 3b dilution',
-        memory=memory,execution_eligible=not reasons,reasons=reasons,
+        outer_boundary_implemented='vacuum at original outer cell edge; no extended atmosphere',
+        outer_boundary_requested=flags['THK_CONT'],
+        memory=memory,memory_budget_GiB=memory_gib,ray_buffer_GiB=ray_buffer_gib,
+        execution_eligible=not reasons,reasons=reasons,
         frequency_resolution_certified=False,physical_equivalence='NOT_JUDGED',final_goal='NOT_JUDGED',
         input_sha256={str(p):sha(p) for p in input_paths},authoritative_fields_executed=0)
     return dict(material=material,sources=cell_source,boundary=inner_source,
         temperature=temperature,luminosity=luminosity,report=report)
 
 
-def execute_candidate(prepared,library,iteration_cap=200,tolerance=1e-10):
+def execute_candidate(prepared,library,iteration_cap=200,tolerance=1e-10,
+                      checkpoint_dir=None,resume_checkpoint=None):
     if not prepared['report']['execution_eligible']:
         raise ValueError('; '.join(prepared['report']['reasons']))
     if iteration_cap<2 or not np.isfinite(tolerance) or tolerance<=0:raise ValueError('반복 기준 손상')
@@ -201,23 +269,64 @@ def execute_candidate(prepared,library,iteration_cap=200,tolerance=1e-10):
     j=np.zeros((ns,nf));error=np.zeros_like(j);counts=np.zeros(4,dtype='u8');diagnostics=np.zeros(4)
     dll=ct.CDLL(str(Path(library).resolve(strict=True)))
     rel=prepared['report']['implemented_frame']==REL_FRAME
+    observed=checkpoint_dir is not None
+    if (observed or resume_checkpoint is not None) and (not rel or not observed):
+        raise ValueError('J 저장/재개는 명시 full-SR 복구 경로 전용')
+    budget=ray_buffer_bytes(prepared['report'].get('ray_buffer_GiB',8))
+    buffered=budget!=8*1024**3
+    if buffered and not rel:raise ValueError('변경 광선 버퍼는 full-SR 경로 전용')
     f=dll.lumina_cell_relativistic_candidate if rel else dll.lumina_cell_stationary_candidate
+    if buffered:f=dll.lumina_cell_relativistic_candidate_buffered
     p=ct.POINTER(ct.c_double)
     f.argtypes=[ct.c_int,ct.c_int,ct.c_double,p,p,p,ct.c_double,ct.c_double,ct.c_double]+[p]*12+[
         ct.c_int,ct.c_double,ct.POINTER(ct.c_uint64),p]
+    initial=[0,float('inf'),float('inf')];writer=None;callback=None;extra=[]
+    if observed:
+        contract=dict(input_sha256=prepared['report']['input_sha256'],library_sha256=sha(library),
+            shape=[ns,nf],dlognu=sources['dlog'],frame=REL_FRAME,ray_buffer_bytes=budget,
+            iteration_cap=iteration_cap,tolerance=tolerance,scheme='J_then_K_then_error-v1')
+        origin=None
+        if resume_checkpoint is not None:
+            saved,n,relative,absolute,origin=read_checkpoint(resume_checkpoint,contract)
+            j[:]=saved;del saved;initial=[n,relative,absolute]
+        writer=FieldCheckpoint(checkpoint_dir,contract,origin)
+        callback_type=ct.CFUNCTYPE(ct.c_int,ct.c_int,ct.c_int,ct.c_double,ct.c_double,
+                                  ct.c_double,p,ct.c_size_t,ct.c_void_p)
+        @callback_type
+        def callback(phase,completed,relative,absolute,norm,data,count,context):
+            try:
+                if count!=ns*nf:raise ValueError('C 저장 J 차원 불일치')
+                view=np.ctypeslib.as_array(data,shape=(count,)).reshape(ns,nf)
+                writer.record(phase,completed,relative,absolute,norm,view)
+                return 0
+            except Exception as exc:
+                writer.error=str(exc);return 1
+        f=dll.lumina_cell_relativistic_candidate_checkpointed
+        f.argtypes=[ct.c_int,ct.c_int,ct.c_double,p,p,p,ct.c_double,ct.c_double,ct.c_double]+[p]*12+[
+            ct.c_int,ct.c_double,ct.POINTER(ct.c_uint64),p,ct.c_size_t,ct.c_int,
+            ct.c_double,ct.c_double,callback_type,ct.c_void_p]
+        extra=[budget,*initial,callback,None]
+    elif buffered:
+        f.argtypes+=[ct.c_size_t];extra=[budget]
     f.restype=ct.c_int
     def pointer(a):return a.ctypes.data_as(p)
     status=f(ns,nf,sources['dlog'],pointer(sources['nu']),pointer(ri),pointer(ro),
         material['epoch'],prepared['temperature'],prepared['luminosity'],pointer(chi),pointer(eta),
         pointer(component[6]),*[pointer(a) for a in sources['component']],pointer(j),pointer(error),
-        iteration_cap,tolerance,counts.ctypes.data_as(ct.POINTER(ct.c_uint64)),pointer(diagnostics))
+        iteration_cap,tolerance,counts.ctypes.data_as(ct.POINTER(ct.c_uint64)),pointer(diagnostics),
+        *extra)
+    if writer is not None and writer.error:raise OSError('J 저장 실패: '+writer.error)
     if status:raise CandidateFailure(status,j,error,counts,diagnostics)
     result=dict(frame=REL_FRAME if rel else FRAME,iterations=int(counts[0]),rays=int(counts[1]),ray_buffer_slots=int(counts[2]),
-        candidate_solver_calls=1,authoritative_field_role=False,
+        candidate_solver_calls=1,authoritative_field_role=False,ray_buffer_budget_bytes=budget,
         componentwise_verified=bool(counts[3]),relative_change=float(diagnostics[0]),
         actual_K_norm_upper=float(diagnostics[1]),residual_upper=float(diagnostics[2]),
         error_upper_max=float(diagnostics[3]),library_sha256=sha(library),
         output_role='stationary candidate; not native discrete formal/physical equivalence proof')
+    if writer is not None:
+        result.update(checkpoint_directory=str(Path(checkpoint_dir).resolve()),
+                      resumed_iterations=initial[0],snapshot_seconds_total=writer.write_seconds,
+                      verification_order='J_then_K_then_error')
     return j,error,result
 
 
@@ -227,19 +336,24 @@ def main():
         parser.add_argument('--'+key,type=Path,required=True)
     parser.add_argument('--library',type=Path);parser.add_argument('--execute-candidate',action='store_true')
     parser.add_argument('--memory-GiB',type=float,default=32)
+    parser.add_argument('--ray-buffer-GiB',type=float,default=8)
+    parser.add_argument('--checkpoint',action='store_true',help='완료 반복의 J를 보존하는 복구 경로')
+    parser.add_argument('--resume-checkpoint',type=Path)
     a=parser.parse_args()
     if a.out.exists():raise ValueError('기존 후보 실행 산출물 보존')
     a.out.mkdir()
     result=dict(status='INVALID_INPUT',authoritative_fields_executed=0,final_goal='NOT_JUDGED')
     code=2
     try:
-        prepared=prepare(a.cells,a.sources,a.seed,a.boundary_sources,a.model,a.memory_GiB)
+        prepared=prepare(a.cells,a.sources,a.seed,a.boundary_sources,a.model,a.memory_GiB,a.ray_buffer_GiB)
         result=prepared['report'];result['status']='PREFLIGHT_ONLY'
         code=0 if result['execution_eligible'] else 3
         if a.execute_candidate:
             if not result['execution_eligible']:raise ValueError('; '.join(result['reasons']))
             if a.library is None:raise ValueError('후보 실행 library 필요')
-            j,error,run=execute_candidate(prepared,a.library)
+            j,error,run=execute_candidate(prepared,a.library,
+                checkpoint_dir=a.out/'checkpoint' if a.checkpoint else None,
+                resume_checkpoint=a.resume_checkpoint)
             np.savez(a.out/'candidate_field.npz',nu_Hz=prepared['sources']['nu'],J=j,error_upper=error)
             result.update(status='CANDIDATE_COMPLETED',candidate=run,
                 output_sha256={'candidate_field.npz':sha(a.out/'candidate_field.npz')})

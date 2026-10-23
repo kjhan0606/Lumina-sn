@@ -208,11 +208,35 @@ def write_binary(path,nu,state,components):
             stream.write(np.asarray(value,dtype='<f8').tobytes())
 
 
-def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None):
-    if out.exists():raise ValueError('기존 물리 계수 산출물 보존')
-    out.mkdir()
+def paired_memory_inventory(cells,frequencies,routes,block_bins=1024):
+    """두 상태 BF 보존 + 한 상태 후처리의 알려진 동시 할당을 센다.
+
+    후처리는 순차이며 dissolution/FF의 배열·식 임시값/직렬화를 최대12개
+    상태×주파수 배열로 잡는다. 캐시2개와 조립/선택2개를 따로 합한다.
+    원자자료/line catalogue/인구/BLAS/runtime에는4GiB를 남긴다.
+    실제 전체 격자 peak RSS를 측정했다는 뜻은 아니다.
+    """
+    if len(cells)!=2 or min(cells)<1 or frequencies<2 or routes<1:
+        raise ValueError('공유 생산 메모리 차원 손상')
+    parts=dict(both_states_BF=4*sum(cells)*frequencies*8,
+        one_state_postprocessing=12*max(cells)*frequencies*8,
+        sigma_cache_and_assembly=4*routes*block_bins*8,
+        atomic_catalogue_populations_runtime=4*1024**3)
+    return dict(parts=parts,known_allocation_bound_bytes=sum(parts.values()),
+        whole_process_peak_RSS_verified=False,sequential_state_postprocessing=True)
+
+
+def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None,
+            peer=None):
+    """peer=(물질, C full 인구, 출력)일 때 σ만 공유하고 각 상태는 따로 쓴다."""
+    requests=[(material,c_full,out)]
+    if peer is not None:requests.append(peer)
+    if len({p[2].resolve() for p in requests})!=len(requests) or any(p[2].exists() for p in requests):
+        raise ValueError('기존/중복 물리 계수 산출물 보존')
+    for _,_,folder in requests:folder.mkdir()
     fixed=[run/n for n in ('MODEL','MODEL_SPEC','LEVEL_SL_STEQ_LINKS','atomic_links.txt','TWO_PHOT_DATA')]
     fixed += [material,atomic_dir/'levels.csv',phot_library,kernel_library,c_full,Path(__file__).resolve()]
+    if peer is not None:fixed.extend(peer[:2])
     if frequency_grid is not None:fixed.append(Path(frequency_grid))
     fixed += [Path(__file__).with_name(n) for n in ('cmfgen_model_continuum.py','cmfgen_parser.py',
         'expand_atomic_data_cmfgen.py','cmfgen_phot_smoothing.py')]
@@ -224,11 +248,30 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         raise ValueError('선택한 주파수 격자 파일과 실제 생산 주파수 불일치')
     rows,models,routes,policy,smoothing,route_counts=B.load_model(run,atomic_dir,phot_library)
     inactive=inactive_processes(run,models,policy);profile=fixed_profile(run/'MODEL')
-    state=B.read_material(material,rows,models)
-    if B.dissolution_flag(run/'MODEL'):
-        state=B.read_material(material,rows,models,B.material_occupation(rows,models,state))
-    full_comparison=B.consume_c_full_population(c_full,state)
-    bf=B.continuum_grid(routes,rows,state,nu)
+    states=[];full_comparisons=[]
+    for mat,full,_ in requests:
+        state=B.read_material(mat,rows,models)
+        if B.dissolution_flag(run/'MODEL'):
+            state=B.read_material(mat,rows,models,B.material_occupation(rows,models,state))
+        full_comparisons.append(B.consume_c_full_population(full,state));states.append(state)
+    memory=(paired_memory_inventory([len(s['temperature']) for s in states],len(nu),len(routes))
+            if peer is not None else None)
+    if memory is not None and memory['known_allocation_bound_bytes']>32*1024**3:
+        raise ValueError('공유 계수 생산의 알려진 할당이 봉인32GiB 초과')
+    cache_metrics={}
+    bfs=([B.continuum_grid(routes,rows,states[0],nu)] if peer is None else
+         B.continuum_grids_shared(routes,rows,states,nu,cache_metrics=cache_metrics))
+    summaries=[]
+    for i,(_,_,folder) in enumerate(requests):
+        summaries.append(_finish_sources(run,nu,folder,states[i],bfs[i],rows,models,routes,
+            policy,smoothing,route_counts,full_comparisons[i],inactive,profile,before,
+            kernel_library,dict(cache=cache_metrics,memory=memory) if peer is not None else None))
+        bfs[i]=None  # 다음 상태의 FF/선 생산 전에 앞 상태의 큰 BF 배열을 해제한다.
+    return summaries[0] if peer is None else dict(states=summaries,shared_sigma=cache_metrics,memory=memory)
+
+
+def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,route_counts,
+                    full_comparison,inactive,profile,before,kernel_library,cache_metrics):
     dissolved=B.add_dissolved_continuum(bf,routes,rows,models,state,nu) if B.dissolution_flag(run/'MODEL') else None
     kernels=SourceKernels(kernel_library)
     ff=free_free(nu,state,models,kernels)
@@ -263,6 +306,7 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
             'all-positive-ion FF vs lower-PHOT-target-only FF',
             'signed raw line chi; native zero replacement/SRCE_CHK not applied'],
         process_selection=policy,input_sha256=before,osc_sha256=osc_identities,
+        shared_continuum_sigma=cache_metrics,
         output_sha256={n:B.sha(out/n) for n in ('sources.bin','sources.npz','line_catalog.npz')},
         physical_RT_executions=0,native_executions=0,SE_RE_solved=False,final_goal='NOT_JUDGED')
     with (out/'sources.json').open('x') as stream:
@@ -278,11 +322,17 @@ if __name__=='__main__':
     grid=parser.add_mutually_exclusive_group(required=True)
     grid.add_argument('--frequency-Hz',nargs='+',type=float);grid.add_argument('--bf-grid',action='store_true')
     grid.add_argument('--frequency-grid',type=Path,help='Hz 단위 오름차순 .npy 전체 격자')
+    for name in ('peer-material','peer-C-full-population','peer-out'):
+        parser.add_argument('--'+name,type=Path)
     args=parser.parse_args()
+    peer=(args.peer_material,args.peer_C_full_population,args.peer_out)
+    if any(p is not None for p in peer) and not all(p is not None for p in peer):
+        parser.error('peer 물질/C 인구/출력 세 항목을 함께 지정해야 함')
     nu=(B.atomic.BF_NU_MIN*np.exp((np.arange(B.atomic.BF_N_FREQ_BIN)+.5)*
         np.log(B.atomic.BF_NU_MAX/B.atomic.BF_NU_MIN)/B.atomic.BF_N_FREQ_BIN)
         if args.bf_grid else np.load(args.frequency_grid,allow_pickle=False)
         if args.frequency_grid is not None else np.asarray(args.frequency_Hz,dtype='f8'))
     print(json.dumps(prepare(args.run.resolve(),args.material.resolve(),args.atomic.resolve(),
         args.phot_library.resolve(),args.kernel_library.resolve(),args.C_full_population.resolve(),
-        nu,args.out.resolve(),args.frequency_grid.resolve() if args.frequency_grid else None),ensure_ascii=False))
+        nu,args.out.resolve(),args.frequency_grid.resolve() if args.frequency_grid else None,
+        tuple(p.resolve() for p in peer) if peer[0] is not None else None),ensure_ascii=False))

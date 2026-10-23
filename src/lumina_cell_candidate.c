@@ -9,10 +9,12 @@ static int cell_candidate(int ns,int nf,double dlog,const double *nu,
     const double *boundary_es,const double *bf_chi,const double *bf_eta,
     const double *ff_chi,const double *ff_eta,const double *bb_chi,
     const double *bb_eta,const double *es,double *j,double *error,
-    int iteration_cap,double tolerance,uint64_t *counts,double *diagnostics,int relativistic)
+    int iteration_cap,double tolerance,uint64_t *counts,double *diagnostics,int relativistic,
+    size_t ray_buffer_bytes,const CMFExactProgress *progress)
 {
     if(ns<1||nf<2||!nu||!ri||!ro||!boundary_chi||!boundary_eta||!boundary_es||
        !j||!error||!counts||!diagnostics||
+       ray_buffer_bytes>(size_t)24*1024*1024*1024||
        (size_t)ns>SIZE_MAX/(size_t)nf/sizeof(double)/2||
        (size_t)nf>SIZE_MAX/sizeof(double)/4)return CMF_EXACT_INVALID_INPUT;
     size_t n=(size_t)ns*nf;
@@ -35,8 +37,16 @@ static int cell_candidate(int ns,int nf,double dlog,const double *nu,
     if(status!=CMF_EXACT_OK)goto done;
     CMFExactInnerBoundary bc={CMF_EXACT_INNER_DIFFUSION,NAN,NAN,sf,ratio,gradient};
     if(relativistic){bc.kind=CMF_EXACT_INNER_PLANCK_DIFFUSION;bc.temperature=boundary_temperature;}
-    CMFExactReport report;
-    status=(relativistic ? cmf_exact_cell_solve_relativistic_raw_sources :
+    CMFExactReport report={0};
+    if(progress)
+        status=cmf_exact_cell_solve_relativistic_raw_sources_checkpointed(ns,nf,dlog,nu,ri,ro,epoch,&bc,
+            chi,es,eta,j,error,3,iteration_cap,tolerance,CMF_EXACT_MODE_POSITIVE_SLIDING,&report,
+            ray_buffer_bytes,progress);
+    else if(relativistic&&ray_buffer_bytes)
+        status=cmf_exact_cell_solve_relativistic_raw_sources_buffered(ns,nf,dlog,nu,ri,ro,epoch,&bc,
+            chi,es,eta,j,error,3,iteration_cap,tolerance,CMF_EXACT_MODE_POSITIVE_SLIDING,&report,
+            ray_buffer_bytes);
+    else status=(relativistic ? cmf_exact_cell_solve_relativistic_raw_sources :
         cmf_exact_cell_solve_raw_sources)(ns,nf,dlog,nu,ri,ro,epoch,&bc,
         chi,es,eta,j,error,3,iteration_cap,tolerance,CMF_EXACT_MODE_POSITIVE_SLIDING,&report);
     counts[0]=(uint64_t)report.iterations_used;counts[1]=(uint64_t)report.n_rays;
@@ -59,7 +69,7 @@ int lumina_cell_stationary_candidate(int ns,int nf,double dlog,const double *nu,
     double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics)
 {
     return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
-        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,0);
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,0,0,NULL);
 }
 
 __attribute__((visibility("default")))
@@ -70,5 +80,35 @@ int lumina_cell_relativistic_candidate(int ns,int nf,double dlog,const double *n
     double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics)
 {
     return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
-        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,1);
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,1,0,NULL);
+}
+
+__attribute__((visibility("default")))
+int lumina_cell_relativistic_candidate_buffered(int ns,int nf,double dlog,const double *nu,
+    const double *ri,const double *ro,double epoch,double temperature,double luminosity,
+    const double *bchi,const double *beta,const double *bes,const double *bfchi,const double *bfeta,
+    const double *ffchi,const double *ffeta,const double *bbchi,const double *bbeta,const double *es,
+    double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics,
+    size_t ray_buffer_bytes)
+{
+    if(!ray_buffer_bytes)return CMF_EXACT_INVALID_INPUT;
+    return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,1,
+        ray_buffer_bytes,NULL);
+}
+
+__attribute__((visibility("default")))
+int lumina_cell_relativistic_candidate_checkpointed(int ns,int nf,double dlog,const double *nu,
+    const double *ri,const double *ro,double epoch,double temperature,double luminosity,
+    const double *bchi,const double *beta,const double *bes,const double *bfchi,const double *bfeta,
+    const double *ffchi,const double *ffeta,const double *bbchi,const double *bbeta,const double *es,
+    double *j,double *error,int cap,double tol,uint64_t *counts,double *diagnostics,
+    size_t ray_buffer_bytes,int completed,double relative,double absolute,
+    CMFExactProgressCallback callback,void *context)
+{
+    if(!ray_buffer_bytes||!callback)return CMF_EXACT_INVALID_INPUT;
+    CMFExactProgress progress={callback,context,completed,relative,absolute};
+    return cell_candidate(ns,nf,dlog,nu,ri,ro,epoch,temperature,luminosity,bchi,beta,bes,
+        bfchi,bfeta,ffchi,ffeta,bbchi,bbeta,es,j,error,cap,tol,counts,diagnostics,1,
+        ray_buffer_bytes,&progress);
 }

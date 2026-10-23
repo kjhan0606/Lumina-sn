@@ -291,11 +291,37 @@ def ground_lte_reference(rows,models,state):
     return reference
 
 
+def _dissolution_candidate_start(k,xdis,ydis):
+    """원래 fraction>1e-4의 가능한 구간을 보수적으로 찾는다.
+
+    k는 주파수에 대해 감소하고 f(k)=(A+Bk)/(A+Bk+Ck²)는 감소한다.
+    양의 유한 연산의 반올림 여유32eps는 탐색 구간을 넓히는 데만 쓴다.
+    최종 fraction과 엄격한1e-4 선택은 원래 연산으로 다시 평가한다.
+    단조성/유한성이 성립하지 않으면 원래 전체 구간으로 돌아간다.
+    """
+    if (not len(k) or not np.isfinite(k).all() or np.any(k<0) or
+        np.any(np.diff(k)>0) or not np.isfinite(xdis).all() or
+        not np.isfinite(ydis).all() or np.any(xdis<0) or np.any(ydis<0)):
+        return 0
+    with np.errstate(over='ignore',invalid='ignore'):
+        largest=7.782+xdis*k[0]
+        denominator=largest+ydis*k[0]**2
+    if not np.isfinite(denominator).all():return 0
+    lo,hi=0,len(k);expansion=1+32*np.finfo(float).eps
+    while lo<hi:
+        mid=(lo+hi)//2;first=7.782+xdis*k[mid]
+        fraction=first/(first+ydis*k[mid]**2)
+        upper=np.nextafter(fraction*expansion,np.inf)
+        if np.any(upper>1e-4):hi=mid
+        else:lo=mid+1
+    return lo
+
+
 def add_dissolved_continuum(result,routes,rows,models,state,nu):
     b,a,x=dissolution_vectors(state);reference=ground_lte_reference(rows,models,state)
     t=state['temperature'];ns=len(t)
     absorption=np.zeros((ns,len(nu)));stimulated=np.zeros_like(absorption)
-    cells=0
+    cells=0;xdis=b*x;ydis_by_charge={}
     for route in routes:
         if not route.dissolution_primary:continue
         if route.target_energy_eV!=0:
@@ -305,18 +331,25 @@ def add_dissolved_continuum(result,routes,rows,models,state,nu):
         if not np.any(active):continue
         sigma_edge=float(route.sigma(np.array([edge*(1+1e-14)]))[0])*route.probability
         if sigma_edge==0:continue
-        frequency=nu[active];effective=np.sqrt(3.289395e15*z*z/(edge-frequency))
+        bins=np.flatnonzero(active);frequency=nu[bins]
+        effective=np.sqrt(3.289395e15*z*z/(edge-frequency))
         k=np.minimum(1.,16*effective/(1+effective)**2/3)
         k=(k*z**3/effective**4)**1.5
-        xdis=b*x;ydis=1.091*(x+4*(z-1)*a)*b*b
+        if z not in ydis_by_charge:ydis_by_charge[z]=1.091*(x+4*(z-1)*a)*b*b
+        ydis=ydis_by_charge[z]
+        # 원래 지수 overflow가 발생하는 입력을 탐색 생략으로 숨기지 않는다.
+        safe_exp=H*(edge-frequency[0])/(KB*float(t.min()))<np.log(np.finfo(float).max)
+        start=_dissolution_candidate_start(k,xdis,ydis) if safe_exp else 0
+        if start==len(k):continue
+        bins=bins[start:];frequency=frequency[start:];k=k[start:]
         first=7.782+xdis[:,None]*k[None,:]
         fraction=first/(first+ydis[:,None]*k[None,:]**2)
         # 원본 MOD_LEV_DIS_BLK/GENOPAETA의 명시된 pseudo-continuum 지지 선택.
         support=fraction>1e-4
         coefficient=np.where(support,sigma_edge*fraction,0.)
-        absorption[:,active]+=coefficient*state['full'][route.lower,:,None]
+        absorption[:,bins]+=coefficient*state['full'][route.lower,:,None]
         induced=reference[route.lower,:,None]*np.exp(H*(edge-frequency[None,:])/(KB*t[:,None]))
-        stimulated[:,active]+=coefficient*induced
+        stimulated[:,bins]+=coefficient*induced
         cells+=int(np.count_nonzero(support))
     result['chi_abs']+=absorption;result['chi_stim']+=stimulated
     result['chi_net']=result['chi_abs']-result['chi_stim']
@@ -385,7 +418,7 @@ def continuum_block(routes,rows,state,nu):
     return dict(chi_abs=sums[0],chi_stim=sums[1],chi_net=sums[0]-sums[1],eta_spont=sums[2])
 
 
-def continuum_grid(routes,rows,state,nu,block_bins=1024):
+def _continuum_grid_steps(routes,rows,state,nu,block_bins=1024,sigma_provider=None):
     """생산 경로: route×주파수 블록만 만들고 실제 인구와 BLAS로 수축한다.
 
     exp 기준점은 블록의 최저 주파수다. 더 낮은 edge의 역재결합이 나눠진
@@ -398,6 +431,9 @@ def continuum_grid(routes,rows,state,nu,block_bins=1024):
         raise ValueError('생산 주파수/블록 입력 오류')
     lower=np.empty((ns,nr));nstar=np.empty_like(lower)
     threshold=np.array([r.threshold_Hz for r in routes]);prob=np.array([r.probability for r in routes])
+    # Route.sigma의 개별 PHOT 지지구간보다 낮으면 정확히0이다. 그런 route까지
+    # 매 블록 Python 호출/행렬로 만들지 않는다. 인구나 계수 크기로 자르지 않는다.
+    support_start=np.array([min((entry[2] for entry in r.models),default=np.inf) for r in routes])
     thermal=state['ne']*(H*H/(2*np.pi*ME*KB*t))**1.5
     for i,route in enumerate(routes):
         lower[:,i]=state['full'][route.lower]
@@ -417,20 +453,29 @@ def continuum_grid(routes,rows,state,nu,block_bins=1024):
     absorption=np.zeros((ns,len(nu)));stimulated=np.zeros_like(absorption)
     start=0
     while start<len(nu):
+        # 공유 생산기는 각 물질의 다음 블록 시작점만 교차 실행한다. 각자의
+        # T 최소값·지수 기준점·행렬 크기는 분리 계산과 동일하게 유지한다.
+        yield start
         # 범위32는 exp 인수의 수치 표현을 위한 분할 기준이다. bin은 모두 남는다.
         max_frequency=nu[start]+32*KB*float(t.min())/H
         end=min(len(nu),start+block_bins,int(np.searchsorted(nu,max_frequency,side='right')))
         if end<=start:raise ValueError('수치 블록 구성 실패')
         frequency=nu[start:end]
-        sigma=np.stack([r.sigma(frequency) for r in routes])*prob[:,None]
+        possible=np.flatnonzero(support_start<=frequency[-1])
+        if not len(possible):
+            start=end
+            continue
+        sigma=(np.stack([routes[i].sigma(frequency) for i in possible])*prob[possible,None]
+               if sigma_provider is None else sigma_provider(start,end,possible))
         active=np.any(sigma>0,axis=1)
         if np.any(active):
             # 활성 σ가 없으면 생략하는 것은 물리적 exact zero다. 작은 인구를
             # 문턱으로 골라 버리거나 낮은 edge 전체를 버리지 않는다.
             basis=sigma[active]
-            absorption[:,start:end]=lower[:,active]@basis
-            offset=H*(threshold[None,active]-frequency[0])/(KB*t[:,None])
-            coefficient=nstar[:,active]*np.exp(offset)
+            selected=possible[active]
+            absorption[:,start:end]=lower[:,selected]@basis
+            offset=H*(threshold[None,selected]-frequency[0])/(KB*t[:,None])
+            coefficient=nstar[:,selected]*np.exp(offset)
             decay=np.exp(-H*(frequency[None,:]-frequency[0])/(KB*t[:,None]))
             stimulated[:,start:end]=(coefficient@basis)*decay
         start=end
@@ -440,6 +485,56 @@ def continuum_grid(routes,rows,state,nu,block_bins=1024):
     if not all(np.isfinite(a).all() for a in result.values()):
         raise ValueError('생산 연속 계수 비유한')
     return result
+
+
+def continuum_grid(routes,rows,state,nu,block_bins=1024):
+    """한 물질의 기존 블록/합산 규약. 공유 경로의 직접 대조도 이 함수를 쓴다."""
+    steps=_continuum_grid_steps(routes,rows,state,nu,block_bins)
+    while True:
+        try:next(steps)
+        except StopIteration as completed:return completed.value
+
+
+def continuum_grids_shared(routes,rows,states,nu,block_bins=1024,cache_metrics=None):
+    """서로 다른 물질의 σ만 최대 두 주파수 블록으로 공유한다.
+
+    각 물질의 exp 분할·기준점·occupation·T/ne·인구·행렬 축은 그대로다.
+    전체 route×frequency 캐시는 만들지 않는다. σ의 주파수별 평가가
+    입력 배열의 분할과 무관함을 원자료 직접시험으로 확인해야 한다.
+    """
+    if not states:raise ValueError('공유할 물질 없음')
+    nu=np.asarray(nu,dtype='f8');cache={};peak=0;evaluations=0
+    support=np.array([min((entry[2] for entry in r.models),default=np.inf) for r in routes])
+    def sigma_block(start,end,possible):
+        nonlocal peak,evaluations
+        pieces=[]
+        for block in range(start//block_bins,(end-1)//block_bins+1):
+            lo=block*block_bins;hi=min(len(nu),lo+block_bins)
+            if block not in cache:
+                data=np.zeros((len(routes),hi-lo))
+                for i in np.flatnonzero(support<=nu[hi-1]):
+                    data[i]=routes[i].sigma(nu[lo:hi])*routes[i].probability
+                    evaluations+=1
+                cache[block]=data;peak=max(peak,len(cache))
+            pieces.append(cache[block][possible,max(start,lo)-lo:min(end,hi)-lo])
+        return pieces[0] if len(pieces)==1 else np.concatenate(pieces,axis=1)
+    steps=[_continuum_grid_steps(routes,rows,state,nu,block_bins,sigma_block) for state in states]
+    positions=[next(step) for step in steps];results=[None]*len(states)
+    while any(position<len(nu) for position in positions):
+        i=int(np.argmin(positions))
+        try:positions[i]=next(steps[i])
+        except StopIteration as completed:
+            results[i]=completed.value;positions[i]=len(nu)
+        earliest=min(positions)
+        for block in tuple(cache):
+            if min(len(nu),(block+1)*block_bins)<=earliest:
+                del cache[block]
+    if cache_metrics is not None:
+        cache_metrics.update(peak_blocks=peak,route_evaluations=evaluations,
+            full_block_bytes=len(routes)*block_bins*8,
+            cache_bound_bytes=2*len(routes)*block_bins*8,
+            physical_field_executions=0)
+    return results
 
 
 def consume_c_full_population(path,state):
