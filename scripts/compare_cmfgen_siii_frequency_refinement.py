@@ -47,6 +47,9 @@ def advance(previous_chi, previous_eta, chi, eta, s_m, s_p, b_m, b_p,
 def run(capture, out, transport_root, baseline_rates, subdivisions=64,
         frequency_factor=1, reference_result=None):
     started = time.monotonic()
+    source_paths = (Path(__file__),
+                    Path(__file__).with_name('cmfgen_siii_full_path_kernel.py'))
+    source_sha256_at_start = {str(path): sha(path) for path in source_paths}
     delta_path = out.with_suffix('.npy')
     if out.exists() or delta_path.exists():
         raise FileExistsError('기존 공간·주파수 비교 결과 보존')
@@ -166,9 +169,12 @@ def run(capture, out, transport_root, baseline_rates, subdivisions=64,
         delta_J_photo_cm3_s=delta_rate, delta_j_sha256=sha(delta_path),
         elapsed_seconds=time.monotonic()-started, new_SE_RE_updates=0,
         self_consistent_scattering=False, final_goal='NOT_MET',
-        file_sha256={str(p): sha(p) for p in (candidates[0], field/'siii_blue_in.bin',
-            field/'siii_compact.bin', original, f_path, baseline_rates,
-            Path(__file__), Path(__file__).with_name('cmfgen_siii_full_path_kernel.py'))})
+        source_hash_timing='run 시작 시 source 해시; 종료 시 파일 변화는 별도 기록',
+        source_files_changed_since_start=[str(path) for path in source_paths
+            if sha(path) != source_sha256_at_start[str(path)]],
+        file_sha256={**source_sha256_at_start, **{str(p): sha(p) for p in
+            (candidates[0], field/'siii_blue_in.bin', field/'siii_compact.bin',
+             original, f_path, baseline_rates)}})
     with out.open('x') as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2, allow_nan=False)
         stream.write('\n')
