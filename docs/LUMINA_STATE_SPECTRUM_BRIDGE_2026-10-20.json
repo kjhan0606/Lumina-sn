@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "purpose_id": "LUMINA_STATE_SPECTRUM_BRIDGE_2026-10-20",
-  "status": "Astra 계획 및 동일물질 phase 정정 수신; 운전자 소스 확인 완료 범위를 기록. 구현·실제 물리 실행은 아직 없음",
+  "status": "상태·스펙트럼 생산 연결 미완. 기존 native90 자체 J 입력 연결의 재사용을 소스와 실제계수 선택열 시험으로 확인(2026-10-23). 새 자체 수송장·물질 갱신·실제 observer는 미완",
   "planning_owner": "gpt-6-astra",
   "planning_submission": "01a15738-6334-78c0-8c8f-5b7834568a0e",
   "phase_correction_submission": "01a15745-1454-7df3-8739-93c5a88ef143",
@@ -150,6 +150,51 @@
   "cost_warning": "Lumina 실제 비용은 미실증이므로 시간 내 완료를 보장하지 않는다. 메모리/시간 초과를 숨기려고 모델·주파수·물리 범위를 축소하지 않는다.",
   "preservation": "원래70/71·J71·비채택71B·C1·원자자료·native·기존 계약/청구·실패와 사용자 미커밋 변경을 보존한다. source 편집은 운전자 한 명이 apply_patch로 수행한다. writer·build·실행은 새 root만 사용한다. commit/push와 공유 전역 문맥 편집은 하지 않는다.",
   "reproducibility": "실행 전 새 입력/소스/바이너리/설정 신원을 봉인하고 고정물질·물질 갱신·마지막 스펙트럼의 출처를 재현한다. 실제 명령·결과·실패 분류와 물리 해석 범위를 인수인계서에 기록한다. 완료 산출물은 별도 새 출력에서 재현한다.",
+  "native90_source_reuse_2026_10_23": {
+    "scope": "기존 입력 연결의 재사용 확인과 최소 의존 코드 보존. 새 수송 알고리즘이나 자체장 해를 구현·완료한 것이 아니다",
+    "correction": "fast P0 native-fixed 진단의 자체 J 제한을 전체 경로의 결손으로 일반화하지 않는다. CompiledInput의 동일 좌표 J 재결합과 native90_campaign의 완료 J readonly 재결합은 이미 존재한다",
+    "source_coupling": "src/cmf_nodal_input.c의 native 계수는 같은 native 반경의 η_true+χ_scat*J를 사용하며 반경 보간 뒤 ES*J를 조립하고 주파수 보간한다. 현재 실제 시험은 native 절점과 ν 보간/slab 재결합에 한정한다",
+    "trial_field": "명시적 J=0과 해석적으로 만든 비상수 입력 시험장. CMFGEN J를 자체 수송 결과로 사용하지 않았다",
+    "actual_native_nodes": 90,
+    "actual_grid_frequencies": 1115020,
+    "selected_wavelengths_A": [300,715,1500],
+    "tested_columns_per_band": 3,
+    "changed_eta_values": 810,
+    "coefficient_identity_rtol": 2e-12,
+    "static_coefficient_bytes_added_after_rebind": 0,
+    "new_GPU_calls": 0,
+    "new_transport_F_calls": 0,
+    "new_SE_RE_updates": 0,
+    "full_source_hash_verification": "기존 봉인 보고서 계승; 대형 계수 본문 전체를 다시 해시하지 않음",
+    "source_integration_commit": "76e32a846f2048fb1aa79b20186386eb85ae26d5",
+    "source_preservation": "기존 미추적 입력 연결7파일은 원문 그대로 통합하고 신규 독립 시험1파일을 추가. 다른 미추적 파일·사용자 수정은 보존",
+    "working_tree_reproduction": {
+      "result": "1통과/1.04초",
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_native90_rebind_repro_20261023-ztElBc",
+      "report": "pytest/test_actual_native90_rebind_re0/native90-source-rebind.json",
+      "report_sha256": "f957e57955a32c819c5e39a8988587b37582e3e4e5251ff7263cf15c9257897d"
+    },
+    "committed_files_only_reproduction": {
+      "result": "1통과/1.07초",
+      "root": "/gpfs/kjhan/cmfgen_runs/lumina_native90_clean_20261023-AOmOeN",
+      "source": "위 커밋의 Python6파일·C소스·기존C헤더·신규시험만 git archive로 추출한 독립 트리",
+      "report": "pytest/test_actual_native90_rebind_re0/native90-source-rebind.json",
+      "report_sha256": "0e47b8e3ecbdf957079b4017a278f9ede05b633d5950272e8534b8ffa487d260",
+      "library_sha256": "6ffcd6cf9d6efe527fd50c274c0cbb443d5f9117985db75e709d1d894509b9eb"
+    },
+    "resources": {"CPU": 1, "GPU": 0, "memory_GiB": 4, "wall_seconds_max": 180, "host": "lageunha"},
+    "reproduction": "LUMINA_NATIVE_SOURCE_CONFIG=/gpfs/kjhan/cmfgen_runs/lumina_field0_checkpoint_20261020-EoA5Bi/input/config.json LUMINA_NATIVE_SOURCE_PREPARATION=/gpfs/kjhan/cmfgen_runs/lumina_outer_reuse_20261021-uTVbnT/boundary/preparation.json LUMINA_NATIVE_SOURCE_PREPARATION_SHA256=1fad50444de5db7a583befd8d59ae7970c5ebf63c3cd423273c341ddb21582f2 와 OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1을 환경에 지정하고 ulimit -v 4194304 뒤 taskset -c 29 timeout 180s python3 -m pytest -q --basetemp=<새-root>/pytest tests/test_lumina_native90_rebind.py 실행",
+    "astra_evaluation": "기존 CompiledInput·OwnField 연결 재사용으로 계획 보정. 다음은 정확도 기준을 유지하며 실제 수송 완결성 병목을 해결해 J1을 얻는 것. 새 중복 어댑터나 정전 전 장시간 실행·추가 게이트 불필요",
+    "existing_incomplete_run": {
+      "record": "/gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local.json",
+      "elapsed_seconds": 14413.369359388947,
+      "completed_interval_results": 0,
+      "moment_updates": 0,
+      "last_maximum_error_ratio": 19.59364123622809,
+      "reason": "시간초과이며 정확도 수용이나 실제 native90 J1 확보가 아님. 원인을 단순 성능 문제로 확정하지 않는다"
+    },
+    "final_goal": "NOT_MET"
+  },
   "T_release": false,
   "final_goal_complete": false
 }
