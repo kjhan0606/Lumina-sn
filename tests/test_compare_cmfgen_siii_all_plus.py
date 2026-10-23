@@ -25,7 +25,7 @@ def test_all_plus_uses_angle_and_photo_weights_without_changing_original(tmp_pat
         geometry=paths[0], compact=paths[1]))
     monkeypatch.setattr(C, 'production_weight', lambda *_:
                         (np.full(n, 1./n), 2., 1., paths[2], paths[3]))
-    monkeypatch.setattr(C, 'sc_sweep', lambda ray, pieces, mode:
+    monkeypatch.setattr(C, 'sc_sweep', lambda ray, pieces, mode, **kwargs:
                         ray['observed'].copy() if pieces == 1 else
                         ray['observed'] + ray['delta'])
     monkeypatch.setattr(C, 'sha', lambda path: 'synthetic-'+Path(path).name)

@@ -54,3 +54,13 @@ def test_linear_sc_substeps_reject_invalid_range():
         linear_sc_sweep(data, 0)
     with pytest.raises(ValueError):
         linear_sc_sweep(data, 1, 4)
+
+
+def test_initial_interior_blue_profile_changes_near_blue_edge_only():
+    data = make_data(.1, 0., .02, np.zeros(4), np.zeros(4))
+    data['previous_outer'] = np.ones(4)
+    inner = sc_sweep(data, 4, mode='linear', initial_profile='inner')
+    outer = sc_sweep(data, 4, mode='linear', initial_profile='outer')
+    assert outer[-1] > inner[-1]
+    with pytest.raises(ValueError, match='세분'):
+        sc_sweep(data, 4, initial_profile='invented')

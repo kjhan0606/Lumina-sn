@@ -16,12 +16,14 @@ from compare_cmfgen_siii_ray_segment import actual_ray
 from prepare_cmfgen_mom_capture import sha
 
 
-def sc_sweep(data, subdivisions, minimum_index=0, mode='linear'):
+def sc_sweep(data, subdivisions, minimum_index=0, mode='linear',
+             initial_profile='linear'):
     """원 ν간격의 상풍 source와 선형 또는 Bézier 공간 SC를 연쇄한다."""
     if (type(subdivisions) is not int or not 1 <= subdivisions <= 64 or
             type(minimum_index) is not int or
             not 0 <= minimum_index < len(data['incoming']) or
             mode not in ('linear', 'bezier') or
+            initial_profile not in ('linear', 'inner', 'outer') or
             (mode == 'bezier' and data.get('far_neighbor') is None)):
         raise ValueError('원 광선 세분·주파수 범위 오류')
     n = len(data['incoming'])
@@ -30,6 +32,10 @@ def sc_sweep(data, subdivisions, minimum_index=0, mode='linear'):
          fraction * data['b_outer'])
     previous = ((1. - fraction) * data['previous_inner'][-1] +
                 fraction * data['previous_outer'][-1])
+    if initial_profile == 'inner':
+        previous[1:-1] = data['previous_inner'][-1]
+    elif initial_profile == 'outer':
+        previous[1:-1] = data['previous_outer'][-1]
     current = np.empty_like(previous)
     result = np.full(n, np.nan)
     step = data['length'] / subdivisions

@@ -178,11 +178,14 @@ def production_weight(nu_band, transport_root, baseline_rates, capture_j):
         f._mmap.close()
 
 
-def analyze(capture, transport_root, baseline_rates, out_root, subdivisions=8):
+def analyze(capture, transport_root, baseline_rates, out_root, subdivisions=8,
+            initial_profile='linear'):
     if out_root.exists():
         raise FileExistsError('기존 outward 각도/율 결과 보존')
     if type(subdivisions) is not int or not 2 <= subdivisions <= 64:
         raise ValueError('한정된 조건부 공간 세분 수 필요')
+    if initial_profile not in ('linear', 'inner', 'outer'):
+        raise ValueError('새 내부 노드 첫 청색 강도 프로필 오류')
     captured = collect_plus(capture)
     photo_weight, f_rate, j_rate, original, f_path = production_weight(
         captured['freq']*1e15, transport_root, baseline_rates,
@@ -195,7 +198,8 @@ def analyze(capture, transport_root, baseline_rates, out_root, subdivisions=8):
         baseline_max_abs = max(baseline_max_abs, float(error))
         if error > 1e-10*max(float(np.max(ray['observed'])), 1e-300):
             raise ValueError(f'원 outward 광선 {r+1} 전대역 재현 실패')
-        refined = sc_sweep(ray, subdivisions, mode='bezier')
+        refined = sc_sweep(ray, subdivisions, mode='bezier',
+                           initial_profile=initial_profile)
         delta += captured['angle_weights'][r]*(refined-ray['observed'])
     j_adjusted = captured['native_j']+delta
     if not np.isfinite(j_adjusted).all() or np.any(j_adjusted < 0):
@@ -213,6 +217,7 @@ def analyze(capture, transport_root, baseline_rates, out_root, subdivisions=8):
     report = dict(scope=__doc__, status='LOCAL_CONDITIONAL_ONLY',
                   native_zero_index=49, outward_crossing_ray_count=len(captured['rays']),
                   frequencies=len(captured['freq']), subdivisions=subdivisions,
+                  initial_profile=initial_profile,
                   original_bezier_baseline_max_abs=baseline_max_abs,
                   plus_angle_weight_sum=float(np.sum(captured['angle_weights'])),
                   original_F_photo_cm3_s=f_rate,
@@ -249,7 +254,9 @@ if __name__ == '__main__':
     parser.add_argument('--baseline-rates', type=Path, required=True)
     parser.add_argument('--out-root', type=Path, required=True)
     parser.add_argument('--subdivisions', type=int, default=8)
+    parser.add_argument('--initial-profile', choices=('linear', 'inner', 'outer'),
+                        default='linear')
     args = parser.parse_args()
     analyze(args.capture.resolve(), args.transport_root.resolve(),
             args.baseline_rates.resolve(), args.out_root.resolve(),
-            args.subdivisions)
+            args.subdivisions, args.initial_profile)
