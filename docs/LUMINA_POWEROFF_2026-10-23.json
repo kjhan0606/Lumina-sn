@@ -1,5 +1,5 @@
 {
-  "status": "STOPPED_COMMIT_PENDING",
+  "status": "STOPPED_COMMITTED_PUSH_PENDING",
   "timer_unit": "lumina-poweroff-stop-20261023.timer",
   "timer_verified": "active/waiting, NextElapseUSecRealtime=Fri 2026-10-23 10:50:00 KST, AccuracySec=1",
   "remote_access_verified": "비대화형 git ls-remote origin 성공; 등록 시 원격 HEAD 763fd8c06982e1a4b60d6f07fcc396d03b64a0f0",
@@ -22,5 +22,6 @@
   "selected_processes": [],
   "remaining_processes": [],
   "tests": "정전 보존용 WIP 커밋. 종료 시 전체 시험을 새로 실행하지 않음.",
-  "git_head_before": "1c5e613adb7d11689ae3c09772dfdd24df15eb1b"
+  "git_head_before": "1c5e613adb7d11689ae3c09772dfdd24df15eb1b",
+  "snapshot_commit": "089e7be37831cf642f5c92543525753565c150dc"
 }
