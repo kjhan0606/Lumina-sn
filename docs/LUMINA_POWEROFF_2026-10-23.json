@@ -1,9 +1,15 @@
 {
-  "status": "SCHEDULED",
+  "status": "STOPPED_COMMIT_PENDING",
   "timer_unit": "lumina-poweroff-stop-20261023.timer",
   "timer_verified": "active/waiting, NextElapseUSecRealtime=Fri 2026-10-23 10:50:00 KST, AccuracySec=1",
   "remote_access_verified": "비대화형 git ls-remote origin 성공; 등록 시 원격 HEAD 763fd8c06982e1a4b60d6f07fcc396d03b64a0f0",
   "requested_by": "user",
+  "pre_stop_check": {
+    "checked_at": "2026-10-23T10:44:50+09:00",
+    "local_lumina_calculations": 0,
+    "syntax_slurm_lumina_jobs": 0,
+    "preservation_checkpoint": "6bf9610 (기존 미커밋 관련 source/test 보존; 물리 합격 판정 아님)"
+  },
   "stop_at": "2026-10-23T10:50:00+09:00",
   "poweroff_at": "2026-10-23T11:00:00+09:00",
   "poweroff_owner": "user",
@@ -11,5 +17,10 @@
   "preservation": "부분 출력과 다른 프로젝트 작업을 보존한다. 기존 무관한 미추적 파일과 .claude/settings.json은 자동 커밋하지 않는다.",
   "scientific_goal": "NOT_MET",
   "goal_pause": "10:50 이후 운전자가 paused로 전환한다. OS 타이머는 goal API를 호출하지 않는다.",
-  "initial_slurm_check": "2026-10-23 09:41 KST syntax 조회에서 Lumina-sn 작업 없음"
+  "initial_slurm_check": "2026-10-23 09:41 KST syntax 조회에서 Lumina-sn 작업 없음",
+  "started_at": "2026-10-23T10:50:00.867327+09:00",
+  "selected_processes": [],
+  "remaining_processes": [],
+  "tests": "정전 보존용 WIP 커밋. 종료 시 전체 시험을 새로 실행하지 않음.",
+  "git_head_before": "1c5e613adb7d11689ae3c09772dfdd24df15eb1b"
 }
