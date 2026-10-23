@@ -193,6 +193,13 @@
       "last_maximum_error_ratio": 19.59364123622809,
       "reason": "시간초과이며 정확도 수용이나 실제 native90 J1 확보가 아님. 원인을 단순 성능 문제로 확정하지 않는다"
     },
+    "failure_trace_correction": {
+      "change": "LinearDriver.interval 새 호출 시작에 last_completed_batch 초기화, 새 진행에 interval_index 기록. 이전 구간 진행이 다음 초기 실패의 근거로 남는 문제만 수정",
+      "direct_tests": "경계 준비·입력 검증·기하 초기 실패3사례 포함 tests/test_lumina_gpu_linear_host.py 16통과/3.98초; CPU1·외부120초·GPU0",
+      "numerical_contract_changed": false,
+      "error_scope": "기존 max_error_ratio19.59는 국소 구간 추정비. 전체 광선/J/PHOT 및 고정점 잔차로 해석하지 않음",
+      "remaining_path_error": "기존16:34 기록과 같이 incident_errors 선택 replay API는 있으나 실제 interval/field의 전체 경로 전달은 미연결. 이번 실패 추적 수정으로 해결한 것이 아님"
+    },
     "final_goal": "NOT_MET"
   },
   "T_release": false,

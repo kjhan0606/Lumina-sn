@@ -175,6 +175,8 @@ class LinearDriver(GpuDriver):
             check(uncertain(*arguments,incident_errors.part(begin*16,width*16).address,self.rt.status))
 
     def interval(self, plan, index, work, *, max_seconds=60.):
+        # 새 호출이 초기 실패해도 이전 구간의 진행 상태를 재사용하지 않는다.
+        self.last_completed_batch = None
         self.bound()
         if not 0 < max_seconds <= self.interval_limit_seconds: raise ValueError('B 구간 시간 한도')
         if plan.source is not self.provider._source or plan.panels != 1 or type(index) is not int or not 0 <= index < len(plan.arrays['steps']):
@@ -202,7 +204,7 @@ class LinearDriver(GpuDriver):
             while True:
                 work.check(); active = int(errors.argmax()); worst = float(errors[active])
                 if math.isnan(worst) or worst < 0: raise RuntimeError('B 상대오차 결과 비정상')
-                self.last_completed_batch = dict(rounds=rounds, maximum_error_ratio=worst,
+                self.last_completed_batch = dict(interval_index=index, rounds=rounds, maximum_error_ratio=worst,
                     active_slab=active, active_leaves=len(leaves[active]), completed_candidate=True)
                 if worst <= 1.: break
                 current = leaves[active]; peak = max(x.score for x in current); updated = []

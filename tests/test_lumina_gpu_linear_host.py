@@ -115,3 +115,25 @@ def test_import_and_runtime_abi_definition_do_not_create_cuda_context(monkeypatc
     def forbidden(*args,**kwargs):raise AssertionError('import 중 공유 라이브러리 로드 금지')
     monkeypatch.setattr(ct,'CDLL',forbidden)
     importlib.reload(gpu_linear)
+
+
+@pytest.mark.parametrize('failure', ['bound','validation','geometry'])
+def test_new_interval_failure_cannot_report_previous_interval_progress(failure):
+    from types import SimpleNamespace
+    driver = gpu_linear.LinearDriver.__new__(gpu_linear.LinearDriver)
+    driver.last_completed_batch = dict(interval_index=99, maximum_error_ratio=.2)
+    source = object()
+    driver.provider = SimpleNamespace(_source=source)
+    driver.nf = driver.width = 8
+
+    def fail(*args):
+        raise RuntimeError('새 구간 초기 실패')
+
+    driver.bound = fail if failure == 'bound' else lambda: None
+    driver.geometry = fail
+    plan = SimpleNamespace(source=source, panels=0 if failure == 'validation' else 1,
+                           arrays={'steps':np.zeros((1,5))})
+    work = SimpleNamespace(deadline=float('inf'), check=lambda: None)
+    with pytest.raises((RuntimeError,ValueError)):
+        driver.interval(plan,0,work,max_seconds=1.)
+    assert driver.last_completed_batch is None
