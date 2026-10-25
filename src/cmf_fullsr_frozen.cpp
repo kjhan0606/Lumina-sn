@@ -369,3 +369,46 @@ extern "C" int cmf_fullsr_frozen_fixed_cell(const CMFNodalDenseView *view,const 
     }catch(const std::bad_alloc &){stats->status=3;}
     stats->elapsed_seconds=clock_now()-started;return stats->status;
 }
+
+extern "C" int cmf_fullsr_linear_chain(int nstep,int nray,const double *length,const double *delta,
+    const double *chi,const double *eta,const CMFLinearPositive *initial,CMFLinearPositive *output,
+    CMFFrozenAffine *maps,double seconds,CMFFrozenStats *stats,int *failed_step){
+    if(!stats)return 1;
+    *stats={};stats->failed_column=-1;if(failed_step)*failed_step=-1;
+    if(nstep<1||nstep>65536||nray<1||nray>512||(uint64_t)nstep*nray>2000000||
+       !length||!delta||!chi||!eta||!initial||!output||
+       !std::isfinite(seconds)||seconds<=0||seconds>160.){stats->status=1;return 1;}
+    for(int k=0;k<nstep;k++)if(!std::isfinite(length[k])||length[k]<=0||
+        !std::isfinite(delta[k])||delta[k]<0){stats->status=1;if(failed_step)*failed_step=k;return 1;}
+    for(size_t i=0;i<(size_t)(nstep+1)*nray;i++)if(!std::isfinite(chi[i])||!std::isfinite(eta[i])||eta[i]<0){
+        stats->status=1;if(failed_step)*failed_step=(int)(i/nray);return 1;
+    }
+    double started=clock_now();
+    stats->heap_bytes=(uint64_t)nray*sizeof(Positive)+(maps?(uint64_t)nstep*nray*sizeof(Affine):0);
+    try{
+        std::vector<Positive> current(nray);
+        std::vector<Affine> saved(maps?(size_t)nstep*nray:0);
+        for(int j=0;j<nray;j++){
+            current[j]=decode(initial[j]);if(!valid(current[j])){stats->status=1;return 1;}
+        }
+        for(int k=0;k<nstep&&!stats->status;k++){
+            if(clock_now()-started>=seconds){stats->status=4;if(failed_step)*failed_step=k;break;}
+            for(int j=0;j<nray;j++){
+                size_t a=(size_t)k*nray+j,b=a+nray;Affine map;Positive next;
+                if(!linear_source(std::fma(chi[a],length[k],3.*delta[k]),
+                    std::fma(chi[b],length[k],3.*delta[k]),length[k],eta[a],eta[b],map,*stats)||
+                   !apply(map,current[j],next)){
+                    stats->status=2;stats->failed_column=j;if(failed_step)*failed_step=k;break;
+                }
+                current[j]=next;if(maps)saved[a]=map;
+            }
+        }
+        if(!stats->status){
+            for(int j=0;j<nray;j++)output[j]={current[j].mantissa,current[j].exponent};
+            if(maps)for(size_t i=0;i<saved.size();i++)maps[i]={{saved[i].t.mantissa,saved[i].t.exponent},
+                {saved[i].s.mantissa,saved[i].s.exponent}};
+            stats->completed_outputs=nray;
+        }
+    }catch(const std::bad_alloc &){stats->status=3;}
+    stats->elapsed_seconds=clock_now()-started;return stats->status;
+}

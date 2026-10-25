@@ -6,6 +6,8 @@ import numpy as np
 
 from lumina_fullsr_sc import SCALED
 
+AFFINE = np.dtype([('transmission', SCALED), ('source', SCALED)], align=True)
+
 
 class Stats(ct.Structure):
     _fields_ = [(k, ct.c_uint64) for k in ('primitive_maps', 'compositions', 'completed_outputs', 'heap_bytes')]+[
@@ -21,6 +23,7 @@ class FrozenKernel:
         self.function.restype = ct.c_int
         self.begin_function = getattr(self.library, 'cmf_fullsr_frozen_begin', None)
         self.fixed_function = getattr(self.library, 'cmf_fullsr_frozen_fixed_cell', None)
+        self.chain_function = getattr(self.library, 'cmf_fullsr_linear_chain', None)
         if self.begin_function is not None:
             self.begin_function.argtypes = [ct.c_int]+[ct.c_double]*2+[ct.c_int]*2+[
                 ct.c_void_p]*2+[ct.c_double, ct.c_void_p]
@@ -29,6 +32,9 @@ class FrozenKernel:
             self.fixed_function.argtypes = [ct.c_void_p]*2+[ct.c_double]*4+[ct.c_int]*2+[
                 ct.c_void_p]*2+[ct.c_double, ct.c_void_p]
             self.fixed_function.restype = ct.c_int
+        if self.chain_function is not None:
+            self.chain_function.argtypes = [ct.c_int]*2+[ct.c_void_p]*7+[ct.c_double]+[ct.c_void_p]*2
+            self.chain_function.restype = ct.c_int
 
     @staticmethod
     def _buffers(nf, incident, output):
@@ -52,6 +58,21 @@ class FrozenKernel:
         code = self.begin_function(view.nf, provider._source.dlognu, delta, reconstruction, last,
             incident.ctypes.data, output.ctypes.data, max_seconds, ct.byref(stats))
         return code, output, self._report(stats, code)
+
+    def chain(self, lengths, deltas, chi, eta, initial, *, max_seconds=120.):
+        if self.chain_function is None: raise ValueError('실제 경로 계수 chain API가 없는 바이너리')
+        lengths, deltas, chi, eta = [np.ascontiguousarray(a, dtype='f8') for a in (lengths, deltas, chi, eta)]
+        nstep = len(lengths); nray = len(initial)
+        if (not 1 <= nstep <= 65536 or not 1 <= nray <= 512 or nstep*nray > 2000000 or
+                lengths.shape != (nstep,) or deltas.shape != (nstep,) or chi.shape != (nstep+1, nray) or
+                eta.shape != chi.shape or initial.shape != (nray,) or initial.dtype != SCALED or
+                not initial.flags.c_contiguous): raise ValueError('선형 chain 배열 크기/dtype 오류')
+        output = np.zeros(nray, dtype=SCALED); maps = np.zeros((nstep, nray), dtype=AFFINE)
+        stats = Stats(); failed = ct.c_int(-1)
+        code = self.chain_function(nstep, nray, *[a.ctypes.data for a in (lengths, deltas, chi, eta, initial, output, maps)],
+                                   max_seconds, ct.byref(stats), ct.byref(failed))
+        report = self._report(stats, code); report['failed_step'] = failed.value
+        return code, output, maps, report
 
     def fixed_cell(self, provider, location, length, da, db, incident, *, output=None,
                    bin_subdivisions=1, last=0, max_seconds=120.):

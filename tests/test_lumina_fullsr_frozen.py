@@ -292,3 +292,36 @@ def test_fixed_failure_keeps_output_and_preset_has_exactly_sixteen_cells(frozen)
                                             output=output, max_seconds=1e-12)
     assert code == 4 and report['published_outputs'] == 0
     np.testing.assert_array_equal(output, before)
+
+
+def test_correlated_chain_preserves_linear_profile_when_steps_are_split(frozen):
+    from lumina_linear_native import Positive
+    lengths = np.array([.2, .7, .1]); deltas = np.array([.002, .03, .001])
+    chi = np.array([[.2, -.4], [3., .7], [.1, -1.], [.7, .4]])
+    eta = np.array([[.3, .7], [.5, .1], [.8, .6], [.4, .3]])
+    initial = positive(np.array([.4, .2]))
+    code, result, maps, report = frozen.chain(lengths, deltas, chi, eta, initial)
+    assert code == 0, report
+    for j in range(2):
+        state = Positive(float(initial[j]['mantissa']), int(initial[j]['exponent']))
+        for k in range(3):
+            t, s = maps[k, j]['transmission'], maps[k, j]['source']
+            state = state*Positive(float(t['mantissa']), int(t['exponent']))+Positive(float(s['mantissa']), int(s['exponent']))
+        assert math.isclose(state.value(), values(result)[j], rel_tol=2e-15)
+    refined_chi = [chi[0]]; refined_eta = [eta[0]]
+    for k in range(3):
+        refined_chi.extend((.5*chi[k]+.5*chi[k+1], chi[k+1]))
+        refined_eta.extend((.5*eta[k]+.5*eta[k+1], eta[k+1]))
+    code, refined, _, report = frozen.chain(np.repeat(lengths/2, 2), np.repeat(deltas/2, 2),
+                                           refined_chi, refined_eta, initial)
+    assert code == 0, report
+    np.testing.assert_allclose(values(refined), values(result), rtol=2e-11)
+
+
+def test_correlated_chain_failure_does_not_publish_half_a_path(frozen):
+    initial = positive(np.array([.4])); before = initial.copy()
+    code, result, maps, report = frozen.chain([1.], [.02], [[.4], [.7]], [[.3], [.2]],
+                                             initial, max_seconds=1e-12)
+    assert code == 4 and report['published_outputs'] == 0
+    assert np.all(result['mantissa'] == 0) and np.all(maps['source']['mantissa'] == 0)
+    np.testing.assert_array_equal(initial, before)
