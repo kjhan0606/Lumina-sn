@@ -118,3 +118,49 @@ Astra01a173e6-f13b-7ba0-a3c7-c6ba90ceeb83에 이 새 중요 결정과 J2
 선형 chi의 내부 gain·±1200 gain과 극소 source 복원, 독립 Gauss 대조를
 포함한 후보40시험 및 기존 회귀를 합해155시험/8.08초가 통과했다.
 이는 실제 세 열의 미달을 통과로 바꾸는 증거가 아니다.
+
+## 다음 소형 대조의 확정 설계 — 구간 출구 프레임 고정
+
+Astra의 평가와 운전자 유도를 합쳐 다음처럼 진행한다. 구현·직접시험은
+운전자가 맡으며, 새 대형 실행/물질 피드백/생산 채택은 아직 하지 않는다.
+
+한 원래 물리구간의 출구 Doppler를 D_exit라 하고
+`d(s)=log(D(s)/D_exit)`, `Q_j(s)=exp(-3d(s))*I(s,nu_j*exp(d(s)))`를
+운반한다. 입구에서 원 native I를 한 번 재구성해
+`Q_entry=I_entry(nu_j*exp(d_entry))*exp(-3d_entry)`로 바꾼다.
+공간 cell의 기존 comoving 맵T,S에는 이미3delta가 들어 있으므로
+`T_fixed=T*exp(3*(da-db))`, `S_fixed=S*exp(-3db)`로 변환한다.
+이를 같은 j의 Q에 적용하고 cell 사이에는 주파수 보간을 하지 않는다.
+출구 db=0에서만 native I로 돌아온다. Q를 최종 observer I라고 부르지 않는다.
+
+source의 native 인덱스 범위는 `[j+db/h,j+da/h]`다. 공통 정수부/소수부를
+분리해 양끝 부분 bin과 그 사이 whole-bin 이동창을 순서대로 합성한다.
+두 끝이 같은 bin에 있을 때는 하나의 부분 bin으로 계산한다. da>=db>=0이므로
+source의 낮은 주파수 계수 연장은 필요 없다. 이 조건을 비단조 D에 확대하지
+않는다. 공간 cell의 zero drift도 해당 공통 주파수 offset에서 처리해야 한다.
+
+최고nu 밖은 현재와 같은 constant I/chi/eta다. 최고 bin을 포함한 상방 전체의
+입사와 계수가 주파수 독립이면 모든 상방 I는 같은 scalar 식을 풀어,
+매 cell 갱신 후 constant 연장과 입구의 한 번 연장이 대수적으로 같다.
+Astra도 추가 확인에서 이 조건부 논증에 동의했고, 주의점을 최고 bin 바로
+아래의 재구성 오차로 좁혔다. 비영 source·cell별 다른 물질/b의 최고 bin
+대조로 구현을 확인한다. 실제 세 열은 최대625223+1414<1115020이므로
+상방 경계를 만나지 않는다.
+
+실제 대조는 다음 세 설정만 한 묶음으로 CPU1·8GiB·외부180초 안에서 한다.
+
+1. fixed-frame uniform4 — 보존된 구간별 재투영 space4와 비교.
+2. fixed-frame uniform16 — 같은 방식의 space16 및 uniform4와 비교.
+3. fixed-frame endpoint16 — uniform16과 같은 cell 수로 끝점 집중 효과 확인.
+
+endpoint16의 분할점은 사전에 `i/8 (i=0..8)`과
+`2^-k,1-2^-k (k=4,8,16,24)`의 정렬된 합집합으로 고정한다(총16cell).
+기준·원 자료·LINEAR_CHI·cubic U·초기J/I=0·독립세열은 동일하다.
+비영 입구/진공과 최고nu source 경계는 기존 제조 사례를 재사용한다.
+같은 mesh의 기존↔fixed 차이를 반복 재투영 효과로, fixed 내부의 mesh 차이를
+공간 동결/기하 평가로 구분한다. 영입사만으로 입구 재구성이 검증됐다고
+표시하지 않는다. 기준 미달이면 그대로 기록하고 무조건 uniform 확대하지 않는다.
+
+이 의뢰는 종료·닫았다. 최종 우선순위는 수송 이산화 판별, 선택한 수송의
+자체 J 폐합, 전원소 SE/RE·Si/S 분포, 최종 동일물질 observer 순서다.
+이 문단은 아직 fixed-frame 구현/실제 대조 성공을 뜻하지 않는다.
