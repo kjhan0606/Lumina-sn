@@ -5,13 +5,15 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 
 
-def stage(project, root, include_comparison=False):
+def stage(project, root, include_comparison=False, chain_gpu=False):
     project, root = Path(project).resolve(), Path(root).resolve()
     if root.exists(): raise FileExistsError('새 계산 root만 허용')
     pending = [project/'scripts/lumina_fullsr_sc_actual.py', project/'scripts/lumina_fullsr_sc.py']
+    if chain_gpu: pending += [project/'scripts/run_lumina_fullsr_chain_gpu.py']
     if include_comparison: pending.append(project/'scripts/compare_lumina_fullsr_sc.py')
     paths = set()
     while pending:
@@ -29,6 +31,17 @@ def stage(project, root, include_comparison=False):
                  'cmf_linear_affine.hpp', 'cmf_ordered_maps.hpp', 'cmf_linear_provider.hpp'):
         paths.add(project/'src'/name)
     paths.add(project/'scripts/run_lumina_fullsr_sc.sh')
+    if chain_gpu:
+        paths.add(project/'scripts/run_lumina_fullsr_chain_gpu.sh')
+        pending = [project/'src'/name for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_frozen.cpp')]
+        while pending:
+            path = pending.pop()
+            if path in paths: continue
+            paths.add(path)
+            for name in re.findall(r'^\s*#include\s+"([^"]+)"', path.read_text(), flags=re.M):
+                dependency = (path.parent/name).resolve()
+                if not dependency.is_relative_to(project/'src'): raise ValueError('원천 의존 경로 범위 밖')
+                if dependency not in paths: pending.append(dependency)
     if include_comparison:
         paths.add(project/'scripts/run_lumina_fullsr_sc_compare.sh')
         paths.add(project/'scripts/run_lumina_fullsr_sc_pair.sh')
@@ -46,4 +59,5 @@ def stage(project, root, include_comparison=False):
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('project'); p.add_argument('root')
     p.add_argument('--include-comparison', action='store_true')
+    p.add_argument('--chain-gpu', action='store_true')
     a = p.parse_args(); stage(**vars(a))

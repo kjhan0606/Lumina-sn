@@ -6,13 +6,13 @@
 #include <ctime>
 #include <new>
 #include <vector>
-#include "cmf_positive_moments.h"
+#include "cmf_fullsr_linear_map.hpp"
 
 namespace {
 using lumina_ordered::Positive;
 using lumina_ordered::product;
 using lumina_ordered::sum;
-struct Affine {Positive t,s;};
+using Affine=lumina_fullsr_map::Affine;
 struct Node {Affine value,aggregate;};
 double clock_now(){timespec t{};return clock_gettime(CLOCK_MONOTONIC,&t)?NAN:t.tv_sec+1e-9*t.tv_nsec;}
 bool valid(Positive p){return std::isfinite(p.mantissa)&&p.mantissa>=0&&
@@ -41,29 +41,7 @@ bool apply(Affine a,Positive incoming,Positive &out){
 /* q0/q1은 양 끝 effective chi*length다. 내부 gain 봉우리에서는 0점을
  * 나누고, 순 gain은 반사+scaled T로 보존해 모멘트의 double overflow를 피한다. */
 bool linear_source(double q0,double q1,double length,double eb,double er,Affine &out,CMFFrozenStats &stats){
-    if(!std::isfinite(q0)||!std::isfinite(q1))return false;
-    if(q0>0&&q1<0){
-        double denominator=q0-q1;if(!std::isfinite(denominator))return false;
-        double f=q0/denominator;if(!(f>0&&f<1))return false;
-        double middle=(1.-f)*eb+f*er;Affine a,b;
-        return linear_source(q0*f,0.,length*f,eb,middle,a,stats)&&
-            linear_source(0.,q1*(1.-f),length*(1.-f),middle,er,b,stats)&&compose(a,b,out,stats);
-    }
-    double tau=.5*q0+.5*q1;
-    Affine result;if(!Positive::from_log(-tau,result.t))return false;
-    result.s=Positive::zero();stats.primitive_maps++;
-    if(eb!=0||er!=0){
-        bool reflected=tau<0;double a=reflected?-q1:q0,b=reflected?-q0:q1;
-        double w[3];CMFHistoryStats work={};
-        if(::basis(a,b,std::exp(-(.5*a+.5*b)),w,&work))return false;
-        for(double x:w)if(!std::isfinite(x)||x<=0)return false;
-        double blue=reflected?w[1]+w[2]:w[0]+w[1],red=reflected?w[0]+w[1]:w[1]+w[2];
-        Positive p,q,r;
-        if(!Positive::from_double(blue,p)||!scale(p,length,q)||!scale(q,eb,p)||
-           !Positive::from_double(red,q)||!scale(q,length,r)||!scale(r,er,q)||!sum(p,q,result.s))return false;
-        if(reflected){if(!product(result.s,result.t,p))return false;result.s=p;}
-    }
-    out=result;return true;
+    return lumina_fullsr_map::source(q0,q1,length,eb,er,out,stats.primitive_maps,stats.compositions);
 }
 /* 각 native bin의 주파수 방향은 청색 -> 적색이다. */
 bool bin_map(double cb,double cr,double eb,double er,double length,double delta,int n,
