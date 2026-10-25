@@ -41,3 +41,29 @@ def test_sc_report_preserves_its_actual_method_and_own_field_lineage(tmp_path):
     data['identity']['input_J'] = first['J']; path.write_text(json.dumps(data))
     second = C.completed_entry(path, {'fixture': True}, 16172, 2, first['J'])
     assert second['input_iteration'] == 1 and second['iteration'] == 2
+
+
+def test_adapter_records_method_and_input_identities_without_another_transport(tmp_path, monkeypatch):
+    path, data = record(tmp_path)
+    config = tmp_path/'config'; config.write_text('{}')
+    base = tmp_path/'base.json'
+    base.write_text(json.dumps(dict(config=str(config), preparation='SYNTHETIC',
+        preparation_sha256='SYNTHETIC', source_identity=data['source_identity'])))
+    monkeypatch.setattr(C, 'BASE', base); monkeypatch.setattr(C, 'BASE_SHA', C.N.sha(base))
+    monkeypatch.setattr(C, 'verify_stage', lambda root: 'SYNTHETIC_STAGE')
+    class Source:
+        identity = data['source_identity']
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    monkeypatch.setattr(C.N, 'open_sealed_native', lambda *args: Source())
+    calls = []
+    def rates(config, source, contract, entries, out, deadline):
+        calls.append(entries); Path(out).mkdir()
+        return dict(synthetic_only=True, accepted_physical_field=False)
+    monkeypatch.setattr(C.R, 'compare', rates)
+    out = tmp_path/'rates'; C.compare(path, out)
+    evidence = json.loads((out/'transport-comparison.json').read_text())
+    assert len(calls) == 1 and calls[0][0]['J'] == data['J']
+    assert evidence['completed_fields'][0]['report']['transport'] == 'FULLSR_INVARIANT_UPWIND_SC'
+    assert evidence['result_records'][str(path)] == C.N.sha(path)
+    assert evidence['accepted_physical_field'] is False and evidence['final_goal'] == 'NOT_MET'

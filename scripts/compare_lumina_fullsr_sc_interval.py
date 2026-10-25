@@ -17,7 +17,12 @@ import lumina_local_micro as M
 from lumina_nodal_driver import CompiledDriverPlan
 
 
-def compare(root, library, seconds=160):
+def compare(root, library, seconds=160, cases=None):
+    cases = ((4, 1), (16, 1), (64, 1), (64, 4)) if cases is None else cases
+    if (type(seconds) is not int or not 1 <= seconds <= 160 or not 1 <= len(cases) <= 4 or
+            any(len(case) != 2 or any(type(x) is not int for x in case) or
+                not 1 <= case[0] <= 4096 or not 1 <= case[1] <= 16 for case in cases)):
+        raise ValueError('최대4조합·공간4096·주파수16·내부160초 한도')
     root = Path(root).resolve(); output = root/'interval-comparison.json'
     if output.exists(): raise FileExistsError('기존 독립 대조 보존')
     if M.N.sha(BASE) != BASE_SHA: raise ValueError('원 봉인 변경')
@@ -44,7 +49,7 @@ def compare(root, library, seconds=160):
                     ct.c_double, ct.c_int]+[ct.c_void_p]*6
                 helper.geom.restype = ct.c_int
                 kernel = Kernel(library); boundary = np.zeros(source.nf)
-                for space, frequency in ((4, 1), (16, 1), (64, 1), (64, 4)):
+                for space, frequency in cases:
                     leaves = [Leaf(k/space, (k+1)/space) for k in range(space)]
                     lengths, deltas, loc, _ = helper.geometry(original, 13003, leaves)
                     locations = [loc[0]]+[loc[5*k+4] for k in range(space)]
@@ -77,4 +82,5 @@ def compare(root, library, seconds=160):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('library', type=Path)
+    p.add_argument('--case', dest='cases', nargs=2, type=int, action='append')
     args = p.parse_args(); raise SystemExit(compare(**vars(args)))

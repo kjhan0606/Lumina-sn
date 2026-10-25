@@ -8,10 +8,11 @@ from pathlib import Path
 import shutil
 
 
-def stage(project, root):
+def stage(project, root, include_comparison=False):
     project, root = Path(project).resolve(), Path(root).resolve()
     if root.exists(): raise FileExistsError('새 계산 root만 허용')
     pending = [project/'scripts/lumina_fullsr_sc_actual.py', project/'scripts/lumina_fullsr_sc.py']
+    if include_comparison: pending.append(project/'scripts/compare_lumina_fullsr_sc.py')
     paths = set()
     while pending:
         path = pending.pop()
@@ -28,6 +29,7 @@ def stage(project, root):
                  'cmf_linear_affine.hpp', 'cmf_ordered_maps.hpp', 'cmf_linear_provider.hpp'):
         paths.add(project/'src'/name)
     paths.add(project/'scripts/run_lumina_fullsr_sc.sh')
+    if include_comparison: paths.add(project/'scripts/run_lumina_fullsr_sc_compare.sh')
     root.mkdir(); manifest = {}
     for path in sorted(paths):
         relative = path.relative_to(project); target = root/'code'/relative
@@ -41,4 +43,5 @@ def stage(project, root):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('project'); p.add_argument('root')
-    a = p.parse_args(); stage(a.project, a.root)
+    p.add_argument('--include-comparison', action='store_true')
+    a = p.parse_args(); stage(**vars(a))

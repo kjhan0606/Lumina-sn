@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 
 import lumina_native90_rates as R
-from lumina_fullsr_sc_actual import BASE, BASE_SHA
+from lumina_fullsr_sc_actual import BASE, BASE_SHA, verify_stage
 import lumina_native_columns as N
 
 
@@ -32,6 +32,7 @@ def completed_entry(path, source_identity, intervals, iteration, previous=None):
 def compare(first, out, *, second=None, seconds=1200):
     if type(seconds) is not int or not 1 <= seconds <= 1200: raise ValueError('비교 내부1200초 한도')
     if Path(out).exists(): raise FileExistsError('기존 Si/S 비교 결과 보존')
+    stage_digest = verify_stage(Path(out).parent)
     if N.sha(BASE) != BASE_SHA: raise ValueError('원 물질·계수 봉인 변경')
     c = json.loads(BASE.read_text()); deadline = time.monotonic()+seconds
     with N.open_sealed_native(c['config'], c['preparation'], c['preparation_sha256']) as source:
@@ -44,6 +45,13 @@ def compare(first, out, *, second=None, seconds=1200):
         contract = dict(source_identity=source.identity, config_sha256=N.sha(c['config']),
                         plan_layout=dict(physical_intervals=intervals))
         result = R.compare(c['config'], source, contract, entries, out, deadline)
+        provenance = dict(schema='lumina-fullsr-sc-rate-comparison-v1', input_plan_sha256=BASE_SHA,
+            stage_sha256=stage_digest,
+            completed_fields=entries, result_records={str(p): N.sha(p) for p in (first, second) if p is not None},
+            rates=result, accepted_physical_field=False, final_goal='NOT_MET',
+            scope='같은 동결 물질의 첫 자체장 율 응답; 산란·물질 평형이나 스펙트럼 합격 아님')
+        with (Path(out)/'transport-comparison.json').open('x') as stream:
+            json.dump(provenance, stream, ensure_ascii=False, indent=2, allow_nan=False)
     return result
 
 
