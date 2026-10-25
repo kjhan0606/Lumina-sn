@@ -732,3 +732,25 @@ GPU0·no-requeue로 기존 native90 비교를 실행한다. 기존 coarse 두 �
 error 없음이다. 장치 live5,337,716,964B·관측 peak10,058,989,568B는16GiB
 한도 안이고 새 checkpoint는 아직0개다. 첫 완성장/수렴/물리 합격은 아니다.
 진행 중인 동일 할당을 확인한 verified wait이며 새 수송이나 재시도를 만들지 않았다.
+
+08:39 KST 확인에서436191은 계속 RUNNING(5519초),4347/16172구간·3448관측을
+완료했다. error 없음이며 첫 `checkpoint-4096`을 저장했다. 저장 위치는
+4096 actions·4061구간·3239관측이고 complete=false다. source·기하·stage·
+파일 신원과 배열 형상/dtype을 grammar-debug의 읽기 전용 확인에서 재현했다.
+같은 원 계획의 action prefix를 다시 만들어 구간/관측 수도 일치함을 확인했다.
+추가 수송이나 실제 GPU 복원 실행은0이다. 이를 복원 계산 통과나 물리 합격으로
+표시하지 않는다. 원 수송은 중단하지 않고 같은 입력으로 계속 진행한다.
+
+- checkpoint 기록: `18347b6c2109f061e1a3aae65c898776e2f5bfae9121bd898acd7af9eb1e647e`.
+- ray: `b0ba9b01da327c6426619d41925e0522edb2f55ab6c8875cb215950572c89066`.
+- J/H/K 부분 모멘트: `302a5a79718cb6005b758dc6984b2aba78aa52bde0d737de9b6a955dc42fb9e7`.
+- terminal 변환 계수: `7b209c27fd98f1aa08b4521c44eee81ecbb9ae1daafc07fc8c6cafb84cdd1652`.
+
+확인한 로직을 같은 root의 `checkpoint-preservation.py`에 보존했다. 재현은
+grammar-debug·CPU1·가상주소4GiB·55초 한도에서 실행 root를 cwd로 하고
+`ulimit -v 4194304` 뒤
+`PYTHONPATH=code/scripts OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 timeout 55s python3 checkpoint-preservation.py`다.
+보존한 확인 코드 SHA256은 `c7aeadef75a8084ded7bfa62b873761b219193de61b58622a38a1b57440f627f`다.
+이 파일은 보존 확인용 일회성 증거이며 수송 실행기나 새 통과 게이트가 아니다.
+첫 체크포인트 저장 뒤 host peak RSS는5519576KiB, 장치 관측 peak는
+10058989568B로 둘 다 원16GiB 이내다. 완성 J와 새 CMFGEN 율 비교는 아직 없다.
