@@ -26,14 +26,22 @@ class PhaseGeometry:
             ct.c_double, ct.c_int, ct.c_int]+[ct.c_void_p]*8
         self.function.restype = ct.c_int
 
-    def grid(self, step, subdivisions=4):
+    def _query(self, step, subdivisions):
         step = np.ascontiguousarray(step, dtype='f8')
         if step.shape != (5,) or type(subdivisions) is not int: raise ValueError('phase 기하 입력 크기/세분 오류')
-        before = time.monotonic(); n = ct.c_int()
+        n = ct.c_int()
         args = [self.provider._ctx, len(self.radius)]+[a.ctypes.data for a in (self.radius, self.velocity, self.gx, self.gw, step)]+[
             self.h, subdivisions]
         code = self.function(*args, 0, ct.byref(n), *[None]*7)
         if code: raise ValueError('C phase 기하 크기 조회 실패: '+str(code))
+        return args, n, step
+
+    def count(self, step, subdivisions=4):
+        return self._query(step, subdivisions)[1].value
+
+    def grid(self, step, subdivisions=4):
+        before = time.monotonic()
+        args, n, step = self._query(step, subdivisions)
         x, radius, phase = [np.empty(n.value+1, dtype='f8') for _ in range(3)]
         length, drift = [np.empty(n.value, dtype='f8') for _ in range(2)]
         locations = (Location*(n.value+1))(); error = ct.c_double()

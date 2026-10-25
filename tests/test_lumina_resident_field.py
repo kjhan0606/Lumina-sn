@@ -12,6 +12,7 @@ from test_lumina_nodal_driver import driver_library
 from lumina_fullsr_sc import SCALED
 from lumina_fullsr_chain_gpu import DeviceInput
 from lumina_phase_geometry import PhaseGeometry
+from lumina_phase_cache import CachedPhaseGeometry, build_cache
 from lumina_resident_field import ResidentField, actions
 from lumina_resident_actual import manufactured_source, analytic_moments
 from run_lumina_fullsr_chain_gpu import positive
@@ -89,15 +90,19 @@ def test_resident_control_preserves_core_events_all_moments_and_checkpoint(drive
             assert field.intervals == len(plan.arrays['steps'])
             assert field.observations == len(plan.arrays['event_node'])+int(plan.arrays['paths'][:, 4].sum())
             assert abs(original-expected).max()/expected[0].max() < 1e-12
-        with ResidentField(gpu, runtime, device, factory, plan, boundary, gradient, **kwargs) as field:
+        build_cache(tmp_path/'geometry-cache', factory, plan)
+        with CachedPhaseGeometry(tmp_path/'geometry-cache', factory, plan) as cached, ResidentField(
+                gpu, runtime, device, cached, plan, boundary, gradient, **kwargs) as field:
             field.advance(deadline=time.monotonic()+120, max_actions=len(field.sequence)//2)
             field.checkpoint(tmp_path/'checkpoint')
-        with ResidentField(gpu, runtime, device, factory, plan, boundary, gradient, **kwargs) as field:
+        with CachedPhaseGeometry(tmp_path/'geometry-cache', factory, plan) as cached, ResidentField(
+                gpu, runtime, device, cached, plan, boundary, gradient, **kwargs) as field:
             field.restore(tmp_path/'checkpoint'); field.advance(deadline=time.monotonic()+120)
             np.testing.assert_array_equal(field.complete_moments(), original)
         metadata = json.loads((tmp_path/'checkpoint/checkpoint.json').read_text()); metadata['intervals'] += 1
         (tmp_path/'checkpoint/checkpoint.json').write_text(json.dumps(metadata))
-        with ResidentField(gpu, runtime, device, factory, plan, boundary, gradient, **kwargs) as field:
+        with CachedPhaseGeometry(tmp_path/'geometry-cache', factory, plan) as cached, ResidentField(
+                gpu, runtime, device, cached, plan, boundary, gradient, **kwargs) as field:
             with pytest.raises(ValueError, match='완료 위치'): field.restore(tmp_path/'checkpoint')
     assert not runtime.data
 

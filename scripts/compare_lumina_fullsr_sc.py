@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""완성 SC 자체장만 기존 native90 Si/S 생산율 대조기에 전달한다."""
+"""완성 자체장만 기존 native90 Si/S 생산율 대조기에 전달하고 수송 출처를 구별한다."""
 import argparse
 import json
 from pathlib import Path
@@ -8,16 +8,14 @@ import time
 import numpy as np
 
 import lumina_native90_rates as R
-from lumina_fullsr_sc_actual import BASE, BASE_SHA, verify_stage
+from lumina_fullsr_sc_actual import BASE, BASE_SHA, verify_stage, completed_transport
 import lumina_native_columns as N
 
 
 def completed_entry(path, source_identity, intervals, iteration, previous=None):
     record = json.loads(Path(path).read_text())
     expected_input = 'ZERO_OWN_START' if previous is None else previous
-    if (record.get('schema') != 'lumina-fullsr-sc-native90-v1' or
-            record.get('complete_original_grid') is not True or record.get('next_frequency') != -1 or
-            record.get('completed_frequencies') != 1115020 or
+    if (not completed_transport(record, 1115020) or
             record.get('source_identity') != source_identity or
             record.get('original_layout', {}).get('physical_intervals') != intervals or
             record.get('identity', {}).get('input_J') != expected_input or
@@ -25,9 +23,11 @@ def completed_entry(path, source_identity, intervals, iteration, previous=None):
         raise ValueError('동일 물질의 전격자 완료/자체장 계보 불일치')
     j = record['J']
     if N.sha(j['path']) != j['sha256']: raise ValueError('완성 자체 J 변경')
+    transport = ('FULLSR_INVARIANT_UPWIND_SC' if record['schema'] == 'lumina-fullsr-sc-native90-v1'
+                 else 'FULLSR_ACTUAL_PHASE_RESIDENT_CHAIN')
     return dict(iteration=iteration, input_iteration=iteration-1, J=j,
         report=dict(completed_actual_F_calls=1, physical_intervals=intervals,
-                    transport='FULLSR_INVARIANT_UPWIND_SC',
+                    transport=transport,
                     discretization=record['identity'], accepted_physical_field=False))
 
 

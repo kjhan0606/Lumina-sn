@@ -29,9 +29,11 @@ class InputField:
     """완성 자체 J 파일만 연결한다. 참조장 주입은 하지 않는다."""
     def __init__(self, source, path, digest):
         if M.N.sha(path) != digest: raise ValueError('입력 자체장 신원 변경')
-        previous = json.loads((Path(path).parent/'sc-result.json').read_text())
-        if (previous.get('schema') != 'lumina-fullsr-sc-native90-v1' or
-                previous.get('complete_original_grid') is not True or
+        candidates = [Path(path).parent/name for name in ('sc-result.json', 'resident-field.json')]
+        candidates = [item for item in candidates if item.is_file()]
+        if len(candidates) != 1: raise ValueError('자체장의 완료 기록은 하나로 특정되어야 한다')
+        previous = json.loads(candidates[0].read_text())
+        if (not completed_transport(previous, source.nf) or
                 previous.get('source_identity') != source.identity or
                 previous.get('J') != dict(path=str(Path(path).resolve()), sha256=digest)):
             raise ValueError('동일 물질에서 완성된 자체장 계보 필요')
@@ -43,6 +45,25 @@ class InputField:
         self.identity = dict(role='OWN_NATIVE90_COMPLETED_FIELD', path=str(path), sha256=digest)
     def close(self):
         self.values._mmap.close(); self.closed = True
+
+
+def completed_transport(record, nf):
+    """기존 coarse sweep과 새 실제 phase 수송의 완료 표식을 구별한다."""
+    if record.get('complete_original_grid') is not True or record.get('completed_actual_F_calls') != 1:
+        return False
+    layout = record.get('original_layout', {})
+    if layout.get('frequencies') != nf: return False
+    if record.get('schema') == 'lumina-fullsr-sc-native90-v1':
+        return record.get('next_frequency') == -1 and record.get('completed_frequencies') == nf
+    if record.get('schema') == 'lumina-resident-fullsr-native90-v1':
+        field = record.get('field_report', {})
+        observations = layout.get('step_observations', -1)+layout.get('boundary_observations', -1)
+        actions = layout.get('paths', -1)+layout.get('physical_intervals', -1)+layout.get('boundary_observations', -1)
+        return (field.get('complete') is True and field.get('failed') is False and
+                field.get('physical_intervals') == layout.get('physical_intervals') and
+                field.get('observations') == observations and
+                field.get('next_action') == field.get('actions') == actions and actions > 0)
+    return False
 
 
 def verify_stage(root):

@@ -562,3 +562,116 @@ coarse J1/J2도 실제 F 두 번이며 실패/정확도 미달을 이유로 횟�
 SHA256 `933c3ca879b51abbbc18d303730ac32a88d7eaf9cc26e93ac330f2fe751a6e06`다.
 단회 최대480초=0.133333GPUh만 대장에 예약했으며 이 예약을 실제 사용량으로
 미리 차감하지 않았다. 대형 전체장 실행권한 질문과는 별개의 소형 검증이다.
+
+### GPU 상주 통합 결과와 독립 재현
+
+436170/H100 NVL은 COMPLETED/0:0, 본할당63초로 종료했다. 내부 준비·시험·
+저장은44.345초다. 제조 전체장 J/H/K의 해석 대조 오차는 max(J) 정규화로
+각9.7944e-16/1.6324e-16/3.2648e-16이며, 1680번째 action의 checkpoint를
+복원한 최종 결과는 무중단 결과와 같았다. 제조3302구간·1392관측을 완결했으나
+이는 실제 원모델 native90 F 계산이 아니다.
+
+원13003 전1115020ν의 새 상주 출력과 앞선 병렬 fold의 최대 상대차는
+phase2에서5.6165e-12, phase4에서5.487173979871096e-12다. phase2/4 차이는
+8.282012892678197e-5다. 자체 coarse J1 source·비영 제조 입구를 가진
+13003→13004 연속구간의 선택 CPU 대조도2.24e-14/6.63e-16 이내다.
+새 phase4 원13003 수송·동기화는5.382초이나 이를 모든 구간의 ETA로
+단순 외삽하지 않는다. 잘못된 scaled 입구의 오류175 뒤에는 부분장과
+checkpoint 모두 발행되지 않았다.
+
+같은 할당에서 native90 실제 전체장 배열의 할당만 시험했다. live6,140,531,364B,
+보수 예약10,769,530,880B, 장치 관측 peak10,860,363,776B이며 원16GiB 이내다.
+host RSS peak4,010,892KiB다. 실제 native90 action은0이고 전체 F·물질 갱신도0이다.
+
+결과 `lumina_resident_20261026-97IoJk/run/resident-integration.json` SHA256은
+`57db434cbbb2055b4922e26b72ac32c43f8e543a20f2d2211b5ff63b3597a46c`,
+CUDA 바이너리는 `531ded6df7c3f72ec2cd17688d6245d5fd291ddfcdfb1705fdd6a435664d4956`,
+C 기하는 `3cddc57f07232c92af77d7647f137d6f0f63904024959b34345e487da9bec2d0`이다.
+저장한 `stream-phase4.npy` SHA256은
+`209ee953f689bf0eb04dab7248e10b93f87f8637ad7fff6795ca3c1c1aeecf4d`다.
+
+운전자가 grammar-debug에서 새 GPU 실행 없이 봉인된 원58파일의
+파일 신원, 결과와 저장 출력의 해시, 기존 fold와의 전NF 차이를 읽기 전용으로
+재현했다. 최대차5.487173979871096e-12와 최악 열133610이 같았다. 별도로
+저장된 제조 절반 checkpoint를 같은 일정 계수 광선 해석해와 대조했다.
+J/H/K 오차5.733e-16/2.099e-16/2.048e-16, 광선 오차0으로 재현됐다.
+첫 읽기 전용 확인문은 Positive 객체를 float에서 빼는 보고문 오류로 종료했다.
+수치나 원파일은 변경하지 않고 작은 ray의 명시적 변환만 고쳐 위 결과를 얻었다.
+제조 최종 J/H/K 배열은 별도 저장되지 않았으므로 그 배열 전체의 재대조를
+독립 재현이라고 쓰지 않는다. 최종 제조 통과/복원 일치는 원 실행기의
+대조 assertion과 봉인 결과에 근거한다.
+
+63 GPU초를 한 번 차감하고480초 예약은 전부 해제했다. 누적 사용76.989GPUh,
+잔여67.011GPUh·예약0이다. 본할당/내부 실행/시험 시간을 중복 합산하지 않았다.
+최종 물리 목표는 NOT_MET다. 새 정확 whole-F 쌍의 추가 횟수·합계 시간
+질문에는 아직 응답이 없어 큰 F는 시작하지 않았다.
+
+### CPU 기하 재사용 준비
+
+같은 전체장 연결 내부 구현으로 `lumina_phase_cache.py`를 추가했다. 기존 C의
+구간별 phase·proper 길이·반경 위치 결과를 변경 없이 읽기 전용 NPY로
+보존한다. 반경·속도·native 반경·주파수 간격·원 구간·적분 규칙·C 바이너리·
+세분이 같아야 사용하며 온도/준위인구/J만 바뀌면 재사용한다. 부분 cache는
+완성으로 발행하지 않고 기존 출력도 덮어쓰지 않는다. 기하 자체를 추가
+물리 수용 조건으로 만들거나 J/물질 반복 횟수로 세지 않는다.
+
+grammar-debug에서 새 cache와 같은 C 기하10시험이11.54초에 통과했다.
+실제 전체 기하 준비는 grammar Slurm CPU1·4GiB·최대5분/내부240초·GPU0·
+자동 재시도0의 새 root `lumina_phase_prepare_20261026-8fMV0m/run`에서 한다.
+59파일 stage SHA256은
+`63dd4c68e238ff1afb5f0a3a28f15c1968963ee30579ff2780cd959d97642ac0`이다.
+이 준비는 계수/J를 생성하지 않고 F 계산도 하지 않는다.
+
+기하 준비1217965는 grammar048에서 COMPLETED/0:0, CPU1·4GiB·GPU0·89초로
+끝났다. 내부83.392초에16172구간·11918912 cells·11935084 nodes를 완결했다.
+최대 phase 반올림은5.798e-11 bin이다. `cache/geometry.json` SHA256은
+`a7dc3241e60d7ea3a22e86d9ee66cc7acfb562092201894d64be80451f9ae5cc`다.
+grammar-debug에서 모든 cache 파일 해시를 확인하고 원0/1000/13003/16171의
+6개 배열을 C에서 새로 만든 결과와 byte-identical하게 재현했다. GPU 계산이나
+원자료 본문 재해시는 하지 않았다. CPU 비용을 GPUh에 넣지 않는다.
+
+### 전체장 출력·재개·다음 자체장 연결 구현
+
+`lumina_resident_run.py`와 단회 Slurm 실행 외곽을 추가했다. 원 물질70,
+불변 source/J, 같은 내부 경계·native90·전체NF·107광선·원 관측을 사용하고
+phase4 기하 cache를 읽는다. 원 상주 kernel/소스 계수 제공자는 변경하지 않았다.
+입력 J=0 또는 같은 물질에서 완성된 자체장만 허용하며 참조 J 주입은 없다.
+
+실행기는 입력·바이너리·기하·계보가 같은 유효 checkpoint만 새 root에서
+복원한다. 자동 재시작은 없다. 정상 진행 checkpoint는 약1/4·1/2·3/4 위치에
+최대3개, 시간 종료 전 추가1개만 보존해 매 작은 구간마다 대형 파일을 쌓지
+않는다. 기존 checkpoint와 실패 원본은 삭제하지 않는다. 완성 시에만 J/H/K와
+별도 J를 발행하며 음수 H를 보존하고 부분장을 다음 자체장으로 넘기지 않는다.
+Slurm 외부의 직접 전체장 실행은 입출력 생성 전에 거부한다. 코드를 준비한
+것은 Slurm 제출·F 횟수·합계 GPUh의 추가 승인이 아니다.
+
+기존 `InputField`와 native90 PHOT 소비기는 coarse SC와 새 상주 phase 결과를
+구분해 완료 여부·입력 계보를 확인한다. 새 결과의 방법 표시는
+`FULLSR_ACTUAL_PHASE_RESIDENT_CHAIN`이며 기존 coarse upwind라고 쓰지 않는다.
+같은 폴더에 완료 기록이 둘이면 임의로 골라 사용하지 않는다. 기존 coarse
+완료 기록과 그 실제 수송법 표시는 유지한다.
+
+같은 cache를 사용한 제조 전체장/복원, 출력과 자체장 계보, 생산 PHOT 소비기,
+기존 frozen/CUDA 연결/메모리 회귀를 포함해 grammar-debug에서122시험이
+16.45초에 통과했다. 이는 새 production 전체 F의 GPU 실측이나 CMFGEN
+동질성 통과가 아니다. 직접 재현 범위는 다음과 같다.
+
+```bash
+python3 -m pytest -q -x --tb=short tests/test_lumina_resident_field.py tests/test_lumina_resident_run.py tests/test_lumina_fullsr_sc_comparison.py tests/test_lumina_phase_cache.py tests/test_lumina_phase_geometry.py tests/test_lumina_fullsr_frozen.py tests/test_lumina_fullsr_chain_gpu.py tests/test_lumina_gpu_budget.py
+```
+
+위 명령은 grammar-debug·CPU1/8GiB 가상주소 한도·스레드1·외부55초에서
+실행했다. 새 실행기의 help와 shell 구문도 확인했다.
+새 전체장 준비 root는 `lumina_resident_field_20261026-qFP5rJ/run`이다.
+수송과 기존 생산율 소비기의 정확한82파일 폐쇄를 고정했고 stage SHA256은
+`98ef3956514253abbadf7e9c6ff7f3941442d5f6440eb97ba756c7a7475e40d2`다.
+새 root에는 검증한 CUDA/기하 바이너리를 그대로 복사했으며 두 SHA256은
+위436170과 같다. 기존 실행 root는 변경하지 않았다. 이 root의 상태는
+PREPARED_NOT_LAUNCHED이며 GPU 예약·대형 F·물질·observer 모두0이다.
+
+다음은 사용자 응답에 따라 최대2회/합계24GPUh 또는 기존 잔여1F 범위를
+확정한 뒤 현재 클러스터 Slurm GPU1/CPU1·명시 메모리16GiB·노드 미고정·
+자동 재시도0으로 실행하는 것이다. 두 새 완성장을 얻으면 첫 장의 잔차와
+coarse/새 자체장/CMFGEN J71의 같은 물질 PHOT를 grammar에서 비교한다.
+첫 장 잔차를 두 번째 장의 수렴 판정이라고 부르지 않는다. 고정 물질
+차이를 설명하기 전 물질 갱신이나 마지막 물질 observer로 넘어가지 않는다.

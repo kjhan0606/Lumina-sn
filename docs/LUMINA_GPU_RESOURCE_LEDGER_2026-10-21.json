@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-26 03:40",
+  "as_of_KST": "2026-10-26 04:37",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,18 +96,22 @@
       }
     ]
   },
-  "used_upper_GPUh": 76.9715,
-  "remaining_before_new_reservations_GPUh": 67.0285,
-  "current_reserved_GPUh": 0.13333333333333333,
-  "remaining_after_current_reservations_GPUh": 66.89516666666667,
+  "used_upper_GPUh": 76.989,
+  "remaining_before_new_reservations_GPUh": 67.011,
+  "current_reserved_GPUh": 0,
+  "remaining_after_current_reservations_GPUh": 67.011,
   "resident_integration_2026_10_26": {
-    "state": "RESERVED_FOR_SINGLE_DISPATCH",
+    "state": "SETTLED_RESIDENT_INTEGRATION_COMPLETE_NOT_NATIVE90_F",
+    "job_id": "436170",
+    "terminal_state": "COMPLETED/0:0",
+    "allocated_gpu_seconds": 63,
+    "allocated_GPUh": 0.0175,
     "root": "lumina_resident_20261026-97IoJk/run",
     "GPU": 1,
     "CPU": 1,
     "host_device_memory_GiB_each": 16,
     "maximum_parent_seconds": 480,
-    "reserved_GPUh": 0.13333333333333333,
+    "reserved_GPUh": 0,
     "actual_native90_full_F_calls": 0,
     "automatic_retries": 0,
     "scope": "같은 실제 수송의 GPU 상주 연결·제조 전체장·원13003 fullNF·비영 source/입구·연속 구간·복원·실패 거부를 한 번 검증한다. 실제 native90 전체장/물질/observer는 실행하지 않는다.",

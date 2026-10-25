@@ -15,7 +15,7 @@ def record(tmp_path):
     j = dict(path=str(field), sha256=C.N.sha(field))
     data = dict(schema='lumina-fullsr-sc-native90-v1', complete_original_grid=True, next_frequency=-1,
         completed_frequencies=1115020, source_identity={'fixture': True},
-        original_layout=dict(physical_intervals=16172), identity=dict(input_J='ZERO_OWN_START'),
+        original_layout=dict(physical_intervals=16172, frequencies=1115020), identity=dict(input_J='ZERO_OWN_START'),
         completed_actual_F_calls=1, J=j)
     path = tmp_path/'result.json'; path.write_text(json.dumps(data))
     return path, data
