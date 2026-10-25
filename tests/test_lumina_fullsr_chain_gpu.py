@@ -1,5 +1,6 @@
 """장치 없이 host 연결/축약 순서·자원 반환을 확인한다. GPU 정확도는 실제 실행에서 본다."""
 from pathlib import Path
+import json
 from types import SimpleNamespace
 import sys
 
@@ -13,6 +14,7 @@ from lumina_fullsr_sc import SCALED
 from lumina_linear_native import DenseView
 from run_lumina_fullsr_chain_gpu import (positive, scalar, relative_scaled, selected_columns, manufactured,
                                        array_relative, scaled_counts, grid_comparison)
+from run_lumina_fullsr_chain_gpu import run_full
 from stage_lumina_fullsr_sc import stage
 from test_lumina_fullsr_frozen import frozen
 
@@ -162,3 +164,12 @@ def test_scaled_classification_distinguishes_zero_underflow_and_gain_range():
     data = np.zeros(5, dtype=SCALED)
     for i, e in enumerate((-2400, -1074, -1073, 2400), start=1): data[i] = (.5, e)
     assert scaled_counts(data) == dict(true_zero=1, binary64_underflow_nonzero=2, binary64_overflow=1)
+
+
+def test_failed_full_interval_records_terminal_state_without_starting_gpu(tmp_path):
+    root = tmp_path/'run'; root.mkdir()
+    assert run_full(root, parent_seconds=60) == 1
+    record = json.loads((root/'full-interval.json').read_text())
+    assert record['status'] == 'INCOMPLETE' and record['phase'] == 'FINISHED'
+    assert record['complete_original_frequencies'] is False and not record['cases']
+    assert not (root/'I-phase1.npy').exists() and not (root/'complete-tiles.npy').exists()

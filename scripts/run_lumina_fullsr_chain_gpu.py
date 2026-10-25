@@ -373,7 +373,7 @@ def run_full(root, parent_seconds=480):
                                    fine_criterion_met=bool(np.max(abs(actual/np.array(c['fine_values'])-1)) <= 1e-4))
                         current.flush(); current._mmap.close(); current = None; partial.replace(target)
                         row.update(complete=True, output=target.name, output_sha256=M.N.sha(target)); save()
-                    record['memory_end'] = runtime.report()
+                    record['memory_with_input_resident'] = runtime.report()
                 comparisons = []
                 for first, second in ((1, 2), (2, 4)):
                     a = np.load(root/('I-phase'+str(first)+'.npy'), mmap_mode='r', allow_pickle=False)
@@ -387,6 +387,7 @@ def run_full(root, parent_seconds=480):
     except Exception as exc:
         record.update(status='INCOMPLETE', error=type(exc).__name__+': '+str(exc), complete_original_frequencies=False)
     finally:
+        record['phase'] = 'FINISHED'
         save()
         if current is not None: current._mmap.close()
         if bitmap is not None: bitmap._mmap.close()
