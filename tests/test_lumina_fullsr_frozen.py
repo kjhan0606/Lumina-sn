@@ -200,3 +200,95 @@ def test_linear_opacity_recovers_a_tiny_source_after_large_gain(frozen):
     log_exact = math.log(1e-300)+math.log(1e-50)-q-math.log(-q)
     log_actual = math.log(float(result[0]['mantissa']))+int(result[0]['exponent'])*math.log(2.)
     assert abs(log_actual-log_exact) < 5e-10
+
+
+@pytest.mark.parametrize('delta', [0., .0037, .01, .0837, .8, 2.])
+def test_fixed_single_cell_matches_old_comoving_cell(frozen, delta):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65)
+    provider.keep[0][0] = .2+1.5*np.cos(np.arange(65)*.37)
+    provider.keep[0][2] = .3+.1*np.sin(np.arange(65)*.23)
+    incoming = positive(.4+.1*np.cos(np.arange(65)*.17)); loc = Location(1, 1, 0, .3)
+    code, expected, report = kernel.cell(provider, loc, 1., delta, incoming)
+    assert code == 0, report
+    code, q, report = kernel.begin(provider, delta, incoming)
+    assert code == 0, report
+    code, result, report = kernel.fixed_cell(provider, loc, 1., delta, 0., q)
+    assert code == 0, report
+    np.testing.assert_allclose(values(result), values(expected), rtol=2e-11, atol=0.)
+
+
+def test_fixed_frame_constant_material_does_not_diffuse_when_space_is_split(frozen):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65)
+    provider.keep[0][0] = .2+1.5*np.cos(np.arange(65)*.37)
+    provider.keep[0][2] = .3+.1*np.sin(np.arange(65)*.23)
+    initial = positive(.4+.1*np.cos(np.arange(65)*.17)); loc = Location(1, 1, 0, .3)
+    results = []
+    for n in (1, 4, 16):
+        code, q, report = kernel.begin(provider, .0837, initial)
+        assert code == 0, report
+        for k in range(n):
+            da, db = .0837*(n-k)/n, .0837*(n-k-1)/n
+            code, q, report = kernel.fixed_cell(provider, loc, 1/n, da, db, q)
+            assert code == 0, report
+        results.append(values(q))
+    for result in results[1:]: np.testing.assert_allclose(result, results[0], rtol=2e-11, atol=0.)
+
+
+def test_fixed_frame_vacuum_nonzero_incident_preserves_invariant(frozen):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=129, chi=0., eta=0.)
+    initial = .2*np.exp(3*.01*np.arange(129)); loc = Location(1, 1, 0, .3)
+    code, q, report = kernel.begin(provider, .2437, positive(initial))
+    assert code == 0, report
+    for k in range(16):
+        code, q, report = kernel.fixed_cell(provider, loc, 1/16, .2437*(16-k)/16, .2437*(15-k)/16, q)
+        assert code == 0, report
+    np.testing.assert_allclose(values(q)[:100], initial[:100], rtol=6e-14)
+
+
+def test_fixed_and_cellwise_constant_blue_boundary_are_equivalent(frozen):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65); loc = Location(1, 1, 0, .3)
+    moving = positive(np.full(65, .3)); offsets = [.2, .13, .07, 0.]
+    code, q, report = kernel.begin(provider, offsets[0], moving)
+    assert code == 0, report
+    for k, (length, chi, eta) in enumerate(zip((.3, .2, .5), (.4, -1.2, .7), (.2, .8, .05))):
+        provider.keep[0][0] = chi; provider.keep[0][2] = eta
+        da, db = offsets[k:k+2]
+        code, moving, report = kernel.cell(provider, loc, length, da-db, moving)
+        assert code == 0, report
+        code, q, report = kernel.fixed_cell(provider, loc, length, da, db, q)
+        assert code == 0, report
+        top = values(q)[-1]*math.exp(3*db)
+        assert math.isclose(top, values(moving)[-1], rel_tol=3e-13)
+
+
+@pytest.mark.parametrize('db,da', [(.0437, .0437), (.0037, .0082)])
+def test_fixed_zero_drift_or_same_native_bin_uses_shifted_source(frozen, db, da):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65, chi=.4, eta=.3)
+    code, result, report = kernel.fixed_cell(provider, Location(1, 1, 0, .3), 1., da, db,
+                                            positive(np.full(65, .4)))
+    assert code == 0, report
+    tau = .4+3*(da-db)
+    exact = .4*math.exp(-.4)+.3*(-math.expm1(-tau))/tau*math.exp(-3*db)
+    np.testing.assert_allclose(values(result), exact, rtol=3e-13)
+
+
+def test_fixed_failure_keeps_output_and_preset_has_exactly_sixteen_cells(frozen):
+    from compare_lumina_fullsr_sc_interval import endpoint16_edges
+    edges = endpoint16_edges()
+    assert len(edges) == 17 and edges[0] == 0 and edges[-1] == 1
+    assert np.all(np.diff(edges) > 0) and edges[1] == 2.**-24 and edges[-2] == 1.-2.**-24
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65); loc = Location(1, 1, 0, .3)
+    initial = positive(np.full(65, .4)); output = positive(np.full(65, 99.)); before = output.copy()
+    code, output, report = kernel.begin(provider, .02, initial, output=output, max_seconds=1e-12)
+    assert code == 4 and report['published_outputs'] == 0
+    np.testing.assert_array_equal(output, before)
+    code, output, report = kernel.fixed_cell(provider, loc, 1., .02, .01, initial,
+                                            output=output, max_seconds=1e-12)
+    assert code == 4 and report['published_outputs'] == 0
+    np.testing.assert_array_equal(output, before)

@@ -251,3 +251,121 @@ extern "C" int cmf_fullsr_frozen_linear_cell(const CMFNodalDenseView *v,const CM
     const CMFLinearPositive *input,CMFLinearPositive *output,double seconds,CMFFrozenStats *s){
     return cell(v,p,length,delta,h,n,reconstruction,last,input,output,seconds,s,true);
 }
+
+extern "C" int cmf_fullsr_frozen_begin(int nf,double h,double delta,int reconstruction,int last,
+    const CMFLinearPositive *input,CMFLinearPositive *output,double seconds,CMFFrozenStats *stats){
+    if(!stats)return 1;
+    *stats={};stats->failed_column=-1;
+    if(nf<2||nf>2000000||!input||!output||!std::isfinite(h)||h<=0||
+       !std::isfinite(delta)||delta<0||(reconstruction!=0&&reconstruction!=1)||
+       last<0||last>=nf||!std::isfinite(seconds)||seconds<=0||seconds>160.){stats->status=1;return 1;}
+    double span=delta/h;
+    if(!std::isfinite(span)||span>1e9){stats->status=2;return 2;}
+    int whole=(int)std::floor(span);double fraction=span-whole;
+    Positive frame;if(!Positive::from_log(-3.*delta,frame)){stats->status=2;return 2;}
+    double started=clock_now();stats->heap_bytes=(uint64_t)(nf-last)*sizeof(Positive);
+    try{
+        std::vector<Positive> candidate(nf-last);
+        for(int j=nf-1;j>=last;j--){
+            stats->failed_column=j;
+            if((nf-1-j)%2048==0&&clock_now()-started>=seconds){stats->status=4;break;}
+            Positive incoming,result;int k=j+whole;
+            if(k>=nf-1)incoming=decode(input[nf-1]);
+            else if(!interpolate(input,nf,k,fraction,h,reconstruction,incoming)){stats->status=2;break;}
+            if(!valid(incoming)||!product(incoming,frame,result)){stats->status=2;break;}
+            candidate[j-last]=result;stats->completed_outputs++;
+        }
+        if(!stats->status){
+            for(int j=last;j<nf;j++)output[j]={candidate[j-last].mantissa,candidate[j-last].exponent};
+            stats->failed_column=-1;
+        }
+    }catch(const std::bad_alloc &){stats->status=3;}
+    stats->elapsed_seconds=clock_now()-started;return stats->status;
+}
+
+extern "C" int cmf_fullsr_frozen_fixed_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
+    double length,double da,double db,double h,int subdivisions,int last,
+    const CMFLinearPositive *input,CMFLinearPositive *output,double seconds,CMFFrozenStats *stats){
+    if(!stats)return 1;
+    *stats={};stats->failed_column=-1;
+    if(!view||!location||!input||!output||!std::isfinite(length)||length<=0||
+       !std::isfinite(da)||!std::isfinite(db)||db<0||da<db||!std::isfinite(h)||h<=0||
+       subdivisions<1||subdivisions>16||last<0||last>=view->nf||
+       !std::isfinite(seconds)||seconds<=0||seconds>160.){stats->status=1;return 1;}
+    CMFNodalLocation pair[2]={*location,*location};
+    if(!lumina_native_linear::valid(*view,pair)){stats->status=1;return 1;}
+    double delta=da-db,span=delta/h,red_offset=db/h;
+    if(!std::isfinite(span)||!std::isfinite(red_offset)||span>1e9||red_offset>1e9){stats->status=2;return 2;}
+    int rb=(int)std::floor(red_offset),shift=(int)std::floor(span);
+    double rf=red_offset-rb,temporary=rf+(span-shift);
+    int carry=temporary>=1.?1:0,bb=rb+shift+carry;
+    double bf=temporary-carry;
+    if(delta>0&&bb==rb&&bf==rf){stats->status=2;return 2;}
+    int nf=view->nf,maximum=nf-1,low_offset=rb+(rf>0?1:0);
+    int width=std::min(maximum,std::max(0,bb-low_offset));
+    uint64_t count=nf-last;
+    stats->heap_bytes=count*(sizeof(Positive)+2*sizeof(double))+2*(uint64_t)(width+1)*sizeof(Node);
+    if(stats->heap_bytes>UINT64_C(536870912)){stats->status=3;return 3;}
+    Positive transfer_frame,source_frame;
+    if(!Positive::from_log(3.*delta,transfer_frame)||!Positive::from_log(-3.*db,source_frame)){
+        stats->status=2;return 2;
+    }
+    double started=clock_now();
+    try{
+        std::vector<double> chi(count),eta(count);
+        std::vector<Positive> candidate(count);
+        Window window(width+1,*stats);
+        lumina_native_linear::Reader reader={*view,{*location,*location},0};
+        for(int j=maximum;j>=last;j--){
+            if((maximum-j)%2048==0&&clock_now()-started>=seconds){stats->status=4;break;}
+            if(!reader.at(0,j,chi[j-last],eta[j-last])){stats->status=2;stats->failed_column=j;break;}
+        }
+        auto sample=[&](int k,double f,double &c,double &e){
+            if(k>=maximum){c=chi[maximum-last];e=eta[maximum-last];}
+            else{c=(1.-f)*chi[k-last]+f*chi[k+1-last];e=(1.-f)*eta[k-last]+f*eta[k+1-last];}
+        };
+        auto part=[&](int blue,double blue_fraction,int red,double red_fraction,
+                      double portion,Affine &out){
+            double cb,cr,eb,er;sample(blue,blue_fraction,cb,eb);sample(red,red_fraction,cr,er);
+            return portion>0&&std::isfinite(portion)&&bin_map(cb,cr,eb,er,length*portion,
+                delta*portion,subdivisions,out,*stats,true);
+        };
+        for(int j=maximum;j>=last&&!stats->status;j--){
+            stats->failed_column=j;
+            if((maximum-j)%2048==0&&clock_now()-started>=seconds){stats->status=4;break;}
+            int red=j+rb,blue=j+bb,low=j+low_offset;
+            Affine total=identity();
+            if(width&&low<maximum){
+                Affine full;
+                if(!part(low+1,0.,low,0.,1./span,full)||!window.push(full)||
+                   (window.size()>(size_t)width&&!window.pop())){stats->status=2;break;}
+            }
+            if(delta==0){
+                double c,e;sample(red,rf,c,e);
+                if(!linear_source(c*length,c*length,length,e,e,total,*stats)){stats->status=2;break;}
+            }else if(red>=maximum){
+                if(!part(maximum,0.,maximum,0.,1.,total)){stats->status=2;break;}
+            }else if(red==blue){
+                if(!part(blue,bf,red,rf,1.,total)){stats->status=2;break;}
+            }else{
+                Affine prefix=identity(),whole,suffix=identity(),intermediate;
+                if(blue>=maximum){
+                    double portion=((blue-maximum)+bf)/span;
+                    if(portion>0&&!part(maximum,0.,maximum,0.,portion,prefix)){stats->status=2;break;}
+                }else if(bf>0&&!part(blue,bf,blue,0.,bf/span,prefix)){stats->status=2;break;}
+                if(rf>0&&!part(red+1,0.,red,rf,(1.-rf)/span,suffix)){stats->status=2;break;}
+                if(!window.aggregate(whole)||!compose(prefix,whole,intermediate,*stats)||
+                   !compose(intermediate,suffix,total,*stats)){stats->status=2;break;}
+            }
+            Affine fixed;Positive result;
+            if(!product(total.t,transfer_frame,fixed.t)||!product(total.s,source_frame,fixed.s)||
+               !apply(fixed,decode(input[j]),result)){stats->status=2;break;}
+            candidate[j-last]=result;stats->completed_outputs++;
+        }
+        if(!stats->status){
+            for(int j=last;j<nf;j++)output[j]={candidate[j-last].mantissa,candidate[j-last].exponent};
+            stats->failed_column=-1;
+        }
+    }catch(const std::bad_alloc &){stats->status=3;}
+    stats->elapsed_seconds=clock_now()-started;return stats->status;
+}

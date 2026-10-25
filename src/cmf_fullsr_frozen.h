@@ -22,6 +22,14 @@ int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNodalLocation 
 int cmf_fullsr_frozen_linear_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
     double length,double delta,double h,int bin_subdivisions,int reconstruction,int last,
     const CMFLinearPositive *incident,CMFLinearPositive *output,double max_seconds,CMFFrozenStats *stats);
+/* 원래 물리구간 입구에서 한 번만 출구 프레임 Q로 재구성한다. */
+int cmf_fullsr_frozen_begin(int nf,double h,double delta,int reconstruction,int last,
+    const CMFLinearPositive *incident,CMFLinearPositive *output,double max_seconds,CMFFrozenStats *stats);
+/* Q_j는 같은 j 그대로 운반한다. source만 [j+db/h,j+da/h]를 조회한다.
+ * T에는 이미3(da-db)가 있으므로 그 프레임 보정만 적용한다. */
+int cmf_fullsr_frozen_fixed_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
+    double length,double da,double db,double h,int bin_subdivisions,int last,
+    const CMFLinearPositive *incident,CMFLinearPositive *output,double max_seconds,CMFFrozenStats *stats);
 #ifdef __cplusplus
 }
 #endif

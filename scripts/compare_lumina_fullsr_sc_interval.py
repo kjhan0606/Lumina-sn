@@ -17,6 +17,40 @@ import lumina_local_micro as M
 from lumina_nodal_driver import CompiledDriverPlan
 
 
+def endpoint16_edges():
+    return np.array(sorted({i/8 for i in range(9)} |
+                           {x for k in (4, 8, 16, 24) for x in (2.**-k, 1.-2.**-k)}))
+
+
+def fixed_interval(kernel, provider, lengths, deltas, loc, subdivisions, columns, deadline, reconstruction):
+    from lumina_linear_native import Positive
+    if len(lengths) < 1 or float(deltas[-1, 2]) != 0.:
+        raise ValueError('고정 물리구간의 최종 offset0 필요')
+    initial = np.zeros(provider.nf, dtype=SCALED); lower = min(columns)
+    remaining = deadline-time.monotonic()
+    if remaining <= 1: raise TimeoutError('고정 출구 프레임 전체 시간 한도')
+    code, ray, begin = kernel.begin(provider, float(deltas[0, 0]), initial, last=lower,
+                                  reconstruction=reconstruction, max_seconds=remaining-1)
+    report = dict(cell_calls=0, primitive_maps=0, compositions=0, elapsed_seconds=begin['elapsed_seconds'],
+        bin_subdivisions=subdivisions, ray_grid_subdivisions=1, entrance_reconstructions=1,
+        source_bin_rule='LINEAR_CHI', requested_red_column=lower, begin=begin)
+    if code: return code, None, report
+    for k in range(len(lengths)):
+        remaining = deadline-time.monotonic()
+        if remaining <= 1: raise TimeoutError('고정 출구 프레임 전체 시간 한도')
+        code, updated, part = kernel.fixed_cell(provider, loc[5*k+2], float(lengths[k, 0]),
+            float(deltas[k, 0]), float(deltas[k, 2]), ray, last=lower,
+            bin_subdivisions=subdivisions, max_seconds=remaining-1)
+        for key in ('primitive_maps', 'compositions', 'elapsed_seconds'): report[key] += part[key]
+        report['cell_calls'] += 1
+        if code:
+            report['failed_cell'] = k; report['failure'] = part
+            return code, None, report
+        ray = updated
+    values = np.array([Positive(float(x['mantissa']), int(x['exponent'])).value() for x in ray[columns]])
+    return code, values, report
+
+
 def frozen_interval(kernel, provider, lengths, deltas, loc, subdivisions, columns, deadline, reconstruction):
     from lumina_linear_native import Positive
     ray = np.zeros(provider.nf, dtype=SCALED)
@@ -43,15 +77,20 @@ def frozen_interval(kernel, provider, lengths, deltas, loc, subdivisions, column
     return code, values, report
 
 
-def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstruction=1, bin_rule='MEAN_CHI'):
+def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstruction=1, bin_rule='MEAN_CHI', fixed_three=False):
+    if fixed_three:
+        if cases is not None: raise ValueError('사전 고정3설정과 임의 조합을 혼용하지 않는다')
+        if reconstruction != 1: raise ValueError('사전 고정3설정은 cubic U 재구성이다')
+        cases = ((4, 1), (16, 1), (16, 1)); engine = 'FIXED_FRAME'; bin_rule = 'LINEAR_CHI'
     cases = ((4, 1), (16, 1), (64, 1), (64, 4)) if cases is None else cases
     if (type(seconds) is not int or not 1 <= seconds <= 160 or not 1 <= len(cases) <= 4 or
             any(len(case) != 2 or any(type(x) is not int for x in case) or
                 not 1 <= case[0] <= 4096 or not 1 <= case[1] <= 16 for case in cases)):
         raise ValueError('최대4조합·공간4096·주파수16·내부160초 한도')
-    if (engine not in ('UPWIND_SC', 'FROZEN_MIDPOINT') or reconstruction not in (0, 1) or
+    if (engine not in ('UPWIND_SC', 'FROZEN_MIDPOINT', 'FIXED_FRAME') or reconstruction not in (0, 1) or
             bin_rule not in ('MEAN_CHI', 'LINEAR_CHI')):
         raise ValueError('명시적 수송/재구성 선택 필요')
+    if engine == 'FIXED_FRAME' and bin_rule != 'LINEAR_CHI': raise ValueError('고정 프레임은 선형 chi 적분 선택만 사용한다')
     root = Path(root).resolve(); output = root/'interval-comparison.json'
     if output.exists(): raise FileExistsError('기존 독립 대조 보존')
     if M.N.sha(BASE) != BASE_SHA: raise ValueError('원 봉인 변경')
@@ -77,18 +116,21 @@ def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstr
                 helper.geom.argtypes = [ct.c_void_p, ct.c_int]+[ct.c_void_p]*5+[
                     ct.c_double, ct.c_int]+[ct.c_void_p]*6
                 helper.geom.restype = ct.c_int
-                if engine == 'FROZEN_MIDPOINT':
+                if engine in ('FROZEN_MIDPOINT', 'FIXED_FRAME'):
                     from lumina_fullsr_frozen import FrozenKernel
                     kernel = FrozenKernel(library, linear_chi=bin_rule=='LINEAR_CHI')
                 else: kernel = Kernel(library)
                 boundary = np.zeros(source.nf)
-                for space, frequency in cases:
-                    leaves = [Leaf(k/space, (k+1)/space) for k in range(space)]
+                for case_index, (space, frequency) in enumerate(cases):
+                    mesh = 'ENDPOINT16' if fixed_three and case_index == 2 else 'UNIFORM'
+                    edges = endpoint16_edges() if mesh == 'ENDPOINT16' else np.arange(space+1)/space
+                    leaves = [Leaf(float(a), float(b)) for a, b in zip(edges[:-1], edges[1:])]
                     lengths, deltas, loc, _ = helper.geometry(original, 13003, leaves)
-                    if engine == 'FROZEN_MIDPOINT':
-                        code, actual, report = frozen_interval(kernel, provider, lengths, deltas, loc,
+                    if engine in ('FROZEN_MIDPOINT', 'FIXED_FRAME'):
+                        method = fixed_interval if engine == 'FIXED_FRAME' else frozen_interval
+                        code, actual, report = method(kernel, provider, lengths, deltas, loc,
                             frequency, c['fine_columns'], start+seconds, reconstruction)
-                        row = dict(spatial_subdivisions=space, bin_subdivisions=frequency, report=report)
+                        row = dict(spatial_subdivisions=len(leaves), mesh=mesh, bin_subdivisions=frequency, report=report)
                         if code == 0:
                             reference = np.array(c['fine_values'])
                             row.update(values=actual.tolist(), signed_relative=(actual/reference-1).tolist())
@@ -127,7 +169,8 @@ def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstr
 if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('library', type=Path)
     p.add_argument('--case', dest='cases', nargs=2, type=int, action='append')
-    p.add_argument('--engine', choices=('UPWIND_SC', 'FROZEN_MIDPOINT'), default='UPWIND_SC')
+    p.add_argument('--engine', choices=('UPWIND_SC', 'FROZEN_MIDPOINT', 'FIXED_FRAME'), default='UPWIND_SC')
     p.add_argument('--reconstruction', type=int, choices=(0, 1), default=1)
     p.add_argument('--bin-rule', choices=('MEAN_CHI', 'LINEAR_CHI'), default='MEAN_CHI')
+    p.add_argument('--fixed-three', action='store_true')
     args = p.parse_args(); raise SystemExit(compare(**vars(args)))
