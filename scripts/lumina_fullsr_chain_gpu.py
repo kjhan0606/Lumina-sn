@@ -7,6 +7,7 @@ import uuid
 import numpy as np
 
 from lumina_fullsr_sc import SCALED
+from lumina_fullsr_frozen import AFFINE
 from lumina_linear_native import DenseView
 from lumina_gpu_driver import check, check_host
 
@@ -17,6 +18,8 @@ class DeviceInput:
     """기존 reader의 동일 dense 세대를 한 번 업로드한다. 물리 계수는 변경하지 않는다."""
     def __init__(self, runtime, provider):
         self.blocks = []; self.runtime = runtime; started = time.monotonic()
+        if 'REFERENCE' in provider.identity.get('field', {}).get('role', ''):
+            raise ValueError('참조 J를 자체 수송 source에 사용하지 않는다')
         view = provider.borrow_dense_view(); self.view = DenseView.from_buffer_copy(view)
         n = view.ns*view.nf
         try:
@@ -101,3 +104,57 @@ class ChainGPU:
                 explicit_device_bytes=sum(b.size for b in buffers), accepted_physical_field=False)
         finally:
             for buffer in reversed(buffers): buffer.close()
+
+
+class ProviderTiles:
+    """한 실제 구간의 기하/장치 작업공간을 재사용한다. 원천/J 세대는 변경하지 않는다."""
+    def __init__(self, gpu, runtime, device_input, lengths, deltas, locations, phases, *, width=256):
+        self.gpu, self.runtime, self.input = gpu, runtime, device_input
+        self.blocks = []; self.steps = len(lengths); self.width = width; started = time.monotonic()
+        arrays = (np.ascontiguousarray(lengths, dtype='f8'), np.ascontiguousarray(deltas, dtype='f8'),
+                  np.ascontiguousarray(locations, dtype=LOCATION_DTYPE), np.ascontiguousarray(phases, dtype='f8'))
+        if (not 1 <= self.steps <= 65536 or type(width) is not int or not 1 <= width <= 512 or
+                self.steps*width > 2000000 or device_input.runtime is not runtime or
+                any(a.shape != (self.steps+(i >= 2),) for i, a in enumerate(arrays))):
+            raise ValueError('전 주파수 tile의 기하/작업공간 한도 오류')
+        try:
+            self.geometry = []
+            for array in arrays:
+                block = self.allocate(array.nbytes); runtime.upload(block, array); self.geometry.append(block)
+            self.columns = self.allocate(width*4); self.initial = self.allocate(width*16)
+            self.maps = self.allocate(self.steps*width*32); self.spare = self.allocate(((self.steps+1)//2)*width*32)
+            self.result = self.allocate(width*16); runtime.sync()
+            self.preparation_seconds = time.monotonic()-started
+        except Exception:
+            self.close(); raise
+
+    def allocate(self, size):
+        block = self.runtime.allocate(int(size)); self.blocks.append(block); return block
+
+    def execute(self, columns, initial, *, transmission=False):
+        columns = np.ascontiguousarray(columns, dtype='i4'); rays = len(columns)
+        if (not 1 <= rays <= self.width or columns.shape != (rays,) or initial.shape != (rays,) or
+                initial.dtype != SCALED or not initial.flags.c_contiguous): raise ValueError('tile 입사/원 주파수 크기 오류')
+        runtime = self.runtime; started = time.monotonic(); runtime.upload(self.columns, columns); runtime.upload(self.initial, initial)
+        uploaded = time.monotonic(); maps, spare = self.maps, self.spare
+        check(self.gpu.lib.lumina_fullsr_chain_provider_build(ct.byref(self.input.view), self.steps, rays,
+            *[b.address for b in self.geometry], self.columns.address, maps.address, runtime.status))
+        runtime.sync(); built = time.monotonic(); rows = self.steps; launches = 1
+        while rows > 1:
+            check(self.gpu.lib.lumina_fullsr_chain_reduce(rows, rays, maps.address, spare.address, runtime.status))
+            maps, spare = spare, maps; rows = (rows+1)//2; launches += 1
+        check(self.gpu.lib.lumina_fullsr_chain_apply(rays, maps.address, self.initial.address, self.result.address, runtime.status))
+        runtime.sync(); reduced = time.monotonic(); result = runtime.download(self.result, rays, dtype=SCALED)
+        response = runtime.download(maps, rays, dtype=AFFINE)['transmission'].copy() if transmission else None
+        report = dict(endpoint_maps=self.steps*rays, outputs=rays, kernel_launches=launches+1,
+            upload_allocate_seconds=uploaded-started, build_sync_seconds=built-uploaded,
+            reduce_apply_sync_seconds=reduced-built, download_seconds=time.monotonic()-reduced,
+            total_seconds=time.monotonic()-started, explicit_device_bytes=sum(b.size for b in self.blocks))
+        return (result, report, response) if transmission else (result, report)
+
+    def close(self):
+        for block in reversed(self.blocks): block.close()
+        self.blocks = []
+
+    def __enter__(self): return self
+    def __exit__(self, *args): self.close()

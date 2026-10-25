@@ -14,7 +14,7 @@ from scipy.integrate import quad
 from scipy.optimize import brentq
 
 from lumina_compiled_input import CompiledInput
-from lumina_fullsr_chain_gpu import ChainGPU, DeviceInput, LOCATION_DTYPE
+from lumina_fullsr_chain_gpu import ChainGPU, DeviceInput, ProviderTiles, LOCATION_DTYPE
 from lumina_fullsr_frozen import FrozenKernel
 from lumina_fullsr_sc import SCALED, Location
 from lumina_fullsr_sc_actual import BASE, BASE_SHA, InputField, publish, verify_stage
@@ -25,6 +25,10 @@ import lumina_local_micro as M
 
 OWN_J = Path('/gpfs/kjhan/cmfgen_runs/lumina_fullsr_sc_20261025-LcW8Dq/run/J.npy')
 OWN_J_SHA = '21dd68ee432d75eb746509571a320b25e647c2be65cf248a1d7ee1f566336ca9'
+INHERITED = Path('/gpfs/kjhan/cmfgen_runs/lumina_chain_runtime_20261026-kIuwyB/run')
+INHERITED_SHA = '5c97217a3b39b57ec11017313b3960bea6db16b0845e16d3393052a3e4e08d66'
+PROFILE = Path('/gpfs/kjhan/cmfgen_runs/lumina_correlated_native_20261026-Ashd0c/correlated-profile.npz')
+PROFILE_SHA = '0ae3175fc7b7579b750482cc69331d6ce76550a9048b9fdfe48365f460dad2a4'
 
 
 def positive(values):
@@ -43,6 +47,40 @@ def relative_scaled(first, second):
         if not difference.m: result.append(0.); continue
         result.append(math.ldexp(difference.m/denominator.m, difference.e-denominator.e))
     return np.array(result)
+
+
+def array_relative(first, second):
+    """scaled 원본을 binary64 강도로 변환하지 않고 대칭 상대차를 구한다."""
+    a, b = first['mantissa'], second['mantissa']; ea, eb = first['exponent'], second['exponent']
+    choose_a = (a != 0)&((b == 0)|(ea > eb)|((ea == eb)&(a >= b)))
+    large, small = np.where(choose_a, a, b), np.where(choose_a, b, a)
+    shift = np.where(choose_a, eb-ea, ea-eb); shift = np.where(small == 0, 0, shift)
+    # 상대 정렬의 IEEE 표현 범위다. 물리 강도에 floor를 적용하지 않는다.
+    aligned = np.ldexp(small, np.maximum(-1075, shift).astype('i4'))
+    return np.divide(abs(large-aligned), large, out=np.zeros_like(large), where=large != 0)
+
+
+def scaled_counts(values):
+    m, e = values['mantissa'], values['exponent']
+    if np.any(~np.isfinite(m)|(m < 0)|((m != 0)&((m < .5)|(m >= 1)))|(e <= -2**60)|(e >= 2**60)):
+        raise ValueError('완성 scaled 출력의 정규화/표현 오류')
+    ordinary = (e >= -1074)&(e <= 1024)
+    converted = np.ldexp(m, np.where(ordinary, e, 0).astype('i4'))
+    return dict(true_zero=int(np.count_nonzero(m == 0)),
+        binary64_underflow_nonzero=int(np.count_nonzero((m != 0)&((e < -1074)|(ordinary&(converted == 0))))),
+        binary64_overflow=int(np.count_nonzero((m != 0)&(e > 1024))))
+
+
+def grid_comparison(first, second, source):
+    error = array_relative(first, second); order = np.argsort(error)[-16:][::-1]
+    return dict(maximum_relative=float(error.max()), quantile_probabilities=[0., .5, .9, .99, .999, 1.],
+        quantiles=np.quantile(error, [0., .5, .9, .99, .999, 1.]).tolist(),
+        above_1e_4=int(np.count_nonzero(error > 1e-4)),
+        both_true_zero=int(np.count_nonzero((first['mantissa'] == 0)&(second['mantissa'] == 0))),
+        one_true_zero=int(np.count_nonzero((first['mantissa'] == 0) != (second['mantissa'] == 0))),
+        worst=[dict(column=int(j), frequency_Hz=float(source.frequency[j]), relative=float(error[j]),
+                    first=(float(first[j]['mantissa']), int(first[j]['exponent'])),
+                    second=(float(second[j]['mantissa']), int(second[j]['exponent']))) for j in order])
 
 
 def selected_columns(source, fine):
@@ -236,6 +274,126 @@ def run(root, parent_seconds=600):
     return 0 if record['status'] == 'SAMPLES_COMPLETE_NOT_FIELD' else 1
 
 
+def run_full(root, parent_seconds=480):
+    if not 60 <= parent_seconds <= 480: raise ValueError('전NF 부모60–480초 한도')
+    root = Path(root).resolve(); output = root/'full-interval.json'
+    if output.exists(): raise FileExistsError('기존 전NF 결과 보존')
+    started = time.monotonic(); deadline = started+min(450, parent_seconds-30)
+    record = dict(status='STARTED', phase='OPEN_INPUTS', final_goal='NOT_MET', accepted_physical_field=False,
+        interval=13003, input='M70_J0_I0_ZERO', actual_model_F_calls=0, SE_RE_updates=0, cases=[],
+        parent_seconds=parent_seconds, internal_seconds=min(450, parent_seconds-30), automatic_retries=0,
+        requested_phase_subdivisions=[1, 2, 4], tile_width=256, frame='COMOVING_AT_INTERVAL_EXIT')
+    current = bitmap = None; last_save = started
+    def save():
+        if current is not None: current.flush()
+        if bitmap is not None: bitmap.flush()
+        record.update(elapsed_seconds=time.monotonic()-started, peak_rss_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        publish(output, record)
+    def check():
+        if time.monotonic() >= deadline: raise TimeoutError('전NF 내부 마감; 완성 범위와 부분 출력을 보존')
+    save()
+    try:
+        record['stage_sha256'] = verify_stage(root)
+        if M.N.sha(BASE) != BASE_SHA or M.N.sha(INHERITED/'chain-gpu.json') != INHERITED_SHA or M.N.sha(PROFILE) != PROFILE_SHA:
+            raise ValueError('기존 물질/제조·408평가/실제 경로 신원 변경')
+        inherited = json.loads((INHERITED/'chain-gpu.json').read_text())
+        if inherited['status'] != 'SAMPLES_COMPLETE_NOT_FIELD' or not inherited['manufactured']['passed']:
+            raise ValueError('재사용할 완료된 GPU 검증 없음')
+        for filename, key in (('chain_cuda.so', 'kernel_sha256'), ('frozen.so', 'cpu_sha256')):
+            if M.N.sha(root/filename) != inherited[key]: raise ValueError('기존 검증 바이너리 변경')
+        old_stage = json.loads((INHERITED/'stage.json').read_text())['files']
+        new_stage = json.loads((root/'stage.json').read_text())['files']
+        if any(new_stage.get(name) != sha for name, sha in old_stage.items() if name.startswith('src/')):
+            raise ValueError('재사용 바이너리의 원 C/CUDA 소스 변경')
+        record.update(inherited_gpu_validation_sha256=INHERITED_SHA, kernel_sha256=inherited['kernel_sha256'],
+                      profile_sha256=PROFILE_SHA, input_plan_sha256=BASE_SHA)
+        c = json.loads(BASE.read_text())
+        if M.N.sha(c['cpu_library']) != c['sealed_sha256'][c['cpu_library']]: raise ValueError('원 계수 제공자 변경')
+        query = subprocess.run(['nvidia-smi', '--query-gpu=uuid,name,memory.free', '--format=csv,noheader,nounits'],
+                               check=True, capture_output=True, text=True, timeout=10)
+        gpu = ChainGPU(root/'chain_cuda.so'); device_uuid = gpu.device_uuid()
+        matches = [line.split(',') for line in query.stdout.splitlines() if line.split(',')[0].strip().lower() == device_uuid.lower()]
+        if len(matches) != 1: raise ValueError('Slurm CUDA0/NVML 신원 일치 실패')
+        _, name, free = matches[0]; record.update(device_name=name.strip(), device_uuid=device_uuid)
+        with Runtime(root/'chain_cuda.so', int(free)*1024**2, _functions={}, _abis=()) as runtime:
+          with M.N.open_sealed_native(c['config'], c['preparation'], c['preparation_sha256']) as source:
+            if source.identity != c['source_identity']: raise ValueError('원 물질 변경')
+            g = M.open_geometry(c['preparation']); interval = M.Interval(g, c['intervals'][0]['step'])
+            with np.load(PROFILE, allow_pickle=False) as data:
+                xx, dd, rr, phases = [data[name].copy() for name in ('x', 'delta', 'radius', 'phases')]
+            if (xx[0] != 0 or xx[-1] != 1 or dd[-1] != 0 or len(xx) != 5655 or
+                    not math.isclose(dd[0], interval.point(0.)[1], rel_tol=0., abs_tol=1e-16)):
+                raise ValueError('봉인 실제 구간 profile 정합 오류')
+            with CompiledInput(c['cpu_library'], g, source, M.ZeroTrial(source), slab_width=128, cache_rows=128, profiles=1024) as provider:
+                provider.bind_zero_trial(); record['dense_preparation'] = provider.prepare_dense()
+                locations = (Location*len(xx))(); prepare = provider._lib.cmf_nodal_input_prepare
+                prepare.argtypes = [ct.c_void_p, ct.c_double, ct.c_void_p]; prepare.restype = ct.c_int
+                for i, radius in enumerate(rr):
+                    if prepare(provider._ctx, float(radius), ct.byref(locations[i])): raise ValueError('실제 위치 준비 실패')
+                loc = np.frombuffer(locations, dtype=LOCATION_DTYPE)
+                tiles = (source.nf+255)//256; record.update(frequencies=source.nf, source_identity=source.identity)
+                if (root/'complete-tiles.npy').exists(): raise FileExistsError('기존 완료 비트맵 보존')
+                bitmap = np.lib.format.open_memmap(root/'complete-tiles.npy', mode='w+', dtype='u1', shape=(3, tiles)); bitmap[:] = 0
+                with DeviceInput(runtime, provider) as device_input:
+                    record['source_device_upload_seconds'] = device_input.upload_seconds
+                    for level, subdivision in enumerate((1, 2, 4)):
+                        check(); selected = np.r_[0, 1+np.flatnonzero(np.rint(phases[1:]*4).astype('i8')%(4//subdivision) == 0)]
+                        x, delta = xx[selected], dd[selected]
+                        lengths = np.array([interval.geometry(float(a), float(b)) for a, b in zip(x[:-1], x[1:])])
+                        partial = root/('I-phase'+str(subdivision)+'.partial.npy')
+                        target = root/('I-phase'+str(subdivision)+'.npy')
+                        if partial.exists() or target.exists(): raise FileExistsError('기존 해상도 출력 보존')
+                        current = np.lib.format.open_memmap(partial, mode='w+', dtype=SCALED, shape=(source.nf,))
+                        row = dict(phase_subdivisions=subdivision, steps=len(lengths), completed_frequencies=0,
+                            complete=False, timing_totals={}, net_transmission_gain_columns=0,
+                            internal_gain_count='NOT_MEASURED; net T>1과 signed chi의 내부 gain은 다름')
+                        record['cases'].append(row); record['phase'] = 'FULL_NF_PHASE_'+str(subdivision); save()
+                        phase_start = time.monotonic()
+                        with ProviderTiles(gpu, runtime, device_input, lengths, delta[:-1]-delta[1:], loc[selected],
+                                           delta/source.dlognu, width=256) as work:
+                            row['workspace_preparation_seconds'] = work.preparation_seconds
+                            for tile, begin in enumerate(range(0, source.nf, 256)):
+                                check(); end = min(source.nf, begin+256)
+                                if bitmap[level, tile]: raise ValueError('완료 tile 중복 실행 방지')
+                                result, timing, response = work.execute(np.arange(begin, end, dtype='i4'),
+                                    np.zeros(end-begin, dtype=SCALED), transmission=True)
+                                current[begin:end] = result; bitmap[level, tile] = 1; row['completed_frequencies'] = end
+                                row['net_transmission_gain_columns'] += int(np.count_nonzero((response['exponent'] > 1)|
+                                    ((response['exponent'] == 1)&(response['mantissa'] > .5))))
+                                for key, value in timing.items():
+                                    if key == 'explicit_device_bytes': row['workspace_bytes'] = value
+                                    else: row['timing_totals'][key] = row['timing_totals'].get(key, 0)+value
+                                if time.monotonic()-last_save >= 60:
+                                    save(); last_save = time.monotonic()
+                        if row['completed_frequencies'] != source.nf or not np.all(bitmap[level] == 1):
+                            raise ValueError('전NF 완료 범위 누락')
+                        row.update(scaled_counts=scaled_counts(current), phase_elapsed_seconds=time.monotonic()-phase_start)
+                        actual = np.array([scalar(v).value() for v in current[c['fine_columns']]])
+                        row.update(fine_values=actual.tolist(), fine_signed_relative=(actual/np.array(c['fine_values'])-1).tolist(),
+                                   fine_criterion_met=bool(np.max(abs(actual/np.array(c['fine_values'])-1)) <= 1e-4))
+                        current.flush(); current._mmap.close(); current = None; partial.replace(target)
+                        row.update(complete=True, output=target.name, output_sha256=M.N.sha(target)); save()
+                    record['memory_end'] = runtime.report()
+                comparisons = []
+                for first, second in ((1, 2), (2, 4)):
+                    a = np.load(root/('I-phase'+str(first)+'.npy'), mmap_mode='r', allow_pickle=False)
+                    b = np.load(root/('I-phase'+str(second)+'.npy'), mmap_mode='r', allow_pickle=False)
+                    comparisons.append(dict(first_phase=first, second_phase=second, **grid_comparison(a, b, source)))
+                    a._mmap.close(); b._mmap.close()
+                record['comparisons'] = comparisons
+                passed = all(row['fine_criterion_met'] for row in record['cases']) and comparisons[-1]['maximum_relative'] <= 1e-4
+                record.update(status='COMPLETE_LOCAL_CRITERIA_MET_NOT_FIELD' if passed else 'COMPLETE_CRITERIA_FAILED',
+                              complete_original_frequencies=True, error_certificate=False)
+    except Exception as exc:
+        record.update(status='INCOMPLETE', error=type(exc).__name__+': '+str(exc), complete_original_frequencies=False)
+    finally:
+        save()
+        if current is not None: current._mmap.close()
+        if bitmap is not None: bitmap._mmap.close()
+    return 0 if record['status'] == 'COMPLETE_LOCAL_CRITERIA_MET_NOT_FIELD' else 1
+
+
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('--parent-seconds', type=int, default=600)
-    a = p.parse_args(); raise SystemExit(run(**vars(a)))
+    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('--parent-seconds', type=int, default=480)
+    p.add_argument('--full-interval', action='store_true'); a = p.parse_args(); full = vars(a).pop('full_interval')
+    raise SystemExit((run_full if full else run)(**vars(a)))

@@ -7,10 +7,12 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT/'scripts'))
-from lumina_fullsr_chain_gpu import ChainGPU
+from lumina_fullsr_chain_gpu import ChainGPU, DeviceInput, ProviderTiles, LOCATION_DTYPE
 from lumina_fullsr_frozen import AFFINE
 from lumina_fullsr_sc import SCALED
-from run_lumina_fullsr_chain_gpu import positive, scalar, relative_scaled, selected_columns, manufactured
+from lumina_linear_native import DenseView
+from run_lumina_fullsr_chain_gpu import (positive, scalar, relative_scaled, selected_columns, manufactured,
+                                       array_relative, scaled_counts, grid_comparison)
 from stage_lumina_fullsr_sc import stage
 from test_lumina_fullsr_frozen import frozen
 
@@ -28,7 +30,8 @@ class FakeRuntime:
     def upload(self, target, array): self.data[target.address] = array.copy()
     def sync(self):
         if self.fail: raise RuntimeError('모의 장치 실패')
-    def download(self, source, shape, dtype='f8'): return self.data[source.address].copy()
+    def download(self, source, shape, dtype='f8'):
+        return self.data[source.address].reshape(-1)[:int(np.prod(shape))].astype(dtype, copy=True).reshape(shape)
 
 
 class FakeLibrary:
@@ -36,6 +39,13 @@ class FakeLibrary:
     def lumina_fullsr_chain_build(self, steps, rays, lengths, deltas, chi, eta, maps, status):
         d = self.rt.data
         code, _, built, report = self.cpu.chain(d[lengths], d[deltas], d[chi], d[eta], np.zeros(rays, dtype=SCALED))
+        assert code == 0, report
+        d[maps] = built.copy(); return 0
+    def lumina_fullsr_chain_provider_build(self, view, steps, rays, lengths, deltas, locations, phases, columns, maps, status):
+        d = self.rt.data; phase = d[phases]; cols = d[columns]
+        chi = .2+.03*cols[None, :]+.1*phase[:, None]
+        eta = .3+.02*cols[None, :]+.05*phase[:, None]
+        code, _, built, report = self.cpu.chain(d[lengths], d[deltas], chi, eta, np.zeros(rays, dtype=SCALED))
         assert code == 0, report
         d[maps] = built.copy(); return 0
     def lumina_fullsr_chain_reduce(self, rows, rays, incoming, outgoing, status):
@@ -111,3 +121,44 @@ def test_gpu_staging_captures_import_and_shared_source_closure(tmp_path):
         assert (root/'code/src'/name).is_file()
     assert (root/'code/scripts/run_lumina_fullsr_chain_gpu.py').is_file()
     assert (root/'code/scripts/lumina_gpu_driver.py').is_file()
+
+
+def test_reusable_tiles_keep_geometry_and_handle_short_last_tile(frozen):
+    gpu, runtime = fake_gpu(frozen); device_input = SimpleNamespace(runtime=runtime, view=DenseView())
+    lengths = np.linspace(.1, .7, 5); deltas = lengths*.01; phases = np.linspace(.2, 0., 6)
+    locations = np.zeros(6, dtype=LOCATION_DTYPE)
+    with ProviderTiles(gpu, runtime, device_input, lengths, deltas, locations, phases, width=4) as work:
+        allocations = runtime.next
+        for columns in (np.arange(4, dtype='i4'), np.arange(4, 6, dtype='i4')):
+            initial = positive(np.full(len(columns), .4))
+            chi = .2+.03*columns[None, :]+.1*phases[:, None]
+            eta = .3+.02*columns[None, :]+.05*phases[:, None]
+            code, expected, _, report = frozen.chain(lengths, deltas, chi, eta, initial); assert code == 0, report
+            result, timing, response = work.execute(columns, initial, transmission=True)
+            assert relative_scaled(result, expected).max() < 2e-14
+            assert response.shape == (len(columns),) and timing['outputs'] == len(columns)
+            assert runtime.next == allocations
+    assert not runtime.data and len(runtime.closed) == 9
+
+
+def test_reference_j_is_rejected_before_gpu_upload():
+    provider = SimpleNamespace(identity={'field': {'role': 'REFERENCE_NATIVE90_J'}})
+    with pytest.raises(ValueError, match='참조 J'): DeviceInput(None, provider)
+
+
+def test_vector_scaled_difference_matches_scalar_without_floor():
+    rng = np.random.default_rng(418)
+    first = np.zeros(1000, dtype=SCALED); second = first.copy()
+    for data in (first, second):
+        data['mantissa'] = rng.uniform(.5, 1., 1000); data['exponent'] = rng.integers(-2400, 2400, 1000)
+    first['mantissa'][:10] = 0.; second['mantissa'][5:15] = 0.
+    np.testing.assert_allclose(array_relative(first, second), relative_scaled(first, second), rtol=2e-15, atol=0)
+    source = SimpleNamespace(frequency=np.arange(1000, dtype=float)+1)
+    report = grid_comparison(first, second, source)
+    assert report['both_true_zero'] == 5 and report['one_true_zero'] == 10
+
+
+def test_scaled_classification_distinguishes_zero_underflow_and_gain_range():
+    data = np.zeros(5, dtype=SCALED)
+    for i, e in enumerate((-2400, -1074, -1073, 2400), start=1): data[i] = (.5, e)
+    assert scaled_counts(data) == dict(true_zero=1, binary64_underflow_nonzero=2, binary64_overflow=1)
