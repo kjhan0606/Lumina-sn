@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #include "cmf_fullsr_linear_map.hpp"
-#include "cmf_linear_native.h"
+#include "cmf_fullsr_chain.h"
 #include "cmf_linear_provider.hpp"
 using lumina_fullsr_map::Affine;
 using lumina_ordered::Positive;

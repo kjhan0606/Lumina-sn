@@ -1,7 +1,9 @@
 #include <cuda_runtime.h>
 #include "cmf_gpu_runtime.h"
 #include "cmf_gpu_budget.hpp"
-#ifdef CMF_GPU_LINEAR
+#if defined(CMF_GPU_FULLSR_CHAIN)
+#include "cmf_fullsr_chain.h"
+#elif defined(CMF_GPU_LINEAR)
 #include "cmf_linear_cuda.h"
 #else
 #include "cmf_history_cuda.h"
@@ -53,7 +55,9 @@ extern "C" CMFGpuRuntime *cmf_gpu_create(int device,uint64_t cap,uint64_t baseli
     cudaDeviceProp prop;size_t available,total,stack;
     size_t kernel_local=0;
     if(cudaSetDevice(device)!=cudaSuccess){delete c;*code=2;return nullptr;}
-#ifdef CMF_GPU_LINEAR
+#if defined(CMF_GPU_FULLSR_CHAIN)
+    if(lumina_fullsr_chain_workspace(&kernel_local)){delete c;*code=2;return nullptr;}
+#elif defined(CMF_GPU_LINEAR)
     if(lumina_linear_cuda_workspace(&kernel_local)){delete c;*code=2;return nullptr;}
 #else
     size_t a,b,d,e,f,g;

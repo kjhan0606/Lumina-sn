@@ -107,7 +107,7 @@ def test_scaled_comparison_does_not_discard_underflow():
 def test_gpu_staging_captures_import_and_shared_source_closure(tmp_path):
     root = tmp_path/'run'; stage(ROOT, root, chain_gpu=True)
     for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_linear_map.hpp', 'cmf_positive_moments.h',
-                 'cmf_linear_provider.hpp', 'cmf_frequency_history.h'):
+                 'cmf_linear_provider.hpp', 'cmf_frequency_history.h', 'cmf_gpu_runtime.cu', 'cmf_fullsr_chain.h'):
         assert (root/'code/src'/name).is_file()
     assert (root/'code/scripts/run_lumina_fullsr_chain_gpu.py').is_file()
     assert (root/'code/scripts/lumina_gpu_driver.py').is_file()

@@ -33,7 +33,7 @@ def stage(project, root, include_comparison=False, chain_gpu=False):
     paths.add(project/'scripts/run_lumina_fullsr_sc.sh')
     if chain_gpu:
         paths.add(project/'scripts/run_lumina_fullsr_chain_gpu.sh')
-        pending = [project/'src'/name for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_frozen.cpp')]
+        pending = [project/'src'/name for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_frozen.cpp', 'cmf_gpu_runtime.cu')]
         while pending:
             path = pending.pop()
             if path in paths: continue

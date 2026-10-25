@@ -94,3 +94,12 @@ def test_failure_report_is_optional_and_preserves_numeric_values(budget):
     report=creation_preflight(budget)
     assert report['reason']==3 and report['reserved']==9*G and report['cap']==16*G
     assert report['threads']==221184 and report['kernel_local']==9168
+
+
+def test_fullsr_chain_uses_its_actual_workspace_without_expanding_cap(budget):
+    old = call(budget, selected=1, local=3872, threads=270336)
+    new = call(budget, selected=1, local=5040, threads=270336)
+    assert old[0] == new[0] == 0
+    assert new[1]-old[1] == (5040-3872)*270336
+    assert budget.reservation_fits_probe(16*G, new[1], 0, 4*G) == 1
+    assert budget.reservation_fits_probe(16*G, new[1], 0, 16*G) == 0

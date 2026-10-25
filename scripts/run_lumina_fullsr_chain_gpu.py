@@ -23,8 +23,6 @@ from lumina_linear_native import Positive
 from lumina_nodal_driver import CompiledDriverPlan
 import lumina_local_micro as M
 
-OLD_GPU = Path('/gpfs/kjhan/cmfgen_runs/lumina_slab_local_20261025-nJ6bSE/history_cuda.so')
-OLD_GPU_SHA = '72e0bea5e4114cfad2a895756a591ce7c8aa2b3e408af35b18764f86a6e78476'
 OWN_J = Path('/gpfs/kjhan/cmfgen_runs/lumina_fullsr_sc_20261025-LcW8Dq/run/J.npy')
 OWN_J_SHA = '21dd68ee432d75eb746509571a320b25e647c2be65cf248a1d7ee1f566336ca9'
 
@@ -102,12 +100,13 @@ def manufactured(cpu, gpu, runtime):
                             tiny[0]['exponent'] < -1074 and relative_scaled(recovered, positive([1.]))[0] <= 1e-10))
 
 
-def run(root):
+def run(root, parent_seconds=600):
+    if not 60 <= parent_seconds <= 600: raise ValueError('부모 상한60–600초 필요')
     root = Path(root).resolve(); output = root/'chain-gpu.json'
     if output.exists(): raise FileExistsError('기존 GPU 결과 보존')
     started = time.monotonic(); deadline = started+420
     record = dict(status='STARTED', phase='OPEN_INPUTS', final_goal='NOT_MET', accepted_physical_field=False,
-        actual_model_F_calls=0, SE_RE_updates=0, cases=[], parent_seconds=600, internal_seconds=420,
+        actual_model_F_calls=0, SE_RE_updates=0, cases=[], parent_seconds=parent_seconds, internal_seconds=420,
         automatic_retries=0, total_pair_evaluations=0,
         scope='≤512 실제 구간–출력 쌍의 수치/비용; 전체 J·이온분포·observer 갱신 아님')
     def save():
@@ -118,10 +117,10 @@ def run(root):
     save(); own_field = None
     try:
         record['stage_sha256'] = verify_stage(root)
-        if M.N.sha(BASE) != BASE_SHA or M.N.sha(OLD_GPU) != OLD_GPU_SHA: raise ValueError('기존 봉인/장치 runtime 변경')
+        if M.N.sha(BASE) != BASE_SHA: raise ValueError('기존 봉인 변경')
         c = json.loads(BASE.read_text())
         if M.N.sha(c['cpu_library']) != c['sealed_sha256'][c['cpu_library']]: raise ValueError('계수 제공자 변경')
-        record.update(input_plan_sha256=BASE_SHA, old_runtime_sha256=OLD_GPU_SHA,
+        record.update(input_plan_sha256=BASE_SHA, runtime_variant='CMF_GPU_FULLSR_CHAIN_SAME_16_GiB_BUDGET',
                       kernel_sha256=M.N.sha(root/'chain_cuda.so'), cpu_sha256=M.N.sha(root/'frozen.so'))
         # CUDA0은 Slurm이 배정한 장치다. NVML의 물리0과 혼동하지 않는다.
         query = subprocess.run(['nvidia-smi', '--query-gpu=uuid,name,memory.free', '--format=csv,noheader,nounits'],
@@ -131,7 +130,7 @@ def run(root):
         if len(matches) != 1: raise ValueError('배정 CUDA0과 NVML GPU 신원 일치 실패')
         _, name, free = matches[0]; record.update(device_name=name.strip(), device_uuid=device_uuid)
         local = gpu.workspace()
-        with Runtime(OLD_GPU, int(free.strip())*1024**2, _functions={}, _abis=()) as runtime:
+        with Runtime(root/'chain_cuda.so', int(free.strip())*1024**2, _functions={}, _abis=()) as runtime:
             memory = runtime.report(); record.update(memory_begin=memory, chain_kernel_local_bytes=local)
             if local > memory['kernel_local']: raise MemoryError('새 kernel local이 기존 보수 예약보다 큼')
             cpu = FrozenKernel(root/'frozen.so', linear_chi=True)
@@ -196,7 +195,9 @@ def run(root):
                                     maximum_CPU_GPU_relative=float(paired.max()), timing=timing)
                                 row['samples'].append(sample)
                                 if paired.max() > 1e-8:
-                                    sample['CPU_GPU_relative'] = paired.tolist(); save()
+                                    sample.update(CPU_GPU_relative=paired.tolist(),
+                                        CPU_scaled=[(float(v['mantissa']), int(v['exponent'])) for v in baseline],
+                                        GPU_scaled=[(float(v['mantissa']), int(v['exponent'])) for v in result]); save()
                                     raise ValueError('같은 이산화 CPU/GPU 차이 미달')
                                 if source_mode == 'J0_I0' and index == 13003:
                                     fine = result[np.searchsorted(columns, c['fine_columns'])]
@@ -209,6 +210,8 @@ def run(root):
                             difference = relative_scaled(*results)
                             row.update(phase2_phase4_maximum_relative=float(difference.max()),
                                        phase2_phase4_relative=difference.tolist(), phase_converged=bool(difference.max() <= 1e-4))
+                            if not row['phase_converged']:
+                                row['phase_scaled'] = [[(float(v['mantissa']), int(v['exponent'])) for v in result] for result in results]
                             save()
                     if isinstance(field, InputField): field.close(); own_field = None
                 record['memory_end'] = runtime.report()
@@ -234,4 +237,5 @@ def run(root):
 
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); a = p.parse_args(); raise SystemExit(run(**vars(a)))
+    p = argparse.ArgumentParser(); p.add_argument('root', type=Path); p.add_argument('--parent-seconds', type=int, default=600)
+    a = p.parse_args(); raise SystemExit(run(**vars(a)))
