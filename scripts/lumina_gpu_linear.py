@@ -77,6 +77,7 @@ class LinearDriver(GpuDriver):
     endpoint_cache=False
     source_integrator=0
     cooperative_shared_bytes=0
+    slab_local_refinement=False
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
         return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
@@ -177,6 +178,7 @@ class LinearDriver(GpuDriver):
     def interval(self, plan, index, work, *, max_seconds=60.):
         # 새 호출이 초기 실패해도 이전 구간의 진행 상태를 재사용하지 않는다.
         self.last_completed_batch = None
+        self._interval_complete = False
         self.bound()
         if not 0 < max_seconds <= self.interval_limit_seconds: raise ValueError('B 구간 시간 한도')
         if plan.source is not self.provider._source or plan.panels != 1 or type(index) is not int or not 0 <= index < len(plan.arrays['steps']):
@@ -201,12 +203,27 @@ class LinearDriver(GpuDriver):
             finally:
                 self.arena.release(offset)
             for i in range(slabs): leaves[i][0].score = float(errors[i])
+            active = None
             while True:
-                work.check(); active = int(errors.argmax()); worst = float(errors[active])
+                work.check()
+                if not self.slab_local_refinement or active is None:
+                    active = int(errors.argmax())
+                worst = float(errors[active])
                 if math.isnan(worst) or worst < 0: raise RuntimeError('B 상대오차 결과 비정상')
-                self.last_completed_batch = dict(interval_index=index, rounds=rounds, maximum_error_ratio=worst,
+                self.last_completed_batch = dict(interval_index=index, rounds=rounds,
+                    maximum_error_ratio=float(errors.max()), active_slab_error_ratio=worst,
+                    finished_slabs=int(np.count_nonzero(errors <= 1.)), total_slabs=slabs,
                     active_slab=active, active_leaves=len(leaves[active]), completed_candidate=True)
-                if worst <= 1.: break
+                if worst <= 1.:
+                    if not self.slab_local_refinement or float(errors.max()) <= 1.:
+                        break
+                    # 끝낸 주파수 묶음은 다시 계산하지 않으므로 맵을 즉시 돌려준다.
+                    for leaf in leaves[active]:
+                        if leaf.cache is not None:
+                            self.arena.release(leaf.cache[0]); leaf.cache = None
+                    if active in cached: cached.remove(active)
+                    active = None
+                    continue
                 current = leaves[active]; peak = max(x.score for x in current); updated = []
                 for leaf in current:
                     if leaf.score < .5*peak: updated.append(leaf); continue
@@ -239,7 +256,9 @@ class LinearDriver(GpuDriver):
                 for leaf, score in zip(current, scores): leaf.score = float(score)
                 errors[active] = value[0]; rounds += 1; maximum_leaves = max(maximum_leaves, len(current))
             self.rt.sync(); work.check(); self.ray, self.candidate = self.candidate, self.ray
+            self._interval_complete = True
             return dict(elapsed_seconds=time.monotonic()-started, global_error=float(errors.max()), global_tolerance=1.,
+                refinement_order='FINISH_ACTIVE_SLAB' if self.slab_local_refinement else 'GLOBAL_WORST_FIRST',
                 error_normalization='maximum of per-frequency relative ratios; no intensity floor or global bright norm',
                 error_certificate=False, max_mesh_leaves=maximum_leaves, rounds=rounds, cache_evictions=evictions,
                 cache_peak_bytes=self.arena.peak, active_workspace_bytes=self.layout['workspace'],
@@ -253,6 +272,8 @@ class LinearDriver(GpuDriver):
     def weighted(self, weights):
         """기계적 양의 가중 I 요약. 실제 생산율이라는 이름으로 사용하지 않는다."""
         self.bound(); values = np.ascontiguousarray(weights, dtype='f8')
+        if not getattr(self, '_interval_complete', False):
+            raise ValueError('완성 구간의 강도와 오차가 함께 있어야 가중합을 계산할 수 있다')
         if values.shape != (self.nf,) or not np.isfinite(values).all() or (values < 0).any():
             raise ValueError('동일ν의 비음수 가중치 필요')
         self.rt.upload(self.weight_buffer, values)

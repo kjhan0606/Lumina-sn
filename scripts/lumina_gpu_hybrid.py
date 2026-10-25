@@ -26,3 +26,9 @@ class HybridDriver(WarpCompactDriver):
         return dict(fallback_attempts=int(counters[0]),fallback_completed=int(counters[1]),
             fallback_unresolved=int(counters[2]),fallback_thread_clock_ticks=int(counters[3]),
             clock_role='sum of per-thread device cycles; not wall time or billed GPU seconds')
+
+
+class SlabLocalHybridDriver(HybridDriver):
+    """현재 주파수 묶음을 끝내어 맵 재생성을 줄이는 명시적 실행 선택."""
+    slab_local_refinement=True
+    engine='SPACE_LINEAR_WARP_NATIVE_SLAB_LOCAL_GPU'
