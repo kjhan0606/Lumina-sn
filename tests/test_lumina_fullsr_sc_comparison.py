@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
@@ -67,3 +68,33 @@ def test_adapter_records_method_and_input_identities_without_another_transport(t
     assert evidence['completed_fields'][0]['report']['transport'] == 'FULLSR_INVARIANT_UPWIND_SC'
     assert evidence['result_records'][str(path)] == C.N.sha(path)
     assert evidence['accepted_physical_field'] is False and evidence['final_goal'] == 'NOT_MET'
+
+
+def test_pair_adapter_reports_j1_residual_not_j2_convergence(tmp_path, monkeypatch):
+    first, data = record(tmp_path)
+    for name, value in (('J1', 1.), ('J2', 1.25)):
+        np.save(tmp_path/(name+'.npy'), np.full((2, 8), value))
+    data['J'] = dict(path=str(tmp_path/'J1.npy'), sha256=C.N.sha(tmp_path/'J1.npy'))
+    first.write_text(json.dumps(data))
+    second_data = json.loads(json.dumps(data)); second_data['identity']['input_J'] = data['J']
+    second_data['J'] = dict(path=str(tmp_path/'J2.npy'), sha256=C.N.sha(tmp_path/'J2.npy'))
+    second = tmp_path/'second.json'; second.write_text(json.dumps(second_data))
+    config = tmp_path/'config'; config.write_text('{}'); base = tmp_path/'base.json'
+    base.write_text(json.dumps(dict(config=str(config), preparation='SYNTHETIC',
+        preparation_sha256='SYNTHETIC', source_identity=data['source_identity'])))
+    monkeypatch.setattr(C, 'BASE', base); monkeypatch.setattr(C, 'BASE_SHA', C.N.sha(base))
+    monkeypatch.setattr(C, 'verify_stage', lambda root: 'SYNTHETIC_STAGE')
+    class Source:
+        identity = data['source_identity']
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    monkeypatch.setattr(C.N, 'open_sealed_native', lambda *args: Source())
+    def rates(config, source, contract, entries, out, deadline):
+        assert len(entries) == 2; Path(out).mkdir()
+        return dict(synthetic_only=True, accepted_physical_field=False)
+    monkeypatch.setattr(C.R, 'compare', rates)
+    out = tmp_path/'rates'; C.compare(first, out, second=second)
+    evidence = json.loads((out/'transport-comparison.json').read_text())
+    assert evidence['J1_residual']['relative'] == .25
+    assert evidence['J1_residual']['J2_residual'] == 'NOT_MEASURED'
+    assert evidence['final_goal'] == 'NOT_MET'

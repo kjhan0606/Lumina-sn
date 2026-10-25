@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import time
 
+import numpy as np
+
 import lumina_native90_rates as R
 from lumina_fullsr_sc_actual import BASE, BASE_SHA, verify_stage
 import lumina_native_columns as N
@@ -50,6 +52,12 @@ def compare(first, out, *, second=None, seconds=1200):
             completed_fields=entries, result_records={str(p): N.sha(p) for p in (first, second) if p is not None},
             rates=result, accepted_physical_field=False, final_goal='NOT_MET',
             scope='같은 동결 물질의 첫 자체장 율 응답; 산란·물질 평형이나 스펙트럼 합격 아님')
+        if second is not None:
+            from lumina_native90_campaign import pair_residual
+            fields = [np.load(e['J']['path'], mmap_mode='r', allow_pickle=False) for e in entries]
+            try: provenance['J1_residual'] = pair_residual(*fields)
+            finally:
+                for field in fields: field._mmap.close()
         with (Path(out)/'transport-comparison.json').open('x') as stream:
             json.dump(provenance, stream, ensure_ascii=False, indent=2, allow_nan=False)
     return result

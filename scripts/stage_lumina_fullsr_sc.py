@@ -29,7 +29,9 @@ def stage(project, root, include_comparison=False):
                  'cmf_linear_affine.hpp', 'cmf_ordered_maps.hpp', 'cmf_linear_provider.hpp'):
         paths.add(project/'src'/name)
     paths.add(project/'scripts/run_lumina_fullsr_sc.sh')
-    if include_comparison: paths.add(project/'scripts/run_lumina_fullsr_sc_compare.sh')
+    if include_comparison:
+        paths.add(project/'scripts/run_lumina_fullsr_sc_compare.sh')
+        paths.add(project/'scripts/run_lumina_fullsr_sc_pair.sh')
     root.mkdir(); manifest = {}
     for path in sorted(paths):
         relative = path.relative_to(project); target = root/'code'/relative
