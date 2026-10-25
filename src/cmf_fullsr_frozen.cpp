@@ -7,6 +7,7 @@
 #include <new>
 #include <vector>
 #include "cmf_fullsr_linear_map.hpp"
+#include "cmf_fullsr_entry.hpp"
 
 namespace {
 using lumina_ordered::Positive;
@@ -19,16 +20,6 @@ bool valid(Positive p){return std::isfinite(p.mantissa)&&p.mantissa>=0&&
     (p.mantissa==0||(p.mantissa>=.5&&p.mantissa<1.))&&
     p.exponent>-(INT64_C(1)<<60)&&p.exponent<(INT64_C(1)<<60);}
 Positive decode(CMFLinearPositive p){return {p.mantissa,p.exponent};}
-bool scale(Positive a,double b,Positive &out){Positive p;return Positive::from_double(b,p)&&product(a,p,out);}
-int order(Positive a,Positive b){
-    if(!a.mantissa)return b.mantissa?-1:0;
-    if(!b.mantissa)return 1;
-    if(a.exponent!=b.exponent)return a.exponent>b.exponent?1:-1;
-    return a.mantissa==b.mantissa?0:(a.mantissa>b.mantissa?1:-1);
-}
-bool subtract(Positive a,Positive b,Positive &out){
-    return order(a,b)>=0&&lumina_linear_affine::difference(a,b,out);
-}
 Affine identity(){return {Positive::one(),Positive::zero()};}
 bool compose(Affine a,Affine b,Affine &out,CMFFrozenStats &s){
     Positive t,x,y;
@@ -94,55 +85,7 @@ public:
     }
 };
 
-bool relative_u(const CMFLinearPositive *values,int i,int base,double h,Positive &out){
-    Positive a=decode(values[i]),factor;
-    return valid(a)&&Positive::from_log(-3.*(i-base)*h,factor)&&product(a,factor,out);
-}
-/* PCHIP 내부 기울기의 h/3 배수다. 양 끝 기울기는 secant를 쓴다.
- * harmonic <= 2*min/3이므로 Bernstein 제어점은 이웃 값 범위 안이다. */
-bool harmonic(Positive a,Positive b,Positive &out){
-    if(!a.mantissa||!b.mantissa){out=Positive::zero();return true;}
-    if(order(a,b)>0)std::swap(a,b);
-    int64_t difference=a.exponent-b.exponent;
-    double ratio=difference < -1074?0.:std::ldexp(a.mantissa/b.mantissa,(int)difference);
-    return scale(a,(2./3.)/(1.+ratio),out);
-}
-bool interpolate(const CMFLinearPositive *values,int nf,int k,double f,double h,int reconstruction,Positive &out){
-    Positive a,b;
-    if(!relative_u(values,k,k,h,a))return false;
-    if(!f){out=a;return true;}
-    if(k+1>=nf||!relative_u(values,k+1,k,h,b))return false;
-    Positive controls[4]={a,a,b,b};int direction=order(b,a);
-    if(reconstruction&&direction){
-        Positive middle,left,right,previous,next,alpha,beta;
-        if(!lumina_linear_affine::difference(a,b,middle))return false;
-        if(k==0){if(!scale(middle,1./3.,alpha))return false;}
-        else{
-            if(!relative_u(values,k-1,k,h,previous)||!lumina_linear_affine::difference(a,previous,left))return false;
-            alpha=Positive::zero();
-            if(order(a,previous)==direction&&!harmonic(left,middle,alpha))return false;
-        }
-        if(k+2==nf){if(!scale(middle,1./3.,beta))return false;}
-        else{
-            if(!relative_u(values,k+2,k,h,next)||!lumina_linear_affine::difference(b,next,right))return false;
-            beta=Positive::zero();
-            if(order(next,b)==direction&&!harmonic(middle,right,beta))return false;
-        }
-        if(direction>0){if(!sum(a,alpha,controls[1])||!subtract(b,beta,controls[2]))return false;}
-        else if(!subtract(a,alpha,controls[1])||!sum(b,beta,controls[2]))return false;
-    }
-    Positive result=Positive::zero(),part,total,factor;
-    if(!reconstruction){
-        if(!scale(a,1.-f,part)||!scale(b,f,total)||!sum(part,total,result))return false;
-    }else{
-        double g=1.-f,w[4]={g*g*g,3.*g*g*f,3.*g*f*f,f*f*f};
-        for(int i=0;i<4;i++){
-            if(!scale(controls[i],w[i],part)||!sum(result,part,total))return false;
-            result=total;
-        }
-    }
-    return Positive::from_log(3.*f*h,factor)&&product(result,factor,out);
-}
+using lumina_fullsr_entry::interpolate;
 }
 
 static int cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,

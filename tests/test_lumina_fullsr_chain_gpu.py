@@ -125,6 +125,15 @@ def test_gpu_staging_captures_import_and_shared_source_closure(tmp_path):
     assert (root/'code/scripts/lumina_gpu_driver.py').is_file()
 
 
+def test_resident_staging_captures_new_field_geometry_and_existing_aux(tmp_path):
+    root = tmp_path/'resident'; stage(ROOT, root, resident=True)
+    for name in ('lumina_resident_actual.py', 'lumina_resident_field.py', 'lumina_phase_geometry.py'):
+        assert (root/'code/scripts'/name).is_file()
+    for name in ('cmf_fullsr_entry.hpp', 'cmf_linear_cuda_aux.cu', 'cmf_nodal_driver.c',
+                 'cmf_frequency_history.c', 'cmf_nodal_input.c', 'cmf_nodal_history.c'):
+        assert (root/'code/src'/name).is_file()
+
+
 def test_reusable_tiles_keep_geometry_and_handle_short_last_tile(frozen):
     gpu, runtime = fake_gpu(frozen); device_input = SimpleNamespace(runtime=runtime, view=DenseView())
     lengths = np.linspace(.1, .7, 5); deltas = lengths*.01; phases = np.linspace(.2, 0., 6)

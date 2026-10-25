@@ -9,10 +9,12 @@ import re
 import shutil
 
 
-def stage(project, root, include_comparison=False, chain_gpu=False):
+def stage(project, root, include_comparison=False, chain_gpu=False, resident=False):
     project, root = Path(project).resolve(), Path(root).resolve()
     if root.exists(): raise FileExistsError('새 계산 root만 허용')
+    if resident: chain_gpu = True
     pending = [project/'scripts/lumina_fullsr_sc_actual.py', project/'scripts/lumina_fullsr_sc.py']
+    if resident: pending.append(project/'scripts/lumina_resident_actual.py')
     if chain_gpu: pending += [project/'scripts/run_lumina_fullsr_chain_gpu.py']
     if include_comparison: pending.append(project/'scripts/compare_lumina_fullsr_sc.py')
     paths = set()
@@ -33,7 +35,9 @@ def stage(project, root, include_comparison=False, chain_gpu=False):
     paths.add(project/'scripts/run_lumina_fullsr_sc.sh')
     if chain_gpu:
         paths.add(project/'scripts/run_lumina_fullsr_chain_gpu.sh')
-        pending = [project/'src'/name for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_frozen.cpp', 'cmf_gpu_runtime.cu')]
+        pending = [project/'src'/name for name in ('cmf_fullsr_chain.cu', 'cmf_fullsr_frozen.cpp', 'cmf_gpu_runtime.cu', 'cmf_linear_cuda_aux.cu')]
+        if resident:
+            pending += [project/'src'/name for name in ('cmf_frequency_history.c', 'cmf_nodal_input.c', 'cmf_nodal_history.c', 'cmf_nodal_driver.c')]
         while pending:
             path = pending.pop()
             if path in paths: continue
@@ -60,4 +64,5 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(); p.add_argument('project'); p.add_argument('root')
     p.add_argument('--include-comparison', action='store_true')
     p.add_argument('--chain-gpu', action='store_true')
+    p.add_argument('--resident', action='store_true')
     a = p.parse_args(); stage(**vars(a))

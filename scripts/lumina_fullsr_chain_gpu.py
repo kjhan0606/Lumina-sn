@@ -20,6 +20,7 @@ class DeviceInput:
         self.blocks = []; self.runtime = runtime; started = time.monotonic()
         if 'REFERENCE' in provider.identity.get('field', {}).get('role', ''):
             raise ValueError('참조 J를 자체 수송 source에 사용하지 않는다')
+        self.identity = dict(provider.identity); self.source = provider._source; self.geometry = provider.g
         view = provider.borrow_dense_view(); self.view = DenseView.from_buffer_copy(view)
         n = view.ns*view.nf
         try:
@@ -52,6 +53,14 @@ class ChainGPU:
                  'workspace': [ct.c_void_p]}
         for name, args in specs.items():
             fun = getattr(self.lib, 'lumina_fullsr_chain_'+name); fun.argtypes = args; fun.restype = ct.c_int
+        optional = {'lumina_fullsr_chain_stream': [ct.c_void_p]+[ct.c_int]*3+[ct.c_void_p]*4+[ct.c_double]+[ct.c_void_p]*3,
+                    'lumina_fullsr_chain_encode': [ct.c_int]+[ct.c_void_p]*3,
+                    'lumina_fullsr_chain_decode': [ct.c_int]+[ct.c_void_p]*4,
+                    'lumina_history_cuda_boundary': [ct.c_int]+[ct.c_void_p]*2+[ct.c_double]+[ct.c_void_p]*2,
+                    'lumina_history_cuda_accumulate': [ct.c_int]*3+[ct.c_void_p]*5}
+        for name, args in optional.items():
+            fun = getattr(self.lib, name, None)
+            if fun is not None: fun.argtypes = args; fun.restype = ct.c_int
 
     def workspace(self):
         out = ct.c_size_t(); check(self.lib.lumina_fullsr_chain_workspace(ct.byref(out))); return out.value

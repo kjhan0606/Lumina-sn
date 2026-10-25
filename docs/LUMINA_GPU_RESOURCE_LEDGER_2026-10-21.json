@@ -1,6 +1,6 @@
 {
   "schema": "lumina-gpu-resource-ledger-v1",
-  "as_of_KST": "2026-10-22 22:46",
+  "as_of_KST": "2026-10-26 03:40",
   "total_GPUh": 144,
   "baseline": {
     "source": "docs/HANDOVER_2026-10-18.md:30",
@@ -96,10 +96,40 @@
       }
     ]
   },
-  "used_upper_GPUh": 76.6962222222111,
-  "remaining_before_new_reservations_GPUh": 67.3037777777889,
-  "current_reserved_GPUh": 0,
-  "remaining_after_current_reservations_GPUh": 67.3037777777889,
+  "used_upper_GPUh": 76.9715,
+  "remaining_before_new_reservations_GPUh": 67.0285,
+  "current_reserved_GPUh": 0.13333333333333333,
+  "remaining_after_current_reservations_GPUh": 66.89516666666667,
+  "resident_integration_2026_10_26": {
+    "state": "RESERVED_FOR_SINGLE_DISPATCH",
+    "root": "lumina_resident_20261026-97IoJk/run",
+    "GPU": 1,
+    "CPU": 1,
+    "host_device_memory_GiB_each": 16,
+    "maximum_parent_seconds": 480,
+    "reserved_GPUh": 0.13333333333333333,
+    "actual_native90_full_F_calls": 0,
+    "automatic_retries": 0,
+    "scope": "같은 실제 수송의 GPU 상주 연결·제조 전체장·원13003 fullNF·비영 source/입구·연속 구간·복원·실패 거부를 한 번 검증한다. 실제 native90 전체장/물질/observer는 실행하지 않는다.",
+    "settlement_rule": "제출한 본할당의 실제 GPU초만 한 번 정산하고 미사용 예약을 해제한다. 빌드/Python/시험/step 시간은 다시 더하지 않는다. 제출 실패라면 사용0으로 예약을 해제한다."
+  },
+  "resumed_transport_2026_10_26": {
+    "state": "SETTLED_MAIN_ALLOCATIONS_ONLY",
+    "previous_used_upper_GPUh": 76.6962222222111,
+    "allocated_gpu_seconds": 991,
+    "allocated_GPUh": 0.2752777777777778,
+    "reserved_GPUh": 0,
+    "records": [
+      {"job_id": "435804", "state": "FAILED", "elapsed_seconds": 4, "GPUs": 1, "root": "lumina_slab_local_20261025-X17K0a"},
+      {"job_id": "435807", "state": "FAILED", "elapsed_seconds": 77, "GPUs": 1, "root": "lumina_slab_local_20261025-a65h6Z"},
+      {"job_id": "435814", "state": "FAILED", "elapsed_seconds": 805, "GPUs": 1, "root": "lumina_slab_local_20261025-nJ6bSE"},
+      {"job_id": "436138", "state": "FAILED", "elapsed_seconds": 40, "GPUs": 1, "root": "lumina_chain_gpu_20261026-9OHxgc/run"},
+      {"job_id": "436140", "state": "COMPLETED", "elapsed_seconds": 34, "GPUs": 1, "root": "lumina_chain_runtime_20261026-kIuwyB/run"},
+      {"job_id": "436145", "state": "COMPLETED", "elapsed_seconds": 31, "GPUs": 1, "root": "lumina_chain_full_20261026-0U6yoO/run"}
+    ],
+    "evidence": "sacct -j435804,435807,435814,436138,436140,436145 -X --parsable2 --format=JobID,State,ElapsedRaw,AllocTRES,WorkDir",
+    "settlement_rule": "GPU1인 본할당의 실제 ElapsedRaw만 한 번 합산했다. step/Python/시험/CPU grammar 실행을 중복 차감하지 않았다. 실패 할당도 포함하며 다른 프로젝트는 제외한다. 과거 사용량을 초기화하지 않는다."
+  },
   "extended_full_frequency_followup": {
     "root": "/gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR",
     "state": "SETTLED_INTERVAL_TIMEOUT_NO_VECTOR",

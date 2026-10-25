@@ -22,6 +22,13 @@ typedef struct {
 int cmf_nodal_driver_geometry(CMFNodalInput *input,int nr,const double *radius,const double *velocity,
     const double *gauss_x,const double *gauss_w,const double *step,double h,int n,const double *edges,
     double *lengths,double *deltas,double *radii,CMFNodalLocation *locations,double *shift);
+/* 같은 기하 함수로 실제 Doppler phase 경계의 좌표/길이/반경 보간 위치를 만든다.
+ * capacity=0은 steps 조회만 한다. 나머지 출력은 steps+1(길이/drift만steps)이다.
+ * 계수/J/수송을 읽거나 갱신하지 않는다. 실패한 배열은 소비하지 않는다. */
+int cmf_nodal_driver_phase_grid(CMFNodalInput *input,int nr,const double *radius,const double *velocity,
+    const double *gauss_x,const double *gauss_w,const double *step,double h,int subdivisions,int capacity,
+    int *steps,double *x,double *radii,double *lengths,double *drifts,double *phase,
+    CMFNodalLocation *locations,double *maximum_phase_roundoff);
 
 /* 같은 propagate의 한 실제 구간/전체ν 비교 전용. 전체장·관측 누적은 없다. */
 int cmf_nodal_driver_interval(CMFNodalInput *input,int nr,

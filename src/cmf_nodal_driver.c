@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "cmf_nodal_driver.h"
 #include <math.h>
+#include <float.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -218,6 +219,52 @@ int cmf_nodal_driver_geometry(CMFNodalInput *input,int nr,const double *r,const 
         code=length(&d,step,p[0],p[4],lengths+3*row);if(code)return code;
         code=length(&d,step,p[0],p[2],lengths+3*row+1);if(code)return code;
         code=length(&d,step,p[2],p[4],lengths+3*row+2);if(code)return code;
+    }
+    return 0;
+}
+
+int cmf_nodal_driver_phase_grid(CMFNodalInput *input,int nr,const double *r,const double *v,
+    const double *gx,const double *gw,const double *step,double h,int subdivisions,int capacity,
+    int *steps,double *x,double *radii,double *lengths,double *drifts,double *phase,
+    CMFNodalLocation *locations,double *maximum_phase_roundoff)
+{
+    if(!steps||subdivisions<1||subdivisions>16||capacity<0||capacity>65537)return 1;
+    double edges[2]={0.,1.},old_length[3],old_delta[3],old_radii[5],span;
+    CMFNodalLocation old_locations[5];
+    int code=cmf_nodal_driver_geometry(input,nr,r,v,gx,gw,step,h,1,edges,
+        old_length,old_delta,old_radii,old_locations,&span);
+    if(code)return code;
+    double count=ceil(span*subdivisions);if(!isfinite(count)||count>65536)return 3;
+    int n=count<1?1:(int)count;*steps=n;
+    if(capacity==0)return 0;
+    if(capacity<n+1)return 3;
+    if(!x||!radii||!lengths||!drifts||!phase||!locations||!maximum_phase_roundoff)return 1;
+    int ns,nf;if(cmf_nodal_input_shape(input,&ns,&nf))return 1;
+    Driver d={.input=input,.ns=ns,.nf=nf,.nr=nr,.r=r,.v=v,.gx=gx,.gw=gw};
+    double observer;code=doppler(&d,step[0],step[2],step[4],&observer);if(code)return code;
+    Point previous;code=point(&d,step,observer,0.,&previous);if(code)return code;
+    x[0]=0.;radii[0]=previous.r;phase[0]=previous.delta/h;*maximum_phase_roundoff=0.;
+    code=cmf_nodal_input_prepare(input,previous.r,locations);if(code)return code;
+    for(int k=1;k<=n;k++){
+        double target=(double)(n-k)/subdivisions,coordinate=1.;Point value;
+        if(k==n){code=point(&d,step,observer,1.,&value);if(code)return code;}
+        else{
+            double lo=x[k-1],hi=1.;
+            for(int iteration=0;iteration<64;iteration++){
+                coordinate=lo+.5*(hi-lo);
+                code=point(&d,step,observer,coordinate,&value);if(code)return code;
+                if(value.delta==target*h||coordinate==lo||coordinate==hi)break;
+                if(value.delta>target*h)lo=coordinate;else hi=coordinate;
+                if(hi-lo<=4*DBL_EPSILON)break;
+            }
+        }
+        if(coordinate<=x[k-1]||coordinate>1.||value.delta>previous.delta)return 7;
+        x[k]=coordinate;radii[k]=value.r;phase[k]=value.delta/h;
+        *maximum_phase_roundoff=fmax(*maximum_phase_roundoff,fabs(phase[k]-target));
+        code=cmf_nodal_input_prepare(input,value.r,locations+k);if(code)return code;
+        code=length(&d,step,previous,value,lengths+k-1);if(code)return code;
+        if(lengths[k-1]<=0)return 7;
+        drifts[k-1]=previous.delta-value.delta;previous=value;
     }
     return 0;
 }
