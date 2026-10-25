@@ -13,8 +13,12 @@ from lumina_compiled_history import SmallDirectProviderTransport, _TrialField
 from lumina_compiled_input import CompiledInput
 from lumina_nodal_driver import CompiledDriverPlan, DriverKernel
 from lumina_gpu_hybrid import HybridDriver, SlabLocalHybridDriver
-from lumina_gpu_driver import Work
+from lumina_gpu_driver import Work, Location
 import time
+import ctypes as ct
+from types import SimpleNamespace
+from test_lumina_gpu_measure import Input
+from lumina_gpu_linear import Piece
 
 pytestmark = pytest.mark.skipif(not os.environ.get('LUMINA_SLAB_CPU_LIBRARY'),
                                 reason='명시적 Slurm 장치 실행에서만 수행')
@@ -47,3 +51,30 @@ def test_two_orders_produce_identical_complete_device_intervals(gpu, tmp_path):
                 finally:
                     driver.close()
     np.testing.assert_array_equal(outputs[0], outputs[1])
+
+
+def test_batched_query_is_bit_identical_on_same_global_tree(gpu):
+    nf = 2051
+    data = Input(gpu,nf)
+    buffers = []
+    values = []
+    try:
+        left,right = [Location(loc.mode,loc.first,loc.last,loc.weight) for loc in data.locations]
+        for cls in (HybridDriver,SlabLocalHybridDriver):
+            d = cls.__new__(cls)
+            d.lib,d.rt,d.view = gpu.lib,gpu,data.device
+            d.provider = SimpleNamespace(_source=SimpleNamespace(dlognu=.001))
+            d.piece = lambda *args:([left,left,right],1.1,.003775,.000375)
+            p = Piece()
+            assert gpu.lib.lumina_linear_cuda_plan(ct.byref(d.view),data.locations,1.1,.001,
+                .003775,.000375,0,nf,2,ct.byref(p)) == 0
+            tree = gpu.allocate(d.tree_bytes(p));maps = gpu.allocate(3*nf*d.map_bytes)
+            buffers.extend((tree,maps));d.tree = tree
+            work = Work(10000000,time.monotonic()+30)
+            d.group((None,None,None,None),0,0,nf,maps,work)
+            values.append(gpu.download(maps,(3*nf*d.map_bytes,),'u1'))
+            maps.close();tree.close();buffers.clear()
+        np.testing.assert_array_equal(values[0],values[1])
+    finally:
+        for buffer in reversed(buffers):buffer.close()
+        data.close()

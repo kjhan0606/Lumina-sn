@@ -78,6 +78,8 @@ class LinearDriver(GpuDriver):
     source_integrator=0
     cooperative_shared_bytes=0
     slab_local_refinement=False
+    query_batch_width=0
+    progress=None
     engine='SPATIAL_LINEAR_B'
     def layout_for(self,nf,width):
         return memory_layout(nf,width,node_bytes=self.node_bytes,extra_bytes=self.projection_bytes)
@@ -152,9 +154,24 @@ class LinearDriver(GpuDriver):
                     ('source_tree_compositions',source_leaves-1),('source_padding_nodes',source_leaves-blocks)):
                     work.counts.setdefault(kind,0);work.take(kind,count)
             check(self.lib.lumina_linear_cuda_build(ct.byref(p), self.tree.address, self.rt.status))
-            work.take('map_queries', width)
-            check(self.lib.lumina_linear_cuda_query(ct.byref(p), self.tree.address, 1e-8, 100000,
-                target.part(k*width*self.map_bytes, width*self.map_bytes).address, self.rt.status))
+            destination = target.part(k*width*self.map_bytes, width*self.map_bytes).address
+            if not self.query_batch_width:
+                work.take('map_queries', width)
+                check(self.lib.lumina_linear_cuda_query(ct.byref(p), self.tree.address, 1e-8, 100000,
+                    destination, self.rt.status))
+            else:
+                query = self.lib.lumina_linear_cuda_query_range
+                query.argtypes=[P,P,D,I,I,I,P,P]; query.restype=I
+                for first in range(0,width,self.query_batch_width):
+                    count = min(self.query_batch_width,width-first)
+                    self.last_query_batch = dict(piece=k,first_output=begin+first,count=count,completed=False)
+                    if self.progress is not None: self.progress(self)
+                    work.take('map_queries',count)
+                    check(query(ct.byref(p),self.tree.address,1e-8,100000,first,count,destination,self.rt.status))
+                    self.rt.sync()
+                    self.last_query_batch['completed'] = True
+                    if self.progress is not None: self.progress(self)
+                    work.check()
 
     def replay(self, current, begin, width, work, *, incident_errors=None):
         if len(current)*width*LOCAL_BYTES > self.results.size or len(current)*width > 2097152:
@@ -178,6 +195,7 @@ class LinearDriver(GpuDriver):
     def interval(self, plan, index, work, *, max_seconds=60.):
         # 새 호출이 초기 실패해도 이전 구간의 진행 상태를 재사용하지 않는다.
         self.last_completed_batch = None
+        self.last_query_batch = None
         self._interval_complete = False
         self.bound()
         if not 0 < max_seconds <= self.interval_limit_seconds: raise ValueError('B 구간 시간 한도')
@@ -214,6 +232,7 @@ class LinearDriver(GpuDriver):
                     maximum_error_ratio=float(errors.max()), active_slab_error_ratio=worst,
                     finished_slabs=int(np.count_nonzero(errors <= 1.)), total_slabs=slabs,
                     active_slab=active, active_leaves=len(leaves[active]), completed_candidate=True)
+                if self.progress is not None: self.progress(self)
                 if worst <= 1.:
                     if not self.slab_local_refinement or float(errors.max()) <= 1.:
                         break
@@ -255,14 +274,17 @@ class LinearDriver(GpuDriver):
                     self.errors.part(active*8, 8), 1)
                 for leaf, score in zip(current, scores): leaf.score = float(score)
                 errors[active] = value[0]; rounds += 1; maximum_leaves = max(maximum_leaves, len(current))
-            self.rt.sync(); work.check(); self.ray, self.candidate = self.candidate, self.ray
-            self._interval_complete = True
-            return dict(elapsed_seconds=time.monotonic()-started, global_error=float(errors.max()), global_tolerance=1.,
+            self.rt.sync(); work.check()
+            report = dict(elapsed_seconds=time.monotonic()-started, global_error=float(errors.max()), global_tolerance=1.,
                 refinement_order='FINISH_ACTIVE_SLAB' if self.slab_local_refinement else 'GLOBAL_WORST_FIRST',
                 error_normalization='maximum of per-frequency relative ratios; no intensity floor or global bright norm',
                 error_certificate=False, max_mesh_leaves=maximum_leaves, rounds=rounds, cache_evictions=evictions,
                 cache_peak_bytes=self.arena.peak, active_workspace_bytes=self.layout['workspace'],
                 limited_polynomials=int(self.rt.download(self.limited, 1, 'u8')[0]), engine=self.engine)
+            work.check()
+            self.ray, self.candidate = self.candidate, self.ray
+            self._interval_complete = True
+            return report
         finally:
             work.deadline = previous_deadline
             for slab in leaves:

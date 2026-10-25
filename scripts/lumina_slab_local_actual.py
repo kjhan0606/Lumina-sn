@@ -2,6 +2,7 @@
 """같은 봉인 입력·바이너리에서 주파수 묶음 완결 순서로 원13003을 실행한다."""
 import argparse
 import json
+import math
 from pathlib import Path
 import resource
 import subprocess
@@ -21,6 +22,13 @@ BASE = Path('/gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-loca
 BASE_SHA = 'f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab'
 
 
+def status_snapshot(values):
+    """무한 오차비도 진행 기록에 남기며, 실제 판정 숫자는 수정하지 않는다."""
+    if values is None: return None
+    return {key:(str(value) if isinstance(value,float) and not math.isfinite(value) else value)
+            for key,value in values.items()}
+
+
 def run(root, seconds=720):
     if type(seconds) is not int or not 1 <= seconds <= 720:
         raise ValueError('원 구간 상한12분 이내의 양의 실행시간 필요')
@@ -33,13 +41,14 @@ def run(root, seconds=720):
         if M.N.sha(c[key]) != c['sealed_sha256'][c[key]]:
             raise ValueError('기존 바이너리 신원 변경')
     start = time.monotonic()
-    record = dict(status='STARTED', final_goal='NOT_MET', actual_model_F_calls=0,
+    record = dict(status='STARTED', phase='OPEN_INPUTS', final_goal='NOT_MET', actual_model_F_calls=0,
         SE_RE_updates=0, input_plan_sha256=BASE_SHA, interval_index=13003,
         own_input='J0_I0_ZERO', completed_interval=False,
         limits=dict(CPU=1, GPU=1, host_GiB=16, device_GiB=16, workspace_GiB=1,
                     interval_seconds=seconds, parent_seconds=900, automatic_retries=0),
         input_hash_verification='원 봉인 및 open_sealed_native 계승; 대형 계수 본문 전체 재해시 안 함')
     driver = work = None
+    last_progress_time = 0.
 
     def publish():
         record.update(elapsed_seconds=time.monotonic()-start,
@@ -49,6 +58,14 @@ def run(root, seconds=720):
         temp = output.with_suffix('.partial')
         temp.write_text(json.dumps(record, ensure_ascii=False, indent=2, allow_nan=False))
         temp.replace(output)
+
+    def progress(current):
+        nonlocal last_progress_time
+        now = time.monotonic()
+        if now-last_progress_time < 60.: return
+        record['last_completed_batch'] = status_snapshot(current.last_completed_batch)
+        record['last_query_batch'] = status_snapshot(current.last_query_batch)
+        publish(); last_progress_time = now
 
     publish()
     try:
@@ -61,7 +78,9 @@ def run(root, seconds=720):
             with CompiledInput(c['cpu_library'],geometry,source,M.ZeroTrial(source),
                                slab_width=128,cache_rows=128,profiles=1024) as provider:
                 provider.bind_zero_trial()
+                record['phase'] = 'PREPARE_DENSE'; publish()
                 record['dense_preparation'] = provider.prepare_dense()
+                record['phase'] = 'CREATE_GPU'; publish()
                 smi = subprocess.run(['nvidia-smi','--id=0','--query-gpu=memory.free',
                     '--format=csv,noheader,nounits'],check=True,capture_output=True,text=True,timeout=10)
                 free = int(smi.stdout.strip())
@@ -74,6 +93,8 @@ def run(root, seconds=720):
                     try:
                         runtime.zero(driver.ray)
                         work = Work(c['limits']['local_full_vectors_total']*source.nf,start+seconds+30)
+                        driver.progress = progress
+                        record['phase'] = 'GPU_INTERVAL'; publish()
                         report = driver.interval(plan,13003,work,max_seconds=seconds)
                         values = runtime.download(driver.ray,source.nf)
                         actual = values[c['fine_columns']]
@@ -85,13 +106,21 @@ def run(root, seconds=720):
                             np.save(stream,values,allow_pickle=False)
                         record['output_sha256'] = M.N.sha(root/'interval-13003.npy')
                         record['status'] = 'INTERVAL_COMPLETE_NOT_FIELD'
+                    except Exception as exc:
+                        record.update(status='INTERVAL_INCOMPLETE',error=type(exc).__name__+': '+str(exc),
+                            last_completed_batch=status_snapshot(driver.last_completed_batch),
+                            last_query_batch=status_snapshot(driver.last_query_batch))
+                        publish()
+                        raise
                     finally:
-                        record['last_completed_batch'] = driver.last_completed_batch
+                        record['last_completed_batch'] = status_snapshot(driver.last_completed_batch)
+                        record['last_query_batch'] = status_snapshot(driver.last_query_batch)
                         record['integration'] = driver.integration_report()
                         driver.close()
                         record['memory_end'] = runtime.report()
     except Exception as exc:
         record.update(status='INTERVAL_INCOMPLETE',error=type(exc).__name__+': '+str(exc))
+    record['phase'] = 'FINISHED'
     publish()
     return 0 if record['completed_interval'] and record['accuracy_met'] else 1
 

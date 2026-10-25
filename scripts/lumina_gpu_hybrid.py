@@ -31,4 +31,5 @@ class HybridDriver(WarpCompactDriver):
 class SlabLocalHybridDriver(HybridDriver):
     """현재 주파수 묶음을 끝내어 맵 재생성을 줄이는 명시적 실행 선택."""
     slab_local_refinement=True
+    query_batch_width=1024
     engine='SPACE_LINEAR_WARP_NATIVE_SLAB_LOCAL_GPU'

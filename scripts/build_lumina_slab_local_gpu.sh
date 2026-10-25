@@ -1,5 +1,5 @@
 #!/bin/bash
-# 문법 서버의 단일 CPU 빌드. 장치 문맥은 만들지 않는다.
+# 계산 노드의 단일 CPU 빌드. 장치 문맥은 만들지 않는다.
 source /etc/profile
 module purge
 module load gnu13 cuda/13.0.2

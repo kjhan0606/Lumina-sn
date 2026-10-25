@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from lumina_gpu_driver import Arena, Work
-from lumina_gpu_linear import LinearDriver
+from lumina_gpu_driver import Arena, Work, Location
+from lumina_gpu_linear import LinearDriver, Piece
 from lumina_gpu_hybrid import SlabLocalHybridDriver
 
 
@@ -142,6 +142,63 @@ def test_partial_completed_slabs_do_not_replace_input_on_failure():
 def test_new_candidate_is_explicit_and_keeps_original_default():
     assert SlabLocalHybridDriver.slab_local_refinement
     assert not LinearDriver.slab_local_refinement
+
+
+def test_reporting_failure_after_completed_mesh_keeps_previous_input():
+    d, plan = driver(True,nf=8,width=8)
+    original = d.ray
+    values = original.values.copy()
+    download = d.rt.download
+    def fail_last(buffer, *args):
+        if buffer is d.limited:
+            raise RuntimeError('완료 보고의 장치 조회 실패')
+        return download(buffer,*args)
+    d.rt.download = fail_last
+    work = Work(10000000,time.monotonic()+30)
+    with pytest.raises(RuntimeError,match='장치 조회 실패'):
+        d.interval(plan,0,work,max_seconds=30)
+    assert d.ray is original and not d._interval_complete
+    np.testing.assert_array_equal(d.ray.values,values)
+    assert not d.arena.live and d.arena.used == 0
+
+
+@pytest.mark.parametrize('expire_after', [None,2])
+def test_bounded_query_keeps_global_piece_and_checks_deadline_between_batches(expire_after):
+    d = SlabLocalHybridDriver.__new__(SlabLocalHybridDriver)
+    calls = []
+    class Query:
+        def __call__(self, *args):
+            p = args[0]._obj
+            calls.append((p.begin,p.count,args[4],args[5],args[6].offset))
+            return 0
+    def plan(*args):
+        p = args[-1]._obj
+        p.begin,p.count,p.nf = args[6],args[7],4097
+        p.bins,p.leaves,p.source_leaves,p.offset,p.span = 2052,2048,128,0.,1.
+        return 0
+    d.lib = SimpleNamespace(lumina_linear_cuda_plan=plan,
+        lumina_linear_cuda_build=lambda *args:0,lumina_linear_cuda_query_range=Query())
+    d.view = Piece().view
+    d.provider = SimpleNamespace(_source=SimpleNamespace(dlognu=.001))
+    d.tree = SimpleNamespace(size=10*1024**2,address=1)
+    work = Work(10000000,time.monotonic()+30)
+    syncs = []
+    def sync():
+        syncs.append(1)
+        if len(syncs) == expire_after: work.deadline = -1.
+    d.rt = SimpleNamespace(status=None,sync=sync)
+    d.piece = lambda *args:([Location(1,0,1,.5)]*3,1.,.002,.001)
+    target = Buffer(np.zeros(3*2050*d.map_bytes,dtype='u1'))
+    if expire_after:
+        with pytest.raises(TimeoutError):d.group((None,None,None,None),0,7,2050,target,work)
+        assert len(calls) == expire_after
+    else:
+        d.group((None,None,None,None),0,7,2050,target,work)
+        assert len(calls) == len(syncs) == 9
+        assert [row[2:4] for row in calls] == [(0,1024),(1024,1024),(2048,2)]*3
+        assert all(row[:2] == (7,2050) for row in calls)
+        assert [row[4] for row in calls] == [k*2050*d.map_bytes for k in range(3) for _ in range(3)]
+        assert work.counts['map_queries'] == 3*2050
 
 
 if __name__ == '__main__':
