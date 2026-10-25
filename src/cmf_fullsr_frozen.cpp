@@ -6,6 +6,7 @@
 #include <ctime>
 #include <new>
 #include <vector>
+#include "cmf_positive_moments.h"
 
 namespace {
 using lumina_ordered::Positive;
@@ -37,20 +38,51 @@ bool compose(Affine a,Affine b,Affine &out,CMFFrozenStats &s){
 bool apply(Affine a,Positive incoming,Positive &out){
     Positive p;return valid(incoming)&&product(a.t,incoming,p)&&sum(p,a.s,out);
 }
+/* q0/q1은 양 끝 effective chi*length다. 내부 gain 봉우리에서는 0점을
+ * 나누고, 순 gain은 반사+scaled T로 보존해 모멘트의 double overflow를 피한다. */
+bool linear_source(double q0,double q1,double length,double eb,double er,Affine &out,CMFFrozenStats &stats){
+    if(!std::isfinite(q0)||!std::isfinite(q1))return false;
+    if(q0>0&&q1<0){
+        double denominator=q0-q1;if(!std::isfinite(denominator))return false;
+        double f=q0/denominator;if(!(f>0&&f<1))return false;
+        double middle=(1.-f)*eb+f*er;Affine a,b;
+        return linear_source(q0*f,0.,length*f,eb,middle,a,stats)&&
+            linear_source(0.,q1*(1.-f),length*(1.-f),middle,er,b,stats)&&compose(a,b,out,stats);
+    }
+    double tau=.5*q0+.5*q1;
+    Affine result;if(!Positive::from_log(-tau,result.t))return false;
+    result.s=Positive::zero();stats.primitive_maps++;
+    if(eb!=0||er!=0){
+        bool reflected=tau<0;double a=reflected?-q1:q0,b=reflected?-q0:q1;
+        double w[3];CMFHistoryStats work={};
+        if(::basis(a,b,std::exp(-(.5*a+.5*b)),w,&work))return false;
+        for(double x:w)if(!std::isfinite(x)||x<=0)return false;
+        double blue=reflected?w[1]+w[2]:w[0]+w[1],red=reflected?w[0]+w[1]:w[1]+w[2];
+        Positive p,q,r;
+        if(!Positive::from_double(blue,p)||!scale(p,length,q)||!scale(q,eb,p)||
+           !Positive::from_double(red,q)||!scale(q,length,r)||!scale(r,er,q)||!sum(p,q,result.s))return false;
+        if(reflected){if(!product(result.s,result.t,p))return false;result.s=p;}
+    }
+    out=result;return true;
+}
 /* 각 native bin의 주파수 방향은 청색 -> 적색이다. */
 bool bin_map(double cb,double cr,double eb,double er,double length,double delta,int n,
-             Affine &out,CMFFrozenStats &stats){
+             Affine &out,CMFFrozenStats &stats,bool linear){
     Affine total=identity();
     for(int k=0;k<n;k++){
         double a=(double)k/n,b=(double)(k+1)/n;
         double c0=(1.-a)*cb+a*cr,c1=(1.-b)*cb+b*cr;
         double e0=(1.-a)*eb+a*er,e1=(1.-b)*eb+b*er;
         double dl=length/n,d=delta/n;
-        CMFLinearPositive zero[3]={},source;
         Affine part;
-        if(cmf_fullsr_sc_step(dl,d,1.,1,c0,c1,e0,e1,zero,&source)||
-           !Positive::from_log(-std::fma(.5*c0+.5*c1,dl,3.*d),part.t))return false;
-        part.s=decode(source);stats.primitive_maps++;
+        if(linear){
+            if(!linear_source(std::fma(c0,dl,3.*d),std::fma(c1,dl,3.*d),dl,e0,e1,part,stats))return false;
+        }else{
+            CMFLinearPositive zero[3]={},source;
+            if(cmf_fullsr_sc_step(dl,d,1.,1,c0,c1,e0,e1,zero,&source)||
+               !Positive::from_log(-std::fma(.5*c0+.5*c1,dl,3.*d),part.t))return false;
+            part.s=decode(source);stats.primitive_maps++;
+        }
         Affine next;if(!compose(total,part,next,stats))return false;
         total=next;
     }
@@ -135,9 +167,9 @@ bool interpolate(const CMFLinearPositive *values,int nf,int k,double f,double h,
 }
 }
 
-extern "C" int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
+static int cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
     double length,double delta,double h,int subdivisions,int reconstruction,int last,
-    const CMFLinearPositive *incident,CMFLinearPositive *output,double seconds,CMFFrozenStats *stats){
+    const CMFLinearPositive *incident,CMFLinearPositive *output,double seconds,CMFFrozenStats *stats,bool linear){
     if(!stats)return 1;
     *stats={};stats->failed_column=-1;
     if(!view||!location||!incident||!output||!std::isfinite(length)||length<=0||
@@ -170,13 +202,13 @@ extern "C" int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNod
             Affine total=identity(),prefix=identity();Positive incoming,result;
             if(delta==0){
                 incoming=decode(incident[j]);
-                if(!bin_map(chi[j-last],chi[j-last],eta[j-last],eta[j-last],length,0.,1,total,*stats)||
+                if(!bin_map(chi[j-last],chi[j-last],eta[j-last],eta[j-last],length,0.,1,total,*stats,linear)||
                    !apply(total,incoming,result)){stats->status=2;break;}
             }else{
                 if(width&&j<maximum){
                     Affine full;
                     if(!bin_map(chi[j+1-last],chi[j-last],eta[j+1-last],eta[j-last],
-                        length/span,h,subdivisions,full,*stats)||!window.push(full)||
+                        length/span,h,subdivisions,full,*stats,linear)||!window.push(full)||
                         (window.size()>(size_t)width&&!window.pop())){stats->status=2;break;}
                 }
                 int k=j+width;
@@ -184,14 +216,14 @@ extern "C" int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNod
                     incoming=decode(incident[maximum]);
                     double portion=(span-(maximum-j))/span;
                     if(portion>0&&!bin_map(chi[maximum-last],chi[maximum-last],eta[maximum-last],eta[maximum-last],
-                        length*portion,delta*portion,1,prefix,*stats)){stats->status=2;break;}
+                        length*portion,delta*portion,1,prefix,*stats,linear)){stats->status=2;break;}
                 }else{
                     if(!interpolate(incident,nf,k,fraction,h,reconstruction,incoming)){stats->status=2;break;}
                     if(fraction){
                         double cr=chi[k-last],cb=chi[k+1-last],er=eta[k-last],eb=eta[k+1-last];
                         double portion=fraction/span;
                         if(!bin_map((1.-fraction)*cr+fraction*cb,cr,(1.-fraction)*er+fraction*eb,er,
-                            length*portion,delta*portion,subdivisions,prefix,*stats)){stats->status=2;break;}
+                            length*portion,delta*portion,subdivisions,prefix,*stats,linear)){stats->status=2;break;}
                     }
                 }
                 Affine whole;
@@ -207,4 +239,15 @@ extern "C" int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNod
         }
     }catch(const std::bad_alloc &){stats->status=3;}
     stats->elapsed_seconds=clock_now()-started;return stats->status;
+}
+
+extern "C" int cmf_fullsr_frozen_cell(const CMFNodalDenseView *v,const CMFNodalLocation *p,
+    double length,double delta,double h,int n,int reconstruction,int last,
+    const CMFLinearPositive *input,CMFLinearPositive *output,double seconds,CMFFrozenStats *s){
+    return cell(v,p,length,delta,h,n,reconstruction,last,input,output,seconds,s,false);
+}
+extern "C" int cmf_fullsr_frozen_linear_cell(const CMFNodalDenseView *v,const CMFNodalLocation *p,
+    double length,double delta,double h,int n,int reconstruction,int last,
+    const CMFLinearPositive *input,CMFLinearPositive *output,double seconds,CMFFrozenStats *s){
+    return cell(v,p,length,delta,h,n,reconstruction,last,input,output,seconds,s,true);
 }

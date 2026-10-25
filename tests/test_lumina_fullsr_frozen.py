@@ -152,3 +152,51 @@ def test_partial_interval_red_halo_matches_whole_grid(frozen):
                                           [20, 21, 22], time.monotonic()+120, 1)
     assert code == 0, report
     np.testing.assert_array_equal(actual, values(ray)[[20, 21, 22]])
+
+
+@pytest.mark.parametrize('q0,q1', [(0., 1.), (3., 20.), (20., 3.), (-3., -20.),
+    (-20., -3.), (-1000., 1000.), (1000., -1000.), (0., -1200.), (-1200., 0.),
+    (1000., 1000.), (-1200., -1200.)])
+def test_linear_opacity_source_matches_independent_gauss_integral(frozen, q0, q1):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65, eta=0., chi=0.)
+    h = provider._source.dlognu; delta = h
+    provider.keep[0][0, :, 0] = q1-3*delta; provider.keep[0][0, :, 1] = q0-3*delta
+    provider.keep[0][2, :, 0] = .8; provider.keep[0][2, :, 1] = .3
+    code, result, report = kernel.cell(provider, Location(1, 1, 0, .3), 1., delta, positive(np.zeros(65)))
+    assert code == 0, report
+    x, weights = np.polynomial.legendre.leggauss(256); y = .5*(1+x)
+    phase = -q1*y-.5*(q0-q1)*y*y
+    points = [0., 1.]
+    if q0 > 0 and q1 < 0: points.append(-q1/(q0-q1))
+    peak = max(-q1*t-.5*(q0-q1)*t*t for t in points)
+    normalized = .5*np.dot(weights, (.8*(1-y)+.3*y)*np.exp(phase-peak))
+    log_exact = peak+math.log(normalized)
+    log_actual = math.log(float(result[0]['mantissa']))+int(result[0]['exponent'])*math.log(2.)
+    assert abs(log_actual-log_exact) < 5e-10
+
+
+def test_linear_opacity_bin_subdivision_does_not_change_the_formal(frozen):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=65)
+    provider.keep[0][0] = .2+5*np.cos(np.arange(65)*.37)
+    provider.keep[0][2] = .3+.1*np.sin(np.arange(65)*.23)
+    incoming = positive(.2+.1*np.cos(np.arange(65)*.17))
+    outputs = []
+    for n in (1, 4):
+        code, result, report = kernel.cell(provider, Location(1, 1, 0, .3), 1., .0837,
+                                         incoming, bin_subdivisions=n)
+        assert code == 0, report
+        outputs.append(values(result))
+    np.testing.assert_allclose(*outputs, rtol=2e-11, atol=0.)
+
+
+def test_linear_opacity_recovers_a_tiny_source_after_large_gain(frozen):
+    kernel = FrozenKernel(frozen.library._name, linear_chi=True)
+    _, provider, _, _ = manufactured(nf=17, eta=1e-300, chi=-1e53)
+    code, result, report = kernel.cell(provider, Location(1, 1, 0, .3), 1e-50, 0., positive(np.zeros(17)))
+    assert code == 0, report
+    q = -1e53*1e-50
+    log_exact = math.log(1e-300)+math.log(1e-50)-q-math.log(-q)
+    log_actual = math.log(float(result[0]['mantissa']))+int(result[0]['exponent'])*math.log(2.)
+    assert abs(log_actual-log_exact) < 5e-10

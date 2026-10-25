@@ -13,9 +13,9 @@ class Stats(ct.Structure):
 
 
 class FrozenKernel:
-    def __init__(self, library):
+    def __init__(self, library, *, linear_chi=False):
         self.library = ct.CDLL(str(Path(library).resolve()))
-        self.function = self.library.cmf_fullsr_frozen_cell
+        self.function = getattr(self.library, 'cmf_fullsr_frozen_linear_cell' if linear_chi else 'cmf_fullsr_frozen_cell')
         self.function.argtypes = [ct.c_void_p]*2+[ct.c_double]*3+[ct.c_int]*3+[
             ct.c_void_p]*2+[ct.c_double, ct.c_void_p]
         self.function.restype = ct.c_int

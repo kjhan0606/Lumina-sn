@@ -17,6 +17,11 @@ typedef struct {
 int cmf_fullsr_frozen_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
     double length,double delta,double h,int bin_subdivisions,int reconstruction,int last,
     const CMFLinearPositive *incident,CMFLinearPositive *output,double max_seconds,CMFFrozenStats *stats);
+/* 같은 공간 동결에서 bin 안의 선형 chi까지 적분하는 별도 선택이다.
+ * 기존 양의 모멘트 코어를 재사용하고 평균 chi 선택은 비교용으로 보존한다. */
+int cmf_fullsr_frozen_linear_cell(const CMFNodalDenseView *view,const CMFNodalLocation *location,
+    double length,double delta,double h,int bin_subdivisions,int reconstruction,int last,
+    const CMFLinearPositive *incident,CMFLinearPositive *output,double max_seconds,CMFFrozenStats *stats);
 #ifdef __cplusplus
 }
 #endif

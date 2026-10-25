@@ -43,13 +43,14 @@ def frozen_interval(kernel, provider, lengths, deltas, loc, subdivisions, column
     return code, values, report
 
 
-def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstruction=1):
+def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstruction=1, bin_rule='MEAN_CHI'):
     cases = ((4, 1), (16, 1), (64, 1), (64, 4)) if cases is None else cases
     if (type(seconds) is not int or not 1 <= seconds <= 160 or not 1 <= len(cases) <= 4 or
             any(len(case) != 2 or any(type(x) is not int for x in case) or
                 not 1 <= case[0] <= 4096 or not 1 <= case[1] <= 16 for case in cases)):
         raise ValueError('최대4조합·공간4096·주파수16·내부160초 한도')
-    if engine not in ('UPWIND_SC', 'FROZEN_MIDPOINT') or reconstruction not in (0, 1):
+    if (engine not in ('UPWIND_SC', 'FROZEN_MIDPOINT') or reconstruction not in (0, 1) or
+            bin_rule not in ('MEAN_CHI', 'LINEAR_CHI')):
         raise ValueError('명시적 수송/재구성 선택 필요')
     root = Path(root).resolve(); output = root/'interval-comparison.json'
     if output.exists(): raise FileExistsError('기존 독립 대조 보존')
@@ -58,7 +59,7 @@ def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstr
     if M.N.sha(c['cpu_library']) != c['sealed_sha256'][c['cpu_library']]:
         raise ValueError('기존 제공자·기하 바이너리 변경')
     record = dict(status='STARTED', cases=[], final_goal='NOT_MET', accepted_physical_field=False,
-        interval=13003, engine=engine, input_J_I='EXPLICIT_ZERO', reference_columns=c['fine_columns'],
+        interval=13003, engine=engine, bin_rule=bin_rule, input_J_I='EXPLICIT_ZERO', reference_columns=c['fine_columns'],
         reference_values=c['fine_values'], input_plan_sha256=BASE_SHA,
         kernel_sha256=M.N.sha(library), runner_sha256=M.N.sha(__file__),
         scope='독립 미세 구간3열과 SC 공간·주파수 세분 대조; 전체장 오차 보증 아님')
@@ -78,7 +79,7 @@ def compare(root, library, seconds=160, cases=None, engine='UPWIND_SC', reconstr
                 helper.geom.restype = ct.c_int
                 if engine == 'FROZEN_MIDPOINT':
                     from lumina_fullsr_frozen import FrozenKernel
-                    kernel = FrozenKernel(library)
+                    kernel = FrozenKernel(library, linear_chi=bin_rule=='LINEAR_CHI')
                 else: kernel = Kernel(library)
                 boundary = np.zeros(source.nf)
                 for space, frequency in cases:
@@ -128,4 +129,5 @@ if __name__ == '__main__':
     p.add_argument('--case', dest='cases', nargs=2, type=int, action='append')
     p.add_argument('--engine', choices=('UPWIND_SC', 'FROZEN_MIDPOINT'), default='UPWIND_SC')
     p.add_argument('--reconstruction', type=int, choices=(0, 1), default=1)
+    p.add_argument('--bin-rule', choices=('MEAN_CHI', 'LINEAR_CHI'), default='MEAN_CHI')
     args = p.parse_args(); raise SystemExit(compare(**vars(args)))
