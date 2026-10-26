@@ -23,6 +23,7 @@ from compare_native_prrr_common_grid import continuum_mapping
 from lumina_model_point_rates import ModelPointBoundRates
 from lumina_model_point_lines import ModelPointLines
 from lumina_model_point_reference import ReferencePointRates,reference_line_rates
+import lumina_native_line_quadrature as L
 from prepare_cmfgen_fixed_field_owner import record_bytes
 from ptf_gated_metrics import read_dimensions,read_variables
 from run_cmfgen_formal_primary import fields
@@ -64,6 +65,47 @@ def check_bf_records(blob,point,nl,ns):
                 not np.array_equal(records['values'][i,:4],expected_values)):
             raise ValueError('기존 BF 경로/상위 정규화가 원70과 다름')
     return records
+
+
+def reuse_bound(manifest_path,out,selected,n_routes):
+    manifest_path = Path(manifest_path)
+    seal = json.loads(manifest_path.read_text())
+    if (seal['schema'] != 'lumina-completed-sameJ-bound-recovery-v1' or
+            seal['material_record'] != 70 or seal['native_node'] != 49 or
+            seal['completed_selected_routes'] != int(selected.sum()) or
+            not re.fullmatch(r'[0-9a-f]{7,40}',seal['producer_commit'])):
+        raise ValueError('완료 BF 복구의 상태/코드/범위 오류')
+    root = Path(seal['directory'])
+    if B.sha(root/'inputs.json') != seal['producer_inputs_sha256']:
+        raise ValueError('완료 BF의 원 시작 manifest 변경')
+    before = json.loads((root/'inputs.json').read_text())
+    project = Path(__file__).resolve().parents[1]
+    archived = []
+    for name,digest in before['input_sha256'].items():
+        path = Path(name)
+        if B.sha(path) == digest:
+            continue
+        relative = path.relative_to(project)
+        blob = subprocess.run(['git','show',seal['producer_commit']+':'+str(relative)],
+                              cwd=project,capture_output=True,check=True).stdout
+        if hashlib.sha256(blob).hexdigest() != digest:
+            raise ValueError('복구 BF 생산자의 정확한 코드 아카이브 불일치')
+        archived.append(str(relative))
+    for name,digest in seal['artifact_sha256'].items():
+        if B.sha(root/name) != digest:
+            raise ValueError('완료 BF 배열 변경')
+    bound = np.load(root/'bound-unit-rates.npy',allow_pickle=False)
+    total = np.load(root/'total-unit-rates.npy',allow_pickle=False)
+    done = np.load(root/'selected-routes-done.npy',allow_pickle=False)
+    if (bound.shape != (n_routes,6) or total.shape != bound.shape or
+            not np.array_equal(done,selected) or not np.isfinite(bound[selected]).all() or
+            not np.isfinite(total[selected]).all() or np.any(total[selected,:3] < 0)):
+        raise ValueError('완료 BF 배열의 선택 범위/수치 손상')
+    np.save(out/'bound-unit-rates.npy',bound)
+    np.save(out/'total-unit-rates.npy',total)
+    np.save(out/'selected-routes-done.npy',done)
+    return bound,total,dict(manifest=str(manifest_path),manifest_sha256=B.sha(manifest_path),
+        producer_commit=seal['producer_commit'],archived_code=archived,numerical_BF_reexecution=0)
 
 
 def run(args):
@@ -108,6 +150,7 @@ def run(args):
             B.sha(paths['collision']) != baseline['point_collision_test']['binary_sha256']):
         raise ValueError('기존 BF/BB/occupation/충돌 입력 변경')
     source_files = [Path(__file__).resolve(),Path(__file__).with_name('lumina_model_point_reference.py'),
+                    Path(L.__file__),
                     Path(__file__).with_name('lumina_model_point_rates.py'),
                     Path(__file__).with_name('lumina_model_point_lines.py'),Path(B.__file__),
                     Path(R.__file__),Path(N.__file__),*artifacts.values(),
@@ -117,6 +160,8 @@ def run(args):
                     Path(__file__).resolve().parents[1]/'tests/model_atom_projection_selftest.c',
                     Path(__file__).resolve().parents[1]/'src/model_source_kernels.c',
                     native/'NATIVE_SE_BOUND_000071.bin',native/'LEVEL_SL_STEQ_LINKS']
+    if args.reuse_bound:
+        source_files.append(Path(args.reuse_bound).resolve())
     identities = {str(path):B.sha(path) for path in source_files}
     (out/'inputs.json').write_text(json.dumps(dict(scope=__doc__,input_sha256=identities,
         fields='original native J70; not the newer direct-coefficient transport',
@@ -152,26 +197,31 @@ def run(args):
         original_blob = artifacts['bf'].read_bytes()
         bf = check_bf_records(original_blob,point,len(rows),90)
         selected = np.array([route.Z in (14,16) for route in point.routes])
-        bound = np.lib.format.open_memmap(out/'bound-unit-rates.npy',mode='w+',dtype='f8',shape=(len(routes),6))
-        total = np.lib.format.open_memmap(out/'total-unit-rates.npy',mode='w+',dtype='f8',shape=(len(routes),6))
-        bound[:] = bf['values'][:,4:]
-        total[:] = bound
-        bound[selected] = np.nan
-        total[selected] = np.nan
-        done = np.zeros(len(routes),dtype=bool)
-        for count,i in enumerate(np.flatnonzero(selected),1):
-            sums = np.zeros((2,6),dtype=np.longdouble)
-            for lo in range(0,len(nu),16384):
-                sl = slice(lo,min(len(nu),lo+16384))
-                sums += producer.contract(i,nu[sl],width[sl],j[sl],evaluation[sl],
-                                           dissolution_enabled=do_dis)
-            bound[i],total[i] = sums.astype('f8')
-            done[i] = True
-            if count%250 == 0:
-                bound.flush();total.flush()
-                np.save(out/'selected-routes-done.npy',done)
-                print(json.dumps(dict(selected_routes_complete=count,elapsed=time.monotonic()-start)),flush=True)
-        bound.flush();total.flush();np.save(out/'selected-routes-done.npy',done)
+        recovery = None
+        if args.reuse_bound:
+            bound,total,recovery = reuse_bound(args.reuse_bound,out,selected,len(routes))
+            done = selected.copy()
+        else:
+            bound = np.lib.format.open_memmap(out/'bound-unit-rates.npy',mode='w+',dtype='f8',shape=(len(routes),6))
+            total = np.lib.format.open_memmap(out/'total-unit-rates.npy',mode='w+',dtype='f8',shape=(len(routes),6))
+            bound[:] = bf['values'][:,4:]
+            total[:] = bound
+            bound[selected] = np.nan
+            total[selected] = np.nan
+            done = np.zeros(len(routes),dtype=bool)
+            for count,i in enumerate(np.flatnonzero(selected),1):
+                sums = np.zeros((2,6),dtype=np.longdouble)
+                for lo in range(0,len(nu),16384):
+                    sl = slice(lo,min(len(nu),lo+16384))
+                    sums += producer.contract(i,nu[sl],width[sl],j[sl],evaluation[sl],
+                                               dissolution_enabled=do_dis)
+                bound[i],total[i] = sums.astype('f8')
+                done[i] = True
+                if count%250 == 0:
+                    bound.flush();total.flush()
+                    np.save(out/'selected-routes-done.npy',done)
+                    print(json.dumps(dict(selected_routes_complete=count,elapsed=time.monotonic()-start)),flush=True)
+            bound.flush();total.flush();np.save(out/'selected-routes-done.npy',done)
         if not done[selected].all() or not np.isfinite(total).all():
             raise ValueError('Si/S BF·terminal·pseudo 전체 경로 미완료')
         physical = point.physical_ion_rates(total)
@@ -209,8 +259,11 @@ def run(args):
         if np.any(line_Z[bb['ids'][:,0]] != line_Z[bb['ids'][:,1]]):
             raise ValueError('원소 사이 BB 전이')
         line_model.lines = {key:value[line_selected] for key,value in line_model.lines.items()}
-        line_values = reference_line_rates(line_model,nu,width,j)
-        np.savez(out/'selected-lines.npz',**line_model.lines,**line_values)
+        physical_lines = line_model.contract(nu,width,j)
+        np.savez(out/'physical-selected-lines.npz',**line_model.lines,**physical_lines)
+        first,last,active,line_intervals = L.intervals(native,rows,models,line_model.lines,len(nu))
+        line_values = L.contract(line_model,nu,width,j,first,last,active)
+        np.savez(out/'native-selected-lines.npz',**line_model.lines,**line_values)
         nd,nt = read_dimensions(native)
         wh,witness = read_witness(native/'NATIVE_SE_BOUND_000071.bin')
         variables = read_variables(native,nt-2)
@@ -223,13 +276,19 @@ def run(args):
         if len(original) != 518:
             raise ValueError('원 Si/S518개 변수 주소 불일치')
         native_scales = next(iter(prediction['results'].values()))['native_constant_scales']
-        cases = {}
+        physical_complete = bool(np.isin(physical_lines['status'],[1,2]).all())
+        cases = {} if physical_complete else dict(physical=dict(state='INCOMPLETE_UNSAMPLED_BB',
+            unsampled=int(np.count_nonzero(physical_lines['status']==4)),
+            out_of_grid=int(np.count_nonzero(physical_lines['status']==3)),candidate_solved=False))
         for name,matched in (('physical',False),('native_discrete',True)):
+            if not matched and not physical_complete:
+                continue
             bf_copy = bf.copy();bb_copy = bb.copy()
             bf_copy['values'][selected,4:] = total[selected]
-            bb_copy['values'][line_selected,1] = line_values['absorption']
-            bb_copy['values'][line_selected,2] = line_values['stimulated']
-            bb_copy['values'][line_selected,3] = line_values['spontaneous_native_discrete' if matched else 'spontaneous']
+            current_lines = line_values if matched else physical_lines
+            bb_copy['values'][line_selected,1] = current_lines['absorption']
+            bb_copy['values'][line_selected,2] = current_lines['stimulated']
+            bb_copy['values'][line_selected,3] = current_lines['spontaneous_native_discrete' if matched else 'spontaneous']
             if matched:
                 scale = np.array([native_scales['photo'],native_scales['reverse'],native_scales['reverse']]*2)
                 bf_copy['values'][selected,4:] *= scale
@@ -272,6 +331,8 @@ def run(args):
             consumed_J_column_sha256=hashlib.sha256(j.tobytes()).hexdigest(),
             frequency_points=len(nu),selected_BF_routes=int(selected.sum()),
             selected_BB_lines=int(line_selected.sum()),other_element_rates='PRESERVED_BUT_UNUSED',
+            bound_recovery=recovery,native_line_intervals=line_intervals,
+            physical_BB_complete=physical_complete,
             same_J_ion_rate_checks=rate_checks,BB_profile_mass_range=[float(line_values['profile_mass'].min()),
                 float(line_values['profile_mass'].max())],BB_profile= line_model.profile,
             cases=cases,source_unchanged=True,wall_seconds=time.monotonic()-start,
@@ -289,4 +350,5 @@ if __name__ == '__main__':
     for name in ('base','baseline','prediction','rate-contract','native-root','collision','point-library',
                  'lines-library','projection','out'):
         parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--reuse-bound',type=Path)
     raise SystemExit(run(parser.parse_args()))

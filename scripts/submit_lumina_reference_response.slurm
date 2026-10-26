@@ -34,7 +34,8 @@ gcc -O2 -std=c11 -fPIC -shared -Wl,-z,defs -Isrc -o "$parent/build/lines.so" \
   src/model_source_kernels.c -lm
 timeout -k 15 120s python3 -m pytest -q -p no:cacheprovider \
   tests/test_model_point_reference.py tests/test_model_point_dissolution.py \
-  tests/test_lumina_reference_response.py > "$parent/reference-tests.stdout" 2> "$parent/reference-tests.stderr"
+  tests/test_lumina_reference_response.py tests/test_native_line_quadrature.py \
+  > "$parent/reference-tests.stdout" 2> "$parent/reference-tests.stderr"
 timeout -k 15 3100s python3 scripts/run_lumina_reference_response.py \
   --base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json \
   --baseline /gpfs/kjhan/cmfgen_runs/lumina_direct_slprofile_20261026-UUiwsU/native-occupation.json \
@@ -43,4 +44,5 @@ timeout -k 15 3100s python3 scripts/run_lumina_reference_response.py \
   --native-root /gpfs/kjhan/cmfgen_runs/lumina_fixedj_exp70_20261026-phmMnx \
   --collision /gpfs/kjhan/cmfgen_runs/lumina_fullpair8_20261026-qXSzbE/fullpair.bin \
   --point-library "$parent/build/point.so" --lines-library "$parent/build/lines.so" \
-  --projection "$parent/build/model_projection" --out "$parent/run"
+  --projection "$parent/build/model_projection" --out "$parent/run" \
+  --reuse-bound "${2:-$project/docs/LUMINA_SAMEJ_BOUND_RECOVERY_2026-10-27.json}"

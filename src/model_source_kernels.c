@@ -105,3 +105,38 @@ int lumina_model_point_gaussian_jbar(size_t nf,size_t nt,const double *nu,
     memcpy(jbar,values,nt*sizeof(double));memcpy(profile_mass,masses,nt*sizeof(double));
     memcpy(status,states,nt);free(values);free(masses);free(states);return 0;
 }
+
+/* 비교 전용: native 정수 공명구간의 원 전역 가중치 적분.
+ * status5는 native 격자 미등록 선이며 물리적인 0율 판정이 아니다. */
+int lumina_model_point_gaussian_native_jbar(size_t nf,size_t nt,const double *nu,
+    const double *dnu,const double *j,const double *nu0,const size_t *first,
+    const size_t *last,const uint8_t *active,double width_fraction,
+    double *jbar,double *profile_mass,uint8_t *status)
+{
+    if(nf<2 || !nt || !nu || !dnu || !j || !nu0 || !first || !last || !active ||
+       !jbar || !profile_mass || !status || !isfinite(width_fraction) ||
+       width_fraction<=0. || nt>SIZE_MAX/sizeof(double))return 1;
+    for(size_t k=0;k<nf;k++)if(!isfinite(nu[k]) || nu[k]<=0. ||
+       (k&&nu[k]<=nu[k-1]) || !isfinite(dnu[k]) || dnu[k]<0. ||
+       !isfinite(j[k]) || j[k]<0.)return 1;
+    for(size_t l=0;l<nt;l++)if(!isfinite(nu0[l]) || nu0[l]<=0. || active[l]>1 ||
+       (active[l] && (first[l]>=last[l] || last[l]>nf)) ||
+       (!active[l] && (first[l] || last[l])))return 1;
+    double *values=malloc(nt*sizeof(double)),*masses=malloc(nt*sizeof(double));
+    uint8_t *states=malloc(nt);
+    if(!values||!masses||!states){free(values);free(masses);free(states);return 2;}
+    for(size_t l=0;l<nt;l++){
+        long double value=0.,mass=0.;
+        if(active[l])for(size_t k=first[l];k<last[l];k++){
+            long double weight=(long double)model_gaussian_phi(nu[k],nu0[l],width_fraction)*dnu[k];
+            mass+=weight;value+=weight*j[k];
+        }
+        values[l]=(double)value;masses[l]=(double)mass;
+        states[l]=active[l]?(values[l]>0.?1:2):5;
+        if(!isfinite(values[l])||values[l]<0.||!isfinite(masses[l])||masses[l]<0.){
+            free(values);free(masses);free(states);return 3;
+        }
+    }
+    memcpy(jbar,values,nt*sizeof(double));memcpy(profile_mass,masses,nt*sizeof(double));
+    memcpy(status,states,nt);free(values);free(masses);free(states);return 0;
+}

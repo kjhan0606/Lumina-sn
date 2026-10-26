@@ -1,0 +1,20 @@
+{
+  "schema": "lumina-completed-sameJ-bound-recovery-v1",
+  "directory": "/gpfs/kjhan/cmfgen_runs/lumina_sameJ_response_20261027-Ps4XXd/run",
+  "producer_commit": "2aab69a",
+  "original_job": 1223286,
+  "original_job_state": "FAILED_AFTER_BF_AT_BB_COVERAGE",
+  "completed_selected_routes": 1599,
+  "producer_inputs_sha256": "95703ca119b22c3903b14db9fb335baa835a81f23691384327e12cc15089f567",
+  "material_record": 70,
+  "native_node": 49,
+  "post_failure_before_edit_source_check": "all original inputs.json source/input hashes matched current files before producer edits",
+  "artifact_sha256": {
+    "bound-unit-rates.npy": "90f9069f54d488dccf044a8195513c8ec5a8025fcb2e28162e3e8f74971a7b23",
+    "total-unit-rates.npy": "9712c4d78f65b6fdf0a96b498857fe5890020e0fc351fc6a6b7158c7df2fb43f",
+    "selected-routes-done.npy": "8376ffc6ca18c24af5019d9d7479181fc4f827497c1937368c3eff68833f8ccc"
+  },
+  "whole_response_complete": false,
+  "numerical_BF_reexecution": 0,
+  "final_goal": "NOT_MET"
+}
