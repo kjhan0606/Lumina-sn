@@ -53,4 +53,19 @@ int nlte_model_element_collision_bb_assemble(NLTEModelCollisionBBBlock *out,
     const NLTEModelCollisionBBView *view);
 void nlte_model_collision_bb_block_free(NLTEModelCollisionBBBlock *block);
 
+/* 한 trial의 원소 블록을 순서대로 받아 완결 뒤에만 게시한다.
+ * borrowed element/atom/nlte/plasma/용해 컨텍스트는 finish까지 불변이어야 한다.
+ * trial_id는 서로 다른 후보의 블록 혼합을 거부하는 caller 소유 신원이다. */
+typedef struct NLTEModelCollisionBBStream NLTEModelCollisionBBStream;
+int nlte_model_collision_bb_stream_begin(NLTEModelCollisionBBStream **stream,
+    const NLTEModelElement *element,const NLTEConfig *nlte,
+    const AtomicData *atom,const PlasmaState *plasma,
+    const NLTEModelCollisionBBView *metadata,uint64_t trial_id);
+int nlte_model_collision_bb_stream_push(NLTEModelCollisionBBStream *stream,
+    uint64_t trial_id,const int32_t *lower,const int32_t *upper,
+    const double *omega,size_t count);
+int nlte_model_collision_bb_stream_finish(NLTEModelCollisionBBStream *stream,
+    uint64_t trial_id,NLTEModelCollisionBBBlock *out);
+void nlte_model_collision_bb_stream_free(NLTEModelCollisionBBStream *stream);
+
 #endif
