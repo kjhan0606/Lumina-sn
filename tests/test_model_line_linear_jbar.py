@@ -106,8 +106,12 @@ class LinearLineTests(unittest.TestCase):
 
     def test_owned_inputs_and_generation(self):
         nu=np.array([90.,110.]);j=np.ones((2,1));p=self.provider(nu,j)
+        expected=p.contract(0,1,radiation_generation=70)
         j[:]=9;nu[:]=1
-        np.testing.assert_allclose(p.contract(0,1,radiation_generation=70)['jbar'],1,rtol=1.e-14)
+        actual=p.contract(0,1,radiation_generation=70)
+        np.testing.assert_array_equal(actual['jbar'],expected['jbar'])
+        np.testing.assert_array_equal(actual['jbar'][:,0],actual['profile_mass'])
+        with self.assertRaises(TypeError):p.profile['width_fraction']=.02
         with self.assertRaises(ValueError):p.contract(0,1,radiation_generation=71)
 
     def test_late_bad_value_preserves_all_c_outputs(self):
