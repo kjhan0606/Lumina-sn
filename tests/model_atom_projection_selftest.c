@@ -3,14 +3,38 @@
 #include "nlte_model_se.h"
 #include "nlte_model_bb.h"
 #include "nlte_model_coll_bb.h"
+#include "nlte_model_sum.h"
 
 static int check(int yes, const char *message) {
     if (!yes) fprintf(stderr, "[MODEL-PROJECTION][FAIL] %s\n", message);
     return yes ? 0 : 1;
 }
 
+typedef struct {
+    int full_frequency, native_node;
+    NLTEModelElement element[2];
+    NLTEModelBFBlock bf[2];
+    NLTEModelBBBlock bb[2];
+    NLTEModelCollisionBBBlock collision[2];
+} NativeFixedFieldBlocks;
+
+static int fixed_field_slot(int Z) {return Z==14 ? 0 : (Z==16 ? 1 : -1);}
+
+static void native_fixed_field_free(NativeFixedFieldBlocks *b)
+{
+    if(!b)return;
+    for(int i=0;i<2;i++){
+        nlte_model_element_free(&b->element[i]);
+        nlte_model_bf_block_free(&b->bf[i]);
+        nlte_model_bb_block_free(&b->bb[i]);
+        nlte_model_collision_bb_block_free(&b->collision[i]);
+    }
+    memset(b,0,sizeof(*b));
+}
+
 /* 선택 또는 완성 ν 적분의 전 경로 handoff. SE/RE 해가 아니다. */
-static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p,
+                                      NativeFixedFieldBlocks *cache)
 {
     FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
     if(!fp || fread(tag,1,8,fp)!=8 ||
@@ -19,6 +43,7 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
        fread(snapshot,8,2,fp)!=2 || shape[0]!=(uint32_t)a->n_levels ||
        shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] || !shape[1])return 1;
     int full_frequency=!memcmp(tag,"LMBFFUL1",8);
+    if(full_frequency && (!cache || cache->full_frequency))return 1;
     size_t nr=shape[1],ns=shape[2],node=shape[3];
     if(nr>SIZE_MAX/ns || nr*ns>(512*1024*1024)/sizeof(BfPointRates) ||
        snapshot[0]!=p->T_e[node] || snapshot[1]!=p->n_electron[node])return 1;
@@ -60,20 +85,27 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
     size_t used=0,terminal_used=0;
     for(int e=0;e<a->n_elements;e++){
         NLTEModelElement layout={0};NLTEModelBFBlock block={0};
-        if(nlte_model_element_init(&layout,n,a,p,a->element_Z[e],(int)node) ||
+        int Z=a->element_Z[e],slot=fixed_field_slot(Z);
+        if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
            nlte_model_element_bf_assemble(&block,&layout,n,a,p))return 1;
         used+=block.routes;terminal_used+=block.terminal_routes;
+        if(full_frequency && slot>=0){
+            cache->element[slot]=layout;cache->bf[slot]=block;
+            memset(&layout,0,sizeof(layout));memset(&block,0,sizeof(block));
+        }
         nlte_model_bf_block_free(&block);nlte_model_element_free(&layout);
     }
     if(nlte_point_bf_view_check(n,a,p,node ? 0 : 1)==0 || used!=nr)return 1;
     n->point_bf_rates=old;n->radfield_view=saved;n->radfield_view_status=saved_status;
+    if(full_frequency){cache->full_frequency=1;cache->native_node=(int)node;}
     printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=%d SE_RE_solved=0\n",node,used,terminal_used,full_frequency);
     free(offset);free(target);free(terminal);free(grid);free(prob);free(edge);free(sigma);
     free(saha);free(te);free(ne);free(rates);free(ready);return 0;
 }
 
 /* 전체 native 복사 선의 한 원래점 handoff. 충돌/RE/완성 SE를 가장하지 않는다. */
-static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p,
+                              NativeFixedFieldBlocks *cache)
 {
     FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];
     if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMBBPTS1",8) ||
@@ -81,6 +113,7 @@ static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,Plasm
        shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] ||
        !shape[1] || shape[1]>2000000)return 1;
     size_t count=shape[1],node=shape[3];
+    if(cache && cache->full_frequency && cache->native_node!=(int)node)return 1;
     int32_t *lo=malloc(count*sizeof(*lo)),*up=malloc(count*sizeof(*up));
     double *nu=malloc(count*sizeof(*nu)),*abs=malloc(count*sizeof(*abs));
     double *stim=malloc(count*sizeof(*stim)),*spont=malloc(count*sizeof(*spont));
@@ -118,6 +151,11 @@ static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,Plasm
         }
         printf("[MODEL-BB][ACTUAL] Z=%d lines=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
                Z,block.lines,block.intra_super_lines,(double)heat);
+        int slot=fixed_field_slot(Z);
+        if(cache && cache->full_frequency && slot>=0){
+            if(cache->bb[slot].radiative)return 1;
+            cache->bb[slot]=block;memset(&block,0,sizeof(block));
+        }
         nlte_model_bb_block_free(&block);nlte_model_element_free(&layout);
     }
     if(used!=count || !intra)return 1;
@@ -135,7 +173,8 @@ static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,Plasm
 }
 
 /* 원래점의 Si/S 모든 bound 이온 전 FL 쌍 Ω를 실제 private generator에 연결한다. */
-static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p,
+                                   NativeFixedFieldBlocks *cache)
 {
     FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
     if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMCBPTS1",8) ||
@@ -144,6 +183,7 @@ static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,
        shape[2]>=shape[1] || shape[3]==0 || shape[3]>400000 ||
        snapshot[0]!=p->T_e[shape[2]] || snapshot[1]!=p->n_electron[shape[2]])return 1;
     size_t count=shape[3],node=shape[2];
+    if(cache && cache->full_frequency && cache->native_node!=(int)node)return 1;
     int32_t *lower=malloc(count*sizeof(*lower)),*upper=malloc(count*sizeof(*upper));
     double *omega=malloc(count*sizeof(*omega));
     if(!lower || !upper || !omega)return 1;
@@ -179,11 +219,97 @@ static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,
             heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];
         printf("[MODEL-COLL-BB][ACTUAL] Z=%d pairs=%zu cross=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
                Z,block.pairs,block.cross_super_pairs,block.intra_super_pairs,(double)heat);
+        if(cache && cache->full_frequency){
+            if(cache->collision[element].collisional)return 1;
+            cache->collision[element]=block;memset(&block,0,sizeof(block));
+        }
         nlte_model_collision_bb_block_free(&block);nlte_model_element_free(&layout);
     }
     if(cursor!=count)return 1;
     free(lower);free(upper);free(omega);
     printf("[MODEL-COLL-BB][HANDOFF] native_node=%zu pairs=%zu SE_RE_solved=0\n",node,count);
+    return 0;
+}
+
+/* 고정된 F(0), T/ne, 점유확률의 누락채널 표시가 붙은 private 원소별 SE 후보.
+ * 전하/RE 또는 수송 자기일관 해로 게시하지 않는다. */
+static int solve_native_fixed_field(NativeFixedFieldBlocks *cache,
+    const AtomicData *a,const NLTEConfig *n)
+{
+    if(!cache || !cache->full_frequency)return 0;
+    for(int slot=0;slot<2;slot++){
+        int Z=slot ? 16:14;
+        const NLTEModelElement *e=&cache->element[slot];
+        NLTEModelCombinedGenerator combined={0};
+        double *candidate=NULL;
+        int *row_stage=NULL;
+        long double *initial_stage=NULL,*candidate_stage=NULL;
+        int max_stage=-1,failed=1;
+        if(e->Z!=Z || e->shell!=cache->native_node || !cache->bf[slot].radiative ||
+           !cache->bb[slot].radiative || !cache->collision[slot].collisional ||
+           nlte_model_element_generator_combine(&combined,e,&cache->bf[slot],
+               &cache->bb[slot],&cache->collision[slot]))goto done;
+        for(int ip=0;ip<a->n_ion_pops;ip++)
+            if(a->ion_pop_Z[ip]==Z && a->ion_pop_stage[ip]>max_stage)
+                max_stage=a->ion_pop_stage[ip];
+        if(max_stage<0 || max_stage>=Z+1)goto done;
+        size_t nv=e->n_variables,ns=(size_t)max_stage+1;
+        candidate=malloc(nv*sizeof(*candidate));
+        row_stage=malloc(nv*sizeof(*row_stage));
+        initial_stage=calloc(ns,sizeof(*initial_stage));
+        candidate_stage=calloc(ns,sizeof(*candidate_stage));
+        if(!candidate || !row_stage || !initial_stage || !candidate_stage)goto done;
+        for(size_t row=0;row<nv;row++)row_stage[row]=-1;
+        for(int gl=0;gl<a->n_levels;gl++)if(a->level_Z[gl]==Z){
+            int ng=n->global_to_nlte_level[gl];
+            if(ng<0 || ng>=n->n_nlte_levels_total)goto done;
+            int sl=n->fl_to_super[ng];
+            if(sl<0 || (size_t)sl>=e->n_super_total)goto done;
+            int row=e->super_to_row[sl],stage=a->level_ion[gl];
+            if(row<0 || (size_t)row>=nv || stage<0 || (size_t)stage>=ns ||
+               (row_stage[row]>=0 && row_stage[row]!=stage))goto done;
+            row_stage[row]=stage;
+        }
+        for(int ip=0;ip<a->n_ion_pops;ip++)if(a->ion_pop_Z[ip]==Z){
+            int row=e->terminal_to_row[ip],stage=a->ion_pop_stage[ip];
+            if(row<0)continue;
+            if((size_t)row>=nv || stage<0 || (size_t)stage>=ns ||
+               (row_stage[row]>=0 && row_stage[row]!=stage))goto done;
+            row_stage[row]=stage;
+        }
+        PopulationGeneratorSolveDiagnostic diagnostic={0};
+        PopulationStatus status=nlte_model_element_fixed_field_candidate(
+            &combined,e,candidate,&diagnostic);
+        if(status!=POP_OK){
+            fprintf(stderr,"[MODEL-SE][FIXED-FIELD-FAIL] Z=%d native_node=%d status=%s recognized=%d residual=%.17g\n",
+                Z,cache->native_node,population_status_name(status),
+                diagnostic.generator_recognized,
+                diagnostic.exact_generator_componentwise_residual);
+            goto done;
+        }
+        for(size_t row=0;row<nv;row++){
+            if(row_stage[row]<0)goto done;
+            initial_stage[row_stage[row]]+=e->initial_population[row];
+            candidate_stage[row_stage[row]]+=candidate[row];
+        }
+        long double old_total=0.,new_total=0.;
+        for(size_t stage=0;stage<ns;stage++){
+            old_total+=initial_stage[stage];new_total+=candidate_stage[stage];
+        }
+        if(fabsl(old_total-e->total_nuclei)>1.e-12L*e->total_nuclei ||
+           fabsl(new_total-e->total_nuclei)>1.e-12L*e->total_nuclei)goto done;
+        printf("[MODEL-SE][FIXED-FIELD] Z=%d native_node=%d variables=%zu state=PRIVATE_PARTIAL_CHANNEL_CANDIDATE residual=%.17g physical_equivalence=NOT_PROVEN\n",
+            Z,cache->native_node,nv,
+            diagnostic.exact_generator_componentwise_residual);
+        for(size_t stage=0;stage<ns;stage++)
+            printf("[MODEL-SE][FIXED-FIELD-STAGE] Z=%d stage0=%zu original=%.17g candidate=%.17g\n",
+                Z,stage,(double)initial_stage[stage],(double)candidate_stage[stage]);
+        failed=0;
+done:
+        free(candidate);free(row_stage);free(initial_stage);free(candidate_stage);
+        nlte_model_combined_generator_free(&combined);
+        if(failed)return 1;
+    }
     return 0;
 }
 
@@ -304,7 +430,8 @@ static int import_native_nodes(const char *path, AtomicData *atom,
              "actual full-model SL/terminal coverage"))return 1;
     printf("[MODEL-SE][ACTUAL-LAYOUT] elements=%d SL=%zu terminal=%zu maximum_element_rows=%zu field_or_SE_solved=0\n",
         atom->n_elements,bound_rows,terminal_rows,max_rows);
-    if(point_contributions && import_point_contributions(point_contributions,atom,nlte,&p))return 1;
+    NativeFixedFieldBlocks fixed_field={0};
+    if(point_contributions && import_point_contributions(point_contributions,atom,nlte,&p,&fixed_field))return 1;
     if (occupation_model) {
         NLTEPopulationCandidate candidate={0};
         size_t count=(size_t)atom->n_levels*ns;
@@ -346,8 +473,10 @@ static int import_native_nodes(const char *path, AtomicData *atom,
         if (fclose(out)!=0 || failed) return 1;
         printf("[MATERIAL-IMPORT][FULL-EXPORT] original_FL_order=%d samples=%d\n",atom->n_levels,ns);
     }
-    if(bb_contributions && import_point_lines(bb_contributions,atom,nlte,&p))return 1;
-    if(collision_contributions && import_point_collisions(collision_contributions,atom,nlte,&p))return 1;
+    if(bb_contributions && import_point_lines(bb_contributions,atom,nlte,&p,&fixed_field))return 1;
+    if(collision_contributions && import_point_collisions(collision_contributions,atom,nlte,&p,&fixed_field))return 1;
+    if(solve_native_fixed_field(&fixed_field,atom,nlte))return 1;
+    native_fixed_field_free(&fixed_field);
     free(cols);free(physical);free(values);free(te);free(ne);free(rho);
     return 0;
 }

@@ -75,6 +75,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if full_bound_result is not None and point_library is None:
         raise ValueError('완성 BF handoff에는 point C 라이브러리가 필요')
+    if full_bound_result is not None and (bb_result is None or col_result is None):
+        raise ValueError('완성 BF의 고정장 SE 후보에는 같은 장 BB와 전쌍 충돌이 필요')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
         raise ValueError('다른 원 native 계획')
     base=json.loads(base_path.read_text());c=json.loads(Path(base['config']).read_text())
@@ -295,21 +297,39 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             full_command=point_command.copy()
             full_command[4]=str(output.with_name('model-full-bound-imported-full.bin'))
             full_command[7]=str(full_contributions)
-            full_completed=subprocess.run(full_command,check=True,env=env,
+            full_completed=subprocess.run(full_command,check=False,env=env,
                 timeout=max(1.,250.-(time.monotonic()-started)),capture_output=True,text=True)
             print(full_completed.stdout,end='',flush=True)
+            if full_completed.returncode:
+                print(full_completed.stderr,end='',file=sys.stderr,flush=True)
+                raise ValueError('완성 BF/BB/충돌 C 고정장 후보 실패')
             marker=re.findall(
                 r'^\[MODEL-SE\]\[ACTUAL-BF-CONTRIBUTIONS\] native_node=(\d+) routes=(\d+) terminal_routes=(\d+) uncomputed_nodes=REJECTED full_frequency=(\d+) SE_RE_solved=0$',
                 full_completed.stdout,re.M)
             if len(marker)!=1 or (int(marker[0][0]),int(marker[0][1]),int(marker[0][3]))!=(49,len(point.routes),1):
                 raise ValueError('완성 BF의 C 전경로 소비 증거 누락')
+            candidates=re.findall(
+                r'^\[MODEL-SE\]\[FIXED-FIELD\] Z=(\d+) native_node=(\d+) variables=(\d+) state=PRIVATE_PARTIAL_CHANNEL_CANDIDATE residual=([^\s]+) physical_equivalence=NOT_PROVEN$',
+                full_completed.stdout,re.M)
+            stages=re.findall(
+                r'^\[MODEL-SE\]\[FIXED-FIELD-STAGE\] Z=(\d+) stage0=(\d+) original=([^\s]+) candidate=([^\s]+)$',
+                full_completed.stdout,re.M)
+            if (len(candidates)!=2 or {int(row[0]) for row in candidates}!={14,16} or
+                any(int(row[1])!=49 or not np.isfinite(float(row[3])) or
+                    float(row[3])>1.e-12 for row in candidates) or
+                not {int(row[0]) for row in stages}>={14,16}):
+                raise ValueError('Si/S private 고정장 정상해 증거 누락')
+            stage_profile={str(Z):[dict(stage0=int(stage),original=float(old),candidate=float(new))
+                                  for z,stage,old,new in stages if int(z)==Z]
+                           for Z in (14,16)}
             physical_full=point.physical_ion_rates(full_rates)
             target_ions=((14,1),(14,2),(16,1),(16,2))
             if any(key not in physical_full for key in target_ions):
                 raise ValueError('Si/S II/III bound BF율 누락')
             full_bound_test=dict(native_node=49,frequencies=len(source.frequency),
                 routes=len(point.routes),terminal_routes=int(marker[0][2]),
-                full_frequency_C_assembly=True,combined_SE_solution=False,
+                full_frequency_C_assembly=True,private_partial_channel_SE_candidate=True,
+                complete_SE_RE_solution=False,fixed_field_stage_profile=stage_profile,
                 contribution_sha256=B.sha(full_contributions),**full_seal,
                 Si_S_II_III_photo_spont_stim={f'{Z}:{stage}':physical_full[Z,stage].tolist()
                                                  for Z,stage in target_ions})
