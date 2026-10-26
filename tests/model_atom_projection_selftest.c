@@ -249,9 +249,24 @@ static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,
         if(cache && cache->dissolution[element].n_levels)
             view.dissolution=&cache->dissolution[element];
         memcpy(view.material_model_sha256,a->partition_stamp.atomic_model_sha256,65);
+        NLTEModelCollisionBBStream *stream=NULL;
         if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
-           nlte_model_element_collision_bb_assemble(&block,&layout,n,a,p,&view) ||
-           block.pairs!=cursor-start)return 1;
+           nlte_model_collision_bb_stream_begin(&stream,&layout,n,a,p,&view,
+               a->population_committed_generation))return 1;
+        size_t chunks=0;
+        for(size_t at=0;at<view.n_pairs;at+=16384){
+            size_t used=view.n_pairs-at;if(used>16384)used=16384;
+            if(nlte_model_collision_bb_stream_push(stream,a->population_committed_generation,
+                view.lower+at,view.upper+at,view.omega+at,used)){
+                nlte_model_collision_bb_stream_free(stream);return 1;
+            }
+            chunks++;
+        }
+        if(nlte_model_collision_bb_stream_finish(stream,a->population_committed_generation,&block) ||
+           block.pairs!=cursor-start){nlte_model_collision_bb_stream_free(stream);return 1;}
+        nlte_model_collision_bb_stream_free(stream);
+        printf("[MODEL-COLL-BB][STREAM] Z=%d chunks=%zu pairs=%zu trial_id=%llu\n",
+            Z,chunks,block.pairs,(unsigned long long)a->population_committed_generation);
         long double heat=0.;
         for(size_t row=0;row<layout.n_variables;row++)
             heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];

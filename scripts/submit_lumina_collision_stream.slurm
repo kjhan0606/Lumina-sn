@@ -11,6 +11,7 @@
 #SBATCH --time=00:10:00
 #SBATCH --gres=gpu:0
 #SBATCH --no-requeue
+#SBATCH --chdir=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 set -euo pipefail
 umask 027
 ulimit -c 0
@@ -28,6 +29,13 @@ git -C "$repository" cat-file -e "$source_commit^{commit}"
 mkdir "$parent/source" "$parent/build"
 git -C "$repository" archive "$source_commit" src scripts tests data | tar -x -C "$parent/source"
 project="$parent/source"
+# 버전 관리 밖의 봉인된 원자 기준표 한 개를 그대로 전달한다.
+test "$(sha256sum "$repository/data/atomic/ionization_reference.csv" | cut -d ' ' -f 1)" = \
+  660141ef55e5b9028f6a8f374a28a149bcf81e67f1f888fc0e157397aea4fa9a
+test ! -e "$project/data/atomic/ionization_reference.csv"
+cp -- "$repository/data/atomic/ionization_reference.csv" "$project/data/atomic/ionization_reference.csv"
+test "$(sha256sum "$project/data/atomic/ionization_reference.csv" | cut -d ' ' -f 1)" = \
+  660141ef55e5b9028f6a8f374a28a149bcf81e67f1f888fc0e157397aea4fa9a
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$project/scripts"
 printf 'source_commit=%s\n' "$source_commit"
