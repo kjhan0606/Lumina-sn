@@ -45,6 +45,7 @@ int main(void)
     assert(fabs(block.radiative_heat[0]-(-.25e-12*.4))<1.e-27);
     assert(fabs(block.radiative_heat[1]-(-.25*5.e-13+.5e-12*.2))<1.e-27);
     assert(fabs(block.radiative_heat[2]-(-.5*7.e-13))<1.e-27);
+    for(int i=0;i<3;i++)assert(block.collisional_heat[i]==0.);
     for(int j=0;j<3;j++){
         double sum=0.;for(int i=0;i<3;i++)sum+=block.radiative[j*3+i];
         assert(fabs(sum)<1.e-14);
@@ -98,7 +99,29 @@ int main(void)
     /* bound upper가 있으면 grid1 CI 제외; terminal이면 grid1도 포함. */
     assert(block.collisional[1]==0. && block.collisional[5]>0. && block.collisional[7]>0.);
     assert(fabs(block.collisional[7]/block.collisional[5]-saha[1]/fraction[2])<1.e-12);
+    const double threshold_energy=6.62607015e-27*edge[1];
+    assert(block.collisional_heat[0]==0.);
+    assert(fabs(block.collisional_heat[1]/(threshold_energy*block.collisional[5])-1.)<1.e-12);
+    assert(fabs(block.collisional_heat[2]/(-threshold_energy*block.collisional[7])-1.)<1.e-12);
     nlte_model_bf_block_free(&block);
+    grid[0]=0;
+    assert(!nlte_model_element_bf_assemble(&block,&element,&n,&a,&p));
+    const double lte[3]={3.,40.,400.};
+    long double lte_heat=0.,lte_flow=0.,thermal=0.,internal=0.;
+    const double internal_energy[3]={0.,threshold_energy,2.*threshold_energy};
+    for(int i=0;i<3;i++){
+        lte_heat+=(long double)block.collisional_heat[i]*lte[i];
+        lte_flow+=fabsl((long double)block.collisional_heat[i]*lte[i]);
+        thermal+=(long double)block.collisional_heat[i]*element.initial_population[i];
+        long double row=0.;
+        for(int j=0;j<3;j++)row+=(long double)block.collisional[j*3+i]*element.initial_population[j];
+        internal+=row*internal_energy[i];
+    }
+    assert(fabsl(lte_heat)<1.e-12L*lte_flow);
+    assert(fabsl(internal-thermal)<1.e-12L*fabsl(thermal));
+    /* 문턱 열량의 부호를 뒤집는 결함은 내부에너지 장부와 모순이다. */
+    assert(fabsl(internal+thermal)>fabsl(thermal));
+    nlte_model_bf_block_free(&block);grid[0]=1;
     BfPointTransition tr={0},before=tr;terminal[1]=1;
     assert(nlte_point_bf_transition(&n,&a,&p,2,1,0,&tr)!=0 && !memcmp(&before,&tr,sizeof(tr)));
     assert(nlte_model_element_bf_assemble(&block,&element,&n,&a,&p)!=0 && !block.n_variables && !block.radiative);

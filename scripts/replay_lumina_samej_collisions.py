@@ -15,6 +15,42 @@ import cmfgen_model_continuum as B
 from run_lumina_reference_response import parse_raw
 from run_lumina_pseudo_candidate_overlay import parse_candidate
 from run_lumina_pseudo_candidate_overlay import HEADER,RECORD
+from analyze_lumina_samej_collision_budget import direct_ci
+
+
+def predict_ci_heat(bf_path,occupation_path,levels_path,reference):
+    """저장 FL 입력으로 직접 CI/C3의 문턱 전자 열량을 독립 계산한다."""
+    levels=list(csv.DictReader(levels_path.open()))
+    blob=bf_path.read_bytes()
+    tag,nl,nr,ns,node,temp,ne=HEADER.unpack_from(blob)
+    if tag!=b'LMBFFUL1' or nl!=len(levels):
+        raise ValueError('CI 열량 예측 BF 주소 오류')
+    records=np.frombuffer(blob,dtype=RECORD,offset=HEADER.size)
+    w=np.frombuffer(occupation_path.read_bytes(),dtype='<f8',offset=16).reshape(nl,ns)[:,node]
+    groups={}
+    for i,r in enumerate(levels):
+        if int(r['atomic_number']) in (14,16):
+            groups.setdefault((int(r['atomic_number']),int(r['ion_number']),int(r['super_level'])),[]).append(i)
+    fraction=np.zeros(nl)
+    for ids in groups.values():
+        energy=np.array([float(levels[i]['energy_eV']) for i in ids])
+        weight=np.array([float(levels[i]['g']) for i in ids])*w[ids]*np.exp(-(energy-energy.min())*B.EV/(B.KB*temp))
+        fraction[ids]=weight/weight.sum()
+    net={14:np.longdouble(0.),16:np.longdouble(0.)};gross=dict(net)
+    for r in records:
+        lo,target,zt,qt,grid=map(int,r['ids'])
+        row=levels[lo];z=int(row['atomic_number']);q=int(row['ion_number'])
+        if z not in net or (target>=0 and grid!=0):
+            continue
+        lower=(z,q,int(row['super_level']))
+        upper=((z,q+1,int(levels[target]['super_level'])) if target>=0 else (zt,qt,-1))
+        prob,edge,sigma,saha=map(float,r['values'][:4])
+        rate=prob*direct_ci(temp,ne,edge,sigma,q)
+        forward=np.longdouble(rate*fraction[lo])*reference[lower]['original']
+        reverse=np.longdouble(rate*saha)*reference[upper]['original']
+        energy=B.H*edge
+        net[z]+=(forward-reverse)*energy;gross[z]+=(forward+reverse)*energy
+    return net,gross
 
 
 def predict_dissolution(bf_path,collision_path,occupation_path,levels_path,reference):
@@ -141,6 +177,7 @@ def run(args):
     sealed.update(base['input_sha256'])
     sealed[str(report_path)] = B.sha(report_path)
     for path in (Path(__file__),project/'scripts/run_lumina_reference_response.py',
+                 project/'scripts/analyze_lumina_samej_collision_budget.py',
                  project/'scripts/run_lumina_pseudo_candidate_overlay.py',
                  project/'data/atomic/topion_levels.csv',project/'data/atomic/ionization_reference.csv'):
         sealed[str(path)] = B.sha(path)
@@ -152,6 +189,7 @@ def run(args):
         control='LUMINA_NLTE_BF_COLLISION=0',experiment='LUMINA_NLTE_BF_COLLISION=1',
         unchanged='material70/J70/BF/BB/occupation/omega/solver'),indent=2)+'\n')
     cases = {}
+    ci_heat,ci_heat_gross=predict_ci_heat(bf,occupation,levels_path,reference)
     modes = [(0,0),(1,0)]+([(1,1)] if args.with_dissolution else [])
     for enabled,dissolution in modes:
         name = 'CI'+str(enabled)+('_D1' if dissolution else '')
@@ -170,6 +208,17 @@ def run(args):
             raise ValueError(name+' 재생 실행/원 인구 보존 오류')
         candidate,residual = parse_candidate(child.stdout,original,49)
         rows = parse_raw(child.stdout,original)
+        heat_matches=re.findall(r'\[MODEL-SE\]\[BF-COLLISION-HEAT\] Z=(\d+) native_node=49 cooling_erg_cm3_s=(\S+)',child.stdout)
+        if heat_matches:
+            actual_heat={int(z):float(value) for z,value in heat_matches if int(z) in (14,16)}
+            if len(actual_heat)!=2:
+                raise ValueError('실제 CI/C3 열량 증거 누락')
+            for z,value in actual_heat.items():
+                if (not np.isfinite(value) or
+                    abs(value-float(ci_heat[z])*enabled)>1.e-10*float(ci_heat_gross[z])*enabled):
+                    raise ValueError('독립 CI/C3 문턱 열량 불일치')
+        elif args.require_ci_heat:
+            raise ValueError('CI/C3 열량 소비가 구현되지 않은 바이너리')
         if not enabled and any(rows[k] != reference[k]['C'] for k in rows):
             raise ValueError('CI0 대조가 저장518행을 재현하지 못함')
         if args.ci_baseline and enabled and not dissolution:
@@ -181,6 +230,8 @@ def run(args):
             candidates=[dict(Z=k[0],charge=k[1],superlevel=k[2],population=v)
                         for k,v in candidate.items()],command=command,
             collision_switch=enabled,dissolution_enabled=bool(dissolution),
+            CI_threshold_heat_verified=bool(heat_matches),
+            CI_threshold_heat_prediction={str(z):float(value)*enabled for z,value in ci_heat.items()},
             nonzero_bf_col_rows=sum(r['bf_col'] != 0. for r in rows.values()))
         if dissolution:
             net,gross,heat,counts = predict_dissolution(bf,collision,occupation,levels_path,reference)
@@ -241,4 +292,5 @@ if __name__ == '__main__':
     parser.add_argument('--projection',type=Path)
     parser.add_argument('--ci-baseline',type=Path)
     parser.add_argument('--with-dissolution',action='store_true')
+    parser.add_argument('--require-ci-heat',action='store_true')
     run(parser.parse_args())

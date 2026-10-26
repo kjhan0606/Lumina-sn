@@ -116,6 +116,11 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
         int Z=a->element_Z[e],slot=fixed_field_slot(Z);
         if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
            nlte_model_element_bf_assemble(&block,&layout,n,a,p))return 1;
+        long double collision_heat=0.;
+        for(size_t row=0;row<layout.n_variables;row++)
+            collision_heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];
+        printf("[MODEL-SE][BF-COLLISION-HEAT] Z=%d native_node=%zu cooling_erg_cm3_s=%.17g\n",
+               Z,node,(double)collision_heat);
         used+=block.routes;terminal_used+=block.terminal_routes;
         if(full_frequency && slot>=0){
             const char *dissolution=getenv("LUMINA_MODEL_COLLISION_DISSOLUTION");

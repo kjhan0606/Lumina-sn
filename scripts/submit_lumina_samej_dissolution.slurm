@@ -31,4 +31,5 @@ python3 -m pytest -q -p no:cacheprovider tests/test_samej_collision_replay.py \
 timeout -k 15 240s python3 scripts/replay_lumina_samej_collisions.py \
   --source /gpfs/kjhan/cmfgen_runs/lumina_sameJ_nativeBB_20261027-y7f92T \
   --ci-baseline /gpfs/kjhan/cmfgen_runs/lumina_sameJ_CI_20261027-OTSjsr/run/result.json \
-  --projection "$parent/build/model_projection" --with-dissolution --out "$parent/run"
+  --projection "$parent/build/model_projection" --with-dissolution --out "$parent/run" \
+  "${@:2}"

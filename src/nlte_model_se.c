@@ -87,7 +87,8 @@ fail:
 void nlte_model_bf_block_free(NLTEModelBFBlock *b)
 {
     if(!b)return;
-    free(b->radiative);free(b->collisional);free(b->radiative_heat);memset(b,0,sizeof(*b));
+    free(b->radiative);free(b->collisional);free(b->radiative_heat);
+    free(b->collisional_heat);memset(b,0,sizeof(*b));
 }
 
 static int add_route(double *a,size_t n,size_t lower,size_t upper,double forward,double reverse)
@@ -118,6 +119,7 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
     const NLTEConfig *n,const AtomicData *a,const PlasmaState *p)
 {
     if(!out || out->n_variables || out->radiative || out->collisional || out->radiative_heat ||
+       out->collisional_heat ||
        !e || !n || !a || !p || !e->n_variables || !e->super_to_row || !e->terminal_to_row ||
        e->material_generation!=a->population_committed_generation ||
        e->n_super_total!=(size_t)n->n_super_total || e->n_ion_pops!=(size_t)a->n_ion_pops ||
@@ -131,8 +133,11 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
         .n_variables=nv};
     b.radiative=calloc(nv*nv,sizeof(double));b.collisional=calloc(nv*nv,sizeof(double));
     b.radiative_heat=calloc(nv,sizeof(double));
+    b.collisional_heat=calloc(nv,sizeof(double));
     long double *heat=calloc(nv,sizeof(long double));
-    if(!b.radiative || !b.collisional || !b.radiative_heat || !heat)goto fail;
+    long double *collision_heat=calloc(nv,sizeof(long double));
+    if(!b.radiative || !b.collisional || !b.radiative_heat || !b.collisional_heat ||
+       !heat || !collision_heat)goto fail;
     for(int gl=0;gl<a->n_levels;gl++){
         if(a->level_Z[gl]!=e->Z)continue;
         int ng=n->global_to_nlte_level[gl];
@@ -165,14 +170,22 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
                 tr.collisional_ionization*f,tr.three_body_recombination))goto fail;
             heat[lower]+=(long double)tr.radiative.heat_photo*f;
             heat[upper]-=(long double)tr.radiative.heat_spontaneous+tr.radiative.heat_stimulated;
+            /* SUBCOL_MULTI_V6: 직접 CI/C3는 전체 이온화 문턱을 전자와 교환한다.
+             * 광자의 운동에너지 적분 또는 3kT/2로 대체하지 않는다. */
+            long double threshold_energy=6.62607015e-27L*n->point_bf_rates->threshold_Hz[r];
+            collision_heat[lower]+=threshold_energy*tr.collisional_ionization*f;
+            collision_heat[upper]-=threshold_energy*tr.three_body_recombination;
             b.routes++;
         }
     }
     if(close_columns(b.radiative,nv) || close_columns(b.collisional,nv))goto fail;
-    for(size_t i=0;i<nv;i++){b.radiative_heat[i]=(double)heat[i];if(!isfinite(b.radiative_heat[i]))goto fail;}
-    free(heat);*out=b;return 0;
+    for(size_t i=0;i<nv;i++){
+        b.radiative_heat[i]=(double)heat[i];b.collisional_heat[i]=(double)collision_heat[i];
+        if(!isfinite(b.radiative_heat[i]) || !isfinite(b.collisional_heat[i]))goto fail;
+    }
+    free(heat);free(collision_heat);*out=b;return 0;
 fail:
-    free(heat);nlte_model_bf_block_free(&b);return -1;
+    free(heat);free(collision_heat);nlte_model_bf_block_free(&b);return -1;
 }
 
 void nlte_model_combined_generator_free(NLTEModelCombinedGenerator *b)
