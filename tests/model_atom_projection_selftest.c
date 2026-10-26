@@ -1,6 +1,7 @@
 /* 실제 원자모형 등록에서 상위 이온 누락과 terminal 혼입을 확인한다. */
 #include "nlte_population_candidate.h"
 #include "nlte_model_se.h"
+#include "nlte_model_bb.h"
 
 static int check(int yes, const char *message) {
     if (!yes) fprintf(stderr, "[MODEL-PROJECTION][FAIL] %s\n", message);
@@ -67,11 +68,74 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
     free(saha);free(te);free(ne);free(rates);free(ready);return 0;
 }
 
+/* 전체 native 복사 선의 한 원래점 handoff. 충돌/RE/완성 SE를 가장하지 않는다. */
+static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+{
+    FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];
+    if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMBBPTS1",8) ||
+       fread(shape,4,4,fp)!=4 || shape[0]!=(uint32_t)a->n_levels ||
+       shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] ||
+       !shape[1] || shape[1]>2000000)return 1;
+    size_t count=shape[1],node=shape[3];
+    int32_t *lo=malloc(count*sizeof(*lo)),*up=malloc(count*sizeof(*up));
+    double *nu=malloc(count*sizeof(*nu)),*abs=malloc(count*sizeof(*abs));
+    double *stim=malloc(count*sizeof(*stim)),*spont=malloc(count*sizeof(*spont));
+    uint8_t *status=malloc(count);
+    if(!lo || !up || !nu || !abs || !stim || !spont || !status)return 1;
+    for(size_t i=0;i<count;i++){
+        int32_t ids[2];double values[4];
+        if(fread(ids,4,2,fp)!=2 || fread(values,8,4,fp)!=4)return 1;
+        lo[i]=ids[0];up[i]=ids[1];
+        nu[i]=values[0];abs[i]=values[1];stim[i]=values[2];spont[i]=values[3];status[i]=1;
+    }
+    if(fgetc(fp)!=EOF)return 1;
+    fclose(fp);
+    NLTEModelBBView view={.n_levels=(size_t)a->n_levels,.n_lines=count,
+        .n_shells=(size_t)p->n_shells,.native_shell=node,
+        .radiation_generation=1,.material_generation=a->population_committed_generation,
+        .lower=lo,.upper=up,.frequency_Hz=nu,.absorption=abs,
+        .stimulated=stim,.spontaneous=spont,.status=status};
+    memcpy(view.material_model_sha256,a->partition_stamp.atomic_model_sha256,65);
+    RadiationFieldView saved=n->radfield_view;int saved_status=n->radfield_view_status;
+    n->radfield_view.generation=1;n->radfield_view_status=RADIATION_FIELD_VIEW_OK;
+    size_t used=0,intra=0;
+    for(int i=0;i<a->n_elements;i++){
+        NLTEModelElement layout={0};NLTEModelBBBlock block={0};
+        int Z=a->element_Z[i];
+        if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
+           nlte_model_element_bb_assemble(&block,&layout,n,a,p,&view))return 1;
+        used+=block.lines;intra+=block.intra_super_lines;
+        long double heat=0.;
+        for(size_t k=0;k<layout.n_variables;k++){
+            heat+=(long double)layout.initial_population[k]*block.radiative_heat[k];
+            long double flow=0.;
+            for(size_t r=0;r<layout.n_variables;r++)flow+=block.radiative[k*layout.n_variables+r];
+            if(fabsl(flow)>1.e-10L*fmaxl(1.,fabsl(block.radiative[k*layout.n_variables+k])))return 1;
+        }
+        printf("[MODEL-BB][ACTUAL] Z=%d lines=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
+               Z,block.lines,block.intra_super_lines,(double)heat);
+        nlte_model_bb_block_free(&block);nlte_model_element_free(&layout);
+    }
+    if(used!=count || !intra)return 1;
+    NLTEModelElement layout={0};NLTEModelBBBlock blocked={0};
+    if(nlte_model_element_init(&layout,n,a,p,a->element_Z[0],(int)node))return 1;
+    view.native_shell=node?0:1;
+    if(nlte_model_element_bb_assemble(&blocked,&layout,n,a,p,&view)==0 ||
+       blocked.radiative || blocked.n_variables)return 1;
+    nlte_model_element_free(&layout);
+    n->radfield_view=saved;n->radfield_view_status=saved_status;
+    free(lo);free(up);free(nu);free(abs);free(stim);free(spont);free(status);
+    printf("[MODEL-BB][HANDOFF] native_node=%zu lines=%zu intra=%zu other_nodes=REJECTED collision=ABSENT SE_RE_solved=0\n",
+           node,used,intra);
+    return 0;
+}
+
 static int import_native_nodes(const char *path, AtomicData *atom,
                                NLTEConfig *nlte, int ns, const char *export_path,
                                const double *occupation,
                                const PopulationOccupationModel *occupation_model,
-                               const char *point_contributions) {
+                               const char *point_contributions,
+                               const char *bb_contributions) {
     FILE *fp=fopen(path,"rb");if (!fp) return 1;
     char magic[8];uint32_t nd,nc,nl;double epoch;
     if (fread(magic,1,8,fp)!=8 || (memcmp(magic,"LUMNOD01",8) && memcmp(magic,"LUMCEL01",8)) ||
@@ -224,12 +288,13 @@ static int import_native_nodes(const char *path, AtomicData *atom,
         if (fclose(out)!=0 || failed) return 1;
         printf("[MATERIAL-IMPORT][FULL-EXPORT] original_FL_order=%d samples=%d\n",atom->n_levels,ns);
     }
+    if(bb_contributions && import_point_lines(bb_contributions,atom,nlte,&p))return 1;
     free(cols);free(physical);free(values);free(te);free(ne);free(rho);
     return 0;
 }
 
 int main(int argc, char **argv) {
-    if (argc>=2 && argc<=8) {
+    if (argc>=2 && argc<=9) {
         AtomicData actual = {0}; OpacityState op = {0}; NLTEConfig model = {0};
         int ns=argc>=3 ? atoi(argv[2]):1;
         if (ns<=0 || ns>1000) return 2;
@@ -269,7 +334,8 @@ int main(int argc, char **argv) {
         }
         if (argc>=4 && import_native_nodes(argv[3],&actual,&model,ns,argc>=5?argv[4]:NULL,occupation,
                                           argc>=7 ? &occupation_model : NULL,
-                                          argc==8 ? argv[7] : NULL)) return 1;
+                                          argc>=8 ? argv[7] : NULL,
+                                          argc==9 ? argv[8] : NULL)) return 1;
         free(occupation_parameters);
         free(occupation);
         if (actual.element_density.source==POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {

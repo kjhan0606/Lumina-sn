@@ -1,5 +1,6 @@
 /* 실제 전모형 조립 API의 terminal/율 보존 시험. 작은 합성 generator다. */
 #include "nlte_model_se.h"
+#include "nlte_model_bb.h"
 #include <assert.h>
 
 int main(void)
@@ -54,6 +55,44 @@ int main(void)
     assert(fabs(solution[1]/solution[0]-.8/.75)<1.e-12);
     assert(fabs(solution[2]/solution[1]-1.2/2.5)<1.e-12);
     nlte_model_bf_block_free(&block);
+    int sl_bb[4]={0,1,2,2},anchor_bb[3]={0,1,2};
+    double bb_frac[4]={1.,1.,.2,.8};
+    NLTEConfig bb_n=n;bb_n.fl_to_super=sl_bb;bb_n.super_anchor_global=anchor_bb;
+    bb_n.n_super_total=3;bb_n.within_sl_frac=bb_frac;
+    NLTEModelElement bb_element={0};
+    assert(!nlte_model_element_init(&bb_element,&bb_n,&a,&p,16,0));
+    int32_t bb_lo[2]={2,0},bb_up[2]={3,1};
+    double bb_nu[2]={1.e15,2.e15},bb_abs[2]={5.,7.},bb_stim[2]={1.,2.},bb_spont[2]={2.,3.};
+    uint8_t bb_status[2]={1,1};
+    NLTEModelBBView bb_view={.n_levels=4,.n_lines=2,.n_shells=1,.native_shell=0,
+        .radiation_generation=5,.material_generation=9,.lower=bb_lo,.upper=bb_up,
+        .frequency_Hz=bb_nu,.absorption=bb_abs,.stimulated=bb_stim,
+        .spontaneous=bb_spont,.status=bb_status};
+    NLTEModelBBBlock bb={0};
+    assert(!nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view));
+    assert(bb.lines==2 && bb.intra_super_lines==1 && bb.n_variables==4);
+    assert(fabs(bb.radiative[1]-7.)<1.e-14 && fabs(bb.radiative[4]-5.)<1.e-14);
+    assert(fabs(bb.radiative[0]+7.)<1.e-14 && fabs(bb.radiative[5]+5.)<1.e-14);
+    assert(fabs(bb.radiative_heat[0]-6.62607015e-12*14.)<1.e-25);
+    assert(fabs(bb.radiative_heat[1]+6.62607015e-12*10.)<1.e-25);
+    assert(fabs(bb.radiative_heat[2]+6.62607015e-12*1.4)<1.e-25);
+    nlte_model_bb_block_free(&bb);
+    bb_status[1]=3;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0 &&
+           !bb.n_variables && !bb.radiative);
+    bb_status[1]=2;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
+    bb_abs[1]=0.;bb_stim[1]=0.;
+    assert(!nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view));
+    assert(bb.radiative[1]==0. && bb.radiative[4]==3.);
+    nlte_model_bb_block_free(&bb);
+    bb_abs[1]=7.;bb_stim[1]=2.;bb_status[1]=1;
+    bb_view.radiation_generation=4;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
+    bb_view.radiation_generation=5;bb_view.native_shell=1;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
+    bb_view.native_shell=0;
+    nlte_model_element_free(&bb_element);
     assert(!setenv("LUMINA_NLTE_BF_COLLISION","1",1));
     assert(!nlte_model_element_bf_assemble(&block,&element,&n,&a,&p));
     /* bound upper가 있으면 grid1 CI 제외; terminal이면 grid1도 포함. */

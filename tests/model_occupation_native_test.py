@@ -8,6 +8,7 @@ import argparse
 import ctypes as C
 import json
 import os
+import re
 from pathlib import Path
 import struct
 import subprocess
@@ -28,7 +29,7 @@ class Model(C.Structure):
               ('z_screen',C.POINTER(C.c_double))]
 
 
-def run(base_path,library,projection,output,point_library=None):
+def run(base_path,library,projection,output,point_library=None,bb_result=None):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
@@ -146,7 +147,61 @@ def run(base_path,library,projection,output,point_library=None):
         point_command=list(command)
         point_command[4]=str(output.with_name('model-point-imported-full.bin'))
         point_command.append(str(contributions))
-        subprocess.run(point_command,check=True,env=env,timeout=max(1.,250.-(time.monotonic()-started)))
+        bb_test=None
+        if bb_result is not None:
+            bb_result=Path(bb_result)
+            sealed=json.loads(bb_result.read_text())
+            bb_catalog=bb_result.with_name('point-lines.npz')
+            if (B.sha(bb_result)!='94070d528e9e84de48711519d0b4ea38f76157177f6e077f3d5d3dad583b09fe' or
+                B.sha(bb_catalog)!=sealed['artifact_sha256'] or not sealed['source_unchanged'] or
+                sealed['native_node']!=49 or sealed['input_identity']!=identity or
+                sealed['state']!='COMPLETE_RADIATIVE_BB_ONLY'):
+                raise ValueError('서로 다른 BB 원래점/물질/장 또는 부분 선 자료')
+            with np.load(bb_catalog,allow_pickle=False) as data:
+                lower=np.asarray(data['lower'],dtype='i4');upper=np.asarray(data['upper'],dtype='i4')
+                nu=np.asarray(data['nu0'],dtype='f8');absorption=np.asarray(data['absorption'],dtype='f8')
+                stimulated=np.asarray(data['stimulated'],dtype='f8')
+                spontaneous=np.asarray(data['spontaneous'],dtype='f8')
+                status=np.asarray(data['status'],dtype='u1')
+            if (len(lower)!=sealed['lines'] or any(len(v)!=len(lower) for v in
+                 (upper,nu,absorption,stimulated,spontaneous,status)) or
+                 not np.isin(status,[1,2]).all() or np.any(lower<0) or np.any(upper<0) or
+                 np.any(lower>=nl) or np.any(upper>=nl) or
+                 not all(np.isfinite(v).all() for v in (nu,absorption,stimulated,spontaneous))):
+                raise ValueError('BB 실물 라인 계약 누락·수치 오류')
+            line_z=np.array([int(r['atomic_number']) for r in rows],dtype='i4')
+            if np.any(line_z[lower]!=line_z[upper]):raise ValueError('원소 간 BB 전이')
+            bb_physical=(state['full'][lower,49]*absorption-
+                state['full'][upper,49]*(stimulated+spontaneous))*B.H*nu
+            bb_expected={int(Z):float(np.sum(bb_physical[line_z[lower]==Z],dtype=np.longdouble))
+                         for Z in np.unique(line_z)}
+            bb_binary=output.with_name('point-lines-contributions.bin')
+            records=np.empty(len(lower),dtype=np.dtype([('ids','<i4',(2,)),('values','<f8',(4,))]))
+            records['ids'][:,0]=lower;records['ids'][:,1]=upper
+            for index,value in enumerate((nu,absorption,stimulated,spontaneous)):
+                records['values'][:,index]=value
+            with bb_binary.open('xb') as stream:
+                stream.write(struct.pack('<8sIIII',b'LMBBPTS1',nl,len(lower),ns,49))
+                stream.write(records.tobytes())
+            point_command.append(str(bb_binary))
+        completed=subprocess.run(point_command,check=True,env=env,
+            timeout=max(1.,250.-(time.monotonic()-started)),
+            capture_output=bb_result is not None,text=bb_result is not None)
+        if bb_result is not None:
+            print(completed.stdout,end='',flush=True)
+            matched=re.findall(r'^\[MODEL-BB\]\[ACTUAL\] Z=(\d+) lines=(\d+) intra=(\d+) heat_erg_cm3_s=([^\s]+)$',
+                               completed.stdout,re.M)
+            if len(matched)!=len(bb_expected) or sum(int(row[1]) for row in matched)!=len(lower):
+                raise ValueError('BB 원소별 C handoff 행 누락')
+            for Z,count,intra,heat_string in matched:
+                Z=int(Z);actual=float(heat_string);bb_reference=bb_expected[Z]
+                if not np.isclose(actual,bb_reference,rtol=2.e-7,atol=1.e-30):
+                    raise ValueError(f'원소 {Z} 복사 선 열량 불일치: C={actual} 원FL={bb_reference}')
+            bb_test=dict(lines=len(lower),source_result_sha256=B.sha(bb_result),
+                contributions_sha256=B.sha(bb_binary),C_heat_per_Z={Z:float(value) for Z,_,_,value in matched},
+                full_level_heat_per_Z=bb_expected,within_SL_lines=sum(int(row[2]) for row in matched),
+                C_all_elements_BB_assembly=True,collisional_BB_included=False,
+                original_J_A_after_IR_fix_regenerated=False,SE_RE_solution=False)
         point_test=dict(native_node=49,routes=len(point.routes),ions=len(physical),selected_frequencies=len(frequency),
             terminal_ions=[dict(Z=key[0],lower_stage=key[1],energy_eV=value[0],g=value[1])
                            for key,value in sorted(point.terminal.items())],
@@ -164,7 +219,7 @@ def run(base_path,library,projection,output,point_library=None):
         auxiliary_atomic_sha256={p.name:B.sha(p) for p in (catalog,reference)},
         script_sha256=B.sha(Path(__file__)),wall_seconds=time.monotonic()-started,
         fit_sensitivity_is_SE_RE_solution=False,public_material_updates=0,
-        point_bound_test=point_test,new_transport=0,final_goal='NOT_MET')
+        point_bound_test=point_test,point_bb_test=bb_test,new_transport=0,final_goal='NOT_MET')
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('MODEL_OCCUPATION_NATIVE_TEST PASS values='+str(nl*ns),flush=True)
 
@@ -173,5 +228,6 @@ if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--base',required=True)
     p.add_argument('--library',required=True);p.add_argument('--projection',required=True)
     p.add_argument('--point-library')
+    p.add_argument('--bb-result')
     p.add_argument('--out',required=True);args=p.parse_args()
-    run(args.base,args.library,args.projection,args.out,args.point_library)
+    run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result)

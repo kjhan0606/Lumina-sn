@@ -11,7 +11,7 @@ module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export PYTHONDONTWRITEBYTECODE=1
-core=(lumina_plasma lumina_element_wide nlte_model_se population_contract opacity_publication
+core=(lumina_plasma lumina_element_wide nlte_model_se nlte_model_bb population_contract opacity_publication
       emissivity_publication radeq_publication line_net_rate cmfgen_adiabatic
       bf_rate_jnu radiation_field seed_capability atomic_internal_energy
       nlte_population_candidate line_jbar lumina_atomic)
@@ -58,7 +58,8 @@ if test "${3:-}" = model-native; then
     python3 "$project/tests/model_occupation_native_test.py" \
         --base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json \
         --library "$output/occupation.so" --projection "$output/model_projection" --point-library "$output/point.so" \
-        --out "$output/native-occupation.json"
+        --out "$output/native-occupation.json" \
+        --bb-result /gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json
 fi
 cd "$project"
 sha256sum -c "$output/source-before.sha256" > "$output/source-after-check.txt"
