@@ -103,7 +103,9 @@ def compare(base_path,direct_root,resident_path,out):
                 return direct_radiation_block(frequency[sl],reference_nu,original,direct,
                                               source.frequency,own,reference_log,own_log)
             output=[];completed=[]
-            for (Z,stage),result in ion_rates_stream(frequency,block,routes,rows,models,state,do_dis):
+            for (Z,stage),result in ion_rates_stream(
+                    frequency,block,routes,rows,models,state,do_dis,
+                    dissolution_policy='native-SE'):
                 members=[i for i,row in enumerate(rows) if
                          (int(row['atomic_number']),int(row['ion_number'])+1)==(Z,stage)]
                 population=state['full'][members].sum(axis=0)
@@ -139,6 +141,7 @@ def compare(base_path,direct_root,resident_path,out):
                 native_nodes=90,targets=list(TARGETS),frequencies=len(frequency),
                 fields=['CMFGEN','CMFGEN_DIRECT','J_A'],
                 integration='동일 원래점의 전 생산 ν와 참조 양끝점; 원 PHOT/Milne/용해, 전역 사다리꼴',
+                dissolution_support='native-SE: QUAD_MULTI_V10의 nu>0.8*edge',
                 full_population=full_check,do_lev_dissolution=do_dis,phot_preprocessing=smoothing,
                 input_sha256={str(p):B.sha(p) for p in (base_path,config_path,plan_path,
                     input_path,runtime_path,resident_path)},code_sha256=code_sha256,
