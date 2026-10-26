@@ -47,12 +47,12 @@ for name in "${core[@]}"; do files+=("src/$name.c"); done
 sha256sum src/*.h "${files[@]}" scripts/lumina_model_material_rates.py \
   scripts/lumina_model_response.py scripts/lumina_model_response_balance.py \
   scripts/lumina_common_charge.py scripts/run_lumina_common_material.py \
-  scripts/lumina_coupled_material.py scripts/lumina_material_restart.py \
+  scripts/lumina_coupled_material.py scripts/lumina_material_restart.py scripts/lumina_frozen_direction.py \
   scripts/lumina_model_material_bridge.py scripts/lumina_model_collision_source.py \
   data/atomic/ionization_reference.csv data/atomic/topion_levels.csv > "$parent/build/source-before.sha256"
 OMP_NUM_THREADS=1 python3 -m pytest -q -p no:cacheprovider \
   tests/test_model_material_rates.py tests/test_lumina_common_charge.py \
-  tests/test_lumina_coupled_material.py tests/test_lumina_material_restart.py
+  tests/test_lumina_coupled_material.py tests/test_lumina_material_restart.py tests/test_lumina_frozen_direction.py
 python3 -c 'import run_lumina_common_material'
 objects=()
 for name in "${core[@]}"; do

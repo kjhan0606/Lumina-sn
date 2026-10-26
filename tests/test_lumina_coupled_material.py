@@ -10,6 +10,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from lumina_coupled_material import MaterialPacket,jacobian,residual,newton_direction,packet,solve_coupled
 from run_lumina_fixed_state_balance import adiabatic
+import lumina_frozen_direction as frozen
 
 
 @pytest.fixture(scope='module')
@@ -87,3 +88,25 @@ def test_global_newton_changes_T_and_ne_to_actual_depth_coupled_root(ad):
     limited=solve_coupled(evaluate,base,ad,max_evaluations=4)
     assert not limited['numerical_converged'] and limited['iterations']==0
     assert limited['packet'] is base
+
+
+def test_frozen_direction_uses_one_actual_trial_and_no_centered_probes(ad):
+    t=np.array([1.2,1.3,1.5,1.8])*1.e4;ne=np.array([1.6,3.,6.,11.])*1.e8;h=1.e-4
+    b=local(t,ne);f=residual(b,ad,b.ne,b.thermal_scale)
+    j=jacobian(b,local(t*np.exp(h),ne),local(t*np.exp(-h),ne),
+        local(t,ne*np.exp(h)),local(t,ne*np.exp(-h)),h,ad)
+    direction=newton_direction(j,f)
+    basis=dict(temperature=t,ne=ne,charge_scale=b.ne,thermal_scale=b.thermal_scale,
+               scaled_residual=f,jacobian=j,direction=direction)
+    first=min(1.,.1/float(abs(direction).max()));seen=[]
+    def evaluate(t,ne):seen.append((t.copy(),ne.copy()));return local(t,ne)
+    result=frozen.trial(evaluate,b,ad,basis,first/2)
+    assert len(seen)==1 and len(result['history'])==1
+    assert result['iterations']==1 and result['history'][0]['accepted']
+    assert result['history'][0]['scaled_max']<result['history'][0]['scaled_start_max']
+    before=len(seen)
+    with pytest.raises(ValueError):frozen.trial(evaluate,b,ad,basis,first)
+    with pytest.raises(ValueError):frozen.trial(evaluate,b,ad,{**basis,'direction':np.zeros(8)},first/2)
+    with pytest.raises(ValueError):frozen.trial(evaluate,b,ad,{**basis,'scaled_residual':f+1.e-3},first/2)
+    with pytest.raises(ValueError):frozen.trial(evaluate,local(t*1.0001,ne),ad,basis,first/2)
+    assert len(seen)==before

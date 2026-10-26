@@ -20,6 +20,7 @@ from compare_native_prrr_common_grid import continuum_mapping
 from lumina_common_charge import solve
 from lumina_coupled_material import packet,solve_coupled
 from lumina_material_restart import common_start
+import lumina_frozen_direction as frozen
 from lumina_model_collision_source import ModelCollisionSource
 from lumina_model_freefree import ModelFreeFree
 from lumina_model_material_bridge import MaterialBridge
@@ -75,6 +76,12 @@ def run(args):
     coupled=bool(args.common_result)
     if coupled!=bool(args.common_result_sha) or coupled!=bool(args.thermal_policy):
         raise ValueError('공동 Newton은 완료 전하 보고서/hash/명시한 열정책이 함께 필요')
+    frozen_args=(args.linearization,args.linearization_sha,args.linearization_inputs_sha,args.frozen_alpha)
+    continuing=any(v is not None for v in frozen_args)
+    if continuing and (not coupled or any(v is None for v in frozen_args)):
+        raise ValueError('추가 감쇠는 같은 기준 후보와 방향/입력 hash/감쇠 비율이 함께 필요')
+    basis,basis_identity=(frozen.load(args.linearization,args.linearization_sha,args.linearization_inputs_sha,
+                         args.thermal_policy,inputs) if continuing else (None,None))
     start_candidate,start_energy,start_directory=(common_start(args.common_result,args.common_result_sha,snapshot,inputs)
         if coupled else (initial,None,None))
     roster=npz(BF/'route-roster.npz');lines=npz(BB/'line-roster.npz')
@@ -140,7 +147,8 @@ def run(args):
     inputs.update(balance.owner.input_sha256);inputs.update(balance.decay_metadata['input_sha256'])
     (out/'inputs.json').write_text(json.dumps(dict(source_commit=args.source_commit,input_sha256=inputs,
         resources='CPU16/32GiB/2h/OpenMP16/GPU0/retry0',scope=__doc__,max_charge_evaluations=8,
-        temperature_update=coupled,thermal_policy=args.thermal_policy,max_coupled_evaluations=5 if coupled else 0,
+        temperature_update=coupled,thermal_policy=args.thermal_policy,max_coupled_evaluations=(1 if continuing else 5) if coupled else 0,
+        reused_numerical_direction=basis_identity,frozen_alpha=args.frozen_alpha,
         material_boundary=boundary,temperature_degrees='all90 free in private fixed-J trial; not native release' if coupled else 'fixed70',
         new_native=0,new_transport=0),indent=2)+'\n')
     evaluations=[];latest={}
@@ -184,8 +192,12 @@ def run(args):
                 np.savez(out/'newton-linearization.npz',jacobian=j,scaled_residual=f,direction=direction,
                     temperature=base.temperature,ne=base.ne,charge_scale=c,thermal_scale=h)
             try:
-                outer=solve_coupled(evaluate_coupled,base_packet,full_ad,max_evaluations=5,
-                    on_evaluation=coupled_decision,on_direction=direction_record)
+                if continuing:
+                    outer=frozen.trial(evaluate_coupled,base_packet,full_ad,basis,args.frozen_alpha,
+                                       on_evaluation=coupled_decision)
+                else:
+                    outer=solve_coupled(evaluate_coupled,base_packet,full_ad,max_evaluations=5,
+                        on_evaluation=coupled_decision,on_direction=direction_record)
             except TimeoutError as error:
                 (out/'incomplete.json').write_text(json.dumps(dict(reason=str(error),final_goal='NOT_MET'))+'\n')
                 raise
@@ -231,6 +243,7 @@ def run(args):
         max_temperature_relative_change=float(np.max(abs(selected['temperature']/snapshot['temperature']-1))) if selected is not None else 0.,
         internal_fixed_field_numerical_convergence=solved['converged'] if coupled else False,
         thermal_policy=args.thermal_policy,RE_solved=False,native_E_Jv_verified=False,new_native=0,new_transport=0,
+        reused_numerical_direction=basis_identity,frozen_alpha=args.frozen_alpha,
         accepted_source_directory=str(accepted_root) if coupled else None,
         newton_linearization_sha256=B.sha(out/'newton-linearization.npz') if coupled and (out/'newton-linearization.npz').exists() else None,
         radioactive_policy='stored/instantaneous_scenario kept separate; no reference installed',
@@ -245,4 +258,6 @@ if __name__=='__main__':
     p.add_argument('--common-result',type=Path);p.add_argument('--common-result-sha')
     p.add_argument('--thermal-policy',choices=('physical_stored','physical_instantaneous_scenario',
         'native_stored','native_instantaneous_scenario'))
+    p.add_argument('--linearization',type=Path);p.add_argument('--linearization-sha')
+    p.add_argument('--linearization-inputs-sha');p.add_argument('--frozen-alpha',type=float)
     run(p.parse_args())
