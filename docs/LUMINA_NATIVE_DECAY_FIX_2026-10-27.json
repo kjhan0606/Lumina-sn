@@ -1,0 +1,61 @@
+{
+  "status": "ISOLATED_NATIVE_INSTANTANEOUS_DT0_CORRECTION_VERIFIED",
+  "scope": "원본은 보존한 채 실제 native 루틴의 순간 침적열0시간 분기를 검증. 전체 native/RE/수송 해의 동등성 인증 아님.",
+  "run": "lumina_decay_same_C90_20261027-8OuFRq",
+  "result_sha256": "bcce0f05f6c2d1eefe6380013c11a9b5ced16c504f8d00eb5e500554068a3224",
+  "native_source_original_sha256": "5dd9944de92934a427ade7be70ac1440797c55e476a6de2947df82b06054be3a",
+  "native_source_corrected_sha256": "26764c62d0a2418871a5ff58629acfb609748307172ab84daef87c38dbd64b04",
+  "guards_changed": 3,
+  "correction": "DELTA_T==0 빈 분기는 순간침적이 아닐 때만 선택. 기존 순간열 수식과 isotope 진화 수식은 변경하지 않음.",
+  "direct_tests": {
+    "methods": 5,
+    "seconds": 1.292,
+    "result": "PASS",
+    "skipped": 0,
+    "synthetic_conditions": 12,
+    "stored_hydro90_condition": 1,
+    "same_C_owned90_condition": 1,
+    "paired_original_corrected_snapshots": 28,
+    "chain_lengths": [1,2],
+    "tested_time_intervals_s": [0,60,86400],
+    "instantaneous_modes": [false,true],
+    "zero_time_instantaneous_radiative_and_kinetic_match_independent_formula": true,
+    "isotope_counts_and_evolution_unchanged_at_zero_time": true,
+    "finite_tested_modes_and_zero_time_noninstantaneous_byte_identical": true,
+    "diagnostic_stubs": ["ERROR_LU", "GET_DECAY_LUM_V1", "WRITV_V2"],
+    "geometric_luminosity_validation": false
+  },
+  "output_sha256": {
+    "original-decay": "8c43e598009293a2feb9f137d0d394fd0a30f5ae5e95c1d80cfb67491665f52f",
+    "corrected-decay": "a9d677acae24667632ae0ae7ed7a155edba7af8fa1617da67b694e159f3d4889",
+    "cases.npz": "0126248efe2ac22f9493ada5b38aefe580188535b50341cddbd92b5a244addba",
+    "stage.json": "7035d0af678f0a33fd03b221b110f5bc376214135bd0cb1bcccd2123bcdcc270"
+  },
+  "same_C_owner90": {
+    "source_BF_result_sha256": "482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6",
+    "number_owner": "동일 C 물질 소유자의 원소 총수; 원소/56핵종 분율 동일성 확인",
+    "points": 90,
+    "corrected_heating_min_erg_cm3_s": 1.2573944973837171e-17,
+    "corrected_heating_max_erg_cm3_s": 0.004597314563229453,
+    "maximum_relative_formula_error": 2.220446049250313e-16,
+    "new_mass_conversion": false,
+    "new_interpolation": false,
+    "isotope_state_unchanged": true,
+    "cases_npz_selector": "test_same_C_owned_native90_numbers_without_mass_reconversion-corrected-2-0.0-True-90",
+    "heating_array_row": 0
+  },
+  "stored_hydro90_crosscheck": {
+    "COB56_isotope_list_mass_amu": 55.939839,
+    "COB56_reaction_row_mass_not_used_for_number_conversion": 55.938904,
+    "corrected_heating_max_erg_cm3_s": 0.004597314555857105,
+    "note": "이전의 반응행 질량을 쓴 가정적 추정과 구분. 정본은 위 동일 C 수밀도 대조."
+  },
+  "operator_reproducibility": "REPRODUCED_OUTPUT_HASHES_AND_PRESERVED_MODE_BYTES",
+  "source_original_unchanged": true,
+  "installed_in_native": false,
+  "input70_zero_heating_unchanged": true,
+  "new_full_native": 0,
+  "new_transport": 0,
+  "new_SE_or_RE_solve": 0,
+  "final_goal": "NOT_MET"
+}
