@@ -189,7 +189,7 @@
     "automatic_extra_evaluation": false
   },
   "proposed_charge_projected_candidate": {
-    "status": "USER_AUTHORITY_PENDING",
+    "status": "APPROVED_PREPARING_SINGLE_EXECUTION",
     "objective": "같은 고정장에서 전하를 다시 닫은 실제 온도 후보가 깊이 결합 열잔차를 개선하는지 판별. 최종 스펙트럼 목표의 대체 아님",
     "inputs": "1223954 수용 전하 해·1224060 봉인 방향·기존 J70/물질70 원자료 및 네 열장부 보존",
     "temperature_candidates_max": 1,
@@ -212,9 +212,15 @@
     "exclusions": "기존 미분4개 재계산0·native0·새 수송0·모델 차원/물리 가정/원자자료 변경0",
     "alternative": "사용자가 실제평가1회만 허용하면 기존 frozen 방향 alpha0/8의 단일 후보. 내부 전하 투영 묶음과 중복 실행하지 않음",
     "user_question_sent": true,
-    "user_answer_received": false,
+    "user_answer_received": true,
+    "user_approval": "2026-10-27 사용자 승인: CPU16/32GiB/최대2시간, 새 온도 전적분1회·같은 온도 실제평가 최대8회. native128GiB는 승인 대상 아님",
+    "planned_run_id": "lumina_charge_projected_1224060_20261027",
+    "single_execution_owner": "현재 Codex 운전 흐름이 이 run 하나만 제출. 같은 승인으로 다른 운전 흐름의 중복 발주 금지",
+    "planned_alpha": 0.08746381384424386,
+    "preserved_linearization_sha256": "4d2d30acea5060bd8c99f58fa569847ff06d897d31ee0eaa366dcc42c739c81d",
+    "preserved_linearization_inputs_sha256": "91896174cf80d3b0589888c2541a53a87f2fed2b93108d77d4848603ddd90a31",
     "submitted": false
   },
-  "next": "전하 재평형 묶음의 구체적 추가평가 한도에 대한 사용자 결정을 받는다. 별도 native 기준 계산은32GiB OOM이며128GiB 미승인. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
+  "next": "승인된 전하 재평형 후보1개를 새 고유 출력에 단일 제출하고 실제 전하 폐합·열잔차·90점 Si/S를 판독한다. 별도 native128GiB는 미승인·미제출. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
   "final_goal": "NOT_MET"
 }
