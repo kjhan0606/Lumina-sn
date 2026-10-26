@@ -123,7 +123,9 @@
     "공통 물질/장 잔차·Jv와 새 자기일관 해 및 원래 v2 물리량·스펙트럼·격자 수용"
   ],
   "approved_128GiB_candidate": {
-    "state": "APPROVED_PREPARING",
+    "state": "SUBMITTED",
+    "job_id": 1224251,
+    "source_commit": "26ae629afcbb7a5c118c589e14b93658da5c953e",
     "run_id": "lumina_native128_1224201_20261027",
     "single_execution_owner": "현재 Codex 흐름이 단일 제출. 같은 승인으로 중복 발주 금지",
     "user_approval": "2026-10-27:128GiB도 승인함",
