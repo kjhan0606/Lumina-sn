@@ -161,23 +161,32 @@ def memory_probe(out):
     out.mkdir()
     fixture = NativeFixture(Path(os.environ['CMFGEN_SOURCE_ROOT']), out)
     rows = {}
-    for mode in ('original', 'corrected'):
+    # 원본 full8000은1224133에서4GiB OOM이었다. 같은 실패를 반복하지 않는다.
+    # 수정본은 full8000, 원본은 같은 가상 예약의 앞256컬럼만 지운다.
+    # 원본 prefix의 전체 주소 구간도2.75GiB 이하라 페이지 크기와 무관하게 제한된다.
+    for mode, scope in (('corrected', 'full'), ('original', 'prefix256')):
         executable = fixture.compile(mode, memory=True)
-        result = fixture.command([executable], executable.parent)
+        result = fixture.command([executable, scope], executable.parent)
         (executable.parent / 'stdout.txt').write_text(result.stdout)
         rss = re.search(r'VmHWM:\s*(\d+)\s*kB', result.stdout)
         active_sum = re.search(r'ACTIVE_SUM\s+(\S+)', result.stdout)
+        huge = re.search(r'AnonHugePages:\s*(\d+)\s*kB', result.stdout)
         if rss is None or active_sum is None:
             raise ValueError('메모리 실측 누락')
         rows[mode] = dict(max_rss_KiB=int(rss[1]), active_sum=float(active_sum[1]),
+                          anonymous_hugepages_KiB=(int(huge[1]) if huge else None),
+                          zeroing_scope=scope, zeroed_column_range=(8000 if scope == 'full' else 256),
                           executable_sha256=sha(executable), stdout_sha256=sha(executable.parent / 'stdout.txt'))
     fixture.check_unchanged()
     if rows['original']['active_sum'] != rows['corrected']['active_sum']:
         raise ValueError('사용 strong 결과 불일치')
-    if rows['original']['max_rss_KiB'] <= 1024**2 or rows['corrected']['max_rss_KiB'] >= 256*1024:
+    if (rows['original']['max_rss_KiB'] <= rows['corrected']['max_rss_KiB'] + 16*1024 or
+        rows['corrected']['max_rss_KiB'] >= 256*1024):
         raise ValueError('광범위 행 touch 제거 효과를 재현하지 못함')
     report = dict(state='DIRECT_MEMORY_EFFECT_REPRODUCED', virtual_dZ_bytes=92194560000,
         touched_strong_columns=4, row_cleared=7, input_sha256=fixture.hashes, measurements=rows,
+        original_full_loop_measured_successfully=False,
+        performance_comparison_scope='수정 full8000 대 원본 prefix256; 같은 전체 작업량의 속도 비교 아님',
         full_native_peak_memory_proven=False, full_native_physical_equivalence_proven=False)
     (out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     print(json.dumps(report, ensure_ascii=False))
