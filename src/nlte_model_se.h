@@ -23,6 +23,8 @@ void nlte_model_element_free(NLTEModelElement *element);
  * radiative_heat는 복사 BF 전자 운동에너지 계수(erg s^-1/입자)만 담는다.
  * CI/C3 열량과 전체 RE ledger는 아직 포함하지 않는다. */
 typedef struct {
+    int Z, shell;
+    uint64_t material_generation, radiation_generation;
     size_t n_variables, routes, terminal_routes;
     double *radiative, *collisional, *radiative_heat;
 } NLTEModelBFBlock;

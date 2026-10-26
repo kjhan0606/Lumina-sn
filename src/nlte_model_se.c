@@ -1,5 +1,7 @@
 #include "nlte_model_se.h"
+#include "nlte_model_sum.h"
 
+#include <float.h>
 #include <limits.h>
 
 void nlte_model_element_free(NLTEModelElement *e)
@@ -123,7 +125,10 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
        e->n_variables>SIZE_MAX/e->n_variables ||
        e->n_variables*e->n_variables>SIZE_MAX/sizeof(double))return -1;
     size_t nv=e->n_variables,ns=(size_t)p->n_shells;
-    NLTEModelBFBlock b={.n_variables=nv};
+    NLTEModelBFBlock b={.Z=e->Z,.shell=e->shell,
+        .material_generation=e->material_generation,
+        .radiation_generation=n->point_bf_rates->radiation_generation,
+        .n_variables=nv};
     b.radiative=calloc(nv*nv,sizeof(double));b.collisional=calloc(nv*nv,sizeof(double));
     b.radiative_heat=calloc(nv,sizeof(double));
     long double *heat=calloc(nv,sizeof(long double));
@@ -168,4 +173,90 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
     free(heat);*out=b;return 0;
 fail:
     free(heat);nlte_model_bf_block_free(&b);return -1;
+}
+
+void nlte_model_combined_generator_free(NLTEModelCombinedGenerator *b)
+{
+    if(!b)return;
+    free(b->generator);free(b->fixed_residual);memset(b,0,sizeof(*b));
+}
+
+static int model_generator_closed(const double *a,size_t n)
+{
+    if(!a)return -1;
+    for(size_t j=0;j<n;j++){
+        long double outgoing=0.;
+        for(size_t i=0;i<n;i++)if(i!=j){
+            double rate=a[j*n+i];
+            if(!isfinite(rate) || rate<0.)return -1;
+            outgoing+=rate;
+        }
+        double diagonal=a[j*n+j];
+        if(!isfinite(diagonal) || diagonal>0.)return -1;
+        long double scale=fmaxl(fabsl(diagonal),outgoing);
+        if((scale==0. && diagonal!=0.) ||
+           (scale>0. && fabsl((long double)diagonal+outgoing)>
+                          64.L*DBL_EPSILON*scale))return -1;
+    }
+    return 0;
+}
+
+int nlte_model_element_generator_combine(NLTEModelCombinedGenerator *out,
+    const NLTEModelElement *e,const NLTEModelBFBlock *bf,
+    const NLTEModelBBBlock *bb,const NLTEModelCollisionBBBlock *col)
+{
+    if(!out || out->n_variables || out->generator || out->fixed_residual ||
+       !e || !bf || !bb || !col || !e->n_variables || !e->initial_population ||
+       !e->material_generation || !bf->radiation_generation ||
+       bf->radiation_generation!=bb->radiation_generation ||
+       e->n_variables>SIZE_MAX/e->n_variables ||
+       e->n_variables*e->n_variables>SIZE_MAX/sizeof(double) ||
+       e->n_variables>SIZE_MAX/sizeof(double) ||
+       bf->n_variables!=e->n_variables || bb->n_variables!=e->n_variables ||
+       col->n_variables!=e->n_variables ||
+       bf->Z!=e->Z || bb->Z!=e->Z || col->Z!=e->Z ||
+       bf->shell!=e->shell || bb->shell!=e->shell || col->shell!=e->shell ||
+       bf->material_generation!=e->material_generation ||
+       bb->material_generation!=e->material_generation ||
+       col->material_generation!=e->material_generation ||
+       !isfinite(e->total_nuclei) || e->total_nuclei<0.)return -1;
+    size_t n=e->n_variables;
+    if(model_generator_closed(bf->radiative,n) ||
+       model_generator_closed(bf->collisional,n) ||
+       model_generator_closed(bb->radiative,n) ||
+       model_generator_closed(col->collisional,n))return -1;
+    long double population_total=0.;
+    for(size_t j=0;j<n;j++){
+        if(!isfinite(e->initial_population[j]) || e->initial_population[j]<0.)return -1;
+        population_total+=e->initial_population[j];
+    }
+    if(fabsl(population_total-e->total_nuclei)>
+       1.e-12L*fmaxl(population_total,(long double)e->total_nuclei))return -1;
+    NLTEModelCombinedGenerator b={.Z=e->Z,.shell=e->shell,
+        .material_generation=e->material_generation,
+        .radiation_generation=bf->radiation_generation,.n_variables=n};
+    b.generator=calloc(n*n,sizeof(double));b.fixed_residual=calloc(n,sizeof(double));
+    if(!b.generator || !b.fixed_residual)goto fail;
+    for(size_t j=0;j<n;j++){
+        long double outgoing=0.;
+        for(size_t i=0;i<n;i++)if(i!=j){
+            long double rate=(long double)bf->radiative[j*n+i]+
+                bf->collisional[j*n+i]+bb->radiative[j*n+i]+col->collisional[j*n+i];
+            b.generator[j*n+i]=(double)rate;
+            if(!isfinite(b.generator[j*n+i]))goto fail;
+            outgoing+=rate;
+        }
+        b.generator[j*n+j]=-(double)outgoing;
+        if(!isfinite(b.generator[j*n+j]))goto fail;
+    }
+    for(size_t i=0;i<n;i++){
+        long double residual=0.;
+        for(size_t j=0;j<n;j++)
+            residual+=(long double)b.generator[j*n+i]*e->initial_population[j];
+        b.fixed_residual[i]=(double)residual;
+        if(!isfinite(b.fixed_residual[i]))goto fail;
+    }
+    *out=b;return 0;
+fail:
+    nlte_model_combined_generator_free(&b);return -1;
 }

@@ -19,6 +19,8 @@ typedef struct {
  * same-SL 선은 population generator에는0, 열량에는 남긴다.
  * collisional BB, BF/pseudo, 자유-자유와 전체 RE는 포함하지 않는다. */
 typedef struct {
+    int Z, shell;
+    uint64_t material_generation, radiation_generation;
     size_t n_variables, lines, intra_super_lines;
     double *radiative, *radiative_heat;
 } NLTEModelBBBlock;

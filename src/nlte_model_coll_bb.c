@@ -38,7 +38,8 @@ int nlte_model_element_collision_bb_assemble(NLTEModelCollisionBBBlock *out,
        e->n_variables*e->n_variables>SIZE_MAX/sizeof(double))return -1;
 
     const size_t nv=e->n_variables,ns=v->n_shells;
-    NLTEModelCollisionBBBlock b={.n_variables=nv};
+    NLTEModelCollisionBBBlock b={.Z=e->Z,.shell=e->shell,
+        .material_generation=e->material_generation,.n_variables=nv};
     long double *heat=calloc(nv,sizeof(*heat));
     b.collisional=calloc(nv*nv,sizeof(double));
     b.collisional_heat=calloc(nv,sizeof(double));

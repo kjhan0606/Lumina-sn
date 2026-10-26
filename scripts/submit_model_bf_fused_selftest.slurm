@@ -1,5 +1,5 @@
 #!/bin/bash
-# 실제 native49의 BF Milne 적분과 기존 물리 계수를 직접 대조한다.
+# BF Milne/SE 행렬 결합의 합성 시험과 실제 native49 계수 소비를 대조한다.
 # 별도 출력 root에서 CPU1·4GiB·5분, 새 복사장/물질 갱신 없음.
 #SBATCH --job-name=lumina-bf-fused-test
 #SBATCH --partition=normal

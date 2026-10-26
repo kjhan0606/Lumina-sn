@@ -20,6 +20,7 @@ for name in "${core[@]}"; do source_files+=("src/$name.c"); done
 cd "$project"
 sha256sum src/*.h "${source_files[@]}" tests/a2_05_bf_rate_selftest.c \
     tests/bf_point_matrix_selftest.c tests/model_element_bf_selftest.c tests/nlte_element_wide_layout_selftest.c \
+    tests/model_combined_generator_selftest.c \
     tests/nlte_population_candidate_selftest.c tests/a2_07_population_selftest.c \
     tests/model_atom_projection_selftest.c tests/model_occupation_native_test.py \
     tests/model_collision_bb_selftest.c \
@@ -41,6 +42,8 @@ done
 ./bf_matrix
 "${cc[@]}" -o model_element_bf "$project/tests/model_element_bf_selftest.c" "${objects[@]}" -lm
 ./model_element_bf
+"${cc[@]}" -o model_combined "$project/tests/model_combined_generator_selftest.c" "${objects[@]}" -lm
+./model_combined
 "${cc[@]}" -o model_collision_bb "$project/tests/model_collision_bb_selftest.c" "${objects[@]}" -lm
 ./model_collision_bb
 "${cc[@]}" -DLUMINA_EW_SYNTHETIC_TEST -o ew_layout \
@@ -69,5 +72,5 @@ cd "$project"
 sha256sum -c "$output/source-before.sha256" > "$output/source-after-check.txt"
 sha256sum "$output/bf_rate" "$output/bf_matrix" "$output/ew_layout" \
     "$output/population_candidate" "$output/population_contract" "$output/model_projection" \
-    "$output/model_element_bf" "$output/model_collision_bb" > "$output/binary.sha256"
+    "$output/model_element_bf" "$output/model_combined" "$output/model_collision_bb" > "$output/binary.sha256"
 printf 'BF_POINT_TEST_BUNDLE PASS\n'

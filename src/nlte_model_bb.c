@@ -35,7 +35,10 @@ int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
        e->n_variables*e->n_variables>SIZE_MAX/sizeof(double) ||
        e->n_variables>SIZE_MAX/sizeof(long double))return -1;
     const size_t nv=e->n_variables,ns=(size_t)p->n_shells;
-    NLTEModelBBBlock b={.n_variables=nv};
+    NLTEModelBBBlock b={.Z=e->Z,.shell=e->shell,
+        .material_generation=e->material_generation,
+        .radiation_generation=v->radiation_generation,
+        .n_variables=nv};
     long double *heat=calloc(nv,sizeof(*heat));
     b.radiative=calloc(nv*nv,sizeof(double));b.radiative_heat=calloc(nv,sizeof(double));
     if(!heat || !b.radiative || !b.radiative_heat)goto fail;

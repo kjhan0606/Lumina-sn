@@ -20,6 +20,8 @@ typedef struct {
  * same-SL/용해 이온화, CI/C3, 전체 RE와 새 SE 해는 포함하지 않는다.
  * collisional_heat는 가스 냉각 부호(+ 들뜸, - 탈들뜸) 계수다. */
 typedef struct {
+    int Z, shell;
+    uint64_t material_generation;
     size_t n_variables, pairs, cross_super_pairs, intra_super_pairs;
     double *collisional, *collisional_heat;
 } NLTEModelCollisionBBBlock;
