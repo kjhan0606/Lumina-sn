@@ -2,7 +2,7 @@
 """동결 자체 J의 원래점 하나에서 전ν bound PHOT 율을 제한 시간 안에 생산한다.
 
 새 수송/CMFGEN formal/물질 갱신은 없다. 한도 종료는 완료 route만 보존하고
-전체 snapshot은 INCOMPLETE다. 자동 재시도나 시간 연장은 없다.
+전체 snapshot은 INCOMPLETE다. 자동 재시도는 없다.
 """
 import argparse
 import json
@@ -19,7 +19,10 @@ from lumina_model_point_rates import ModelPointBoundRates
 
 
 def run(args):
-    start=time.monotonic();deadline=start+260.;out=Path(args.out)
+    if args.wall_seconds not in (300,7200):
+        raise ValueError('승인되지 않은 BF 실행 시간 한도')
+    start=time.monotonic();deadline=start+args.wall_seconds-(40 if args.wall_seconds==300 else 200)
+    out=Path(args.out)
     if out.exists():raise FileExistsError('기존 전ν율 결과 보존')
     if os.environ.get('SLURM_CPUS_PER_TASK')!='1' or os.environ.get('SLURM_MEM_PER_NODE')!='4096':
         raise ValueError('CPU1/4GiB Slurm 직접시험 필요')
@@ -55,13 +58,13 @@ def run(args):
     try:
         for index,r in enumerate(producer.routes):
             active_route=index
-            if time.monotonic()>=deadline:raise TimeoutError('260s including preparation')
+            if time.monotonic()>=deadline:raise TimeoutError('BF time budget including preparation')
             # 원 PHOT의 정확히0인 지지 밖만 생략한다. 실제 격자/가중치는 불변.
             support=min((entry[2] for entry in r.models),default=np.inf)
             begin=int(np.searchsorted(nu,support,side='left'))
             total=np.zeros(6,dtype=np.longdouble)
             for lo in range(begin,len(nu),16384):
-                if time.monotonic()>=deadline:raise TimeoutError('260s including preparation')
+                if time.monotonic()>=deadline:raise TimeoutError('BF time budget including preparation')
                 hi=min(len(nu),lo+16384)
                 total+=producer.contract_route_block(index,nu[lo:hi],widths[lo:hi],j[lo:hi])
                 visited+=hi-lo
@@ -84,6 +87,7 @@ def run(args):
     complete=bool(done.all() and reason is None and source_unchanged)
     result=dict(state='COMPLETE_BOUND_ONLY' if complete else 'INCOMPLETE',
         native_node=node,frequencies=len(nu),routes_expected=len(routes),routes_complete=int(done.sum()),
+        allocated_wall_seconds=args.wall_seconds,
         active_route=active_route,visited_route_frequency_values=visited,stop_reason=reason,
         source_unchanged=source_unchanged,source_sha256=identities,input_identity=source_identity,
         full_population_check=full_check,pseudo_included=False,BB_included=False,
@@ -125,6 +129,7 @@ def recover_saved(out):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--base')
     p.add_argument('--j');p.add_argument('--library');p.add_argument('--out',required=True)
+    p.add_argument('--wall-seconds',type=int,default=300)
     p.add_argument('--recover-saved',action='store_true');args=p.parse_args()
     if args.recover_saved:raise SystemExit(recover_saved(args.out))
     if not all((args.base,args.j,args.library)):p.error('--base/--j/--library 필요')

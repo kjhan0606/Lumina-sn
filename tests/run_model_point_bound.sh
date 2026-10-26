@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CPU1/4GiB/300초 한도에서 전ν 율 연결을 시도한다. 수송/물질 실행 아님.
+# CPU1/4GiB/최대2시간에서 전ν 율 연결을 시도한다. 수송/물질 실행 아님.
 set -euo pipefail
 ulimit -c 0
 project=$(realpath "${1:?project}")
@@ -16,4 +16,4 @@ gcc -O2 -std=c11 -fPIC -shared -Wl,-z,defs -Isrc -o "$output/point.so" \
 python3 scripts/run_lumina_model_point_bound.py \
     --base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json \
     --j /gpfs/kjhan/cmfgen_runs/lumina_resident_field_20261026-qFP5rJ/run/J.npy \
-    --library "$output/point.so" --out "$output/run"
+    --library "$output/point.so" --out "$output/run" --wall-seconds "${LUMINA_BOUND_WALL_SECONDS:-300}"
