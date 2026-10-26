@@ -91,13 +91,27 @@ def selected_controls(path):
     return result
 
 
-def weak_line_cut(f, energy, g):
+def native_edge_frequencies(osc_path,osc,n):
+    """GENOSC_V9의 원 cm⁻¹→FEDGE15 연산 순서. CSV 에너지 차를 쓰지 않는다."""
+    values=[]
+    for line in Path(osc_path).read_text().splitlines():
+        prefix,separator,tag=line.partition('!')
+        if separator and 'Ionization energy' in tag:
+            values.append(float(prefix.strip().replace('D','E')))
+    require(len(values)==1,'OSC 원 이온화 파수 누락/중복')
+    edge=(values[0]-osc.levels['E_cm'][:n])*material.C*1.e-15
+    require(len(edge)==n and np.isfinite(edge).all() and np.all(edge>0),
+            'native FEDGE15 오류')
+    return edge
+
+
+def weak_line_cut(f, energy, g, native_edges=None):
     """GENOSC_V9 lower I>LEV_CUT, upper J>max(LEV_CUT,MIN_TRANS)."""
     n = len(g)
     modified = 0
     for up in range(max(GF_LEV_CUT, MIN_TRANS), n):
         dE = (energy[up]-energy[:up])*EV_ERG
-        nu = dE/H_CGS
+        nu = dE/H_CGS if native_edges is None else (native_edges[:up]-native_edges[up])*1.e15
         spontaneous = np.where(dE > 0., f[:up, up]*g[:up]/g[up]*nu*nu, 0.)
         tenth = np.partition(spontaneous, len(spontaneous)-MIN_TRANS)[len(spontaneous)-MIN_TRANS]
         for lo in range(GF_LEV_CUT, up):
@@ -123,7 +137,7 @@ def table_at_temperature(table, tgrid, temperature_K):
     return table[lower]*(t4/tgrid[lower])**alpha
 
 
-def ion_strengths(Z, ion0, name, expected_tab, ids, rows, models, links, temperature):
+def ion_strengths(Z, ion0, name, expected_tab, ids, rows, models, links, temperature,*,native_precision=False):
     n = len(ids)
     require(n == int(models[Z, ion0+1]["n_full"]) and
             [int(rows[k]["level_number"]) for k in ids] == list(range(n)),
@@ -148,7 +162,8 @@ def ion_strengths(Z, ion0, name, expected_tab, ids, rows, models, links, tempera
                     f"{name} OSC 전이 인덱스/강도 오류")
             f[lo,up] = abs(float(tr["f"]))  # GENOSC: repeated ordered pair last wins
             raw_pairs.add((lo,up))
-    cut = weak_line_cut(f, energy, g)
+    native_edges=native_edge_frequencies(osc_path,osc,n) if native_precision else None
+    cut = weak_line_cut(f, energy, g,native_edges)
     header = parse_col_header(col_path)
     if header.n_transitions:
         name_to_index, _, weights, full_n = col.parse_osc(str(osc_path))
@@ -176,14 +191,17 @@ def ion_strengths(Z, ion0, name, expected_tab, ids, rows, models, links, tempera
         elif f[i,j] > 1.e-5:
             delta=energy[j]-energy[i]
             require(delta > 0., f"{name} f>0 동률 에너지 전이")
-            x=delta/(KB_EV*temperature)
+            fl=(delta*EV_ERG/(H_CGS*1.e15) if native_edges is None
+                else native_edges[i]-native_edges[j])
+            require(fl>0.,f'{name} native f>0의0 주파수')
+            x=(delta/(KB_EV*temperature) if native_edges is None
+               else 1.e11*H_CGS/material.KB*fl/(temperature/1.e4))
             if ion0 == 0:
                 gbar=0.276*_ex_e1x(x) if x <= 14. else 0.066*(1.+1.5/x)/math.sqrt(x)
             else:
                 same = keys[i] is not None and keys[i] == keys[j]
                 same_n_vr_pairs += int(same)
                 gbar=max(0.7 if same else 0.2,0.276*_ex_e1x(x))
-            fl=delta*EV_ERG/(H_CGS*1.e15)
             value=47.972*header.scale_factor*gbar*f[i,j]*g[i]/fl
             kind="VR"
         else:
@@ -199,6 +217,7 @@ def ion_strengths(Z, ion0, name, expected_tab, ids, rows, models, links, tempera
         GF_culled_lines=cut,tabulated_pairs=len(table),branches=branch,
         same_n_vr_pairs=same_n_vr_pairs,
         omega_set=header.default_omega,omega_scale=header.scale_factor,
+        frequency_basis='NATIVE_FEDGE15_SUBTRACTION' if native_precision else 'SEALED_CSV_EV',
         osc_sha256=material.sha(osc_path),col_sha256=material.sha(col_path))
 
 
