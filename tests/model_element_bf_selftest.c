@@ -45,7 +45,23 @@ int main(void)
     assert(fabs(block.radiative_heat[0]-(-.25e-12*.4))<1.e-27);
     assert(fabs(block.radiative_heat[1]-(-.25*5.e-13+.5e-12*.2))<1.e-27);
     assert(fabs(block.radiative_heat[2]-(-.5*7.e-13))<1.e-27);
+    const double photon_edge=6.62607015e-27*edge[0];
+    /* 전자 열량이 음수인 pseudo 표본도 전체 광자 h*nu 장부와 구별한다. */
+    for(int j=0;j<3;j++){
+        long double threshold=0.;
+        for(int i=0;i<3;i++)threshold+=(long double)(i-j)*photon_edge*block.radiative[j*3+i];
+        assert(fabsl(block.radiative_photon_heat[j]-block.radiative_heat[j]-threshold)<1.e-25L);
+    }
     for(int i=0;i<3;i++)assert(block.collisional_heat[i]==0.);
+    /* 경로마다 다른 문턱이어야 전체 원소에 한 문턱을 쓰는 결함도 검출한다. */
+    NLTEModelBFBlock different_edge={0};edge[1]*=1.5;
+    assert(!nlte_model_element_bf_assemble(&different_edge,&element,&n,&a,&p));
+    assert(fabs((different_edge.radiative_photon_heat[1]-block.radiative_photon_heat[1])-
+                .5*photon_edge*block.radiative[5])<1.e-25);
+    assert(fabs((different_edge.radiative_photon_heat[2]-block.radiative_photon_heat[2])+
+                .5*photon_edge*block.radiative[7])<1.e-25);
+    assert(different_edge.radiative_heat[1]==block.radiative_heat[1]);
+    nlte_model_bf_block_free(&different_edge);edge[1]/=1.5;
     for(int j=0;j<3;j++){
         double sum=0.;for(int i=0;i<3;i++)sum+=block.radiative[j*3+i];
         assert(fabs(sum)<1.e-14);

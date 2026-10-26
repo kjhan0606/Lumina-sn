@@ -66,15 +66,17 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
 {
     FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
     if(!fp || fread(tag,1,8,fp)!=8 ||
-       (memcmp(tag,"LMBFPTS1",8) && memcmp(tag,"LMBFFUL1",8)) ||
+       (memcmp(tag,"LMBFPTS1",8) && memcmp(tag,"LMBFFUL1",8) && memcmp(tag,"LMBF90V1",8)) ||
        fread(shape,4,4,fp)!=4 ||
        fread(snapshot,8,2,fp)!=2 || shape[0]!=(uint32_t)a->n_levels ||
-       shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] || !shape[1])return 1;
+       shape[2]!=(uint32_t)p->n_shells || !shape[1])return 1;
+    int all_nodes=!memcmp(tag,"LMBF90V1",8);
+    if(all_nodes ? (shape[2]!=90 || shape[3]!=UINT32_MAX) : shape[3]>=shape[2])return 1;
     int full_frequency=!memcmp(tag,"LMBFFUL1",8);
     if(full_frequency && (!cache || cache->full_frequency))return 1;
-    size_t nr=shape[1],ns=shape[2],node=shape[3];
+    size_t nr=shape[1],ns=shape[2],node=all_nodes ? 0 : shape[3];
     if(nr>SIZE_MAX/ns || nr*ns>(512*1024*1024)/sizeof(BfPointRates) ||
-       snapshot[0]!=p->T_e[node] || snapshot[1]!=p->n_electron[node])return 1;
+       (!all_nodes && (snapshot[0]!=p->T_e[node] || snapshot[1]!=p->n_electron[node])))return 1;
     int *offset=calloc((size_t)a->n_levels+1,sizeof(int));
     int *target=malloc(nr*sizeof(int)),*terminal=malloc(nr*sizeof(int)),*grid=malloc(nr*sizeof(int));
     double *prob=malloc(nr*sizeof(double)),*edge=malloc(nr*sizeof(double)),*sigma=malloc(nr*sizeof(double));
@@ -82,10 +84,17 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
     BfPointRates *rates=calloc(nr*ns,sizeof(*rates));uint8_t *ready=calloc(ns,1);
     if(!offset || !target || !terminal || !grid || !prob || !edge || !sigma ||
        !saha || !te || !ne || !rates || !ready)return 1;
+    if(all_nodes){
+        if(fread(te,8,ns,fp)!=ns || fread(ne,8,ns,fp)!=ns)return 1;
+        for(size_t s=0;s<ns;s++){
+            if(te[s]!=p->T_e[s] || ne[s]!=p->n_electron[s])return 1;
+            ready[s]=1;
+        }
+    }
     int previous=-1;
     for(size_t r=0;r<nr;r++){
         int32_t ids[5];double values[10];
-        if(fread(ids,4,5,fp)!=5 || fread(values,8,10,fp)!=10 || ids[0]<previous ||
+        if(fread(ids,4,5,fp)!=5 || fread(values,8,all_nodes ? 3 : 10,fp)!=(all_nodes ? 3 : 10) || ids[0]<previous ||
            ids[0]<0 || ids[0]>=a->n_levels)return 1;
         previous=ids[0];offset[ids[0]+1]++;
         target[r]=ids[1];terminal[r]=-1;grid[r]=ids[4];
@@ -95,12 +104,21 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
             }
             if(terminal[r]<0)return 1;
         }
-        prob[r]=values[0];edge[r]=values[1];sigma[r]=values[2];saha[r*ns+node]=values[3];
-        rates[r*ns+node]=(BfPointRates){values[4],values[5],values[6],values[7],values[8],values[9]};
+        prob[r]=values[0];edge[r]=values[1];sigma[r]=values[2];
+        if(all_nodes){
+            for(size_t s=0;s<ns;s++){
+                double v[7];if(fread(v,8,7,fp)!=7)return 1;
+                saha[r*ns+s]=v[0];
+                rates[r*ns+s]=(BfPointRates){v[1],v[2],v[3],v[4],v[5],v[6]};
+            }
+        }else{
+            saha[r*ns+node]=values[3];
+            rates[r*ns+node]=(BfPointRates){values[4],values[5],values[6],values[7],values[8],values[9]};
+        }
     }
     if(fgetc(fp)!=EOF)return 1;fclose(fp);
     for(int gl=0;gl<a->n_levels;gl++)offset[gl+1]+=offset[gl];
-    te[node]=snapshot[0];ne[node]=snapshot[1];ready[node]=1;
+    if(!all_nodes){te[node]=snapshot[0];ne[node]=snapshot[1];ready[node]=1;}
     BfPointRateView view={.n_levels=(size_t)a->n_levels,.n_routes=nr,.n_shells=ns,
         .radiation_generation=1,.material_generation=a->population_committed_generation,
         .offset=offset,.target=target,.terminal_ion=terminal,.phot_grid=grid,
@@ -111,16 +129,22 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
     int saved_status=n->radfield_view_status;
     n->point_bf_rates=&view;n->radfield_view.generation=1;n->radfield_view_status=RADIATION_FIELD_VIEW_OK;
     size_t used=0,terminal_used=0;
-    for(int e=0;e<a->n_elements;e++){
+    size_t first_node=node,last_node=all_nodes ? ns : node+1;
+    for(node=first_node;node<last_node;node++)for(int e=0;e<a->n_elements;e++){
         NLTEModelElement layout={0};NLTEModelBFBlock block={0};
         int Z=a->element_Z[e],slot=fixed_field_slot(Z);
         if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
            nlte_model_element_bf_assemble(&block,&layout,n,a,p))return 1;
-        long double collision_heat=0.;
-        for(size_t row=0;row<layout.n_variables;row++)
+        long double collision_heat=0.,electron_heat=0.,photon_heat=0.;
+        for(size_t row=0;row<layout.n_variables;row++){
             collision_heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];
+            electron_heat+=(long double)layout.initial_population[row]*block.radiative_heat[row];
+            photon_heat+=(long double)layout.initial_population[row]*block.radiative_photon_heat[row];
+        }
         printf("[MODEL-SE][BF-COLLISION-HEAT] Z=%d native_node=%zu cooling_erg_cm3_s=%.17g\n",
                Z,node,(double)collision_heat);
+        printf("[MODEL-SE][BF-ENERGY] Z=%d native_node=%zu electron_erg_cm3_s=%.17g photon_erg_cm3_s=%.17g\n",
+               Z,node,(double)electron_heat,(double)photon_heat);
         used+=block.routes;terminal_used+=block.terminal_routes;
         if(full_frequency && slot>=0){
             const char *dissolution=getenv("LUMINA_MODEL_COLLISION_DISSOLUTION");
@@ -131,10 +155,12 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
         }
         nlte_model_bf_block_free(&block);nlte_model_element_free(&layout);
     }
-    if(nlte_point_bf_view_check(n,a,p,node ? 0 : 1)==0 || used!=nr)return 1;
+    node=first_node;
+    if((!all_nodes && nlte_point_bf_view_check(n,a,p,node ? 0 : 1)==0) ||
+       used!=nr*(last_node-first_node))return 1;
     n->point_bf_rates=old;n->radfield_view=saved;n->radfield_view_status=saved_status;
     if(full_frequency){cache->full_frequency=1;cache->native_node=(int)node;}
-    printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=%d SE_RE_solved=0\n",node,used,terminal_used,full_frequency);
+    printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=%d SE_RE_solved=0\n",node,used,terminal_used,full_frequency || all_nodes);
     free(offset);free(target);free(terminal);free(grid);free(prob);free(edge);free(sigma);
     free(saha);free(te);free(ne);free(rates);free(ready);return 0;
 }

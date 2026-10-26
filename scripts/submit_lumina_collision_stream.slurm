@@ -43,9 +43,14 @@ cd "$project"
 timeout -k 15 300s bash tests/run_bf_point_tests.sh "$project" "$parent/build" \
   > "$parent/build.stdout" 2> "$parent/build.stderr"
 python3 -m pytest -q -p no:cacheprovider tests/test_samej_collision_replay.py \
-  tests/test_lumina_reference_response.py tests/test_native_line_quadrature.py
+  tests/test_lumina_reference_response.py tests/test_native_line_quadrature.py \
+  tests/test_material_bf90_consumer.py
 timeout -k 15 240s python3 scripts/replay_lumina_samej_collisions.py \
   --source /gpfs/kjhan/cmfgen_runs/lumina_sameJ_nativeBB_20261027-y7f92T \
   --ci-baseline /gpfs/kjhan/cmfgen_runs/lumina_sameJ_CI_20261027-OTSjsr/run/result.json \
   --projection "$parent/build/model_projection" --with-dissolution --require-ci-heat \
   --out "$parent/run"
+if test -n "${3:-}"; then
+    timeout -k 15 480s python3 scripts/consume_lumina_material_bf90.py \
+      --source "$3" --projection "$parent/build/model_projection" --out "$parent/bf90"
+fi
