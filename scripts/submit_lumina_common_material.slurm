@@ -53,12 +53,17 @@ OMP_NUM_THREADS=1 python3 -m pytest -q -p no:cacheprovider \
 python3 -c 'import run_lumina_common_material'
 objects=()
 for name in "${core[@]}"; do
-    gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -fPIC -fvisibility=hidden \
+    visibility=hidden
+    # Python이 직접 소비하는 기존 순수 C 단열 API도 공개해야 한다.
+    if [[ "$name" = cmfgen_adiabatic ]]; then visibility=default; fi
+    gcc -O2 -std=gnu11 -D_GNU_SOURCE -fopenmp -fPIC -fvisibility="$visibility" \
       -ffunction-sections -fdata-sections -I"$project/src" -c "src/$name.c" -o "$parent/build/$name.o"
     objects+=("$parent/build/$name.o")
 done
 gcc -shared -fopenmp -Wl,--gc-sections -Wl,-z,defs -o "$parent/build/bridge.so" "${objects[@]}" -lm
 sha256sum "$parent/build/bridge.so" > "$parent/build/binary.sha256"
+run_status=0
 timeout -k 30 6900s python3 scripts/run_lumina_common_material.py \
-  --library "$parent/build/bridge.so" --source-commit "$source_commit" --out "$parent/run"
+  --library "$parent/build/bridge.so" --source-commit "$source_commit" --out "$parent/run" || run_status=$?
 sha256sum -c "$parent/build/source-before.sha256" > "$parent/build/source-after-check.txt"
+exit "$run_status"

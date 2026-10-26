@@ -5,6 +5,7 @@
 이 평가기는 이후 T 변화의 전적분을 지원하고 깊이 AD를 독립점으로 쪼개지 않는다.
 """
 import argparse
+import ctypes as C
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,12 @@ def run(args):
         os.environ.get('OMP_NUM_THREADS')!='16'):raise ValueError('CPU16/32GiB/OpenMP16 전용')
     started=time.monotonic();deadline=started+6600;out=args.out.resolve()
     if out.exists():raise FileExistsError('기존 공통 물질 후보 보존')
+    # 큰 입력을 읽거나 후보를 풀기 전에 Python에서 실제 소비할 공개 심볼 확인.
+    library=C.CDLL(str(args.library))
+    for name in ('cmfgen_adiabatic_v3_homologous_evaluate','bf_rate_material_block_contract',
+                 'bf_rate_material_pseudo_block_contract','nlte_model_material_bridge_open',
+                 'nlte_model_material_bridge_prepare','nlte_model_material_bridge_finalize'):
+        getattr(library,name)
     inputs={}
     br=load_report(BF,'COMPLETE_FROZEN_MATERIAL_BF_90',
         '482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6',inputs)
@@ -110,8 +117,12 @@ def run(args):
     evaluations=[];latest={}
     def record(result,metrics,trial,total):
         number=len(evaluations)+1;root=out/('evaluation-'+str(number));root.mkdir()
+        # 후속 에너지 진단이 실패해도 이미 생산한 후보를 잃지 않는다.
+        np.savez(root/'response.npz',**result)
+        (root/'SE-result.json').write_text(json.dumps(dict(**metrics,
+            response_sha256=B.sha(root/'response.npz')),indent=2,allow_nan=False)+'\n')
         energy,energy_summary=balance.evaluate(result,trial,total)
-        np.savez(root/'response.npz',**result);np.savez(root/'balance.npz',**energy)
+        np.savez(root/'balance.npz',**energy)
         entry=dict(**metrics,**energy_summary,output_sha256={name:B.sha(root/name) for name in ('response.npz','balance.npz')})
         (root/'result.json').write_text(json.dumps(entry,indent=2,allow_nan=False)+'\n')
         evaluations.append(entry);latest.update(result=result,trial=trial,rates=total,root=root)
