@@ -1,5 +1,5 @@
 #!/bin/bash
-# 완성 CMFGEN 직접 J만 바꾼 원49점 전복사선 BB. 새 물질/수송/SE 없음.
+# 완성 CMFGEN 직접 J의 지정 원래점 전복사선 BB. 새 물질/수송/SE 없음.
 #SBATCH --job-name=lumina-lines-direct
 #SBATCH --partition=normal
 #SBATCH --nodes=1
@@ -30,4 +30,5 @@ gcc -O2 -std=c11 -fPIC -shared -Wl,-z,defs -Isrc -o "$jobroot/lines.so" src/mode
 timeout -k 15 570s python3 scripts/run_lumina_model_point_lines.py \
   --base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json \
   --j "$j_path" \
-  --field-projection "$LUMINA_PROJECTION" --library "$jobroot/lines.so" --out "$jobroot/run"
+  --field-projection "$LUMINA_PROJECTION" --library "$jobroot/lines.so" \
+  --node "${LUMINA_NATIVE_NODE:-49}" --out "$jobroot/run"

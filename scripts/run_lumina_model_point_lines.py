@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""동결 자체장/native49의 전모형 BB Jbar와 Einstein 복사율만 생산한다.
+"""동결 복사장의 지정 원래점에서 전모형 BB Jbar와 Einstein 복사율만 생산한다.
 
 같은 source의 raw OSC/GF 선택/고정 Doppler profile을 재사용한다.
 전체 SE/RE·충돌율·물질 갱신·새 수송의 완료 판정은 하지 않는다.
@@ -50,7 +50,8 @@ def run(args):
         raise ValueError('원 계수 신원 변경')
     with N.open_sealed_native(base['config'],base['preparation'],base['preparation_sha256']) as source:
         rows,models,routes,state,do_dis,full_check,smoothing=R.material_state(c,plan,source,json.loads(report_path.read_text()))
-        nu=np.array(source.frequency,copy=True);node=49
+        nu=np.array(source.frequency,copy=True);node=args.node
+        if not 0<=node<source.ns:raise ValueError('원래점 인덱스 범위 밖')
         with N.FrozenNativeField(args.j,source,source.radius,source.frequency) as field:
             j=np.concatenate([field.read(np.array([node]),np.arange(lo,min(len(nu),lo+65536),dtype='i8'))[0]
                               for lo in range(0,len(nu),65536)])
@@ -91,6 +92,7 @@ def run(args):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--base',required=True);p.add_argument('--j',required=True)
+    p.add_argument('--node',type=int,default=49)
     p.add_argument('--field-projection')
     p.add_argument('--library',required=True);p.add_argument('--out',required=True)
     raise SystemExit(run(p.parse_args()))

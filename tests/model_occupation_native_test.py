@@ -71,7 +71,7 @@ def load_complete_full_bound(path,point,identity,n_frequency):
 
 
 def run(base_path,library,projection,output,point_library=None,bb_result=None,col_result=None,
-        full_bound_result=None,direct_j_projection=None):
+        full_bound_result=None,direct_j_projection=None,native_node=49):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if full_bound_result is not None and point_library is None:
@@ -117,6 +117,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         raise ValueError('직접 J와 private 원물질 세대 불일치')
     if not do_dis:raise ValueError('실제 DO_DIS 물질이 아님')
     nl,ns=state['full'].shape
+    if not 0<=native_node<ns:raise ValueError('원래점 인덱스 범위 밖')
     edge=np.empty(nl);z=np.empty(nl)
     for l,row in enumerate(rows):
         model=models[int(row['atomic_number']),int(row['ion_number'])+1]
@@ -127,14 +128,14 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
     fn.argtypes=[C.POINTER(Model),C.c_size_t,ptr,ptr,ptr,ptr];fn.restype=C.c_int
     model=Model(nl,edge.ctypes.data_as(ptr),z.ctypes.data_as(ptr))
     cases=[];original_w=None
-    for name in ('original','T_ne_native49','Npositive_native49'):
+    for name in ('original',f'T_ne_native{native_node}',f'Npositive_native{native_node}'):
         trial=dict(state)
         trial['temperature']=state['temperature'].copy();trial['ne']=state['ne'].copy()
         trial['superlevel']=state['superlevel'].copy()
-        if name=='T_ne_native49':
-            trial['temperature'][49]*=1.07;trial['ne'][49]*=1.11
-        if name=='Npositive_native49':
-            trial['superlevel'][state['columns'][:,1]>0,49]*=1.13
+        if name==f'T_ne_native{native_node}':
+            trial['temperature'][native_node]*=1.07;trial['ne'][native_node]*=1.11
+        if name==f'Npositive_native{native_node}':
+            trial['superlevel'][state['columns'][:,1]>0,native_node]*=1.13
         positive=np.ascontiguousarray(trial['superlevel'][state['columns'][:,1]>0].sum(axis=0))
         expected=B.material_occupation(rows,models,trial)
         got=np.full_like(expected,-1.)
@@ -182,7 +183,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
     collision_test=None
     full_bound_test=None
     if point_library is not None:
-        point=ModelPointBoundRates(routes,rows,models,state,49,Path(point_library).resolve())
+        point=ModelPointBoundRates(routes,rows,models,state,native_node,Path(point_library).resolve())
         indices=np.unique(np.linspace(0,len(source.frequency)-1,33).astype('i8'))
         frequency=np.ascontiguousarray(source.frequency[indices]);width=np.zeros_like(frequency)
         left=indices>0;right=indices<len(source.frequency)-1
@@ -191,12 +192,12 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         j_path=(Path(direct_j['J_path']) if direct_j is not None else
             Path('/gpfs/kjhan/cmfgen_runs/lumina_resident_field_20261026-qFP5rJ/run/J.npy'))
         with N.FrozenNativeField(j_path,source,source.radius,source.frequency) as field:
-            j=np.ascontiguousarray(field.read(np.array([49]),indices)[0])
+            j=np.ascontiguousarray(field.read(np.array([native_node]),indices)[0])
         block=point.contract_bound_block(frequency,width,j)
         physical=point.physical_ion_rates(block)
         single=dict(state)
-        for key in ('full','occupation','superlevel'):single[key]=state[key][:,49:50]
-        for key in ('temperature','ne'):single[key]=state[key][49:50]
+        for key in ('full','occupation','superlevel'):single[key]=state[key][:,native_node:native_node+1]
+        for key in ('temperature','ne'):single[key]=state[key][native_node:native_node+1]
         coefficients=B.continuum_grid(routes,rows,single,frequency,33)
         photon=4*np.pi*width/(B.H*frequency)
         expected=np.array([np.sum(coefficients['chi_abs'][0]*j*photon),
@@ -218,7 +219,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             records['ids'][i]=[r.lower,r.target,r.Z if r.target<0 else 0,r.stage if r.target<0 else 0,r.phot_grid]
             records['values'][i]=[r.probability,r.threshold_Hz,point.sigma_edge[i],point.saha[i],*block[i]]
         with contributions.open('xb') as stream:
-            stream.write(struct.pack('<8sIIII2d',b'LMBFPTS1',nl,len(point.routes),ns,49,point.temperature,point.ne))
+            stream.write(struct.pack('<8sIIII2d',b'LMBFPTS1',nl,len(point.routes),ns,native_node,point.temperature,point.ne))
             stream.write(records.tobytes())
         full_contributions=None
         if full_bound_result is not None:
@@ -226,7 +227,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             full_contributions=output.with_name('bound-full-frequency-contributions.bin')
             full_records=records.copy();full_records['values'][:,4:]=full_rates
             with full_contributions.open('xb') as stream:
-                stream.write(struct.pack('<8sIIII2d',b'LMBFFUL1',nl,len(point.routes),ns,49,
+                stream.write(struct.pack('<8sIIII2d',b'LMBFFUL1',nl,len(point.routes),ns,native_node,
                                          point.temperature,point.ne))
                 stream.write(full_records.tobytes())
         point_command=list(command)
@@ -245,7 +246,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                 sealed.get('radiation_unchanged') is True)
             if (not bb_identity_ok or
                 B.sha(bb_catalog)!=sealed['artifact_sha256'] or not sealed['source_unchanged'] or
-                sealed['native_node']!=49 or sealed['input_identity']!=identity or
+                sealed['native_node']!=native_node or sealed['input_identity']!=identity or
                 sealed['state']!='COMPLETE_RADIATIVE_BB_ONLY'):
                 raise ValueError('서로 다른 BB 원래점/물질/장 또는 부분 선 자료')
             with np.load(bb_catalog,allow_pickle=False) as data:
@@ -262,8 +263,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                 raise ValueError('BB 실물 라인 계약 누락·수치 오류')
             line_z=np.array([int(r['atomic_number']) for r in rows],dtype='i4')
             if np.any(line_z[lower]!=line_z[upper]):raise ValueError('원소 간 BB 전이')
-            bb_physical=(state['full'][lower,49]*absorption-
-                state['full'][upper,49]*(stimulated+spontaneous))*B.H*nu
+            bb_physical=(state['full'][lower,native_node]*absorption-
+                state['full'][upper,native_node]*(stimulated+spontaneous))*B.H*nu
             bb_expected={int(Z):float(np.sum(bb_physical[line_z[lower]==Z],dtype=np.longdouble))
                          for Z in np.unique(line_z)}
             bb_binary=output.with_name('point-lines-contributions.bin')
@@ -272,7 +273,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             for index,value in enumerate((nu,absorption,stimulated,spontaneous)):
                 records['values'][:,index]=value
             with bb_binary.open('xb') as stream:
-                stream.write(struct.pack('<8sIIII',b'LMBBPTS1',nl,len(lower),ns,49))
+                stream.write(struct.pack('<8sIIII',b'LMBBPTS1',nl,len(lower),ns,native_node))
                 stream.write(records.tobytes())
             point_command.append(str(bb_binary))
         if col_result is not None:
@@ -283,17 +284,17 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             binary=col_result.with_suffix('')
             if (sealed['schema']!='lumina-cmfgen-fullpair-omega-v1' or
                 sealed['state']!='PRIVATE_INPUT_ONLY' or sealed['material_record']!=70 or
-                sealed['native_node']!=49 or sealed['levels']!=nl or
-                sealed['temperature_K']!=float(state['temperature'][49]) or
-                sealed['electron_density_cm3']!=float(state['ne'][49]) or
+                sealed['native_node']!=native_node or sealed['levels']!=nl or
+                sealed['temperature_K']!=float(state['temperature'][native_node]) or
+                sealed['electron_density_cm3']!=float(state['ne'][native_node]) or
                 B.sha(binary)!=sealed['output_sha256'] or
                 not all(B.sha(Path(path))==digest for path,digest in
                         sealed['input_sha256'].items())):
                 raise ValueError('전쌍 Ω 원래점/신원 불일치')
             raw=binary.read_bytes()
             magic,nlevels,nshells,node,count,temp,ne=struct.unpack_from('<8sIIII2d',raw)
-            if (magic!=b'LMCBPTS1' or (nlevels,nshells,node,count)!=(nl,ns,49,sealed['pairs']) or
-                (temp,ne)!=(float(state['temperature'][49]),float(state['ne'][49])) or
+            if (magic!=b'LMCBPTS1' or (nlevels,nshells,node,count)!=(nl,ns,native_node,sealed['pairs']) or
+                (temp,ne)!=(float(state['temperature'][native_node]),float(state['ne'][native_node])) or
                 len(raw)!=40+16*count or len(sealed['ions'])!=8):
                 raise ValueError('전쌍 Ω binary 형상 불일치')
             records=np.frombuffer(raw,offset=40,
@@ -316,7 +317,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             kt=8.617333262145e-5*temp
             factor=8.63e-6*ne/np.sqrt(temp)
             gap=e[up]-e[lo]
-            w=state['occupation'][:,49];pop=state['full'][:,49]
+            w=state['occupation'][:,native_node];pop=state['full'][:,native_node]
             forward=factor*omega/g[lo]*np.exp(-gap/kt)*w[up]/w[lo]
             reverse=factor*omega/g[up]
             exchange=(pop[lo]*forward-pop[up]*reverse)*gap*B.EV
@@ -341,7 +342,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             marker=re.findall(
                 r'^\[MODEL-SE\]\[ACTUAL-BF-CONTRIBUTIONS\] native_node=(\d+) routes=(\d+) terminal_routes=(\d+) uncomputed_nodes=REJECTED full_frequency=(\d+) SE_RE_solved=0$',
                 full_completed.stdout,re.M)
-            if len(marker)!=1 or (int(marker[0][0]),int(marker[0][1]),int(marker[0][3]))!=(49,len(point.routes),1):
+            if len(marker)!=1 or (int(marker[0][0]),int(marker[0][1]),int(marker[0][3]))!=(native_node,len(point.routes),1):
                 raise ValueError('완성 BF의 C 전경로 소비 증거 누락')
             candidates=re.findall(
                 r'^\[MODEL-SE\]\[FIXED-FIELD\] Z=(\d+) native_node=(\d+) variables=(\d+) state=PRIVATE_PARTIAL_CHANNEL_CANDIDATE residual=([^\s]+) physical_equivalence=NOT_PROVEN$',
@@ -353,7 +354,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                 r'^\[MODEL-SE\]\[FIXED-FIELD-ROW\] Z=(\d+) stage0=(\d+) super0=(-?\d+) original=([^\s]+) candidate=([^\s]+)$',
                 full_completed.stdout,re.M)
             if (len(candidates)!=2 or {int(row[0]) for row in candidates}!={14,16} or
-                any(int(row[1])!=49 or not np.isfinite(float(row[3])) or
+                any(int(row[1])!=native_node or not np.isfinite(float(row[3])) or
                     float(row[3])>1.e-12 for row in candidates) or
                 not {int(row[0]) for row in stages}>={14,16}):
                 raise ValueError('Si/S private 고정장 정상해 증거 누락')
@@ -366,7 +367,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             superlevel_profile=[]
             for key,raw in zip(observed_keys,variable_rows):
                 old,new=map(float,raw[3:])
-                source_old=state['superlevel'][state['sl_index'][key],49]
+                source_old=state['superlevel'][state['sl_index'][key],native_node]
                 if (not np.isfinite(old) or not np.isfinite(new) or old<0 or new<0 or
                     not np.isclose(old,source_old,rtol=1.e-12,atol=0.)):
                     raise ValueError(f'Si/S SL 원 물질70과 C 입력 불일치: {key}')
@@ -380,7 +381,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             target_ions=TARGETS
             if any(key not in physical_full for key in target_ions):
                 raise ValueError('Si/S II/III bound BF율 누락')
-            full_bound_test=dict(native_node=49,frequencies=len(source.frequency),
+            full_bound_test=dict(native_node=native_node,frequencies=len(source.frequency),
                 routes=len(point.routes),terminal_routes=int(marker[0][2]),
                 full_frequency_C_assembly=True,private_partial_channel_SE_candidate=True,
                 complete_SE_RE_solution=False,fixed_field_stage_profile=stage_profile,
@@ -415,13 +416,13 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             for Z,_,_,_,heat_string in matched:
                 if not np.isclose(float(heat_string),expected_heat[int(Z)],rtol=2.e-7,atol=1.e-25):
                     raise ValueError(f'원소 {Z} 충돌 열량 C/원FL 불일치')
-            collision_test=dict(native_node=49,source_result_sha256=B.sha(col_result),
+            collision_test=dict(native_node=native_node,source_result_sha256=B.sha(col_result),
                 binary_sha256=B.sha(binary),pairs=count,
                 C_heat_per_Z={int(Z):float(h) for Z,_,_,_,h in matched},
                 full_level_heat_per_Z=expected_heat,
                 C_all_Si_S_bound_ion_BB_collision_assembly=True,
                 full_SE_RE_solution=False)
-        point_test=dict(native_node=49,routes=len(point.routes),ions=len(physical),selected_frequencies=len(frequency),
+        point_test=dict(native_node=native_node,routes=len(point.routes),ions=len(physical),selected_frequencies=len(frequency),
             terminal_ions=[dict(Z=key[0],lower_stage=key[1],energy_eV=value[0],g=value[1])
                            for key,value in sorted(point.terminal.items())],
             terminal_inverse='native ground scalar; all PHOT EION=0 and GION identical per ion',
@@ -456,6 +457,7 @@ if __name__=='__main__':
     p.add_argument('--col-result')
     p.add_argument('--full-bound-result')
     p.add_argument('--direct-j-projection')
+    p.add_argument('--node',type=int,default=49)
     p.add_argument('--out',required=True);args=p.parse_args()
     run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result,
-        args.col_result,args.full_bound_result,args.direct_j_projection)
+        args.col_result,args.full_bound_result,args.direct_j_projection,args.node)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 동일 물질70/충돌에서 BF·BB 입력 J만 직접 CMFGEN으로 교체한 private 원49점 후보.
+# 동일 물질70/충돌에서 BF·BB 입력 J만 직접 CMFGEN으로 교체한 지정 원래점 후보.
 #SBATCH --job-name=lumina-fixed-direct
 #SBATCH --partition=normal
 #SBATCH --nodes=1

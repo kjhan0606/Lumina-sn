@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""완성 CMFGEN 직접 J의 원49점 BF 생산 입력을 원 runner에 결박한다."""
+"""완성 CMFGEN 직접 J의 지정 원래점 BF 생산 입력을 원 runner에 결박한다."""
 import argparse
 import json
 from pathlib import Path
@@ -25,7 +25,7 @@ def run(args):
         raise ValueError('직접 J byte 신원 변경')
     helper_sha=B.sha(Path(__file__))
     result=run_bound(SimpleNamespace(base=args.base,j=str(j_path),library=args.library,
-                                      out=args.out,wall_seconds=7200))
+                                      out=args.out,wall_seconds=7200,node=args.node))
     final_j_sha=B.sha(j_path)
     attestation=dict(schema='lumina-bound-direct-input-v1',status='COMPLETE_INPUT_SEALED'
                      if result==0 and final_j_sha==j_sha else 'INCOMPLETE',
@@ -45,4 +45,5 @@ if __name__=='__main__':
     p.add_argument('--field-projection',required=True)
     p.add_argument('--library',required=True)
     p.add_argument('--out',required=True)
+    p.add_argument('--node',type=int,default=49)
     raise SystemExit(run(p.parse_args()))

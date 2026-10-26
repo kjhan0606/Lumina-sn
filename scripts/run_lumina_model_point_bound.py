@@ -39,8 +39,9 @@ def run(args):
     report_path=Path(c['reuse_sources']['boundary_sources']['directory'])/'sources.json'
     if B.sha(report_path)!=c['reuse_sources']['boundary_sources']['report_sha256']:
         raise ValueError('계수 report 신원 변경')
-    report=json.loads(report_path.read_text());node=49
+    report=json.loads(report_path.read_text());node=args.node
     with N.open_sealed_native(base['config'],base['preparation'],base['preparation_sha256']) as source:
+        if not 0<=node<source.ns:raise ValueError('원래점 인덱스 범위 밖')
         rows,models,routes,state,do_dis,full_check,smoothing=R.material_state(c,plan,source,report)
         nu=np.array(source.frequency,copy=True)
         with N.FrozenNativeField(args.j,source,source.radius,source.frequency) as field:
@@ -129,6 +130,7 @@ def recover_saved(out):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--base')
     p.add_argument('--j');p.add_argument('--library');p.add_argument('--out',required=True)
+    p.add_argument('--node',type=int,default=49)
     p.add_argument('--wall-seconds',type=int,default=300)
     p.add_argument('--recover-saved',action='store_true');args=p.parse_args()
     if args.recover_saved:raise SystemExit(recover_saved(args.out))

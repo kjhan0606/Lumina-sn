@@ -62,10 +62,14 @@ if test "${3:-}" = model-native; then
     gcc -O1 -std=c11 -fPIC -shared -Wl,-z,defs -I"$project/src" \
         -o "$output/point.so" "$project/src/bf_rate_jnu.c" \
         "$project/src/radiation_field.c" "$project/src/seed_capability.c" -lm
-    bb_result=${LUMINA_DIRECT_BB_RESULT:-/gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json}
     native_args=(--base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json
         --library "$output/occupation.so" --projection "$output/model_projection" --point-library "$output/point.so"
-        --out "$output/native-occupation.json" --bb-result "$bb_result")
+        --out "$output/native-occupation.json")
+    if test -n "${LUMINA_DIRECT_BB_RESULT:-}"; then
+        native_args+=(--bb-result "$LUMINA_DIRECT_BB_RESULT")
+    elif test "${LUMINA_NATIVE_NODE:-49}" = 49 && test -z "${LUMINA_DIRECT_J_PROJECTION:-}"; then
+        native_args+=(--bb-result /gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json)
+    fi
     if test -n "${4:-}"; then native_args+=(--col-result "$4"); fi
     if test -n "${LUMINA_FULL_BOUND_RESULT:-}"; then
         native_args+=(--full-bound-result "$LUMINA_FULL_BOUND_RESULT")
@@ -73,6 +77,7 @@ if test "${3:-}" = model-native; then
     if test -n "${LUMINA_DIRECT_J_PROJECTION:-}"; then
         native_args+=(--direct-j-projection "$LUMINA_DIRECT_J_PROJECTION")
     fi
+    native_args+=(--node "${LUMINA_NATIVE_NODE:-49}")
     python3 "$project/tests/model_occupation_native_test.py" "${native_args[@]}"
 fi
 cd "$project"
