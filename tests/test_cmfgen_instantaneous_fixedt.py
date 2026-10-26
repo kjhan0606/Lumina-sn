@@ -1,7 +1,13 @@
 """자체장 fixed-T 제어의 정확한 범위와 fail-closed 시험."""
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
+from unittest.mock import patch
+import numpy as np
+import run_cmfgen_instantaneous_fixedt as R
 from configure_cmfgen_stageA import set_control
-from run_cmfgen_instantaneous_fixedt import configure
+from run_cmfgen_instantaneous_fixedt import ba_policy_violation, configure
 from run_cmfgen_lambda_probe import control
 
 
@@ -16,6 +22,31 @@ def fixture():
 
 
 class FixedTTests(unittest.TestCase):
+    def test_partial_checkpoint_survives_stale_final_RVTJ(self):
+        initial = np.array([[1., 1.], [2., 2.], [4., 4.], [100., 100.]])
+        updated = initial.copy()
+        updated[2] *= 1.01
+        reader = SimpleNamespace(state=lambda iteration: initial if iteration == 70 else updated)
+        variables = [SimpleNamespace(species='Si', ion='Sk2'), SimpleNamespace(species='S', ion='S2')]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'POINT1').write_text('header\n71 71 1 -1000 F\n')
+            with patch.object(R, 'read_dimensions', return_value=(2, 4)), \
+                 patch.object(R, 'ScrtempReader', return_value=reader), \
+                 patch.object(R, 'read_variables', return_value=variables), \
+                 patch.object(R, 'validate_rvtj', side_effect=RuntimeError('stale RVTJ')):
+                result = R.state_summary(root, initial)
+            self.assertEqual(result['last_completed_record'], 71)
+            self.assertEqual(len(result['iterations']), 1)
+            self.assertFalse(result['final_RVTJ']['complete'])
+
+    def test_actual_BA_violation_is_not_successful_stabilization(self):
+        self.assertIsNone(ba_policy_violation('Current great iteration count is 71\nBA matrix computed\n'))
+        self.assertEqual(ba_policy_violation('read BAMATPNT T\nCurrent great iteration count is 71'),
+                         'requested_fresh_BA_initial_cache_read')
+        self.assertEqual(ba_policy_violation('BA matrix **NOT** computed'),
+                         'requested_fresh_BA_not_computed')
+
     def test_new_field_matrix_and_finite_caps_without_temperature_release(self):
         v, i = configure(*fixture())
         for k, expected in dict(FIX_T='T', COMP_BA='T', N_FIX_BA='0', MAX_LAM='10.0D0',

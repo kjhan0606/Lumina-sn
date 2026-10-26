@@ -19,7 +19,6 @@ from ptf_gated_metrics import ScrtempReader, read_dimensions, read_variables, pa
 from lumina_native_heat_sources import vector
 
 
-BUILD_REPORT_SHA = '0d13e9849643ff3fc6d0a97abacdfe016924fcdda3b41628e6d200f16415abff'
 VADAT_CHANGES = dict(USE_FIXED_J='F', MAX_LAM='10.0D0', COMP_BA='T', N_FIX_BA='0',
                      STORE_BA='F', STORE_BA_INV='F', WR_PRT_INV='F')
 
@@ -42,6 +41,15 @@ def configure(vadat, in_its):
               'F [DO_LAM_AUTO] ! 명시 LAMBDA 모드의 자동 해제만 금지\n'
               'F [DO_T_AUTO] ! 온도 자동 해제 금지\n')
     return vadat, in_its
+
+
+def ba_policy_violation(text):
+    if 'BA matrix **NOT** computed' in text:
+        return 'requested_fresh_BA_not_computed'
+    prefix = text.split('Current great iteration count', 1)[0]
+    if re.search(r'read BAMATPNT\s+T', prefix):
+        return 'requested_fresh_BA_initial_cache_read'
+    return None
 
 
 def state_summary(run, input_state, first=70):
@@ -77,8 +85,13 @@ def state_summary(run, input_state, first=70):
             zero_to_positive_count=int(np.count_nonzero((previous[:-2] == 0) & (current[:-2] > 0))),
             max_ne_relative_change=float(np.max(abs(current[-2] / previous[-2] - 1))),
             stages=stages))
-    return dict(last_completed_record=last_pointer, iterations=rows,
-        final_RVTJ=(validate_rvtj(reader, run / 'RVTJ') if last_pointer > first else None),
+    rvtj = None
+    if last_pointer > first:
+        try:
+            rvtj = validate_rvtj(reader, run / 'RVTJ')
+        except (ValueError, RuntimeError, OSError) as error:
+            rvtj = dict(complete=False, evidence_error=str(error))
+    return dict(last_completed_record=last_pointer, iterations=rows, final_RVTJ=rvtj,
         active_population_statistics='미판정: 위 통계는 양수 support 전체이며 v2 active 기준 대체 아님')
 
 
@@ -91,14 +104,15 @@ def run(args):
         raise FileExistsError('기존 실행 보존')
     build = args.build.resolve()
     report_path = build / 'result.json'
-    if sha(report_path) != BUILD_REPORT_SHA:
+    if not re.fullmatch(r'[0-9a-f]{64}', args.build_report_sha256) or sha(report_path) != args.build_report_sha256:
         raise ValueError('완료 full build 신원 불일치')
     manifest = json.loads(report_path.read_text())
     variant = manifest['variants']['instantaneous_decay']
     executable = Path(variant['executable'])
     if sha(executable) != variant['executable_sha256']:
         raise ValueError('교정 실행파일 변경')
-    if manifest['test_stubs_linked'] or manifest['state'] != 'COMPLETE_FULL_NATIVE_COMPARISON_BUILD':
+    if (manifest['test_stubs_linked'] or manifest['state'] != 'COMPLETE_FULL_NATIVE_COMPARISON_BUILD' or
+        manifest.get('restart_BA_initialization_corrected') is not True):
         raise ValueError('full native 빌드가 아님')
     input_state, identity, _ = verify_material(args.source70, args.original, 70)
     seed_hashes = {str(args.source70 / n): sha(args.source70 / n) for n in RESTART_OVERLAY}
@@ -112,7 +126,7 @@ def run(args):
         raise ValueError('재조립/온도 제어를 덮어쓰는 IT_SPECIFIER 금지')
     expected_controls = {n: sha(material / n) for n in ('VADAT', 'IN_ITS')}
     inputs = dict(scope=__doc__, source70=str(args.source70), input_identity=identity,
-        source_sha256=seed_hashes, full_build=str(build), build_report_sha256=BUILD_REPORT_SHA,
+        source_sha256=seed_hashes, full_build=str(build), build_report_sha256=args.build_report_sha256,
         executable=variant, source_commit=args.source_commit,
         changed_vadat=VADAT_CHANGES, DO_LAM_IT='F: 최초 full, 이후 native fallback 유지',
         unchanged_fallback=dict(LAM_VAL=400, NUM_LAM=2), controls_sha256=expected_controls,
@@ -141,11 +155,13 @@ def run(args):
             try:
                 child.wait(timeout=min(60, remaining))
             except subprocess.TimeoutExpired:
-                reason = scan(material, cursors)
+                log = material / 'OUTGEN'
+                reason = scan(material, cursors) or ba_policy_violation(log.read_text() if log.exists() else '')
                 if reason:
                     stop_child(child)
                     break
-    reason = reason or scan(material, cursors)
+    log = material / 'OUTGEN'
+    reason = reason or scan(material, cursors) or ba_policy_violation(log.read_text() if log.exists() else '')
     result = dict(returncode=child.returncode, stop_reason=reason,
         elapsed_seconds=time.monotonic() - started, released_temperature=False,
         anchor_status='NOT_AVAILABLE', final_goal='NOT_MET')
@@ -166,7 +182,8 @@ def run(args):
         result['four_responses_complete'] = (child.returncode == 0 and reason is None and
             result['last_completed_record'] == 74 and result['BA_computed_count'] >= 4 and
             result['BA_not_computed_count'] == 0 and result['source_unchanged'] and
-            result['controls_unchanged'] and result['executable_unchanged'])
+            result['controls_unchanged'] and result['executable_unchanged'] and
+            result['final_RVTJ'] is not None and result['final_RVTJ']['complete'])
     except (ValueError, OSError, RuntimeError) as error:
         result['evidence_error'] = str(error)
         result['four_responses_complete'] = False
@@ -180,4 +197,5 @@ if __name__ == '__main__':
     for name in ('original', 'source70', 'native', 'build', 'out'):
         p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--source-commit', required=True)
+    p.add_argument('--build-report-sha256', required=True)
     raise SystemExit(run(p.parse_args()))

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """원본을 보존한 full CMFGEN 비교 빌드. 계산·설치·온도 해제는 하지 않는다.
 
-공통 actual-nu fixed-J 수정과 같은 native 링크 입력을 사용하며 두 실행파일의
+공통 actual-nu fixed-J·첫 BA 초기화 수정과 같은 native 링크 입력을 사용하며 두 실행파일의
 차이는 검증한 순간 침적열 분기뿐이다. 단독시험의 stub은 링크하지 않는다.
 """
 import argparse
@@ -22,6 +22,7 @@ SEALED = {
     'new_main/GET_J_CHI.INC': 'aa44ca3bfa346f4d79f2efe21337d8bb0a1249268ca0f78938b164b9cc460775',
     'new_main/cmfgen.o': '2383ffc10c3a5bc1fe605c31f81e863e9e2c76fc2fb37f096c687321e6b24f00',
     'new_main/subs/do_species_decays_v2.f': ORIGINAL_SHA256,
+    'new_main/subs/read_ba_data_v3.f': '8a7d741918b2b7e7ce4af36d324c0fadd9ae633435db08464fbf7e4aadc62869',
     'lib/libsubs.a': 'f719c7393dcb49fca6dd603c43db8616533fc9b757c980ebe7588eb82184048a',
     'lib/libmod.a': 'de1c4841c533bb5ff80848ad41d8b446eecf646907b5f47969dc71d20f0ca6b1',
     'lib/libpgplt.a': '9cb57dc4e374685d7442a31c2e34953cb4f42f38f823cb51316d05d1831d539c',
@@ -29,6 +30,17 @@ SEALED = {
     'lib/libmy_blas.a': '83bb4c947e2ba385b30130f0d08e67ebcebfa0561feeb7e4d9483c66efa5819b',
 }
 SYMBOL = 'do_species_decays_v2_'
+RESTART_OLD = '\tCHK=.FALSE.\n\tIF(.NOT. NEWMOD)THEN\n'
+RESTART_NEW = ('\tCOMPUTE_BA=COMPUTE_BARDIN\n'
+               '\tCHK=COMPUTE_BA\n'
+               '\tSUCCESS=.FALSE.\n'
+               '\tIF(.NOT. NEWMOD)THEN\n')
+
+
+def restart_patch(source):
+    if source.count(RESTART_OLD) != 1:
+        raise ValueError('검토한 첫 BA 초기화 위치가 아님')
+    return source.replace(RESTART_OLD, RESTART_NEW, 1)
 
 
 def sha(path):
@@ -79,7 +91,7 @@ def build(native, out):
     started = time.monotonic()
     before = snapshot(native)
     original_decay = (native / 'new_main/subs/do_species_decays_v2.f').read_bytes()
-    common_source = patched((native / 'new_main/cmfgen_sub.f').read_text())
+    common_source = restart_patch(patched((native / 'new_main/cmfgen_sub.f').read_text()))
     fixed_decay = corrected_source(original_decay)
     out.mkdir()
     inputs = out / 'inputs'
@@ -135,12 +147,13 @@ def build(native, out):
     script_hashes = {str(script_root / name): sha(script_root / name) for name in
         ('build_cmfgen_instantaneous_reference.py', 'prepare_cmfgen_instantaneous_decay.py',
          'prepare_cmfgen_fixedj_exponent.py', 'prepare_cmfgen_mom_capture.py')}
-    report = dict(schema='lumina-native-instantaneous-full-build-v1',
+    report = dict(schema='lumina-native-instantaneous-full-build-v2',
         state='COMPLETE_FULL_NATIVE_COMPARISON_BUILD', native=str(native),
         input_sha256=before, builder_sha256=script_hashes, compiler=version,
         common_source_sha256=sha(common / 'cmfgen_sub.f'),
         common_object_sha256=sha(common / 'cmfgen_sub.o'), variants=variants,
-        comparison='양쪽 actual-nu fixed-J 수정은 동일; 순간 침적열 분기만 다름',
+        comparison='양쪽 actual-nu fixed-J·첫 BA 초기화 수정은 동일; 순간 침적열 분기만 다름',
+        restart_BA_initialization_corrected=True,
         test_stubs_linked=False, native_original_changed=False, installed=False,
         new_full_native_calculations=0, new_transport=0, released_temperature=False,
         anchor_status='NOT_AVAILABLE', final_goal='NOT_MET',

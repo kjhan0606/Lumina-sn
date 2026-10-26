@@ -20,7 +20,11 @@ module load gnu13/13.2.0
 repository=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}
+build=$(realpath "${3:?새 초기화 교정 build 필요}")
+build_report_sha=${4:?봉인 build 보고서 SHA256 필요}
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+[[ "$build_report_sha" =~ ^[0-9a-f]{64}$ ]]
+test "$(sha256sum "$build/result.json" | cut -d ' ' -f 1)" = "$build_report_sha"
 test -d "$parent"
 test ! -e "$parent/source"
 test ! -e "$parent/run"
@@ -37,5 +41,5 @@ timeout -k 30 6900s python3 scripts/run_cmfgen_instantaneous_fixedt.py \
   --original /gpfs/kjhan/cmfgen_runs/toy06_19p48d_stageA_fixedT_427702 \
   --source70 /gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material \
   --native /gpfs/kjhan/cmfgen_src/cur_cmf \
-  --build /gpfs/kjhan/cmfgen_runs/lumina_instant_reference_build_20261027-BQwg8Q/build \
+  --build "$build" --build-report-sha256 "$build_report_sha" \
   --out "$parent/run" --source-commit "$source_commit"

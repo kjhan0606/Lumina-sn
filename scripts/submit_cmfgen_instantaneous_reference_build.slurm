@@ -29,7 +29,9 @@ git -C "$repository" archive "$source_commit" scripts tests | tar -x -C "$parent
 project="$parent/source"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH="$project/scripts"
+export CMFGEN_SOURCE_ROOT=/gpfs/kjhan/cmfgen_src/cur_cmf
 cd "$project"
 python3 -m unittest discover -s tests -p test_cmfgen_instantaneous_reference_build.py -v
+python3 -m unittest discover -s tests -p test_native_restart_ba.py -v
 timeout -k 15 480s python3 scripts/build_cmfgen_instantaneous_reference.py \
   --native /gpfs/kjhan/cmfgen_src/cur_cmf --out "$parent/build"

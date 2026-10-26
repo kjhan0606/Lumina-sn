@@ -100,3 +100,41 @@ J/H만 저장하므로 마지막3회 J 안정성을 이 실행만으로 인증�
 4회 완주는 앵커나 SE/RE 공동 Newton 수렴이 아니다. 결과는 다음 안정화
 방향 선택에 사용한다. 재현: `sbatch scripts/submit_cmfgen_instantaneous_fixedt.slurm
 NEW_PARENT SEALED_COMMIT`. 중복 같은 job-name이 없을 때만 한 번 제출한다.
+
+### 첫 BA 초기화 실행 결함 교정 — 최신
+
+1223908의 첫71에서 실제 MODEL은 COMP_BA=T였으나 `BA matrix **NOT**
+computed`와 과거 BAMAT 재읽기가 관측됐다. 원 소스는 NLBEGIN=0 뒤
+CHK=F로 과거 BA를 읽고, 성공하면서 NLBEGIN=-999가 아니면 WRBAMAT만
+정해 실제 COMPUTE_BA를 입력값으로 초기화하지 않는다. 이번 실행에서
+그 상태는F였다. 온도·SCL·침적열의 물리식 문제가 아니라 첫 Jacobian
+재조립 요청을 수행하지 못한 초기화 결함이다. 큰 raw 보정이나 광도의
+원인을 전부 이 하나로 단정하지 않는다.
+
+이 자체 step1223908.0만 TERM으로 중단했고 batch는FAILED1:0/17분06초,
+step은CANCELLED0:15다. 원본·완료71·부분72·실패 로그를 보존했다.
+원 실패 JSON은 마지막 RVTJ가70에 머물러71 SCRTEMP와 연결되지 않음을
+보고한다. 이것을 열원 실패나 후보 파일 유실로 부르지 않으며, 새 판독은
+부분 checkpoint와 최종 RVTJ 연결 실패를 분리한다. 실패71은 새 seed로
+쓰지 않는다. 새 실행은 같은 원70에서만 시작한다.
+
+Astra는 최소 초기화 수정과 동일 한도의 교정 실행을 지지했다. private
+cmfgen_sub의 CHK=F 한 위치를 `COMPUTE_BA=COMPUTE_BARDIN; CHK=COMPUTE_BA;
+SUCCESS=F`로 바꾼다. 명시T는 과거 BA 읽기를 건너뛰고 기존 분기에서
+fresh BA로 들어가며, 명시F는 정상 cache를 재사용하고 cache 누락/읽기
+실패나 새 모델은 fresh BA로 간다. 과거 미정 상태의 byte 재현이 아니라
+명시 설정의 의도를 보존하는 수정이다. 실제 native READ_BA와 원/수정
+초기화 블록을 컴파일한 시험은 원 결함을 재현하고 수정16조건을 통과했다.
+단독시험만으로 실제 첫 물리 반복의 재조립을 입증했다고 하지는 않는다.
+
+새 full build는 두 실행파일에 공통으로 이 수정만 더한다. 이후 새 build와
+보고서 SHA를 명시 인수로 전달하고, 실제 첫 갱신 전 cache 성공-read가
+없으며 BA 계산이 수행됨을 확인한다. 같은 미조립이 나오면 첫 반복에서
+중단한다. partial 판독/BA 위반 시험4개도 통과했다. 이전 solver의 terminal을
+확인했으며 관측 timeout 때문에 재실행하는 것이 아니다. 원래 작은 빌드
+CPU1/4GiB/10분, 단일 corrected 실행 CPU16/32GiB/2시간/최대4회/retry0와
+기존 fallback·cap·T고정·원본 보존을 유지한다. 자동 반복 제출은 없다.
+
+최신 재현 진입점은 `sbatch scripts/submit_cmfgen_instantaneous_fixedt.slurm
+NEW_PARENT SEALED_COMMIT NEW_BUILD BUILD_REPORT_SHA256`이다. 앞 절의
+2인수 명령은 교정 전 이력이며 새 실행에는 사용하지 않는다.
