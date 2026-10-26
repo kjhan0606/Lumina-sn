@@ -181,6 +181,48 @@ def free_free(nu,state,models,kernels):
         charges=sorted(by_charge),native_charges=sorted(native_by_charge))
 
 
+def continuum_frequencies(nu,evaluation=None):
+    """명시적 CONT_FREQ 대응만 소비한다. 새 격자로 대응을 외삽하지 않는다."""
+    nu=np.asarray(nu,dtype='f8')
+    if (nu.ndim!=1 or not len(nu) or not np.isfinite(nu).all() or
+            np.any(nu<=0) or np.any(np.diff(nu)<=0)):
+        raise ValueError('요청 주파수는 양의 유한 오름차순 벡터여야 함')
+    if evaluation is None:return nu,None
+    evaluation=np.asarray(evaluation,dtype='f8')
+    if (evaluation.shape!=nu.shape or not np.isfinite(evaluation).all() or
+            np.any(evaluation<=0)):
+        raise ValueError('CONT_FREQ 대응의 형상/주파수 손상')
+    return np.unique(evaluation,return_inverse=True)
+
+
+def rescale_continuum(nu,evaluation,temperature,chi,eta):
+    """COMP_OPAC의 진η·유도항 보정. 선/ES에는 이 보정을 적용하지 않는다.
+
+    계수는 이미 각 요청점의 CONT_FREQ 열로 선택된 상태다. 부호 있는 χ를
+    보존하며 음수값의 clamp/floor나 적합 상수는 사용하지 않는다.
+    """
+    nu=np.asarray(nu,dtype='f8');evaluation=np.asarray(evaluation,dtype='f8')
+    continuum_frequencies(nu,evaluation)
+    temperature=np.asarray(temperature,dtype='f8')
+    chi=np.asarray(chi,dtype='f8');eta=np.asarray(eta,dtype='f8')
+    if (temperature.ndim!=1 or not len(temperature) or
+            not np.isfinite(temperature).all() or np.any(temperature<=0) or
+            chi.shape!=(len(temperature),len(nu)) or eta.shape!=chi.shape or
+            not np.isfinite(chi).all() or not np.isfinite(eta).all() or np.any(eta<0)):
+        raise ValueError('CONT_FREQ 보정의 물질/계수 손상')
+    if np.array_equal(nu,evaluation):return chi,eta
+    with np.errstate(over='raise',invalid='raise',divide='raise'):
+        mapped_eta=eta*(nu/evaluation)[None,:]**3*np.exp(
+            -B.H*(nu-evaluation)[None,:]/(B.KB*temperature[:,None]))
+        mapped_chi=chi+(eta/(2*B.H*evaluation**3/B.C**2)[None,:]-
+                       mapped_eta/(2*B.H*nu**3/B.C**2)[None,:])
+    unchanged=nu==evaluation
+    mapped_chi[:,unchanged]=chi[:,unchanged];mapped_eta[:,unchanged]=eta[:,unchanged]
+    if not np.isfinite(mapped_chi).all() or not np.isfinite(mapped_eta).all():
+        raise ValueError('CONT_FREQ 보정 출력 비유한')
+    return mapped_chi,mapped_eta
+
+
 def inactive_processes(run,models,policy):
     model=run/'MODEL'
     if control(model,'INC_XRAYS')!='F' or control(model,'INC_RAY')!='F':
@@ -208,7 +250,7 @@ def write_binary(path,nu,state,components):
             stream.write(np.asarray(value,dtype='<f8').tobytes())
 
 
-def paired_memory_inventory(cells,frequencies,routes,block_bins=1024):
+def paired_memory_inventory(cells,frequencies,routes,block_bins=1024,continuum_frequencies=None):
     """두 상태 BF 보존 + 한 상태 후처리의 알려진 동시 할당을 센다.
 
     후처리는 순차이며 dissolution/FF의 배열·식 임시값/직렬화를 최대12개
@@ -222,13 +264,23 @@ def paired_memory_inventory(cells,frequencies,routes,block_bins=1024):
         one_state_postprocessing=12*max(cells)*frequencies*8,
         sigma_cache_and_assembly=4*routes*block_bins*8,
         atomic_catalogue_populations_runtime=4*1024**3)
+    if continuum_frequencies is not None:
+        if not 1<=continuum_frequencies<=frequencies:
+            raise ValueError('CONT_FREQ 메모리 차원 손상')
+        parts['both_states_BF']=4*sum(cells)*continuum_frequencies*8
+        # 선택 열·BF/FF 보정 출력·exp/Planck 임시값을 포함한 보수적 상한.
+        parts['one_state_postprocessing']=32*max(cells)*frequencies*8
     return dict(parts=parts,known_allocation_bound_bytes=sum(parts.values()),
         whole_process_peak_RSS_verified=False,sequential_state_postprocessing=True)
 
 
 def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None,
-            peer=None):
+            peer=None,continuum_frequency_grid=None):
     """peer=(물질, C full 인구, 출력)일 때 σ만 공유하고 각 상태는 따로 쓴다."""
+    nu=np.asarray(nu,dtype='f8')
+    evaluation=(np.load(continuum_frequency_grid,allow_pickle=False)
+                if continuum_frequency_grid is not None else None)
+    continuum_nu,continuum_index=continuum_frequencies(nu,evaluation)
     requests=[(material,c_full,out)]
     if peer is not None:requests.append(peer)
     if len({p[2].resolve() for p in requests})!=len(requests) or any(p[2].exists() for p in requests):
@@ -238,6 +290,7 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
     fixed += [material,atomic_dir/'levels.csv',phot_library,kernel_library,c_full,Path(__file__).resolve()]
     if peer is not None:fixed.extend(peer[:2])
     if frequency_grid is not None:fixed.append(Path(frequency_grid))
+    if continuum_frequency_grid is not None:fixed.append(Path(continuum_frequency_grid))
     fixed += [Path(__file__).with_name(n) for n in ('cmfgen_model_continuum.py','cmfgen_parser.py',
         'expand_atomic_data_cmfgen.py','cmfgen_phot_smoothing.py')]
     for link in B.atomic.load_cmfgen_links(run/'atomic_links.txt').values():
@@ -246,6 +299,9 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
     before={str(p):B.sha(p) for p in fixed}
     if frequency_grid is not None and not np.array_equal(np.load(frequency_grid,allow_pickle=False),nu):
         raise ValueError('선택한 주파수 격자 파일과 실제 생산 주파수 불일치')
+    if continuum_frequency_grid is not None and not np.array_equal(
+            np.load(continuum_frequency_grid,allow_pickle=False),evaluation):
+        raise ValueError('CONT_FREQ 파일과 실제 생산 대응 불일치')
     rows,models,routes,policy,smoothing,route_counts=B.load_model(run,atomic_dir,phot_library)
     inactive=inactive_processes(run,models,policy);profile=fixed_profile(run/'MODEL')
     states=[];full_comparisons=[]
@@ -254,27 +310,38 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         if B.dissolution_flag(run/'MODEL'):
             state=B.read_material(mat,rows,models,B.material_occupation(rows,models,state))
         full_comparisons.append(B.consume_c_full_population(full,state));states.append(state)
-    memory=(paired_memory_inventory([len(s['temperature']) for s in states],len(nu),len(routes))
+    memory=(paired_memory_inventory([len(s['temperature']) for s in states],len(nu),len(routes),
+            continuum_frequencies=len(continuum_nu) if evaluation is not None else None)
             if peer is not None else None)
     if memory is not None and memory['known_allocation_bound_bytes']>32*1024**3:
         raise ValueError('공유 계수 생산의 알려진 할당이 봉인32GiB 초과')
     cache_metrics={}
-    bfs=([B.continuum_grid(routes,rows,states[0],nu)] if peer is None else
-         B.continuum_grids_shared(routes,rows,states,nu,cache_metrics=cache_metrics))
+    bfs=([B.continuum_grid(routes,rows,states[0],continuum_nu)] if peer is None else
+         B.continuum_grids_shared(routes,rows,states,continuum_nu,cache_metrics=cache_metrics))
     summaries=[]
     for i,(_,_,folder) in enumerate(requests):
         summaries.append(_finish_sources(run,nu,folder,states[i],bfs[i],rows,models,routes,
             policy,smoothing,route_counts,full_comparisons[i],inactive,profile,before,
-            kernel_library,dict(cache=cache_metrics,memory=memory) if peer is not None else None))
+            kernel_library,dict(cache=cache_metrics,memory=memory) if peer is not None else None,
+            continuum_nu,continuum_index,continuum_frequency_grid))
         bfs[i]=None  # 다음 상태의 FF/선 생산 전에 앞 상태의 큰 BF 배열을 해제한다.
     return summaries[0] if peer is None else dict(states=summaries,shared_sigma=cache_metrics,memory=memory)
 
 
 def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,route_counts,
-                    full_comparison,inactive,profile,before,kernel_library,cache_metrics):
-    dissolved=B.add_dissolved_continuum(bf,routes,rows,models,state,nu) if B.dissolution_flag(run/'MODEL') else None
+                    full_comparison,inactive,profile,before,kernel_library,cache_metrics,
+                    continuum_nu=None,continuum_index=None,continuum_frequency_grid=None):
+    if continuum_nu is None:continuum_nu=nu
+    dissolved=B.add_dissolved_continuum(bf,routes,rows,models,state,continuum_nu) if B.dissolution_flag(run/'MODEL') else None
     kernels=SourceKernels(kernel_library)
-    ff=free_free(nu,state,models,kernels)
+    ff=free_free(continuum_nu,state,models,kernels)
+    if continuum_index is not None:
+        evaluation=continuum_nu[continuum_index]
+        bf['chi_net'],bf['eta_spont']=rescale_continuum(nu,evaluation,state['temperature'],
+            bf['chi_net'][:,continuum_index],bf['eta_spont'][:,continuum_index])
+        for chi,eta in (('chi','eta'),('native_chi','native_eta')):
+            ff[chi],ff[eta]=rescale_continuum(nu,evaluation,state['temperature'],
+                ff[chi][:,continuum_index],ff[eta][:,continuum_index])
     lines,line_counts,osc_identities=load_lines(run,rows,models)
     bb_chi,bb_eta=kernels.lines(nu,state['full'],lines,profile)
     es=np.broadcast_to(state['ne'][:,None]*6.6524587321e-25,bb_chi.shape)
@@ -282,7 +349,10 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
         ff_eta=ff['eta'],bb_chi=bb_chi,bb_eta=bb_eta,es_chi=es)
     if any(B.sha(Path(p))!=v for p,v in before.items()):raise ValueError('물리 계수 생산 중 입력 변경')
     np.savez(out/'line_catalog.npz',**lines)
-    np.savez(out/'sources.npz',nu_Hz=nu,**components,ff_native_chi=ff['native_chi'],ff_native_eta=ff['native_eta'])
+    evaluation_payload=({'continuum_nu_Hz':continuum_nu[continuum_index]}
+                        if continuum_index is not None else {})
+    np.savez(out/'sources.npz',nu_Hz=nu,**evaluation_payload,**components,
+        ff_native_chi=ff['native_chi'],ff_native_eta=ff['native_eta'])
     write_binary(out/'sources.bin',nu,state,components)
     total_chi=components['bf_chi']+components['ff_chi']+bb_chi+es
     total_eta=components['bf_eta']+components['ff_eta']+bb_eta
@@ -291,6 +361,11 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
         lines=len(lines['lower']),lines_by_ion=line_counts,cells=len(state['temperature']),frequencies=len(nu),
         source='same actual C full populations; unescaped local eta; stimulated counted once',
         evaluation='requested frequency POINT samples, not frequency-bin averages or a resolved field',
+        continuum_evaluation=dict(mode='explicit-CONT_FREQ' if continuum_index is not None else 'direct',
+            frequency_grid=str(continuum_frequency_grid) if continuum_frequency_grid is not None else None,
+            unique_frequencies=len(continuum_nu),
+            correction='native COMP_OPAC thermal eta/stimulated correction; BB and ES at requested nu',
+            mapping_inferred=False,continuum_sampling_is_physical_truth=False),
         C_full_population_comparison=full_comparison,phot_preprocessing=smoothing,
         profile=profile,dissolved_continuum=dissolved,inactive_processes=inactive,
         free_free=dict(policy='ALL_POSITIVE_IONS',coefficient_cgs=3.69e8,
@@ -322,6 +397,8 @@ if __name__=='__main__':
     grid=parser.add_mutually_exclusive_group(required=True)
     grid.add_argument('--frequency-Hz',nargs='+',type=float);grid.add_argument('--bf-grid',action='store_true')
     grid.add_argument('--frequency-grid',type=Path,help='Hz 단위 오름차순 .npy 전체 격자')
+    parser.add_argument('--continuum-frequency-grid',type=Path,
+        help='요청 주파수마다 명시한 CONT_FREQ(Hz) .npy; 기본은 직접 평가')
     for name in ('peer-material','peer-C-full-population','peer-out'):
         parser.add_argument('--'+name,type=Path)
     args=parser.parse_args()
@@ -335,4 +412,5 @@ if __name__=='__main__':
     print(json.dumps(prepare(args.run.resolve(),args.material.resolve(),args.atomic.resolve(),
         args.phot_library.resolve(),args.kernel_library.resolve(),args.C_full_population.resolve(),
         nu,args.out.resolve(),args.frequency_grid.resolve() if args.frequency_grid else None,
-        tuple(p.resolve() for p in peer) if peer[0] is not None else None),ensure_ascii=False))
+        tuple(p.resolve() for p in peer) if peer[0] is not None else None,
+        args.continuum_frequency_grid.resolve() if args.continuum_frequency_grid else None),ensure_ascii=False))

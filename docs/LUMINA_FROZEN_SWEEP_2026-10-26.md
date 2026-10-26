@@ -1133,3 +1133,124 @@ manifest SHA256 `a361d835544d669296853929ca045dbbd93721684914284270caf281992911a
 용해 원식·채널 선택을 추적한다. goal은 active이며 최종 Si/Si II/III·S 분포,
 released T/ne/J/populations·전체 SE/charge/RE/energy·M/E·observer·3-grid
 기준을 축소하거나 달성한 것으로 처리하지 않는다.
+
+## S II 용해식 조사 중 확인한 CONT_FREQ 규약 — 수치 대조 준비
+
+native `GENOPAETA_V10`의 용해 분율 식과 B의 식은 소스상 같은 형태다.
+반면 `COMP_OPAC`은 실제 FL이 아닌 별도 CONT_FREQ에서 연속항을 계산하고,
+eta에 `(FL/CONT_FREQ)^3 exp[-h(FL-CONT_FREQ)/(kT)]`를 적용하며 chi의 유도
+항을 이에 맞춰 보정한다. line 항은 실제 FL에서 더한다. 따라서 같은 FL의
+저장 chi/eta를 비교해도 BF 평가 주파수가 같다는 보장은 없었다.
+
+실제 참조 `CONT_FREQ`를 원 binary 주파수와 연결했다.611.0975/611.1251 Å의
+연속항 평가 파장은611.345454 Å(각−121.58/−108.08km/s)다.673.5722,
+714.9848,721.9815 Å의 평가 파장은 각각673.602608,715.081459,721.721251 Å다.
+ASCII 출력의 반올림값을 그대로 입력하지 않고 대응하는 binary 원ν를 복원했다.
+이 사실만으로15배 차이의 정량 원인을 확정하지 않는다.
+
+다음 CPU 대조는 동일 계수 생산기를 이4개 CONT_FREQ에서 평가하고, native
+연속항 보정식과 이전 직접 점의 실제 FL line 항을 합쳐 참조와 비교한다.
+`cache-A.py`/`job-cache-A.slurm`, 격리 출력 `cache-A`, grammar CPU1·4GiB·
+300초(내부270초)·GPU0·단회/no-requeue다. 정규화 상수를 맞추거나 용해항을
+끄지 않는다. 새 수송/물질/observer 갱신은 없으며 아직 수치 대조 전이다.
+
+### CONT_FREQ 대조 완료와 공통 계수 규약 구현 묶음
+
+1220024는 grammar107에서14:02:26–14:02:37 KST,11초·COMPLETED/0:0,
+MaxRSS290680KiB였다. 내부 계산9.040859초이고 실제15점의 최대 상대차는
+chi4.209580e-5, 진eta5.294094e-5다.611.125064 Å/native49의 직접평가
+chi/eta 비15.265768/15.474044가 명시적 CONT_FREQ 보정 후
+1.000042096/0.999974670이 됐다. 원 BF/용해식·인구·상수는 바꾸지 않았다.
+따라서 앞선 큰 계수 차이는 이 점들에서는 CONT_FREQ sampling 차이로
+설명되며 S II 용해식 자체의 오류라고 판정하지 않는다. 전 주파수·전체장이나
+S III 율 초과 전체의 원인이 입증됐다는 뜻은 아니다.
+
+- 원 wrapper SHA256: `f10525f3b12eaa42dda0f5fcb855c590bef8017a4e74bbe7d33eacc5f1099795`.
+- CONT_FREQ SHA256: `926ee9715636ef647a9159707d93d378b2f28ea8bebb6480706805692e748fb8`.
+- `cache-A/comparison.csv`: `e71126bf27b7f3abbbfd7a70c04f181c0ee58b19e203e2b7a7b07df1a557eb0d`.
+
+묶음 목적은 참조와 실제 같은 연속항 평가 규약으로 계수를 생산하고, 기존
+직접평가와 참조의 차이를 분리해 다음 수송의 공통 입력을 정하는 것이다.
+Astra의 기존 의뢰를 한 번 재개해 새 수치를 평가받았다. 명시적 mapped nu
+경로·기존 direct 보존을 지지했고,584–770 Å 세 기여 블록의 대표점/급변 양쪽과
+673 Å를 포함한 공통 계수 비교를 권고했다. direct ALL_CROSS와 native cached
+어느 하나를 최종 물리정답으로 간주하지 않으며 남은 차이를 자동으로 RT 오류로
+분류하지 않는다. Q-GOAL/Q-LEAN 및 추가 모델 감사는 없다.
+
+운전자 변경 범위는 `cmfgen_model_sources.py`의 명시적 CONT_FREQ npy 입력,
+고유 평가ν의 BF/FF/용해 생산, native 진eta/유도항 보정과 actual nu의 BB/ES
+결합 및 직접시험이다. 매핑은 입력으로만 받고 자체 전체 격자에 임의 외삽하지
+않는다. MODEL/원자자료·물질70/원90점/C 인구·역사적 상수와 기존 봉인 생산물은
+보존한다. 결과 비율 적합·clamp/floor·용해 끄기는 제외한다.
+
+직접시험 수용 기준은 direct 및 identity의 기존 값 보존, native 보정의 LTE 및
+부호 보존, 잘못된 대응/형상 거부, 실제15점의 기존 대조 재현이다. 확장 계수
+표는 같은 세 점과 주파수에서 direct/mapped/reference를 비교해 미해결 차이를
+숨기지 않는다. 이는 구현/공통입력 증거이며 이온분포/스펙트럼의 최종 수용
+기준을 대체하지 않는다. 시험은 격리 CPU1·4GiB·최대300초/내부270초·GPU0,
+자동 재시도0으로 수행하며 원 출력은 덮어쓰지 않는다. 새 GPU 할당은 없다.
+
+첫 포장1220084는31직접시험을0.34초에 통과했지만 비교 실행에서 격리
+scripts의 읽기 전용 `cmfgen_model_continuum.py` 누락으로 실패했다.
+grammar019·14:14:56–14:15:00·4초·FAILED/1:0·MaxRSS847248KiB다.
+이는 물리 실패도 계수 비교 성공도 아니다. 실패 트리를 보존하고 네 개의
+동일 해시 의존 파일을 포함한 새 트리 `lumina_continuum_contract_20261026-5ykFrd`에
+별도 CPU 단회를 준비했다. 같은 CPU1·4GiB·300초 한도이며 자동 재시도는 없다.
+추가로 CONT_FREQ 파일을 읽은 배열과 사전 해시 시점 배열이 같은지 확인한다.
+
+### 명시적 생산 경로의 실제 비교 완료 — 33주파수/90점
+
+1220104는 grammar048에서14:15:56–14:17:00 KST,64초·COMPLETED/0:0,
+MaxRSS1241740KiB였다.31개 직접시험은0.37초에 통과했고 direct/mapped 두
+생산과 비교는61.718403초였다. 두 생산 모두 원2208780개 C full 인구의
+차이가 정확히0이며,물질70·원90점을 유지했다.33개 실제 참조 주파수의
+명시적 CONT_FREQ는12개 고유ν다. 원 MODEL/PHOT/인구/용해식/상수의
+변경 없이 새 `prepare()` 경로로 계수를 썼다.
+
+|비교 범위|흡수계수 최대차|진방출계수 최대차|
+|---|---:|---:|
+|49/50/58의33ν,99개 값, mapped/ref 비율 기준|0.010500%|0.005548%|
+|90점 전체의33ν,2970개 값, 두 값 중 큰 절대값 기준|0.036958%|0.005548%|
+
+99개 값의 direct/ref 범위는 chi0.676516–15.290074,
+진eta0.676241–15.474044였다. mapped/ref 범위는 chi1.000000184–1.000104996,
+진eta0.999944523–1.000000184다. 가장 큰 mapped chi 비율차는49/640.038168 Å,
+eta는49/583.649344 Å다. ES 비율1.000369734는 기존 역사 상수 차이와 같은
+규모지만,모든 잔여 오차의 원인을 ES 하나로 확정하지 않는다.
+
+운전자는 결과7개 출력 해시·99 CSV행·같은 물질 인구 신원·기존15점 재현
+최대차1.665335e-15를 독립 판독했다. direct/mapped의 BB chi/eta와 ES는
+전90×33개에서 byte 값이 같고 두 binary의 header/주파수/7개 component
+plane은 각각 NPZ와 정확히 같았다. 전체90점 통계는 이미 생산된 작은 배열과
+참조의 같은33개 원ν만 읽어 재계산했으며 새 생산/수송이 아니다.
+
+- 운전자 구현 SHA256: `cfed2ed5fb4b10e9e8dc7c19a03109451bd0d31bb5a04ace0515248a1f69e661`.
+- 직접시험 SHA256: `44f8bda9357a188c4d05b8d20b7ec4ffe688ceec67248c3c81a65374821f00ab`.
+- wrapper: `56bd5c16e9be05376c297732cd0ff06c5ccc00fc7e744c3d1745343bfb4aa236`.
+- 제출 파일: `4c127b73874fd21165011d9e4f1f849e7bd3be0971c7c41a5398412dffacc56a`.
+- `comparison.json`: `78f643d0ff17c7cbe6a03d05cfaa2965670d57f0de53f0420acafa015d607f55`.
+- `comparison.csv`: `541e6593bf48405e6138676d17f097fd84191d54f516eaf46aa8969de2a202a2`.
+- `frequency.npy`: `f8d689bf7b554dbc6f087629b8b4e16702f0db97d3b1b4202396e9e8dec7a186`.
+- `continuum-frequency.npy`: `956c2beb5a51cf74d97b11dbc7b7c5b3636cfa8bd8abd7fa03f64a68f743673f`.
+- mapped `sources.json/bin`: `02594ef87d377b2536e4720a190aa5fa4156ebbd9d2458a14baeb9527577e766` /
+  `885ff9e418f01542889464720a80886793b78ba265a1d7b3da6cb03cc8e89f7c`.
+
+재실행에서 기존 출력을 덮어쓰지 않는다. 재현할 때는 출력이 없는 격리
+복제에서 같은 input·stage/hash·CPU 한도를 사용한다.
+
+실제 두 명령은 `job.slurm`에 고정돼 있다:
+
+```sh
+python3 -m pytest -q -p no:cacheprovider --confcutdir="$PWD/tests" tests/test_cmfgen_model_sources.py
+python3 compare.py
+```
+
+읽기 전용 재현에서는 `comparison.json`의 output_sha256을 각 파일과 대조하고
+`comparison.csv`의 mapped_chi_over_ref/mapped_eta_over_ref를 집계한다.
+
+자체 종료 확인에서 구현과 위 제한 범위 재현은 확인했으나,전 주파수 공통
+입력·새 J·SE/전하/RE·이온분포·observer spectrum은 미완료로 판정한다.
+물리 목적의 묶음은 진행 중/NOT_MET이며 GPU0·물질 갱신0·observer0이다.
+다음에는 CONT_FREQ를 쓰는 native 흡수율/평형 소비부와 직접평가하는 자체
+소비부의 규약도 확인해 수송만 호환시켜 자기 불일치를 만들지 않도록 한다.
+GPU2/2를 사용한 사실은 그대로이며 세 번째 할당을 시작하지 않는다.

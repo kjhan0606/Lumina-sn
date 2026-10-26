@@ -24,6 +24,68 @@ def test_full_pair_known_memory_includes_both_states_and_postprocessing():
     assert result['parts']['both_states_BF']==4*179*1115020*8
 
 
+def test_explicit_continuum_mapping_preserves_requested_order_and_duplicates():
+    nu=np.array([1e14,2e14,3e14,4e14])
+    mapped=np.array([2.1e14,2.1e14,1.2e14,4.1e14])
+    unique,inverse=S.continuum_frequencies(nu,mapped)
+    np.testing.assert_array_equal(unique,[1.2e14,2.1e14,4.1e14])
+    np.testing.assert_array_equal(unique[inverse],mapped)
+    direct,index=S.continuum_frequencies(nu)
+    np.testing.assert_array_equal(direct,nu)
+    assert index is None
+
+
+@pytest.mark.parametrize('nu,mapped',[
+    ([2.,1.],[2.,1.]),([1.,1.],[1.,1.]),([],[]),([0.],[1.]),
+    ([1.],[np.nan]),([1.],[-1.]),([1.,2.],[1.]),([1.],[[1.]])])
+def test_invalid_continuum_mapping_rejected(nu,mapped):
+    with pytest.raises(ValueError):S.continuum_frequencies(nu,mapped)
+
+
+def test_continuum_identity_is_exact_even_for_signed_chi():
+    nu=np.array([1e14,2e14]);chi=np.array([[-1e-12,1e-15]])
+    eta=np.array([[1e-20,1e-26]])
+    c,e=S.rescale_continuum(nu,nu,[9000.],chi,eta)
+    np.testing.assert_array_equal(c,chi);np.testing.assert_array_equal(e,eta)
+
+
+def test_continuum_native_thermal_correction_preserves_lte_and_true_absorption():
+    nu=np.array([1e14,3e14,9e14]);evaluation=np.array([.99e14,3e14,9.1e14])
+    t=np.array([8000.,20000.]);absorption=np.full((2,3),2e-12)
+    decay=np.exp(-B.H*evaluation[None,:]/(B.KB*t[:,None]))
+    eta=absorption*decay*(2*B.H*evaluation**3/B.C**2)[None,:]
+    chi=absorption*(1-decay)
+    c,e=S.rescale_continuum(nu,evaluation,t,chi,eta)
+    expected_decay=np.exp(-B.H*nu[None,:]/(B.KB*t[:,None]))
+    np.testing.assert_allclose(c,absorption*(1-expected_decay),rtol=2e-15)
+    np.testing.assert_allclose(e,absorption*expected_decay*(2*B.H*nu**3/B.C**2)[None,:],rtol=3e-15)
+    np.testing.assert_array_equal(c[:,1],chi[:,1])
+    np.testing.assert_array_equal(e[:,1],eta[:,1])
+
+
+def test_continuum_native_correction_keeps_inversion_without_floor():
+    nu=np.array([1e14,2e14]);evaluation=np.array([.99e14,2.01e14])
+    chi=np.full((1,2),-1e-9);eta=np.full((1,2),1e-25)
+    c,e=S.rescale_continuum(nu,evaluation,[9000.],chi,eta)
+    assert np.all(c<0) and np.all(e>0)
+
+
+@pytest.mark.parametrize('t,chi,eta',[
+    ([0.],[[1.]],[[1.]]),([np.nan],[[1.]],[[1.]]),
+    ([8000.],[1.],[[1.]]),([8000.],[[1.]],[[np.nan]]),
+    ([8000.],[[1.]],[[ -1.]])])
+def test_invalid_continuum_coefficients_rejected(t,chi,eta):
+    with pytest.raises(ValueError):S.rescale_continuum([1e14],[1.01e14],t,chi,eta)
+
+
+def test_mapped_pair_memory_counts_unique_bf_and_thermal_temporaries():
+    result=S.paired_memory_inventory([89,90],100,24667,continuum_frequencies=12)
+    assert result['parts']['both_states_BF']==4*179*12*8
+    assert result['parts']['one_state_postprocessing']==32*90*100*8
+    with pytest.raises(ValueError):
+        S.paired_memory_inventory([89,90],100,24667,continuum_frequencies=101)
+
+
 @pytest.fixture(scope='module')
 def kernels(tmp_path_factory):
     supplied=os.environ.get('CMFGEN_SOURCE_TEST_LIB')
