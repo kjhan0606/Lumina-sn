@@ -128,6 +128,84 @@
     "live_1224060_source_or_inputs_changed": false,
     "direct_tests": "grammar-debug CPU1/4GiB/180초 이내, 관련24개 통과"
   },
-  "next": "단일1224060의 실제 방향 후보 잔차·수용 여부·Si/S 분포를 판독한다. 미분4응답을 재실행하지 않는다. 별도 native 기준 계산은32GiB OOM이며128GiB 미승인. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
+  "coupled_actual_candidate_result": {
+    "job": 1224060,
+    "state": "COMPLETED",
+    "exitcode": "0:0",
+    "elapsed_s": 5205,
+    "maximum_RSS_KiB": 3453028,
+    "report_state": "INCOMPLETE_DEPTH_COUPLED_MATERIAL_STEP",
+    "result_sha256": "0237b36a8d48aeda9361dce90228c0983248a265f5a410c0f7d73fd14478fa53",
+    "candidate_summary_sha256": "8a02eccbacfb86193131ec102aaee729da1ccca0db083856ca343bdec231230c",
+    "candidate_response_sha256": "bf5efdc32ea96db6faa4bce2dc73775e04f97de2d612035b2943943e25f72afb",
+    "candidate_balance_sha256": "162de3ca260de369c2bc5096a6cb1e2f3370c023a33e0d26140b4b39cca97cfe",
+    "source_after_check": "ALL_PASS",
+    "evaluations_used": 5,
+    "evaluation_cap_exhausted": true,
+    "candidate_accepted": false,
+    "accepted_checkpoint": "1223954 evaluation3을 배열 그대로 보존. 새 온도 게시 없음",
+    "actual_alpha": 0.08746381384424386,
+    "actual_T_relative_range": [-0.0951625819640396, 0.05656374555472432],
+    "actual_ne_relative_range": [-0.0017008098613676692, 0.0017976885937205367],
+    "scaled_residual": {
+      "baseline_max": 3.986272124511319e-6,
+      "predicted_max": 3.6376175614805622e-6,
+      "actual_max": 5.01653484991694e-5,
+      "actual_charge_max": 5.01653484991694e-5,
+      "charge_worst_node": 3,
+      "actual_thermal_max": 3.6235668864897056e-6,
+      "charge_linear_prediction_error_max": 5.016534849972813e-5,
+      "thermal_linear_prediction_error_max": 1.4050674990856607e-8
+    },
+    "independent_reproduction": {
+      "location": "grammar-debug CPU1/4GiB/120초 이내",
+      "charge_relative_max": 5.025081558189646e-5,
+      "charge_vs_C_relative_difference_max": 7.241426039586522e-16,
+      "nuclei_relative_max": 1.9984014443252818e-15,
+      "candidate_output_hashes_verified": true,
+      "accepted_response_equals_old_accepted_arrays": true
+    },
+    "absolute_thermal_residuals_erg_cm3_s": {
+      "physical_stored": [0.008070711925334593, 0.008747564372377765],
+      "native_stored": [0.0038800085096417983, 0.0039049485383224635],
+      "physical_instantaneous_scenario": [0.0054189733142800695, 0.004360787488469682],
+      "native_instantaneous_scenario": [0.004728301453260128, 0.0043147450531306605]
+    },
+    "CMFGEN70_max_abs_fraction_difference_old_then_rejected": {
+      "Si_II": [1.4267740867669314e-6, 1.435247598010158e-6],
+      "Si_III": [0.0202789955808631, 0.023517549925675674],
+      "S_II": [0.00042475125570459044, 0.0004191342258617649],
+      "S_III": [0.01939324185408514, 0.016144831589873898]
+    },
+    "interpretation": "열잔차는 선형 예측에 가깝게 감소했지만 전하 비선형 오차가 공동 merit를 지배해 거부됐다. Si III 차이는 악화하고 S III는 개선하므로 전면 CMFGEN 일치나 물리 수렴으로 표시하지 않는다. CMFGEN70은 matched released-T 기준해가 아니다",
+    "astra_followup_evaluation": {
+      "agent": "01a1797c-ec37-76f1-a046-5e27e4c04d11",
+      "interpretation": "전하=0 곡면의 접선 방향을 유한 거리 이동한 이탈이라는 해석을 강하게 지지. 한 후보만으로 이차 법칙이나 모든 Jacobian 분기를 증명하지는 않음",
+      "recommended": "새 T의 bound와 trial 신원을 보존하고 same-T ne를 내부 수렴한 뒤 전체 깊이 열잔차로 수용 판단. 국소 전하 미분 가역·같은 해 가지 조건에서 Schur 제거이며 AD 이웃 결합 보존",
+      "single_evaluation_alternative": "alpha0/8 약0.010933. 예상 오차/개선은 보장 아님. 전하 수렴이 아니므로 장기 작은 보폭 반복 전략으로 권하지 않음",
+      "authority": "기존5평가 소진. 포괄 사전승인만으로 연장하지 않으며 추가 실제평가 한도를 사용자에게 확인",
+      "new_code_or_calculation_by_advisor": false
+    },
+    "automatic_extra_evaluation": false
+  },
+  "proposed_charge_projected_candidate": {
+    "status": "USER_AUTHORITY_PENDING",
+    "objective": "같은 고정장에서 전하를 다시 닫은 실제 온도 후보가 깊이 결합 열잔차를 개선하는지 판별. 최종 스펙트럼 목표의 대체 아님",
+    "inputs": "1223954 수용 전하 해·1224060 봉인 방향·기존 J70/물질70 원자료 및 네 열장부 보존",
+    "temperature_candidates_max": 1,
+    "fresh_temperature_full_BF_integrations_max": 1,
+    "same_temperature_actual_material_evaluations_max_including_initial": 8,
+    "resources": "CPU16/OpenMP16/32GiB/최대2h/GPU0/retry0",
+    "acceptance": "실제 같은 T의 전하/ne<=1e-10 및 기존 정상 SE·원소 보존, 같은 고정 행 scaling/열정책의 전체 깊이 잔차 개선. 기존 수용 기준을 완화하지 않음",
+    "evidence": "fresh-T bound/trial/J/원자경로 신원·각 실제 응답/전하/네 열장부·전체90점 Si/S 비교·최종 수용 여부",
+    "preservation": "새 격리 디렉터리. 원본·거부 후보·이전 수용 checkpoint 보존, 실패/한도 소진 시 공개 물질 갱신 없음",
+    "implementation": "운전자. 새 T bound의 같은 T 정확 재인수와 실제 전하 폐합을 연결하고 직접시험 후 봉인 실행",
+    "exclusions": "기존 미분4개 재계산0·native0·새 수송0·모델 차원/물리 가정/원자자료 변경0",
+    "alternative": "사용자가 실제평가1회만 허용하면 기존 frozen 방향 alpha0/8의 단일 후보. 내부 전하 투영 묶음과 중복 실행하지 않음",
+    "user_question_sent": true,
+    "user_answer_received": false,
+    "submitted": false
+  },
+  "next": "전하 재평형 묶음의 구체적 추가평가 한도에 대한 사용자 결정을 받는다. 별도 native 기준 계산은32GiB OOM이며128GiB 미승인. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
   "final_goal": "NOT_MET"
 }
