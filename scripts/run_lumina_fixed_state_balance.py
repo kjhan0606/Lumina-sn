@@ -20,7 +20,7 @@ import cmfgen_model_continuum as B
 import cmfgen_model_sources as S
 from lumina_model_energy import ModelThermalEnergy
 from lumina_model_balance import balance
-from lumina_native_heat_sources import vector,cooling_vector,artificial_heat
+from lumina_native_heat_sources import vector,cooling_vector,artificial_heat,instantaneous_profile
 from compare_lumina_internal_energy import AdiabaticInput,AdiabaticCell,DP
 
 
@@ -64,7 +64,7 @@ def run(args):
     inputs={}
     br=load_report(BF,'COMPLETE_FROZEN_MATERIAL_BF_90',
         '482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6',inputs)
-    load_report(BB,'COMPLETE_LINEAR_FIELD_BB90',
+    bbr=load_report(BB,'COMPLETE_LINEAR_FIELD_BB90',
         'b95b16e3401068bc8239116a87c872f392e970ec5780b7ce04d32cf51d1e9ec9',inputs)
     rr=load_report(RESPONSE,'COMPLETE_PRIVATE_FIXED_FIELD_ALL_MODEL_RESPONSE',
         'a93e5127286bf0b3ef0e3bf41ba39549b4877675518f2bcffb95923cde46cf68',inputs)
@@ -100,6 +100,7 @@ def run(args):
         inputs[str(p)]=h
     for p in (model,levels,nodes,run/'MODEL_SPEC',run/'atomic_links.txt'):
         if inputs[str(p)]!=br['data_sha256'][str(p)]:raise ValueError('다른 물질/원자 모형')
+    if inputs[str(rvtj)]!=bbr['input_sha256'][str(rvtj)]:raise ValueError('기존 J/물질과 다른 RVTJ 열원')
     if any(B.sha(Path(p))!=h for p,h in inputs.items()):raise ValueError('완료 입력/배열 변경')
     snapshot=npz(BF/'material-snapshot.npz');candidate=npz(RESPONSE/'response.npz')
     roster=npz(BF/'route-roster.npz');lines=npz(BB/'line-roster.npz')
@@ -137,6 +138,12 @@ def run(args):
     xray=cooling_vector(cooling_text,'X-ray heating term [ergs/cm**3/sec]',90,omitted_sum_zero=True)
     if any(np.any(v<0) for v in (decay,shock,xray)) or np.any(xray!=0):raise ValueError('미지원 부호/활성 외부 열원')
     external=decay+shock+xray
+    instantaneous,decay_metadata=instantaneous_profile(run,columns,pop,radius,epoch)
+    for name,h in {
+        'SN_HYDRO_FOR_NEXT_MODEL':'60552a6fd1e87b1aedd97da4d1bd8ff866bd14b069287ced7c6ec852e501e9ef',
+        'NUC_DECAY_DATA':'e38afd62b09d0288fe1793f439f0352b682c2cb518da7f592d94fe02ee931522'}.items():
+        if decay_metadata['input_sha256'][str(run/name)]!=h:raise ValueError('원 핵종/붕괴 원자료 변경')
+    inputs.update(decay_metadata['input_sha256'])
     art=artificial_heat(t,ne,nuclei,S.number(model,'T_MIN')*1.e4)
     bf_terms=np.zeros((2,90),dtype=np.longdouble);bb_terms=np.zeros_like(bf_terms);native_bb=np.zeros_like(bf_terms)
     rates=np.load(BF/'total-rates.npy',mmap_mode='r')
@@ -182,10 +189,12 @@ def run(args):
     ad={mode:adiabatic(args.adiabatic_library,radius,epoch,t,ne,nuclei,u) for mode,u in energies.items()}
     result_terms={
         'physical_photon_stored_decay':balance(bf_terms,bb_terms,ff['all_positive_ions'],ad['physical_neutral']['signed_total'],external,np.zeros(90)),
-        'native_compatible_stored_decay':balance(bf_terms,native_bb,ff['native_upper_ions'],ad['native_static_raw']['signed_total'],external,art)}
+        'native_compatible_stored_decay':balance(bf_terms,native_bb,ff['native_upper_ions'],ad['native_static_raw']['signed_total'],external,art),
+        'physical_photon_instantaneous_scenario':balance(bf_terms,bb_terms,ff['all_positive_ions'],ad['physical_neutral']['signed_total'],shock+xray+instantaneous,np.zeros(90)),
+        'native_compatible_instantaneous_scenario':balance(bf_terms,native_bb,ff['native_upper_ions'],ad['native_static_raw']['signed_total'],shock+xray+instantaneous,art)}
     if any(B.sha(Path(p))!=h for p,h in inputs.items()):raise ValueError('잔차 평가 중 원 입력/소스 변경')
     out.mkdir();arrays=dict(bf=bf_terms,bb=bb_terms,native_bb=native_bb,external=external,artificial=art,
-        decay=decay,shock=shock,physical_internal_energy=energies['physical_neutral'],
+        decay=decay,instantaneous_decay_scenario=instantaneous,shock=shock,physical_internal_energy=energies['physical_neutral'],
         native_internal_energy=energies['native_static_raw'],physical_adiabatic=ad['physical_neutral']['signed_total'],
         native_adiabatic=ad['native_static_raw']['signed_total'],charge_residual=candidate['charge_residual'])
     for policy,v in ff.items():arrays['ff_'+policy]=v
@@ -203,6 +212,9 @@ def run(args):
         artificial_heating_max=float(art.max()),gross_metric_is_not_completion=True,
         external_decay_policy='stored native profile only; not proof of physical instantaneous decay power',
         physical_instantaneous_decay_validated=False,
+        instantaneous_scenario=decay_metadata,
+        instantaneous_scenario_inputs_verified=True,reference_energy_equation_updated=False,
+        instantaneous_scenario_max=float(instantaneous.max()),
         selected_nodes=[dict(node=i,**{mode:{k:float(v[i]) for k,v in values.items()} for mode,values in result_terms.items()})
                         for i in (0,22,35,49,65,89)],
         omitted_external_zero_rule='WR_COOLING_TERM SUM=0 skips all Depth blocks; frozen actual deck, no new shock/Xray model',

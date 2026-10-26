@@ -71,3 +71,55 @@ def artificial_heat(temperature,electron_density,positive_ion_density,minimum_te
         value=1.25663706e-19*ne*ni*np.exp(1000.*(minimum_temperature*1.e-4-t*1.e-4))
     if not np.isfinite(value).all():raise ValueError('native 인공 가열 비유한')
     return value
+
+
+def instantaneous_profile(run,columns,population,radius,epoch):
+    """원90점에 이미 있는 순수56 핵종과 C 원소 총수로 만드는 비교 시나리오.
+
+    새700→90점 보간·isotope 진화·질량 재환산을 하지 않는다. 원소의 전
+    인구가 해당56 핵종임을 원 파일에서 확인한 경우에만 n_Z를 사용한다.
+    원 native 가열/물질/reference에 이 값을 설치하지 않는다.
+    """
+    from pathlib import Path
+    import cmfgen_model_continuum as B
+    from lumina_model_energy import instantaneous_local_decay_heating
+    run=Path(run);hydro=run/'SN_HYDRO_FOR_NEXT_MODEL';nuclear=run/'NUC_DECAY_DATA'
+    identities={str(p):B.sha(p) for p in (hydro,nuclear)}
+    text=hydro.read_text();columns=np.asarray(columns);pop=np.asarray(population)
+    r=np.asarray(radius);ns=len(r)
+    if (columns.ndim!=2 or columns.shape[1]!=3 or pop.shape!=(len(columns),ns) or
+        not np.isfinite(pop).all() or np.any(pop<0) or not np.isfinite(r).all() or np.any(r<=0)):
+        raise ValueError('순간열의 현재 원소/반경 인구 오류')
+    if not np.allclose(vector(text,'Radius grid (10^10 cm)',ns)*1.e10,r,rtol=8.e-11,atol=0):
+        raise ValueError('순간열 native90 반경/주소 불일치')
+    ages=re.findall(r'^Time\(days\) since explosion:\s*(\S+)\s*$',text,re.M)
+    if len(ages)!=1 or not np.isclose(fortran_number(ages[0])*86400,epoch,rtol=1.e-12,atol=0):
+        raise ValueError('순간열 현재 epoch 불일치')
+    densities={};channels=[];reaction_data=[]
+    for line in nuclear.read_text().splitlines():
+        fields=line.split('!')[0].split()
+        if len(fields)!=8 or fields[6] not in ('F','S'):continue
+        name=fields[0];z={'NICK':28,'COB':27}.get(name)
+        if z is None or round(fortran_number(fields[1]))!=56 or round(fortran_number(fields[4]))!=56:
+            raise ValueError('현재 전모형 밖의 붕괴 채널')
+        mass_fraction=vector(text,name+' mass fraction',ns)
+        isotope_fraction=vector(text,name+' 56 mass fraction',ns)
+        if (not np.array_equal(mass_fraction,isotope_fraction) or np.any(mass_fraction<0) or
+            np.any(mass_fraction>1) or not np.any(columns[:,0]==z)):
+            raise ValueError('원소 총수를 순수56 핵종 수로 사용할 수 없음')
+        key=name+'56'
+        if key in densities:raise ValueError('중복 붕괴 핵종')
+        half_life_days=fortran_number(fields[2]);energy_MeV=fortran_number(fields[5])
+        if half_life_days<=0 or energy_MeV<0:raise ValueError('반감기/반응 에너지 오류')
+        densities[key]=pop[columns[:,0]==z].sum(axis=0)
+        decay_constant=np.log(2.)/(half_life_days*86400.)
+        channels.append((key,decay_constant,energy_MeV*1.602176634e-6))
+        reaction_data.append(dict(parent=key,Z=z,half_life_days=half_life_days,
+                                  decay_constant_s=decay_constant,energy_MeV=energy_MeV))
+    if set(densities)!={'NICK56','COB56'}:raise ValueError('Ni56/Co56 전 붕괴 채널 누락')
+    value=instantaneous_local_decay_heating(densities,channels)
+    if any(B.sha(Path(p))!=h for p,h in identities.items()):raise ValueError('순간열 원자료 변경')
+    return value,dict(input_sha256=identities,channels=reaction_data,
+        parent_number_owner='same C candidate total per element; pure56 mass-fraction identity verified',
+        density_mass_conversion=False,new_interpolation=False,isotope_evolution=False,
+        installed_in_native_or_material=False)
