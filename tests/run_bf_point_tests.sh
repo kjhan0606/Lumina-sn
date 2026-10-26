@@ -24,7 +24,7 @@ sha256sum src/*.h "${source_files[@]}" tests/a2_05_bf_rate_selftest.c \
     tests/model_atom_projection_selftest.c tests/model_occupation_native_test.py \
     tests/model_collision_bb_selftest.c \
     scripts/cmfgen_model_continuum.py scripts/lumina_native90_rates.py scripts/lumina_native_columns.py \
-    scripts/lumina_model_point_rates.py \
+    scripts/lumina_model_point_rates.py scripts/build_cmfgen_fullpair_omega.py \
     data/atomic/topion_levels.csv data/atomic/ionization_reference.csv \
     tests/run_bf_point_tests.sh > "$output/source-before.sha256"
 cd "$output"
@@ -58,11 +58,12 @@ if test "${3:-}" = model-native; then
     gcc -O1 -std=c11 -fPIC -shared -Wl,-z,defs -I"$project/src" \
         -o "$output/point.so" "$project/src/bf_rate_jnu.c" \
         "$project/src/radiation_field.c" "$project/src/seed_capability.c" -lm
-    python3 "$project/tests/model_occupation_native_test.py" \
-        --base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json \
-        --library "$output/occupation.so" --projection "$output/model_projection" --point-library "$output/point.so" \
-        --out "$output/native-occupation.json" \
-        --bb-result /gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json
+    native_args=(--base /gpfs/kjhan/cmfgen_runs/lumina_extended_4h_20261022-rJGMVR/gpu-local-plan.json
+        --library "$output/occupation.so" --projection "$output/model_projection" --point-library "$output/point.so"
+        --out "$output/native-occupation.json"
+        --bb-result /gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json)
+    if test -n "${4:-}"; then native_args+=(--col-result "$4"); fi
+    python3 "$project/tests/model_occupation_native_test.py" "${native_args[@]}"
 fi
 cd "$project"
 sha256sum -c "$output/source-before.sha256" > "$output/source-after-check.txt"

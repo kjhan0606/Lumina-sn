@@ -2,6 +2,7 @@
 #include "nlte_population_candidate.h"
 #include "nlte_model_se.h"
 #include "nlte_model_bb.h"
+#include "nlte_model_coll_bb.h"
 
 static int check(int yes, const char *message) {
     if (!yes) fprintf(stderr, "[MODEL-PROJECTION][FAIL] %s\n", message);
@@ -130,12 +131,66 @@ static int import_point_lines(const char *path,AtomicData *a,NLTEConfig *n,Plasm
     return 0;
 }
 
+/* 원래점의 Si/S 모든 bound 이온 전 FL 쌍 Ω를 실제 private generator에 연결한다. */
+static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+{
+    FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
+    if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMCBPTS1",8) ||
+       fread(shape,4,4,fp)!=4 || fread(snapshot,8,2,fp)!=2 ||
+       shape[0]!=(uint32_t)a->n_levels || shape[1]!=(uint32_t)p->n_shells ||
+       shape[2]>=shape[1] || shape[3]==0 || shape[3]>400000 ||
+       snapshot[0]!=p->T_e[shape[2]] || snapshot[1]!=p->n_electron[shape[2]])return 1;
+    size_t count=shape[3],node=shape[2];
+    int32_t *lower=malloc(count*sizeof(*lower)),*upper=malloc(count*sizeof(*upper));
+    double *omega=malloc(count*sizeof(*omega));
+    if(!lower || !upper || !omega)return 1;
+    for(size_t i=0;i<count;i++){
+        if(fread(&lower[i],4,1,fp)!=1 || fread(&upper[i],4,1,fp)!=1 ||
+           fread(&omega[i],8,1,fp)!=1 || lower[i]<0 || upper[i]<=lower[i] ||
+           upper[i]>=a->n_levels || a->level_Z[lower[i]]!=a->level_Z[upper[i]] ||
+           a->level_ion[lower[i]]!=a->level_ion[upper[i]] ||
+           !isfinite(omega[i]) || omega[i]<=0. ||
+           (i && (lower[i]<lower[i-1] ||
+                  (lower[i]==lower[i-1] && upper[i]<=upper[i-1]))))return 1;
+    }
+    if(fgetc(fp)!=EOF)return 1;
+    fclose(fp);
+    size_t cursor=0;
+    for(int element=0;element<2;element++){
+        int Z=element ? 16:14;
+        size_t start=cursor;
+        while(cursor<count && a->level_Z[lower[cursor]]==Z)cursor++;
+        if(cursor==start)return 1;
+        NLTEModelElement layout={0};NLTEModelCollisionBBBlock block={0};
+        NLTEModelCollisionBBView view={.Z=Z,.n_levels=(size_t)a->n_levels,
+            .n_shells=(size_t)p->n_shells,.native_shell=node,.n_pairs=cursor-start,
+            .material_generation=a->population_committed_generation,
+            .temperature_K=snapshot[0],.electron_density_cm3=snapshot[1],
+            .lower=lower+start,.upper=upper+start,.omega=omega+start};
+        memcpy(view.material_model_sha256,a->partition_stamp.atomic_model_sha256,65);
+        if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
+           nlte_model_element_collision_bb_assemble(&block,&layout,n,a,p,&view) ||
+           block.pairs!=cursor-start)return 1;
+        long double heat=0.;
+        for(size_t row=0;row<layout.n_variables;row++)
+            heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];
+        printf("[MODEL-COLL-BB][ACTUAL] Z=%d pairs=%zu cross=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
+               Z,block.pairs,block.cross_super_pairs,block.intra_super_pairs,(double)heat);
+        nlte_model_collision_bb_block_free(&block);nlte_model_element_free(&layout);
+    }
+    if(cursor!=count)return 1;
+    free(lower);free(upper);free(omega);
+    printf("[MODEL-COLL-BB][HANDOFF] native_node=%zu pairs=%zu SE_RE_solved=0\n",node,count);
+    return 0;
+}
+
 static int import_native_nodes(const char *path, AtomicData *atom,
                                NLTEConfig *nlte, int ns, const char *export_path,
                                const double *occupation,
                                const PopulationOccupationModel *occupation_model,
                                const char *point_contributions,
-                               const char *bb_contributions) {
+                               const char *bb_contributions,
+                               const char *collision_contributions) {
     FILE *fp=fopen(path,"rb");if (!fp) return 1;
     char magic[8];uint32_t nd,nc,nl;double epoch;
     if (fread(magic,1,8,fp)!=8 || (memcmp(magic,"LUMNOD01",8) && memcmp(magic,"LUMCEL01",8)) ||
@@ -289,12 +344,13 @@ static int import_native_nodes(const char *path, AtomicData *atom,
         printf("[MATERIAL-IMPORT][FULL-EXPORT] original_FL_order=%d samples=%d\n",atom->n_levels,ns);
     }
     if(bb_contributions && import_point_lines(bb_contributions,atom,nlte,&p))return 1;
+    if(collision_contributions && import_point_collisions(collision_contributions,atom,nlte,&p))return 1;
     free(cols);free(physical);free(values);free(te);free(ne);free(rho);
     return 0;
 }
 
 int main(int argc, char **argv) {
-    if (argc>=2 && argc<=9) {
+    if (argc>=2 && argc<=10) {
         AtomicData actual = {0}; OpacityState op = {0}; NLTEConfig model = {0};
         int ns=argc>=3 ? atoi(argv[2]):1;
         if (ns<=0 || ns>1000) return 2;
@@ -335,7 +391,8 @@ int main(int argc, char **argv) {
         if (argc>=4 && import_native_nodes(argv[3],&actual,&model,ns,argc>=5?argv[4]:NULL,occupation,
                                           argc>=7 ? &occupation_model : NULL,
                                           argc>=8 ? argv[7] : NULL,
-                                          argc==9 ? argv[8] : NULL)) return 1;
+                                          argc>=9 ? argv[8] : NULL,
+                                          argc==10 ? argv[9] : NULL)) return 1;
         free(occupation_parameters);
         free(occupation);
         if (actual.element_density.source==POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {

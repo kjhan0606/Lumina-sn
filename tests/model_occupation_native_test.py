@@ -29,7 +29,7 @@ class Model(C.Structure):
               ('z_screen',C.POINTER(C.c_double))]
 
 
-def run(base_path,library,projection,output,point_library=None,bb_result=None):
+def run(base_path,library,projection,output,point_library=None,bb_result=None,col_result=None):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
@@ -106,6 +106,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
     subprocess.run(command,check=True,env=env,timeout=max(1.,250.-(time.monotonic()-started)))
     imported=B.consume_c_full_population(exported,dict(state))
     point_test=None
+    bb_test=None
+    collision_test=None
     if point_library is not None:
         point=ModelPointBoundRates(routes,rows,models,state,49,Path(point_library).resolve())
         indices=np.unique(np.linspace(0,len(source.frequency)-1,33).astype('i8'))
@@ -147,7 +149,6 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
         point_command=list(command)
         point_command[4]=str(output.with_name('model-point-imported-full.bin'))
         point_command.append(str(contributions))
-        bb_test=None
         if bb_result is not None:
             bb_result=Path(bb_result)
             sealed=json.loads(bb_result.read_text())
@@ -184,6 +185,54 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
                 stream.write(struct.pack('<8sIIII',b'LMBBPTS1',nl,len(lower),ns,49))
                 stream.write(records.tobytes())
             point_command.append(str(bb_binary))
+        if col_result is not None:
+            if bb_result is None:
+                raise ValueError('전쌍 충돌 C 시험에는 기존 BB 원래점 handoff가 필요')
+            col_result=Path(col_result)
+            sealed=json.loads(col_result.read_text())
+            binary=col_result.with_suffix('')
+            if (sealed['schema']!='lumina-cmfgen-fullpair-omega-v1' or
+                sealed['state']!='PRIVATE_INPUT_ONLY' or sealed['material_record']!=70 or
+                sealed['native_node']!=49 or sealed['levels']!=nl or
+                sealed['temperature_K']!=float(state['temperature'][49]) or
+                sealed['electron_density_cm3']!=float(state['ne'][49]) or
+                B.sha(binary)!=sealed['output_sha256'] or
+                not all(B.sha(Path(path))==digest for path,digest in
+                        sealed['input_sha256'].items())):
+                raise ValueError('전쌍 Ω 원래점/신원 불일치')
+            raw=binary.read_bytes()
+            magic,nlevels,nshells,node,count,temp,ne=struct.unpack_from('<8sIIII2d',raw)
+            if (magic!=b'LMCBPTS1' or (nlevels,nshells,node,count)!=(nl,ns,49,sealed['pairs']) or
+                (temp,ne)!=(float(state['temperature'][49]),float(state['ne'][49])) or
+                len(raw)!=40+16*count or len(sealed['ions'])!=8):
+                raise ValueError('전쌍 Ω binary 형상 불일치')
+            records=np.frombuffer(raw,offset=40,
+                dtype=np.dtype([('lower','<i4'),('upper','<i4'),('omega','<f8')]))
+            lo=records['lower'];up=records['upper'];omega=records['omega']
+            if (np.any(lo<0) or np.any(up>=nl) or np.any(lo>=up) or
+                np.any(~np.isfinite(omega)) or np.any(omega<=0) or
+                np.any(lo[1:]<lo[:-1]) or
+                np.any((lo[1:]==lo[:-1])&(up[1:]<=up[:-1])) or
+                sum(row['pairs'] for row in sealed['ions'])!=count):
+                raise ValueError('전쌍 Ω 목록 누락/중복/강도 오류')
+            z=np.array([int(row['atomic_number']) for row in rows],dtype='i4')
+            stage=np.array([int(row['ion_number']) for row in rows],dtype='i4')
+            sl=np.array([int(row['super_level']) for row in rows],dtype='i4')
+            e=np.array([float(row['energy_eV']) for row in rows])
+            g=np.array([float(row['g']) for row in rows])
+            if np.any(z[lo]!=z[up]) or np.any(stage[lo]!=stage[up]):
+                raise ValueError('원소/이온 간 충돌쌍')
+            cross=sl[lo]!=sl[up]
+            kt=8.617333262145e-5*temp
+            factor=8.63e-6*ne/np.sqrt(temp)
+            gap=e[up]-e[lo]
+            w=state['occupation'][:,49];pop=state['full'][:,49]
+            forward=factor*omega/g[lo]*np.exp(-gap/kt)*w[up]/w[lo]
+            reverse=factor*omega/g[up]
+            exchange=(pop[lo]*forward-pop[up]*reverse)*gap*B.EV
+            expected_heat={int(Z):float(np.sum(exchange[cross&(z[lo]==Z)],dtype=np.longdouble))
+                           for Z in (14,16)}
+            point_command.append(str(binary))
         completed=subprocess.run(point_command,check=True,env=env,
             timeout=max(1.,250.-(time.monotonic()-started)),
             capture_output=bb_result is not None,text=bb_result is not None)
@@ -193,7 +242,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
                                completed.stdout,re.M)
             if len(matched)!=len(bb_expected) or sum(int(row[1]) for row in matched)!=len(lower):
                 raise ValueError('BB 원소별 C handoff 행 누락')
-            for Z,count,intra,heat_string in matched:
+            for Z,bb_count,intra,heat_string in matched:
                 Z=int(Z);actual=float(heat_string);bb_reference=bb_expected[Z]
                 if not np.isclose(actual,bb_reference,rtol=2.e-7,atol=1.e-30):
                     raise ValueError(f'원소 {Z} 복사 선 열량 불일치: C={actual} 원FL={bb_reference}')
@@ -202,6 +251,21 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
                 full_level_heat_per_Z=bb_expected,within_SL_lines=sum(int(row[2]) for row in matched),
                 C_all_elements_BB_assembly=True,collisional_BB_included=False,
                 original_J_A_after_IR_fix_regenerated=False,SE_RE_solution=False)
+        if col_result is not None:
+            matched=re.findall(r'^\[MODEL-COLL-BB\]\[ACTUAL\] Z=(\d+) pairs=(\d+) cross=(\d+) intra=(\d+) heat_erg_cm3_s=([^\s]+)$',
+                               completed.stdout,re.M)
+            if (len(matched)!=2 or sum(int(row[1]) for row in matched)!=count or
+                sum(int(row[2])+int(row[3]) for row in matched)!=count):
+                raise ValueError('전쌍 C handoff 범위 누락')
+            for Z,_,_,_,heat_string in matched:
+                if not np.isclose(float(heat_string),expected_heat[int(Z)],rtol=2.e-7,atol=1.e-25):
+                    raise ValueError(f'원소 {Z} 충돌 열량 C/원FL 불일치')
+            collision_test=dict(native_node=49,source_result_sha256=B.sha(col_result),
+                binary_sha256=B.sha(binary),pairs=count,
+                C_heat_per_Z={int(Z):float(h) for Z,_,_,_,h in matched},
+                full_level_heat_per_Z=expected_heat,
+                C_all_Si_S_bound_ion_BB_collision_assembly=True,
+                full_SE_RE_solution=False)
         point_test=dict(native_node=49,routes=len(point.routes),ions=len(physical),selected_frequencies=len(frequency),
             terminal_ions=[dict(Z=key[0],lower_stage=key[1],energy_eV=value[0],g=value[1])
                            for key,value in sorted(point.terminal.items())],
@@ -220,6 +284,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None):
         script_sha256=B.sha(Path(__file__)),wall_seconds=time.monotonic()-started,
         fit_sensitivity_is_SE_RE_solution=False,public_material_updates=0,
         point_bound_test=point_test,point_bb_test=bb_test,new_transport=0,final_goal='NOT_MET')
+    result['point_collision_test']=collision_test
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('MODEL_OCCUPATION_NATIVE_TEST PASS values='+str(nl*ns),flush=True)
 
@@ -229,5 +294,6 @@ if __name__=='__main__':
     p.add_argument('--library',required=True);p.add_argument('--projection',required=True)
     p.add_argument('--point-library')
     p.add_argument('--bb-result')
+    p.add_argument('--col-result')
     p.add_argument('--out',required=True);args=p.parse_args()
-    run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result)
+    run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result,args.col_result)
