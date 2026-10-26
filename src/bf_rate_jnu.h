@@ -63,6 +63,25 @@ int bf_rate_point_contract_milne(size_t n, const double *frequency_Hz,
     const double *forward_sigma, double threshold_Hz,
     double milne_prefactor, double inverse_kT_Hz, BfPointRates *out);
 
+/* 여러 원래점의 같은 주파수 블록을 한 σ 평가로 소비한다. 모든 율은
+ * route-major [n_routes*n_points], J는 point-major [n_points*n_frequency],
+ * bound_sigma는 [n_routes*n_frequency]다. 확률/FL분율은 밖에서 한 번 적용한다.
+ * evaluation_Hz는 σ/용해 평가점이며 열적 지수·열량에는 actual frequency를 쓴다.
+ * 폭32/kT 제한은 지수의 블록 표현만을 위한 것으로 주파수를 버리지 않는다.
+ * 실패 시 두 출력 배열은 보존된다. material_b/a/x는 기존 용해 fit의 점별 값.
+ * dissolved=0이면 해당 세 벡터를 NULL로 줄 수 있다. */
+typedef struct {
+    size_t n_frequency, n_routes, n_points;
+    const double *frequency_Hz, *evaluation_Hz, *quadrature_Hz, *J_nu;
+    const double *bound_sigma, *threshold_Hz, *milne_prefactor, *inverse_kT_Hz;
+    int dissolved;
+    const uint8_t *dissolution_primary;
+    const double *sigma_edge, *z_screen, *material_b, *material_a, *material_x;
+} BfMaterialRateBlock;
+
+int bf_rate_material_block_contract(const BfMaterialRateBlock *block,
+    BfPointRates *bound, BfPointRates *total);
+
 /* 원자 경로 순서의 불변 snapshot. T/ne가 바뀌면 재생산해야 하며
  * stale snapshot을 bin 경로로 대체하지 않는다. 배열은 caller 소유다. */
 typedef struct {

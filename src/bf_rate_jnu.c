@@ -2,6 +2,8 @@
 
 #include <math.h>
 #include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -74,6 +76,108 @@ int bf_rate_point_contract_milne(size_t n,const double *nu,const double *width,
        !isfinite(result.heat_stimulated)) return -1;
     *out=result;
     return 0;
+}
+
+int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
+    BfPointRates *bound,BfPointRates *total)
+{
+    if(!v || !bound || !total || bound==total || !v->n_frequency ||
+       !v->n_routes || !v->n_points || !v->frequency_Hz || !v->evaluation_Hz ||
+       !v->quadrature_Hz || !v->J_nu || !v->bound_sigma || !v->threshold_Hz ||
+       !v->milne_prefactor || !v->inverse_kT_Hz || v->dissolved<0 || v->dissolved>1 ||
+       v->n_points>SIZE_MAX/v->n_frequency || v->n_routes>SIZE_MAX/v->n_frequency ||
+       v->n_routes>SIZE_MAX/v->n_points)return -1;
+    const size_t nf=v->n_frequency,nr=v->n_routes,np=v->n_points,nout=nr*np;
+    if(nout>SIZE_MAX/sizeof(BfPointRates) || nr*nf>SIZE_MAX/sizeof(double) ||
+       np*nf>SIZE_MAX/sizeof(long double) ||
+       nf>SIZE_MAX/sizeof(long double) ||
+       (v->dissolved && (!v->dissolution_primary || !v->sigma_edge || !v->z_screen ||
+                        !v->material_b || !v->material_a || !v->material_x)))return -1;
+    for(size_t k=0;k<nf;k++)if(!isfinite(v->frequency_Hz[k]) || v->frequency_Hz[k]<=0. ||
+       (k && v->frequency_Hz[k]<=v->frequency_Hz[k-1]) ||
+       !isfinite(v->evaluation_Hz[k]) || v->evaluation_Hz[k]<=0. ||
+       !isfinite(v->quadrature_Hz[k]) || v->quadrature_Hz[k]<0.)return -1;
+    for(size_t p=0;p<np;p++){
+        if(!isfinite(v->inverse_kT_Hz[p]) || v->inverse_kT_Hz[p]<=0. ||
+           v->inverse_kT_Hz[p]*(v->frequency_Hz[nf-1]-v->frequency_Hz[0])>32.000000000001)return -1;
+        if(v->dissolved && (!isfinite(v->material_b[p]) || v->material_b[p]<=0. ||
+           !isfinite(v->material_a[p]) || v->material_a[p]<0. ||
+           !isfinite(v->material_x[p]) || v->material_x[p]<=0.))return -1;
+        for(size_t k=0;k<nf;k++)if(!isfinite(v->J_nu[p*nf+k]) || v->J_nu[p*nf+k]<0.)return -1;
+    }
+    for(size_t r=0;r<nr;r++){
+        double edge=v->threshold_Hz[r];
+        if(!isfinite(edge) || edge<=0.)return -1;
+        if(v->dissolved && (v->dissolution_primary[r]>1 || !isfinite(v->sigma_edge[r]) ||
+           v->sigma_edge[r]<0. || !isfinite(v->z_screen[r]) || v->z_screen[r]<=0.))return -1;
+        for(size_t p=0;p<np;p++)if(!isfinite(v->milne_prefactor[r*np+p]) ||
+            v->milne_prefactor[r*np+p]<0.)return -1;
+        for(size_t k=0;k<nf;k++)if(!isfinite(v->bound_sigma[r*nf+k]) ||
+           v->bound_sigma[r*nf+k]<0. ||
+           (v->bound_sigma[r*nf+k]>0. && v->evaluation_Hz[k]<edge))return -1;
+    }
+    long double *thermal=malloc(np*nf*sizeof(*thermal)),*weight=malloc(nf*sizeof(*weight));
+    long double *photon=malloc(nf*sizeof(*photon));
+    BfPointRates *work_bound=malloc(nout*sizeof(*work_bound)),*work_total=malloc(nout*sizeof(*work_total));
+    if(!thermal || !weight || !photon || !work_bound || !work_total){
+        free(thermal);free(weight);free(photon);free(work_bound);free(work_total);return -1;
+    }
+    for(size_t k=0;k<nf;k++){
+        const long double nu=v->frequency_Hz[k];
+        weight[k]=4.L*M_PI*v->quadrature_Hz[k]/(BF_H_CGS*nu);
+        photon[k]=2.L*BF_H_CGS*nu*nu*nu/(BF_C_CGS*BF_C_CGS);
+        for(size_t p=0;p<np;p++)
+            thermal[p*nf+k]=expl(-(long double)v->inverse_kT_Hz[p]*(nu-v->frequency_Hz[0]));
+    }
+    int failed=0;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) reduction(|:failed)
+#endif
+    for(size_t r=0;r<nr;r++)for(size_t p=0;p<np;p++){
+        long double sums[2][6]={{0}},normalization=0.;int normalized=0;
+        const double edge=v->threshold_Hz[r];
+        for(size_t k=0;k<nf;k++){
+            double sigma[2]={v->bound_sigma[r*nf+k],v->bound_sigma[r*nf+k]};
+            double evaluation=v->evaluation_Hz[k];
+            if(v->dissolved && v->dissolution_primary[r] && v->sigma_edge[r]>0. &&
+               evaluation<edge && evaluation>.8*edge && evaluation>edge-3.289395e15/4.){
+                double z=v->z_screen[r],b=v->material_b[p],a=v->material_a[p],x=v->material_x[p];
+                double effective=sqrt(3.289395e15*z*z/(edge-evaluation));
+                double kk=fmin(1.,16.*effective/((1.+effective)*(1.+effective))/3.);
+                kk=pow(kk*z*z*z/pow(effective,4.),1.5);
+                double first=7.782+x*b*kk;
+                double fraction=first/(first+1.091*(x+4.*(z-1.)*a)*b*b*kk*kk);
+                if(!isfinite(fraction) || fraction<0. || fraction>1.){failed=1;break;}
+                if(fraction>1.e-4)sigma[1]+=v->sigma_edge[r]*fraction;
+            }
+            if(sigma[1]==0.)continue; /* 두 항이 실제로0인 지지 밖만 생략한다. */
+            if(sigma[1]>0. && !normalized){
+                normalization=(long double)v->milne_prefactor[r*np+p]*
+                    expl((edge-v->frequency_Hz[0])*(long double)v->inverse_kT_Hz[p]);
+                normalized=1;
+                if(!isfinite(normalization) || normalization<0.){failed=1;break;}
+            }
+            const long double j=v->J_nu[p*nf+k],energy=BF_H_CGS*((long double)v->frequency_Hz[k]-edge);
+            for(int mode=0;mode<2;mode++){
+                long double inverse=sigma[mode]*normalization*thermal[p*nf+k];
+                long double terms[3]={weight[k]*sigma[mode]*j,weight[k]*inverse*photon[k],weight[k]*inverse*j};
+                for(int term=0;term<3;term++){
+                    sums[mode][term]+=terms[term];sums[mode][term+3]+=terms[term]*energy;
+                }
+            }
+        }
+        BfPointRates values[2];
+        for(int mode=0;mode<2;mode++){
+            values[mode]=(BfPointRates){(double)sums[mode][0],(double)sums[mode][1],(double)sums[mode][2],
+                (double)sums[mode][3],(double)sums[mode][4],(double)sums[mode][5]};
+            for(int term=0;term<6;term++)if(!isfinite(sums[mode][term]) ||
+                !isfinite((double)sums[mode][term]))failed=1;
+        }
+        work_bound[r*np+p]=values[0];work_total[r*np+p]=values[1];
+    }
+    if(!failed){memcpy(bound,work_bound,nout*sizeof(*bound));memcpy(total,work_total,nout*sizeof(*total));}
+    free(thermal);free(weight);free(photon);free(work_bound);free(work_total);
+    return failed?-1:0;
 }
 
 int bf_rate_point_get(const BfPointRateView *v,size_t route,size_t shell,
