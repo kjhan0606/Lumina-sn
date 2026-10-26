@@ -1,0 +1,100 @@
+{
+  "status": "SAME_RATES_DIFFERENT_LINE_THERMAL_CONTRACT_CONFIRMED",
+  "scope": "동일한 저장 BB90 순천이율에서 두 선 열장부만 비교. 실제 온도해·이온분율 영향 및 native 이산 연산자 동등성은 미검증.",
+  "BB_run": "lumina_linear_BB90_20261027-gfIdax",
+  "BB_result_sha256": "b95b16e3401068bc8239116a87c872f392e970ec5780b7ce04d32cf51d1e9ec9",
+  "BF_run": "lumina_material_bf90_20261027-B64JUq",
+  "BF_result_sha256": "482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6",
+  "comparison_script_sha256": "b9277a450cc6ab24e8955e63337e7031e7dcddef85b96ce7c2682773d3ed0fef",
+  "native_source_sha256": {
+    "new_main/cmfgen_sub.f": "092f8526661b1f9a5eaeb7a875f07f55623f427ad07c383f2659f2fb67143374",
+    "newsubs/ave_level_energy.f": "5fa6e110229606d49180ba007e6608ebd549997591e4b27607244957c487b0c8",
+    "new_main/subs/update_ba_for_line.f": "be4f1cf9de954c91f7f004e0cc1727dacce6639b3bc7de8d2f7a181cb0913a2a",
+    "new_main/subs/eval_adiabatic_v3.f": "b9c148098f009fb2594d97ada99a05ccc1d413f52384d877f6e76602db1a286a"
+  },
+  "native_SCL_LN": true,
+  "native_ratio_window": 0.5,
+  "native_density_limit": 1e30,
+  "edge_rule": "GENOSC_V9: (ionization_cm - E_cm) * c * 1e-15; 인쇄된 보조 nu15 열은 사용하지 않음",
+  "counts": {
+    "lines": 790493,
+    "within_native_ratio_window": 670672,
+    "changed_by_more_than_one_percent": 568606,
+    "same_SL": 695
+  },
+  "nuclei_density_min": 54446.422608315945,
+  "nuclei_density_max": 5171347234.962812,
+  "density_override_points": 0,
+  "by_element": [
+    {
+      "Z": 14,
+      "maximum_delta_over_gross": 8.639705521433787e-6,
+      "worst_native_node": 65,
+      "physical_at_worst": 1.666920381233129e-29,
+      "native_thermal_at_worst": 5.428004119829239e-31,
+      "delta_at_worst": -1.6126403400348367e-29,
+      "gross_at_worst": 1.866545492822785e-24,
+      "maximum_absolute_delta": 1.3031063840358716e-6
+    },
+    {
+      "Z": 16,
+      "maximum_delta_over_gross": 1.0341410444252035e-5,
+      "worst_native_node": 22,
+      "physical_at_worst": 4.9589106868781717e-5,
+      "native_thermal_at_worst": 4.9381156271109e-5,
+      "delta_at_worst": -2.0795059767271995e-7,
+      "gross_at_worst": 0.020108533433976897,
+      "maximum_absolute_delta": 8.723251143175666e-7
+    },
+    {
+      "Z": 20,
+      "maximum_delta_over_gross": 0.0003665008509126812,
+      "worst_native_node": 13,
+      "physical_at_worst": 4.1058653336794796e-11,
+      "native_thermal_at_worst": 1.1476493384552399e-10,
+      "delta_at_worst": 7.370628050872919e-11,
+      "gross_at_worst": 2.011080747157384e-7,
+      "maximum_absolute_delta": 1.3148905495940397e-8
+    },
+    {
+      "Z": 26,
+      "maximum_delta_over_gross": 0.0036164420122451017,
+      "worst_native_node": 21,
+      "physical_at_worst": -2.92246573061234e-16,
+      "native_thermal_at_worst": -4.949759254696015e-16,
+      "delta_at_worst": -2.0272935240836748e-16,
+      "gross_at_worst": 5.6057680925599105e-14,
+      "maximum_absolute_delta": 0.0004173984907165453
+    },
+    {
+      "Z": 27,
+      "maximum_delta_over_gross": 0.0013336844090503506,
+      "worst_native_node": 36,
+      "physical_at_worst": -1.0310107595926975e-12,
+      "native_thermal_at_worst": -1.190798373742668e-12,
+      "delta_at_worst": -1.5978761414997021e-13,
+      "gross_at_worst": 1.1980916404634805e-10,
+      "maximum_absolute_delta": 0.0027420475640793167
+    },
+    {
+      "Z": 28,
+      "maximum_delta_over_gross": 0.0022644282473304163,
+      "worst_native_node": 38,
+      "physical_at_worst": -9.240943626340914e-13,
+      "native_thermal_at_worst": -1.6503131117139244e-12,
+      "delta_at_worst": -7.26218749079833e-13,
+      "gross_at_worst": 3.207073352560356e-10,
+      "maximum_absolute_delta": 0.0010115037046249968
+    }
+  ],
+  "thermal_unit": "erg cm^-3 s^-1; 양수=물질 가열",
+  "gross_definition": "각 원소의 전 선에서 h*nu*(forward+reverse)를 합산한 값",
+  "maximum_absolute_delta_node_may_differ_from_worst_gross_node": true,
+  "static_vs_dynamic_internal_energy_compared": false,
+  "coupled_temperature_population_response_solved": false,
+  "new_transport": 0,
+  "new_native": 0,
+  "new_BF_BB_integrals": 0,
+  "material_updates": 0,
+  "final_goal": "NOT_MET"
+}
