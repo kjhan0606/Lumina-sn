@@ -1,0 +1,90 @@
+{
+  "scope": "전90점 공통 물질응답의 FF 열항 구현과 native 침적열 계약 조사; 전체 RE 해나 최종 물리 인증 아님",
+  "free_free": {
+    "status": "COMPLETE_FROZEN_FIELD_FF90_THERMAL_COEFFICIENTS",
+    "run": "lumina_FF90_20261027-aZEAs7",
+    "source_commit": "b9c8b94b",
+    "result_sha256": "2ceed7d323612208d0e2ac23808e8d0f9fd6ce6f5b7feff47f2ff0981a3f3b58",
+    "coefficients_sha256": "29a8de0990fee9797eb5b4e385f0f47d40a4e6c5308e391dcf0cbfb1f63729c9",
+    "thermal_csv_sha256": "f2a48ffc2fd95d75340bd48bd55154cc589f7de54a38b8b1f44b62f22920e343",
+    "native_gaunt_binary_sha256": "0f89ccd19f0a2a7631308b0197213d41dee4b6420c0a24cecad2527d8ddc0386",
+    "code_sha256": {
+      "run_lumina_freefree90.py": "d319d5a3948a340285000007247e380e0b2b94928aff354e126502e4ed4fd2b8",
+      "lumina_model_freefree.py": "96adcfd8ac7bf9c2c14dfe1dfdb1d6c35cf86cfea7c7f070e89398a60b2b825f",
+      "cmfgen_model_sources.py": "a9bf5c8eac1586521eaf0d63ebce0b4a8f69625ae18720a9b3ae6f6ccc4ee2b6"
+    },
+    "points": 90,
+    "frequencies": 197291,
+    "charges": 6,
+    "wall_seconds": 6.347899333995883,
+    "temperature_unchanged_cache_reused_for_original_and_fixed_T_ne_SE_population": true,
+    "changed_temperature_requires_recomputation": true,
+    "original_max_abs_policy_net_difference": 3.31547741385152e-10,
+    "candidate_max_abs_policy_net_difference": 3.339912414953686e-10,
+    "original_max_abs_all_positive_ion_net": 6.121905230195645e-5,
+    "candidate_max_abs_all_positive_ion_net": 6.118118838656422e-5,
+    "thermal_unit": "erg cm^-3 s^-1; net 양수=물질 가열",
+    "selected_nodes": [
+      {"node": 35, "original_all_ions_net": -2.864735700943386e-10, "candidate_all_ions_net": -2.885720485958426e-10},
+      {"node": 49, "original_all_ions_net": -4.2419528301024134e-8, "candidate_all_ions_net": -4.242123284276977e-8},
+      {"node": 65, "original_all_ions_net": -6.973161439381333e-6, "candidate_all_ions_net": -6.973093036716991e-6},
+      {"node": 89, "original_all_ions_net": -3.3553686076270714e-5, "candidate_all_ions_net": -3.3534569438375306e-5}
+    ],
+    "independent_output_hash_and_finite_shape_check": "REPRODUCED",
+    "direct_tests_with_actual_native_gaunt": {"tests": 5, "skipped": 0, "seconds": 0.062, "result": "PASS"}
+  },
+  "native_deposition": {
+    "status": "LEGACY_DELTA_T_ZERO_HEATING_CONFIRMED_NOT_PHYSICAL_ABSENCE",
+    "material": "toy06_19p48d_field_feedback_429038/material",
+    "INC_RAD_DECAYS": true,
+    "INS_DEP": true,
+    "TRT_NON_TE": false,
+    "GAMRAY_TRANS": "LOCAL",
+    "SN_age_days": 19.48,
+    "input_hydro_age_days": 19.48,
+    "delta_t_seconds": 0.0,
+    "stored_RVTJ_heating_points": 90,
+    "stored_RVTJ_heating_nonzero": 0,
+    "input_isotope_profiles_700_points": [
+      {"isotope": "NICK56", "min_mass_fraction": 1e-10, "max_mass_fraction": 0.10832065},
+      {"isotope": "COB56", "min_mass_fraction": 1e-10, "max_mass_fraction": 0.793714762},
+      {"isotope": "IRON56", "min_mass_fraction": 1e-10, "max_mass_fraction": 0.0979645878}
+    ],
+    "source_reason": "rd_sn_data.f:523의 현재 나이−hydro 나이 시간차; do_species_decays_v2.f:92/159의 delta_t=0 빈 분기가 INS_DEP보다 우선",
+    "input_sha256": {
+      "MODEL": "e8ec1835355869c3b8fbaf761fc8b6eeb516b527aa660aea768b8cbc19e2f6c9",
+      "VADAT": "80e080036c989a3f8260d339ffdc21432f494a36590752fa7436ad2616d144ec",
+      "RVTJ": "908c3a5a6a7b2430517c1a64d80802537363f3d03bbe172ef80db4e859c87e03",
+      "OUTGEN": "34057328681f4dbd2e172c48ed8679663efe8ff119423fbc3f25074025d9b18c",
+      "NUC_DECAY_DATA": "e38afd62b09d0288fe1793f439f0352b682c2cb518da7f592d94fe02ee931522",
+      "SN_HYDRO_DATA": "fba01d5b4aed2e48abd00f765f08ef770d11ebe3367720403d8d42cb28cbd9ec",
+      "SN_HYDRO_FOR_NEXT_MODEL": "60552a6fd1e87b1aedd97da4d1bd8ff866bd14b069287ced7c6ec852e501e9ef"
+    },
+    "source_sha256": {
+      "do_species_decays_v2.f": "5dd9944de92934a427ade7be70ac1440797c55e476a6de2947df82b06054be3a",
+      "eval_rad_decay_v1.f": "3b030a800321484b8689c397a25c2c71f05c21e643288b60ab9a1c94b023d540"
+    },
+    "counterfactual_instantaneous_local_heating": {
+      "formula": "sum(current_isotope_number_density * decay_constant * energy_per_decay)",
+      "isotope_amu_to_g": 1.66e-24,
+      "MeV_to_erg": 1.602176634e-6,
+      "input": "저장된 native90 SN_HYDRO_FOR_NEXT_MODEL; 새 보간 없음",
+      "minimum": 1.2573975763179436e-17,
+      "maximum": 0.004597357360047755,
+      "maximum_native_node": 89,
+      "node49": 7.917514821925162e-10,
+      "node65": 0.0012836609468300383,
+      "installed_in_material_or_reference": false,
+      "native_residual_equivalence_proven": false
+    },
+    "Astra_recommendation": "현재 input70 재현에는 원0가열 보존. 물리적 부재로 해석하지 말고 후속 물리 앵커에는 동일 isotope와 순간 침적열 계약을 양쪽에 명시. 작은 delta_t 우회나 임의 Ni56 증량 금지.",
+    "zero_heat_released_T_run_alone_is_not_final_physical_anchor": true,
+    "optional_instantaneous_function_direct_tests": {"energy_module_tests": 6, "seconds": 0.028, "result": "PASS"}
+  },
+  "new_transport": 0,
+  "new_native": 0,
+  "new_BF_BB_integrals": 0,
+  "public_material_updates": 0,
+  "full_coupled_charge_RE_solved": false,
+  "final_goal": "NOT_MET"
+}

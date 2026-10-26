@@ -129,3 +129,28 @@ class ModelThermalEnergy:
         ratio=(self.mean_edge[lc]-self.mean_edge[uc])/nu
         factor=np.where(np.abs(ratio-1)<=ratio_limit,ratio,1.) if enabled else np.ones_like(ratio)
         return np.where(density[None,:]>=density_limit,1.,factor[:,None])
+
+
+def instantaneous_local_decay_heating(isotope_number_density,channels):
+    """현재 핵종의 국소 순간출력 Σ n*lambda*E (erg cm^-3 s^-1).
+
+    channels는 (핵종 이름,붕괴상수 s^-1,반응당 에너지 erg)다. isotope 진화나
+    gamma 수송은 하지 않는다. 같은 나이의 두 상태라 해도 현재 붕괴출력은
+    유한하며, 이전 epoch와의 시간차로 나누거나0으로 만들지 않는다.
+    원 입력 재현에서 저장0가열을 선택하는 정책과 이 물리 함수를 혼합하지 않는다.
+    """
+    result=None;seen=set()
+    for name,decay_constant,energy in channels:
+        if (name in seen or name not in isotope_number_density or
+            not np.isfinite([decay_constant,energy]).all() or decay_constant<=0 or energy<0):
+            raise ValueError('핵종/붕괴 채널 입력 오류')
+        seen.add(name);density=np.asarray(isotope_number_density[name],dtype='f8')
+        if (density.ndim!=1 or not len(density) or not np.isfinite(density).all() or np.any(density<0) or
+            (result is not None and density.shape!=result.shape)):
+            raise ValueError('핵종 수밀도 입력 오류')
+        if result is None:result=np.zeros(density.shape,dtype=np.longdouble)
+        result+=np.asarray(density,dtype=np.longdouble)*decay_constant*energy
+    if result is None:raise ValueError('빈 붕괴 채널')
+    result=np.asarray(result,dtype='f8')
+    if not np.isfinite(result).all():raise ValueError('순간 침적열 범위 초과')
+    return result

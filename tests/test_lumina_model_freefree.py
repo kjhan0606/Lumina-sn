@@ -1,4 +1,6 @@
 import unittest
+import os
+from pathlib import Path
 
 import numpy as np
 
@@ -24,7 +26,8 @@ class FreeFreeTests(unittest.TestCase):
 
     def provider(self,J,evaluation=None):
         return ModelFreeFree(self.nu,self.w,J,self.kernels,self.models,self.state['columns'],
-            radiation_generation=70,evaluation=evaluation,kernel_identity='synthetic-gaunt-only')
+            radiation_generation=70,evaluation=evaluation,
+            kernel_identity=None if hasattr(self.kernels,'path') else 'synthetic-gaunt-only')
 
     def test_direct_and_cont_freq_thermal_integral_matches_existing_sources(self):
         j=np.ones((2,len(self.nu)))*1.e-6
@@ -71,6 +74,13 @@ class FreeFreeTests(unittest.TestCase):
         np.testing.assert_allclose(a.heating,b.heating,rtol=3.e-15)
         np.testing.assert_allclose(a.cooling,b.cooling,rtol=3.e-15)
         with self.assertRaises(ValueError):p.prepare(self.state['temperature'],radiation_generation=71)
+
+    def test_actual_native_gaunt_in_existing_source_equivalence(self):
+        library=os.environ.get('CMFGEN_SOURCE_TEST_LIB')
+        if library is None:self.skipTest('봉인 native Gaunt 라이브러리의 명시 경로 필요')
+        self.kernels=S.SourceKernels(Path(library))
+        self.test_direct_and_cont_freq_thermal_integral_matches_existing_sources()
+        self.test_lte_balance_without_profile_or_frequency_renormalization()
 
 
 if __name__=='__main__':unittest.main()

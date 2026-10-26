@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from lumina_model_energy import ModelThermalEnergy
+from lumina_model_energy import ModelThermalEnergy,instantaneous_local_decay_heating
 import cmfgen_model_continuum as B
 
 
@@ -45,6 +45,19 @@ class EnergyTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.energy.superlevel_energy(f,'physical_neutral')
         with self.assertRaises(ValueError):self.energy.superlevel_energy(self.f,'unspecified')
         with self.assertRaises(ValueError):self.energy.internal_energy(np.zeros((5,2)),self.f,'native_static_raw')
+
+    def test_instantaneous_decay_uses_current_parent_density_not_time_difference(self):
+        densities={'Ni56':np.array([0.,2.,3.]),'Co56':np.array([0.,5.,7.])}
+        channels=[('Ni56',.1,2.e-6),('Co56',.02,4.e-6)]
+        actual=instantaneous_local_decay_heating(densities,channels)
+        np.testing.assert_allclose(actual,[0.,8.e-7,1.16e-6],rtol=2.e-15,atol=0)
+        np.testing.assert_array_equal(densities['Ni56'],[0.,2.,3.])
+
+    def test_decay_missing_duplicate_or_negative_density_rejected(self):
+        for densities,channels in (({'Ni56':[1.]},[('Co56',.1,1.)]),
+            ({'Ni56':[1.]},[('Ni56',.1,1.),('Ni56',.1,1.)]),
+            ({'Ni56':[-1.]},[('Ni56',.1,1.)])):
+            with self.assertRaises(ValueError):instantaneous_local_decay_heating(densities,channels)
 
 
 if __name__=='__main__':unittest.main()
