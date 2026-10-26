@@ -20,6 +20,8 @@ module load gnu13/13.2.0
 repository=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}
+build_mode=${3:-baseline}
+[[ "$build_mode" = baseline || "$build_mode" = lazy-dz ]]
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
 test -d "$parent"
 test ! -e "$parent/source"
@@ -33,5 +35,11 @@ export CMFGEN_SOURCE_ROOT=/gpfs/kjhan/cmfgen_src/cur_cmf
 cd "$project"
 python3 -m unittest discover -s tests -p test_cmfgen_instantaneous_reference_build.py -v
 python3 -m unittest discover -s tests -p test_native_restart_ba.py -v
+extra_args=()
+if [[ "$build_mode" = lazy-dz ]]; then
+  python3 -m unittest discover -s tests -p test_native_lazy_dz.py -v
+  python3 tests/test_native_lazy_dz.py --memory-probe "$parent/memory-probe"
+  extra_args+=(--lazy-dz)
+fi
 timeout -k 15 480s python3 scripts/build_cmfgen_instantaneous_reference.py \
-  --native /gpfs/kjhan/cmfgen_src/cur_cmf --out "$parent/build"
+  --native /gpfs/kjhan/cmfgen_src/cur_cmf --out "$parent/build" "${extra_args[@]}"

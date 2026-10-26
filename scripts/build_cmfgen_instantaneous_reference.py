@@ -15,6 +15,7 @@ import time
 from prepare_cmfgen_fixedj_exponent import patched
 from prepare_cmfgen_instantaneous_decay import ORIGINAL_SHA256, corrected_source
 from prepare_cmfgen_mom_capture import FLAGS
+import prepare_cmfgen_lazy_dz as DZ
 
 
 SEALED = {
@@ -28,6 +29,7 @@ SEALED = {
     'lib/libpgplt.a': '9cb57dc4e374685d7442a31c2e34953cb4f42f38f823cb51316d05d1831d539c',
     'lib/libmy_lapack.a': '49b1f986af37711e0bf968ba397f4745e7d5f251a1e5cd012129f9c3184b71a3',
     'lib/libmy_blas.a': '83bb4c947e2ba385b30130f0d08e67ebcebfa0561feeb7e4d9483c66efa5819b',
+    **DZ.SEALED,
 }
 SYMBOL = 'do_species_decays_v2_'
 RESTART_OLD = '\tCHK=.FALSE.\n\tIF(.NOT. NEWMOD)THEN\n'
@@ -82,7 +84,7 @@ def run(command, cwd, log):
     return result.stdout, result.stderr
 
 
-def build(native, out):
+def build(native, out, lazy_dz=False):
     native, out = native.resolve(), out.resolve()
     if out.exists():
         raise FileExistsError('기존 빌드 보존')
@@ -92,6 +94,8 @@ def build(native, out):
     before = snapshot(native)
     original_decay = (native / 'new_main/subs/do_species_decays_v2.f').read_bytes()
     common_source = restart_patch(patched((native / 'new_main/cmfgen_sub.f').read_text()))
+    if lazy_dz:
+        common_source = DZ.main_source(common_source)
     fixed_decay = corrected_source(original_decay)
     out.mkdir()
     inputs = out / 'inputs'
@@ -106,10 +110,17 @@ def build(native, out):
     common = out / 'common'
     common.mkdir()
     (common / 'cmfgen_sub.f').write_text(common_source)
+    if lazy_dz:
+        (common / 'init_line_opac_var_v2.f').write_text(DZ.initializer(
+            (inputs / 'new_main/mod_subs/init_line_opac_var_v2.f').read_bytes()))
     shutil.copyfile(inputs / 'new_main/GET_J_CHI.INC', common / 'GET_J_CHI.INC')
     log = out / 'build.log'
     version, _ = run(['gfortran', '--version'], out, log)
     run(['gfortran', *FLAGS, '-I' + str(inputs / 'mod'), '-c', 'cmfgen_sub.f'], common, log)
+    extra_objects = []
+    if lazy_dz:
+        run(['gfortran', *FLAGS, '-I' + str(inputs / 'mod'), '-c', 'init_line_opac_var_v2.f'], common, log)
+        extra_objects.append(common / 'init_line_opac_var_v2.o')
     variants = {}
     for name, decay in (('original_decay', original_decay), ('instantaneous_decay', fixed_decay)):
         variant = out / name
@@ -120,10 +131,11 @@ def build(native, out):
         mapfile = variant / 'link.map'
         # 두 decay object를 모두 명시한다. archive의 구형 정의에 의존하지 않는다.
         _, trace = run(['gfortran', '-fopenmp', '-m64', inputs / 'new_main/cmfgen.o',
-            common / 'cmfgen_sub.o', variant / 'do_species_decays_v2.o',
+            common / 'cmfgen_sub.o', variant / 'do_species_decays_v2.o', *extra_objects,
             '-L' + str(inputs / 'lib'), '-lsubs', '-lpgplt', '-lmod',
             inputs / 'lib/libmy_lapack.a', inputs / 'lib/libmy_blas.a',
             '-Wl,-Map=' + str(mapfile), '-Wl,--trace-symbol=' + SYMBOL,
+            *(['-Wl,--trace-symbol=zero_dz_', '-Wl,--trace-symbol=init_line_opac_var_v2_'] if lazy_dz else []),
             '-o', executable], variant, log)
         symbols, _ = run(['nm', '--defined-only', str(executable)], variant, log)
         if definition_count(symbols) != 1:
@@ -133,6 +145,14 @@ def build(native, out):
             raise ValueError('의도한 private decay object가 선택되지 않음')
         if 'libsubs.a(do_species_decays_v2.o)' in mapfile.read_text():
             raise ValueError('구형 archive decay object가 중복 포함됨')
+        if lazy_dz:
+            for symbol in ('zero_dz_', 'init_line_opac_var_v2_'):
+                definitions_dz = [line for line in trace.splitlines() if 'definition of ' + symbol in line]
+                if (definition_count(symbols, symbol) != 1 or len(definitions_dz) != 1 or
+                    str(extra_objects[0]) not in definitions_dz[0]):
+                    raise ValueError('의도한 private dZ 함수가 선택되지 않음: ' + symbol)
+            if 'libsubs.a(init_line_opac_var_v2.o)' in mapfile.read_text():
+                raise ValueError('구형 archive dZ object가 중복 포함됨')
         (variant / 'decay-symbol.txt').write_text('\n'.join(
             line for line in symbols.splitlines() if line.split()[-1] == SYMBOL) + '\n' + trace)
         variants[name] = dict(executable=str(executable), executable_sha256=sha(executable),
@@ -146,7 +166,8 @@ def build(native, out):
     script_root = Path(__file__).resolve().parent
     script_hashes = {str(script_root / name): sha(script_root / name) for name in
         ('build_cmfgen_instantaneous_reference.py', 'prepare_cmfgen_instantaneous_decay.py',
-         'prepare_cmfgen_fixedj_exponent.py', 'prepare_cmfgen_mom_capture.py')}
+         'prepare_cmfgen_fixedj_exponent.py', 'prepare_cmfgen_mom_capture.py',
+         'prepare_cmfgen_lazy_dz.py')}
     report = dict(schema='lumina-native-instantaneous-full-build-v2',
         state='COMPLETE_FULL_NATIVE_COMPARISON_BUILD', native=str(native),
         input_sha256=before, builder_sha256=script_hashes, compiler=version,
@@ -154,6 +175,14 @@ def build(native, out):
         common_object_sha256=sha(common / 'cmfgen_sub.o'), variants=variants,
         comparison='양쪽 actual-nu fixed-J·첫 BA 초기화 수정은 동일; 순간 침적열 분기만 다름',
         restart_BA_initialization_corrected=True,
+        lazy_dZ_row_zeroing=lazy_dz,
+        lazy_dZ_identity=({
+            'initializer_source_sha256': sha(common / 'init_line_opac_var_v2.f'),
+            'initializer_object_sha256': sha(common / 'init_line_opac_var_v2.o'),
+            'new_strong_column_full_reset_preserved': True,
+            'array_dimensions_line_list_and_physics_changed': False,
+            'full_model_peak_below_32GiB_proven': False,
+        } if lazy_dz else None),
         test_stubs_linked=False, native_original_changed=False, installed=False,
         new_full_native_calculations=0, new_transport=0, released_temperature=False,
         anchor_status='NOT_AVAILABLE', final_goal='NOT_MET',
@@ -166,5 +195,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--native', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--lazy-dz', action='store_true', help='미사용·weak 컬럼 행 zeroing만 생략')
     args = parser.parse_args()
-    print(json.dumps(build(args.native, args.out), ensure_ascii=False))
+    print(json.dumps(build(args.native, args.out, args.lazy_dz), ensure_ascii=False))
