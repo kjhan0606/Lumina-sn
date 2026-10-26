@@ -2,6 +2,7 @@
 # 원70/J70 PRRR 공통격자 read-only 율 진단. sbatch 인수: 새 격리 root.
 #SBATCH --job-name=lumina-prrr-common
 #SBATCH --partition=normal
+#SBATCH --exclude=grammar072,grammar078,grammar080
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
 #SBATCH --time=01:00:00

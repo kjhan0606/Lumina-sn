@@ -6,7 +6,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from compare_native_prrr_common_grid import (check_prior, continuum_mapping,
-                                             printed_half_step)
+                                             printed_half_step,
+                                             cached_exponent_frequency,
+                                             cached_exponent_rates)
 
 
 def test_continuum_mapping_preserves_native_order_and_rejects_missing(tmp_path):
@@ -45,3 +47,24 @@ def test_five_digit_print_bound():
     assert printed_half_step(1.2345e4) == .5
     assert printed_half_step(1.2345e-4) == 5e-9
     assert printed_half_step(0.) == 0.
+
+
+def test_cached_exponent_uses_first_descending_point_per_contiguous_group():
+    nu = np.arange(1., 8.)
+    evaluation = np.array([2., 2., 4., 4., 4., 2., 2.])
+    np.testing.assert_array_equal(cached_exponent_frequency(nu, evaluation),
+                                  [2., 2., 5., 5., 5., 7., 7.])
+    np.testing.assert_array_equal(cached_exponent_frequency(nu, nu), nu)
+    with pytest.raises(ValueError, match='cache'):
+        cached_exponent_frequency(nu[::-1], evaluation)
+
+
+def test_cached_exponent_changes_reverse_not_photo_and_identity_is_exact():
+    nu = np.array([1e15, 2e15])
+    sampled = dict(chi_abs=np.ones((1, 2)), chi_stim=np.ones((1, 2)),
+                   eta_spont=np.ones((1, 2)))
+    radiation = {'CMFGEN': np.ones((1, 2))}
+    exact = cached_exponent_rates(sampled, nu, nu, [1e4], radiation, np.ones(2))
+    old = cached_exponent_rates(sampled, nu, [2e15, 2e15], [1e4], radiation, np.ones(2))
+    assert old['photo'] == exact['photo'] == 2.
+    assert old['reverse'] < exact['reverse'] == 4.

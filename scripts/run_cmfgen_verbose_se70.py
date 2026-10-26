@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import time
 
+import numpy as np
+
 from configure_cmfgen_stageA import set_control
 from prepare_cmfgen_fixed_field_owner import point_records, record_bytes
 from ptf_gated_metrics import read_dimensions
@@ -18,7 +20,7 @@ from run_cmfgen_fixed_field import output_bytes, scan
 from run_cmfgen_lambda_probe import control, sha, stop_child
 
 
-def run(original, source70, reference71, native, build, root):
+def run(original, source70, reference71, native, build, root, corrected_build=None):
     if os.environ.get('OMP_NUM_THREADS') != '16' or not os.environ.get('SLURM_JOB_ID'):
         raise ValueError('Slurm CPU16/OMP16 작업만 허용')
     if root.exists():
@@ -36,6 +38,18 @@ def run(original, source70, reference71, native, build, root):
     if (Path(execution['actual_executable']['path']) != executable or
             sha(executable) != execution['actual_executable']['sha256']):
         raise ValueError('원71 실행 바이너리 불일치')
+    parent_executable = executable
+    correction_manifest = None
+    if corrected_build is not None:
+        correction_path = corrected_build/'fixedj-exponent-build.json'
+        correction_manifest = json.loads(correction_path.read_text())
+        if Path(correction_manifest['parent']) != build or Path(correction_manifest['native']) != native:
+            raise ValueError('고정장 지수 수정 build 부모/프로젝트 불일치')
+        for path, digest in {**correction_manifest['input_sha256'],
+                             **correction_manifest['output_sha256']}.items():
+            if sha(Path(path)) != digest:
+                raise ValueError('고정장 지수 수정 build 입력/출력 변경: '+path)
+        executable = corrected_build/'cmfgen_fixedj_exponent.exe'
     field = reference71.parent/'field'
     for name in ('EDDFACTOR', 'EDDFACTOR_INFO'):
         if sha(field/name) != runtime71['field_evidence_sha256'][name]:
@@ -60,6 +74,9 @@ def run(original, source70, reference71, native, build, root):
                   stage_controls_sha256={name: sha(step/name) for name in ('VADAT', 'IN_ITS')},
                   fixed_field_sha256={name: sha(step/name) for name in ('EDDFACTOR', 'EDDFACTOR_INFO')},
                   executable=dict(path=str(executable), sha256=sha(executable)),
+                  parent_executable=dict(path=str(parent_executable), sha256=sha(parent_executable)),
+                  correction_build=(None if corrected_build is None else
+                                    dict(path=str(corrected_build), manifest=correction_manifest)),
                   resources='grammar normal CPU16/OMP16 32GiB GPU0 2h; child 100min; retry0',
                   file_cap_bytes=8*1024**3, root_cap_bytes=16*1024**3,
                   physical_equivalence='NOT_JUDGED', final_goal='NOT_JUDGED')
@@ -94,12 +111,19 @@ def run(original, source70, reference71, native, build, root):
     reason = reason or scan(step, cursors)
     matching_record = False
     matching_population = False
+    temperature_unchanged = False
+    state_summary = None
     if proc.returncode == 0 and not reason:
         nd, nt = read_dimensions(step)
         a_header, a_storage, a_population = record_bytes(step/'SCRTEMP', 71, nd, nt)
         r_header, r_storage, r_population = record_bytes(reference71/'SCRTEMP', 71, nd, nt)
         matching_record = a_header == r_header and a_storage == r_storage
         matching_population = a_population.tobytes() == r_population.tobytes()
+        temperature_unchanged = np.array_equal(a_population[-1], state70[-1])
+        if not np.isfinite(a_population).all() or np.any(a_population < 0):
+            reason = 'invalid_material_output'
+        state_summary = dict(max_ne_relative_change=float(np.max(abs(a_population[-2]/state70[-2]-1))),
+                             max_temperature_change_K=float(np.max(abs(a_population[-1]-state70[-1]))*1e4))
     witness = 'NATIVE_SE_BOUND_000071.bin'
     report = dict(returncode=proc.returncode, stop_reason=reason,
                   elapsed_seconds=time.monotonic()-started,
@@ -110,6 +134,8 @@ def run(original, source70, reference71, native, build, root):
                                 sha(step/witness) == sha(reference71/witness),
                   diagnostic_file=str(step/'fort.19'),
                   diagnostic_file_exists=(step/'fort.19').is_file(),
+                  corrected_fixed_J_exponent=corrected_build is not None,
+                  temperature_unchanged=temperature_unchanged, state_summary=state_summary,
                   raw_source_unchanged=all(sha(step/name) == expected for name, expected in
                                            inputs['fixed_field_sha256'].items()),
                   final_goal='NOT_JUDGED')
@@ -120,16 +146,27 @@ def run(original, source70, reference71, native, build, root):
                             report['diagnostic_file_exists'] and
                             report['raw_source_unchanged'] and
                             report['point_records'] == dict(POINT1=71, POINT2=71))
+    if corrected_build is not None:
+        report['completed_corrected_step'] = (
+            report['returncode'] == 0 and not reason and report['temperature_unchanged'] and
+            report['diagnostic_file_exists'] and report['raw_source_unchanged'] and
+            report['point_records'] == dict(POINT1=71, POINT2=71) and (step/witness).is_file() and
+            sha(executable) == inputs['executable']['sha256'] and
+            sha(parent_executable) == inputs['parent_executable']['sha256'])
+        report['reproduced'] = False  # 수정된 물질을 구형 버그 해의 바이트 재현으로 표시하지 않는다.
+        report['physical_equivalence'] = 'NOT_YET_EVALUATED'
     (root/'seq_logs/verbose-se-runtime.json').write_text(
         json.dumps(report, ensure_ascii=False, indent=2)+'\n')
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if report['reproduced'] else 1
+    return 0 if report.get('completed_corrected_step', report['reproduced']) else 1
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ('original', 'source70', 'reference71', 'native', 'build', 'root'):
         parser.add_argument('--'+key, type=Path, required=True)
+    parser.add_argument('--corrected-build', type=Path)
     args = parser.parse_args()
     raise SystemExit(run(*(getattr(args, key).resolve() for key in
-                           ('original', 'source70', 'reference71', 'native', 'build', 'root'))))
+                           ('original', 'source70', 'reference71', 'native', 'build', 'root')),
+                         corrected_build=None if args.corrected_build is None else args.corrected_build.resolve()))
