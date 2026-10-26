@@ -304,6 +304,26 @@ static int solve_native_fixed_field(NativeFixedFieldBlocks *cache,
         for(size_t stage=0;stage<ns;stage++)
             printf("[MODEL-SE][FIXED-FIELD-STAGE] Z=%d stage0=%zu original=%.17g candidate=%.17g\n",
                 Z,stage,(double)initial_stage[stage],(double)candidate_stage[stage]);
+        size_t emitted=0;
+        for(size_t sl=0;sl<e->n_super_total;sl++)if(e->super_to_row[sl]>=0){
+            int row=e->super_to_row[sl];
+            int anchor=n->super_anchor_global[sl];
+            if(anchor<0 || anchor>=a->n_levels || !a->level_super ||
+               a->level_Z[anchor]!=Z || a->level_ion[anchor]!=row_stage[row] ||
+               a->level_super[anchor]<0)goto done;
+            printf("[MODEL-SE][FIXED-FIELD-ROW] Z=%d stage0=%d super0=%d original=%.17g candidate=%.17g\n",
+                Z,row_stage[row],a->level_super[anchor],
+                e->initial_population[row],candidate[row]);
+            emitted++;
+        }
+        for(int ip=0;ip<a->n_ion_pops;ip++)if(e->terminal_to_row[ip]>=0){
+            int row=e->terminal_to_row[ip];
+            if(a->ion_pop_Z[ip]!=Z || a->ion_pop_stage[ip]!=row_stage[row])goto done;
+            printf("[MODEL-SE][FIXED-FIELD-ROW] Z=%d stage0=%d super0=-1 original=%.17g candidate=%.17g\n",
+                Z,row_stage[row],e->initial_population[row],candidate[row]);
+            emitted++;
+        }
+        if(emitted!=nv)goto done;
         failed=0;
 done:
         free(candidate);free(row_stage);free(initial_stage);free(candidate_stage);

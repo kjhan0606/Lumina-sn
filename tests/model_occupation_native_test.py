@@ -349,11 +349,29 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             stages=re.findall(
                 r'^\[MODEL-SE\]\[FIXED-FIELD-STAGE\] Z=(\d+) stage0=(\d+) original=([^\s]+) candidate=([^\s]+)$',
                 full_completed.stdout,re.M)
+            variable_rows=re.findall(
+                r'^\[MODEL-SE\]\[FIXED-FIELD-ROW\] Z=(\d+) stage0=(\d+) super0=(-?\d+) original=([^\s]+) candidate=([^\s]+)$',
+                full_completed.stdout,re.M)
             if (len(candidates)!=2 or {int(row[0]) for row in candidates}!={14,16} or
                 any(int(row[1])!=49 or not np.isfinite(float(row[3])) or
                     float(row[3])>1.e-12 for row in candidates) or
                 not {int(row[0]) for row in stages}>={14,16}):
                 raise ValueError('Si/S private 고정장 정상해 증거 누락')
+            expected_keys={key for key in state['sl_index'] if key[0] in (14,16)}
+            observed_keys=[tuple(map(int,row[:3])) for row in variable_rows]
+            if (len(variable_rows)!=sum(int(row[2]) for row in candidates) or
+                len(observed_keys)!=len(set(observed_keys)) or
+                set(observed_keys)!=expected_keys):
+                raise ValueError('Si/S 고정장 후보의 SL/terminal 위상 불일치')
+            superlevel_profile=[]
+            for key,raw in zip(observed_keys,variable_rows):
+                old,new=map(float,raw[3:])
+                source_old=state['superlevel'][state['sl_index'][key],49]
+                if (not np.isfinite(old) or not np.isfinite(new) or old<0 or new<0 or
+                    not np.isclose(old,source_old,rtol=1.e-12,atol=0.)):
+                    raise ValueError(f'Si/S SL 원 물질70과 C 입력 불일치: {key}')
+                superlevel_profile.append(dict(Z=key[0],stage0=key[1],super0=key[2],
+                                               original=old,candidate=new))
             stage_profile={str(Z):[dict(stage0=int(stage),original=float(old),candidate=float(new))
                                   for z,stage,old,new in stages if int(z)==Z]
                            for Z in (14,16)}
@@ -366,6 +384,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                 routes=len(point.routes),terminal_routes=int(marker[0][2]),
                 full_frequency_C_assembly=True,private_partial_channel_SE_candidate=True,
                 complete_SE_RE_solution=False,fixed_field_stage_profile=stage_profile,
+                fixed_field_superlevel_profile=superlevel_profile,
                 contribution_sha256=B.sha(full_contributions),**full_seal,
                 Si_S_II_III_photo_spont_stim={f'{Z}:{stage}':physical_full[Z,stage].tolist()
                                                  for Z,stage in target_ions})
