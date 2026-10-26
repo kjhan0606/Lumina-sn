@@ -189,7 +189,7 @@
     "automatic_extra_evaluation": false
   },
   "proposed_charge_projected_candidate": {
-    "status": "APPROVED_PREPARING_SINGLE_EXECUTION",
+    "status": "APPROVED_SINGLE_EXECUTION_SUBMITTED",
     "objective": "같은 고정장에서 전하를 다시 닫은 실제 온도 후보가 깊이 결합 열잔차를 개선하는지 판별. 최종 스펙트럼 목표의 대체 아님",
     "inputs": "1223954 수용 전하 해·1224060 봉인 방향·기존 J70/물질70 원자료 및 네 열장부 보존",
     "temperature_candidates_max": 1,
@@ -207,7 +207,7 @@
       "numerical_wrapper_only": true,
       "physical_producer_equations_changed": false,
       "shell_syntax_check": "PASS",
-      "actual_90_point_projection_submitted": false
+      "actual_90_point_projection_submitted": true
     },
     "exclusions": "기존 미분4개 재계산0·native0·새 수송0·모델 차원/물리 가정/원자자료 변경0",
     "alternative": "사용자가 실제평가1회만 허용하면 기존 frozen 방향 alpha0/8의 단일 후보. 내부 전하 투영 묶음과 중복 실행하지 않음",
@@ -233,7 +233,20 @@
     "planned_alpha": 0.08746381384424386,
     "preserved_linearization_sha256": "4d2d30acea5060bd8c99f58fa569847ff06d897d31ee0eaa366dcc42c739c81d",
     "preserved_linearization_inputs_sha256": "91896174cf80d3b0589888c2541a53a87f2fed2b93108d77d4848603ddd90a31",
-    "submitted": false
+    "submitted": true,
+    "execution": {
+      "job": 1224249,
+      "run": "lumina_charge_projected_1224060_20261027_argsfix",
+      "state": "SUBMITTED",
+      "source_commit": "3b1ad0f76ea2a5c808c3d7c204d0f8ba0ee6e465",
+      "resources": "grammar CPU16/OpenMP16/32GiB/1시간59분/GPU0/retry0; 앞 입력실패31초 포함2시간 이내",
+      "fresh_temperature_full_BF_integrations_max": 1,
+      "same_T_material_evaluations_max_including_initial": 8,
+      "temperature_candidates_max": 1,
+      "native_128GiB_submitted": false,
+      "new_transport": 0,
+      "result_and_acceptance": "미확인: 실제 전하 폐합·전체 깊이 열잔차·90점 Si/S 판독이 필요"
+    }
   },
   "next": "승인된 전하 재평형 후보1개를 새 고유 출력에 단일 제출하고 실제 전하 폐합·열잔차·90점 Si/S를 판독한다. 별도 native128GiB는 미승인·미제출. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
   "final_goal": "NOT_MET"
