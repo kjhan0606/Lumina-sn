@@ -754,3 +754,21 @@ grammar-debug·CPU1·가상주소4GiB·55초 한도에서 실행 root를 cwd로 
 이 파일은 보존 확인용 일회성 증거이며 수송 실행기나 새 통과 게이트가 아니다.
 첫 체크포인트 저장 뒤 host peak RSS는5519576KiB, 장치 관측 peak는
 10058989568B로 둘 다 원16GiB 이내다. 완성 J와 새 CMFGEN 율 비교는 아직 없다.
+
+## 수송 대기 중 병렬 소스 확인 — 물질 소비 연결 경계
+
+운전자는 실행 입력/코드를 바꾸지 않고 기존 native90 초기화·물질 후보
+진입점만 확인했다. `nlte_population_candidate_build_bundle`는 명시적인
+radius/velocity 배열을 이미 받으므로 같은 물질 트랜잭션을 중복 구현할
+필요가 있는지 먼저 구분할 수 있다. 반면 기존 a210 wrapper의 중점 반경,
+canonical RadiationField의 shell 경계/bin-average 의미, 생산 main의 기본
+초기화는 새 native90 점값 J를 그대로 받는 생산 연결이 아니다.
+
+특히 현재 BF 소비기에는 legacy bin-average 단면과 J 재빈닝 경로가 있고,
+새 native90 PHOT/Milne 후처리의 성공이 그 SE 소비 연결의 성공은 아니다.
+BF와 line Jbar가 같은 새 장에서 생성되는 연결이 남는다. 또한 물질70
+MODEL의 비열 전자는 꺼져 있지만 방사성 붕괴/local 감마 침적은 켜져 있다.
+후속 감마 가열을 근거 없이0으로 만들지 않는다. source·근거와 한계는
+기존 bridge 기록의 `native90_material_consumer_readonly_2026_10_26`에 남겼다.
+이번 확인은 현재 RT 잔차의 원인 판정이나 새 물질 계산이 아니다. 수송/물질
+소스 수정0·새 수송0·물질 갱신0이며 기존 큰 계산을 중복 실행하지 않았다.
