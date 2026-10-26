@@ -74,6 +74,60 @@
     "correction": "원 식 보존·공개 visibility·선행 API 확인·후처리 전 후보 저장",
     "new_version_not_requeued_original": true
   },
-  "next": "온도별 동적 율을 소비하는 깊이 결합 T/ne Newton을 실제 후보에 연결. 두 열장부 차이와 native E/Jv·안정 reference·새 자기일관 수송·스펙트럼을 별도로 입증.",
+  "coupled_actual_probes": {
+    "job": 1224060,
+    "run": "lumina_coupled_Tne_20261027-6W0owt",
+    "sealed_source": "b59c59b2a8a09d0049e665fdbf33f87770de2560",
+    "observed_at_KST": "2026-10-27 07:14:46",
+    "state": "RUNNING",
+    "elapsed_s": 4912,
+    "thermal_policy": "native_instantaneous_scenario",
+    "completed_derivative_responses": 4,
+    "actual_direction_candidate": "generation15의 새 T BF 적분 중. 수용 결과는 아직 없음",
+    "log_step": 0.0001,
+    "probe_result_sha256": {
+      "T+": "14356671df6eee668ca48538414c58aed23427b0b095309568fc0ef3a834e4e8",
+      "T-": "0bc622de798c19224eb30c76adc408f97d7f9f2a392413739d6a5ac6aee251e9",
+      "ne+": "c086e6472f07cafdb3c7261c8022b168e6b3ae6b2de8fbdfc135929fd497be43",
+      "ne-": "c9a9287c906a194846568fce511ba5e8e3cc4124f01623179f392f83982b2632"
+    },
+    "read_only_reproduction": {
+      "location": "grammar-debug CPU1/4GiB/120초 이내",
+      "response_and_balance_output_hashes_verified": 8,
+      "variables": 180,
+      "linearization_sha256": "4d2d30acea5060bd8c99f58fa569847ff06d897d31ee0eaa366dcc42c739c81d",
+      "actual_C_depth_AD_used": true,
+      "jacobian_replay_error_max": 0.0,
+      "baseline_residual_replay_error_max": 0.0,
+      "linear_solve_residual_max": 3.0627346007716905e-18,
+      "independent_native_E_Jv_proof": false
+    },
+    "centered_uniform_T_response": {
+      "derivative_unit": "erg cm^-3 s^-1 per logT",
+      "physical_instantaneous_scenario": {
+        "maximum_absolute_derivative": 53.498890820504506,
+        "worst_node": 89,
+        "maximum_even_over_maximum_odd_response": 9.530278129799438e-5
+      },
+      "native_instantaneous_scenario": {
+        "maximum_absolute_derivative": 3.585624756935943,
+        "worst_node": 88,
+        "maximum_even_over_maximum_odd_response": 6.743694805415889e-6
+      },
+      "interpretation": "실제 ±logT의 내부 응답·대칭 확인이다. h/2 검증, native Jv, 실제 방향 후보 수용이나 물리 수렴 증명이 아니다"
+    }
+  },
+  "partial_auto_input_scope": {
+    "implementation_commit": "da9a43c6",
+    "native_source_sha256": "d6ebde54b206844fa797506f64c4fcf81153b65e808e3c880669df594bbe6e37",
+    "native_routine": "STEQ_AUTO_V2",
+    "finding": "명시적 AUTO_DATA 경로는 DIE 플래그와 별개다. 현재27 bound ion의 해당 파일은 모두 없어 native도 이 경로에서 반환한다",
+    "future_wrapper_behavior": "파일 또는 끊어진 링크가 있으면 비활성으로 가정하지 않고 거부. 시작 및 최종 게시 전에 확인",
+    "all_autoionization_or_DR_absent_claimed": false,
+    "PHOT_resonance_Milne_removed": false,
+    "live_1224060_source_or_inputs_changed": false,
+    "direct_tests": "grammar-debug CPU1/4GiB/180초 이내, 관련24개 통과"
+  },
+  "next": "단일1224060의 실제 방향 후보 잔차·수용 여부·Si/S 분포를 판독한다. 미분4응답을 재실행하지 않는다. 별도 native 기준 계산은32GiB OOM이며128GiB 미승인. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
   "final_goal": "NOT_MET"
 }
