@@ -144,6 +144,23 @@ def test_pseudo_only_and_fixed_T_cache_match_direct_after_ne_and_population_chan
         cache.integrate(trial,material_generation=3,radiation_generation=7)
 
 
+def test_fresh_changed_temperature_bound_can_seed_same_T_charge_iterations(library):
+    provider,state=example(library)
+    temperature=state['temperature']*np.array([.91,1.03,1.06])
+    warm=provider.prepare({**state,'temperature':temperature},material_generation=9)
+    bound,_=provider.integrate(warm,material_generation=9,radiation_generation=7)
+    cache=FixedTemperatureBoundRates(provider,warm,bound)
+    for generation,factor in ((11,1.001),(12,.999),(13,1.0001)):
+        trial=provider.prepare({**state,'temperature':temperature,'ne':state['ne']*factor},
+                               material_generation=generation)
+        direct=provider.integrate(trial,material_generation=generation,radiation_generation=7)
+        actual=cache.integrate(trial,material_generation=generation,radiation_generation=7)
+        np.testing.assert_allclose(actual,direct,rtol=5.e-12,atol=0)
+    old=provider.prepare(state,material_generation=14)
+    with pytest.raises(ValueError,match='온도'):
+        cache.integrate(old,material_generation=14,radiation_generation=7)
+
+
 def test_lost_inverse_information_uses_direct_route_not_zero_rescaling(library):
     provider,state=example(library);old=provider.prepare(state,material_generation=1)
     bound,_=provider.integrate(old,material_generation=1,radiation_generation=7)

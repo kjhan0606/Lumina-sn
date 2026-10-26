@@ -21,10 +21,11 @@ from lumina_common_charge import solve
 from lumina_coupled_material import packet,solve_coupled
 from lumina_material_restart import common_start
 import lumina_frozen_direction as frozen
+import lumina_charge_projection as projected
 from lumina_model_collision_source import ModelCollisionSource
 from lumina_model_freefree import ModelFreeFree
 from lumina_model_material_bridge import MaterialBridge
-from lumina_model_material_rates import ModelMaterialRates
+from lumina_model_material_rates import ModelMaterialRates,FixedTemperatureBoundRates
 from lumina_model_response import ModelResponse
 from lumina_model_response_balance import ResponseBalance
 from run_cmfgen_formal_primary import fields
@@ -90,6 +91,9 @@ def run(args):
     continuing=any(v is not None for v in frozen_args)
     if continuing and (not coupled or any(v is None for v in frozen_args)):
         raise ValueError('추가 감쇠는 같은 기준 후보와 방향/입력 hash/감쇠 비율이 함께 필요')
+    projecting=args.charge_projection
+    if projecting and not continuing:
+        raise ValueError('전하 투영은 봉인 기준/방향과 명시한 alpha가 필요')
     basis,basis_identity=(frozen.load(args.linearization,args.linearization_sha,args.linearization_inputs_sha,
                          args.thermal_policy,inputs) if continuing else (None,None))
     start_candidate,start_energy,start_directory=(common_start(args.common_result,args.common_result_sha,snapshot,inputs)
@@ -158,12 +162,14 @@ def run(args):
     inputs.update(balance.owner.input_sha256);inputs.update(balance.decay_metadata['input_sha256'])
     (out/'inputs.json').write_text(json.dumps(dict(source_commit=args.source_commit,input_sha256=inputs,
         resources='CPU16/32GiB/2h/OpenMP16/GPU0/retry0',scope=__doc__,max_charge_evaluations=8,
-        temperature_update=coupled,thermal_policy=args.thermal_policy,max_coupled_evaluations=(1 if continuing else 5) if coupled else 0,
+        temperature_update=coupled,thermal_policy=args.thermal_policy,
+        max_coupled_evaluations=(8 if projecting else 1 if continuing else 5) if coupled else 0,
+        charge_projection=projecting,fresh_temperature_full_BF_integrations_max=1 if projecting else None,
         reused_numerical_direction=basis_identity,frozen_alpha=args.frozen_alpha,
         absent_partial_auto_inputs=absent_auto,
         material_boundary=boundary,temperature_degrees='all90 free in private fixed-J trial; not native release' if coupled else 'fixed70',
         new_native=0,new_transport=0),indent=2)+'\n')
-    evaluations=[];latest={}
+    evaluations=[];latest={};projected_cache=None
     def record(result,metrics,trial,total):
         number=len(evaluations)+1;root=out/('evaluation-'+str(number));root.mkdir()
         # 후속 에너지 진단이 실패해도 이미 생산한 후보를 잃지 않는다.
@@ -204,7 +210,28 @@ def run(args):
                 np.savez(out/'newton-linearization.npz',jacobian=j,scaled_residual=f,direction=direction,
                     temperature=base.temperature,ne=base.ne,charge_scale=c,thermal_scale=h)
             try:
-                if continuing:
+                if projecting:
+                    target_T,target_ne=projected.proposal(base_packet,full_ad,basis,args.frozen_alpha)
+                    warm=provider.prepare({**response.seed,'temperature':target_T,'ne':target_ne},
+                                          material_generation=9)
+                    tick=time.monotonic()
+                    print(json.dumps(dict(phase='PROJECTED_T_BOUND_BEGIN',material_generation=9)),flush=True)
+                    fresh_bound,fresh_total=provider.integrate(warm,material_generation=9,
+                        radiation_generation=provider.radiation_generation,check=response.check_time)
+                    del fresh_total
+                    response.bound_cache=FixedTemperatureBoundRates(provider,warm,fresh_bound)
+                    cache_path=out/'projected-bound-cache.npz'
+                    np.savez(cache_path,bound=fresh_bound,milne_prefactor=warm.milne_prefactor,
+                        temperature=target_T,ne=target_ne,field_signature=provider.field_signature)
+                    projected_cache=dict(output_sha256=B.sha(cache_path),BF_seconds=time.monotonic()-tick,
+                        material_generation=9,radiation_generation=provider.radiation_generation,
+                        field_signature=provider.field_signature,
+                        interpretation='새 T 전적분1회. 이후 동일 T의 bound만 정확 재인수하고 pseudo/SE/열은 매번 갱신')
+                    (out/'projected-bound-cache.json').write_text(json.dumps(projected_cache,indent=2)+'\n')
+                    del fresh_bound
+                    outer=projected.trial(evaluate_coupled,base_packet,full_ad,basis,args.frozen_alpha,
+                        lower,upper,max_evaluations=8,on_evaluation=coupled_decision)
+                elif continuing:
                     outer=frozen.trial(evaluate_coupled,base_packet,full_ad,basis,args.frozen_alpha,
                                        on_evaluation=coupled_decision)
                 else:
@@ -257,6 +284,8 @@ def run(args):
         internal_fixed_field_numerical_convergence=solved['converged'] if coupled else False,
         thermal_policy=args.thermal_policy,RE_solved=False,native_E_Jv_verified=False,new_native=0,new_transport=0,
         reused_numerical_direction=basis_identity,frozen_alpha=args.frozen_alpha,
+        charge_projection=projecting,projected_bound_cache=projected_cache,
+        charge_projection_history=outer.get('charge_history',[]) if projecting else [],
         accepted_source_directory=str(accepted_root) if coupled else None,
         newton_linearization_sha256=B.sha(out/'newton-linearization.npz') if coupled and (out/'newton-linearization.npz').exists() else None,
         radioactive_policy='stored/instantaneous_scenario kept separate; no reference installed',
@@ -273,4 +302,5 @@ if __name__=='__main__':
         'native_stored','native_instantaneous_scenario'))
     p.add_argument('--linearization',type=Path);p.add_argument('--linearization-sha')
     p.add_argument('--linearization-inputs-sha');p.add_argument('--frozen-alpha',type=float)
+    p.add_argument('--charge-projection',action='store_true',help='승인된 새 T 전적분1회/같은 T 물질평가 최대8회')
     run(p.parse_args())

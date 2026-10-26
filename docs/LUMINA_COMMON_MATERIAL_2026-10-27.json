@@ -199,7 +199,16 @@
     "acceptance": "실제 같은 T의 전하/ne<=1e-10 및 기존 정상 SE·원소 보존, 같은 고정 행 scaling/열정책의 전체 깊이 잔차 개선. 기존 수용 기준을 완화하지 않음",
     "evidence": "fresh-T bound/trial/J/원자경로 신원·각 실제 응답/전하/네 열장부·전체90점 Si/S 비교·최종 수용 여부",
     "preservation": "새 격리 디렉터리. 원본·거부 후보·이전 수용 checkpoint 보존, 실패/한도 소진 시 공개 물질 갱신 없음",
-    "implementation": "운전자. 새 T bound의 같은 T 정확 재인수와 실제 전하 폐합을 연결하고 직접시험 후 봉인 실행",
+    "implementation": "운전자. lumina_charge_projection.py와 기존 실행 wrapper에 연결 완료. 실제 실행은 사용자 승인 후 봉인 commit에서만 수행",
+    "prepared_implementation_evidence": {
+      "direct_tests": "grammar-debug CPU1/4GiB/180초 이내, 관련28개 통과(1.62초)",
+      "tested": ["온도 후보1개만 사용", "초기 평가 포함 전체 물질평가 한도", "전하 미수렴 및 열악화 시 원 수용 상태 보존", "봉인 방향/잔차·실제 T/ne·수밀도 경계 오류 거부", "새 T에서 직접 적분한 bound로 same-T ne 반복의 전체6율 직접 적분 일치", "다른 온도 재사용 거부"],
+      "fresh_temperature_cache": "새 T bound/pref/T/ne/J 신원을 격리 출력에 보존. pseudo·SE·열장부는 매 ne 후보에 새로 평가하고 경로 fallback은 기존 직접 적분 유지",
+      "numerical_wrapper_only": true,
+      "physical_producer_equations_changed": false,
+      "shell_syntax_check": "PASS",
+      "actual_90_point_projection_submitted": false
+    },
     "exclusions": "기존 미분4개 재계산0·native0·새 수송0·모델 차원/물리 가정/원자자료 변경0",
     "alternative": "사용자가 실제평가1회만 허용하면 기존 frozen 방향 alpha0/8의 단일 후보. 내부 전하 투영 묶음과 중복 실행하지 않음",
     "user_question_sent": true,
