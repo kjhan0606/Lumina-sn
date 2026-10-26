@@ -41,6 +41,42 @@ typedef struct {
  * sigma-weighted contribution is within the declared R6 tolerance. */
 int bf_rate_result_is_consumable(const BfRateResult *result);
 
+/* 점값 전용: 전역 quadrature_Hz를 그대로 소비한다. bin 평균이 아니다.
+ * forward는 하위 FL 입자당, inverse는 상위 SL 입자당 계수다.
+ * PHOT 확률은 이 적분 밖에서 한 번만 적용한다. */
+typedef struct {
+    double photo, spontaneous, stimulated; /* s^-1 */
+    double heat_photo, heat_spontaneous, heat_stimulated; /* erg s^-1 */
+} BfPointRates;
+
+int bf_rate_point_contract(size_t n, const double *frequency_Hz,
+    const double *quadrature_Hz, const double *J_nu,
+    const double *forward_sigma, const double *inverse_sigma,
+    const double *inverse_eta, double threshold_Hz, BfPointRates *out);
+
+/* 원자 경로 순서의 불변 snapshot. T/ne가 바뀌면 재생산해야 하며
+ * stale snapshot을 bin 경로로 대체하지 않는다. 배열은 caller 소유다. */
+typedef struct {
+    size_t n_levels, n_routes, n_shells;
+    uint64_t radiation_generation, material_generation;
+    const int *offset;             /* n_levels+1 */
+    const int *target;             /* n_routes; upper SL의 실제 FL anchor */
+    const double *probability, *threshold_Hz, *sigma_edge;
+    const int *phot_grid;          /* 원 PHOT grid; CI 경로 선택용 */
+    const double *saha_lower_per_upper; /* route-major; 점유확률 포함 */
+    const double *temperature, *electron_density; /* n_shells */
+    const BfPointRates *rates;     /* route-major [n_routes*n_shells] */
+} BfPointRateView;
+
+int bf_rate_point_get(const BfPointRateView *view, size_t route, size_t shell,
+    uint64_t generation, double temperature, double electron_density,
+    BfPointRates *out);
+
+/* 빈 CSR 행은 실제 0개 경로이며 Kramers fallback을 뜻하지 않는다. */
+int bf_rate_point_row(const BfPointRateView *view, size_t n_levels,
+    size_t n_shells, size_t lower, uint64_t material_generation,
+    size_t *begin, size_t *end);
+
 /* sigma tabulation: photo cross-section points (nu ascending, cm^2), zero
  * below nu_threshold.  Matches the existing tabulated interpretation used by
  * the A2-02C builder bf kernel (4*pi*sigma/(h*nu), zero below threshold). */

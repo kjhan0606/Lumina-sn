@@ -15,6 +15,7 @@
 
 #include "lumina_frequency_grid.h" /* single NLTE/BF grid authority */
 #include "radiation_field.h" /* A2-03 canonical shadow schema (CPU only) */
+#include "bf_rate_jnu.h" /* 점값 BF 경로: bin 평균 owner와 별도 */
 #include "population_contract.h" /* A2-07 CPU population owner contract */
 #include "opacity_publication.h" /* A2-08 signed CPU opacity/status owner */
 #include "emissivity_publication.h" /* A2-09 CPU eta/redistribution owner */
@@ -720,6 +721,7 @@ typedef struct {
      * Counters are the R4 zero-consumer gate's observables. */
     RadiationFieldView radfield_view;
     int      radfield_view_status;            /* RadiationFieldViewStatus */
+    const BfPointRateView *point_bf_rates; /* NULL=기존 bin 경로; caller 소유 snapshot */
     uint64_t bf_view_rate_terms;              /* view-integrated (level,shell) terms */
     uint64_t bf_view_blocked_unsampled;       /* BLOCKED_INSUFFICIENT_SAMPLING */
     uint64_t bf_view_blocked_out_of_grid;

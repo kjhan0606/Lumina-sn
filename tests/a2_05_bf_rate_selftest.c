@@ -21,6 +21,76 @@ static int failures;
     } \
 } while (0)
 
+static void run_point_contract_tests(void)
+{
+    double nu[3]={1.e15,2.e15,4.e15}, width[3]={.5e15,1.5e15,1.e15};
+    double j[3]={0.,2.e-8,4.e-8}, sigma[3]={1.e-18,2.e-18,3.e-18};
+    double stim[3]={2.e-20,3.e-20,4.e-20}, eta[3]={1.e-25,2.e-25,3.e-25};
+    BfPointRates all, left, right;
+    double want[6]={0},scale[6]={0};
+    for(int k=0;k<3;k++) {
+        double w=4.*M_PI*width[k]/(H_CGS*nu[k]);
+        double terms[3]={w*sigma[k]*j[k],w*eta[k],w*stim[k]*j[k]};
+        for(int q=0;q<3;q++) {
+            want[q]+=terms[q];
+            want[q+3]+=terms[q]*H_CGS*(nu[k]-3.e15);
+            scale[q]+=fabs(terms[q]);
+            scale[q+3]+=fabs(terms[q]*H_CGS*(nu[k]-3.e15));
+        }
+    }
+    CHECK(!bf_rate_point_contract(3,nu,width,j,sigma,stim,eta,3.e15,&all),"point-integral");
+    double got[6]={all.photo,all.spontaneous,all.stimulated,all.heat_photo,
+                   all.heat_spontaneous,all.heat_stimulated};
+    for(int q=0;q<6;q++) CHECK(fabs(got[q]-want[q])<=2.e-15*scale[q],"point-analytic");
+    CHECK(!bf_rate_point_contract(1,nu,width,j,sigma,stim,eta,3.e15,&left),"point-left-block");
+    CHECK(left.photo==0. && left.spontaneous>0. && left.heat_spontaneous<0.,
+          "point-dark-spontaneous-signed-heat");
+    CHECK(!bf_rate_point_contract(2,nu+1,width+1,j+1,sigma+1,stim+1,eta+1,3.e15,&right),"point-right-block");
+    CHECK(fabs(left.spontaneous+right.spontaneous-all.spontaneous)<1.e-15*all.spontaneous,
+          "point-global-quadrature-preserved");
+    BfPointRates sentinel=all;
+    j[2]=NAN;
+    CHECK(bf_rate_point_contract(3,nu,width,j,sigma,stim,eta,3.e15,&all)!=0 &&
+          !memcmp(&all,&sentinel,sizeof(all)),"point-failure-no-partial-output");
+    j[2]=4.e-8;
+    nu[2]=nu[1];
+    CHECK(bf_rate_point_contract(3,nu,width,j,sigma,stim,eta,3.e15,&all)!=0,"point-reject-duplicate-frequency");
+    nu[2]=4.e15;
+    /* LTE: inverse는 이미 상위 SL 입자당 Saha 비를 포함한다. */
+    const double t=25000.,nstar=.007;
+    for(int k=0;k<3;k++) {
+        double thermal=2.*H_CGS*nu[k]*nu[k]*nu[k]/(2.99792458e10*2.99792458e10);
+        double x=H_CGS*nu[k]/(1.380649e-16*t);
+        j[k]=thermal/expm1(x);
+        stim[k]=sigma[k]*nstar*exp(-x);
+        eta[k]=stim[k]*thermal;
+    }
+    CHECK(!bf_rate_point_contract(3,nu,width,j,sigma,stim,eta,3.e15,&all),"point-lte-integral");
+    CHECK(fabs(nstar*all.photo-all.spontaneous-all.stimulated)<
+          4.e-15*nstar*all.photo,"point-lte-detailed-balance");
+
+    int offset[3]={0,1,1},target[1]={1},grid[1]={0};
+    double probability[1]={.25},edge[1]={3.e15},sigma_edge[1]={1.e-18};
+    double temp[1]={t},ne[1]={1.e10},saha[1]={nstar};
+    BfPointRateView view={.n_levels=2,.n_routes=1,.n_shells=1,
+        .radiation_generation=3,.material_generation=7,.offset=offset,.target=target,
+        .probability=probability,.threshold_Hz=edge,.sigma_edge=sigma_edge,
+        .phot_grid=grid,.saha_lower_per_upper=saha,
+        .temperature=temp,.electron_density=ne,.rates=&all};
+    size_t begin=99,end=99;
+    CHECK(!bf_rate_point_row(&view,2,1,0,7,&begin,&end) && begin==0 && end==1,"point-csr-row");
+    CHECK(!bf_rate_point_row(&view,2,1,1,7,&begin,&end) && begin==end,"point-empty-row-no-fallback");
+    CHECK(bf_rate_point_row(&view,2,1,0,8,&begin,&end)!=0,"point-stale-material");
+    offset[1]=2;
+    CHECK(bf_rate_point_row(&view,2,1,0,7,&begin,&end)!=0,"point-corrupt-csr");
+    offset[1]=1;
+    CHECK(!bf_rate_point_get(&view,0,0,3,t,ne[0],&left),"point-snapshot-get");
+    CHECK(bf_rate_point_get(&view,0,0,4,t,ne[0],&left)!=0,"point-stale-radiation");
+    CHECK(bf_rate_point_get(&view,0,0,3,t+1.,ne[0],&left)!=0,"point-stale-temperature");
+    CHECK(bf_rate_point_get(&view,0,0,3,t,ne[0]+1.,&left)!=0,"point-stale-density");
+    CHECK(bf_rate_point_get(&view,1,0,3,t,ne[0],&left)!=0,"point-route-bound");
+}
+
 static void run_result_contract_tests(void)
 {
     BfRateResult r = {1.25, BF_RATE_VALID, 0.0, 0, 0.0};
@@ -630,6 +700,7 @@ static void run_sh_grid_upper_closure_test(void)
 
 int main(void)
 {
+    run_point_contract_tests();
     run_result_contract_tests();
     run_log_weight_milne_detailed_balance_test();
     run_integrator_tests();

@@ -17252,6 +17252,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
         return -1;
     }
     const int ew_capture = nlte_ew_capture_active();
+    if (nlte->point_bf_rates && ew_capture) {
+        /* terminal scalar와 EW coverage도 점값 경로로 이관하기 전에는
+         * bound pair만 바꾸고 terminal에 bin율을 섞어 풀지 않는다. */
+        fprintf(stderr, "[BF-POINT][FATAL] element-wide terminal integration is not implemented\n");
+        return NLTE_ION_SOLVE_ASSEMBLY_FAILED;
+    }
     int lev_start = nlte->nlte_ion_level_offset[ion_idx_lo];
     int n_shells = plasma->n_shells;
     double T_rad = plasma->T_e[shell];
@@ -18237,7 +18243,84 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
     double n_star_ground = 0.0;
     int sum_R_bf_levels = 0;
 
-    if (ground_hi < N && nu_edge > 0.0 && nu_edge < nlte->nu_max) {
+    /* 점값 snapshot은 기존 bin 평균 적분과 분리한다. PHOT 확률은
+     * 여기서 한 번만 적용하며 inverse는 이미 상위 SL 입자당이다. */
+    if (nlte->point_bf_rates) {
+        const BfPointRateView *v = nlte->point_bf_rates;
+        if (shell < 0 || shell >= n_shells ||
+            nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
+            !v->radiation_generation ||
+            nlte->radfield_view.generation != v->radiation_generation ||
+            (nlte->line_view.n_lines &&
+             (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
+              nlte->line_view.generation != v->radiation_generation))) {
+            bf_channel_error = 1;
+        }
+        for (int lev = 0; lev < n_lo_levels && !bf_channel_error; ++lev) {
+            int gl = nlte->nlte_to_global_level[lev_start + lev];
+            int lower = SOLVE_OF(lev_start + lev);
+            double f = FRAC_OF(lev_start + lev);
+            size_t begin, end;
+            if (gl < 0 || lower < 0 || lower >= n_lo_super ||
+                !isfinite(f) || f <= 0.0 ||
+                bf_rate_point_row(v, (size_t)atom->n_levels,
+                    (size_t)n_shells, (size_t)gl,
+                    atom->population_committed_generation, &begin, &end)) {
+                bf_channel_error = 1;
+                break;
+            }
+            for (size_t r = begin; r < end; ++r) {
+                int upper_global = v->target[r];
+                double p = v->probability[r], edge = v->threshold_Hz[r];
+                double sigma = v->sigma_edge[r];
+                BfPointRates rates;
+                if (upper_global < 0 || upper_global >= atom->n_levels ||
+                    atom->level_Z[upper_global] != atom->level_Z[gl] ||
+                    atom->level_ion[upper_global] != atom->level_ion[gl] + 1 ||
+                    !isfinite(p) || p <= 0.0 || p > 1.0 ||
+                    !isfinite(edge) || edge <= 0.0 ||
+                    !isfinite(sigma) || sigma < 0.0 ||
+                    bf_rate_point_get(v, r, (size_t)shell,
+                        nlte->radfield_view.generation, T_e, n_e, &rates)) {
+                    /* level-less terminal은 별도 scalar 노드가 필요하다.
+                     * 이 pair API는 이를 가짜 FL/ground로 대체하지 않는다. */
+                    bf_channel_error = 1;
+                    break;
+                }
+                int ng = nlte->global_to_nlte_level[upper_global];
+                int upper = ng >= 0 ? SOLVE_OF(ng) : -1;
+                if (upper < n_lo_super || upper >= N) {
+                    bf_channel_error = 1;
+                    break;
+                }
+                double nstar = v->saha_lower_per_upper[r*v->n_shells+shell];
+                double ci = 0.0;
+                if (nlte_bf_collisional_enabled() &&
+                    nlte_bf_cmfgen_ci_route_included(v->phot_grid[r], 1)) {
+                    ci = nlte_bf_cmfgen_collisional_ionization_rate(
+                        T_e, n_e, edge*H_PLANCK/EV_TO_ERG, sigma,
+                        nlte->nlte_ion[ion_idx_lo]);
+                }
+                double photo = p*rates.photo*f;
+                double rec = p*(rates.spontaneous+rates.stimulated);
+                double coll_ion = p*ci*f, coll_rec = p*ci*nstar;
+                if (!isfinite(nstar) || nstar < 0.0 || !isfinite(ci) || ci < 0.0 ||
+                    !isfinite(photo) || !isfinite(rec) ||
+                    !isfinite(coll_ion) || !isfinite(coll_rec)) {
+                    bf_channel_error = 1;
+                    break;
+                }
+                ACM(upper, lower) += photo+coll_ion;
+                ACM(lower, lower) -= photo+coll_ion;
+                ACM(lower, upper) += rec+coll_rec;
+                ACM(upper, upper) -= rec+coll_rec;
+            }
+        }
+        if (bf_channel_error)
+            fprintf(stderr, "[BF-POINT][FATAL] invalid/stale snapshot or unsupported target shell=%d\n", shell);
+    }
+    if (!nlte->point_bf_rates && ground_hi < N &&
+        nu_edge > 0.0 && nu_edge < nlte->nu_max) {
         /* Task #138 Heavy.1: per-level CMFGEN σ_bf where available, Kramers fallback.
          * Same grid as NLTE J_ν (NLTE_N_FREQ_BINS, log-spaced) → direct index. */
         int Z_ion = nlte->nlte_Z[ion_idx_lo];
@@ -18855,7 +18938,12 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             if (nlte->nlte_Z[q] == Zh && nlte->nlte_ion[q] == ion_hi_stage + 1) {
                 hi_is_top = 0; break;
             }
-        if (!ew_capture && tic_mode && hi_is_top && (tic_zonly == 0 || tic_zonly == Zh) &&
+        if (nlte->point_bf_rates && tic_mode && hi_is_top &&
+            (tic_zonly == 0 || tic_zonly == Zh)) {
+            fprintf(stderr, "[BF-POINT][FATAL] legacy bin top-stage reservoir is incompatible\n");
+            bf_channel_error = 1;
+        }
+        if (!nlte->point_bf_rates && !ew_capture && tic_mode && hi_is_top && (tic_zonly == 0 || tic_zonly == Zh) &&
             T_e > 0.0 && n_e > 0.0) {
             nlte_ew_note_topstage_IV_call_for(nlte);
             double chi_hi_eV = find_ioniz_energy(atom, Zh, ion_hi_stage); /* III->IV */

@@ -1,12 +1,73 @@
 #include "bf_rate_jnu.h"
 
 #include <math.h>
+#include <limits.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 #define BF_H_CGS 6.62607015e-27
+
+int bf_rate_point_contract(size_t n,const double *nu,const double *width,
+    const double *j,const double *absorption,const double *stimulated,
+    const double *eta,double edge,BfPointRates *out)
+{
+    if (!out || !n || !nu || !width || !j || !absorption || !stimulated ||
+        !eta || !isfinite(edge) || edge<=0.) return -1;
+    long double sum[6]={0};
+    for(size_t k=0;k<n;k++) {
+        if(!isfinite(nu[k]) || nu[k]<=0. || (k && nu[k]<=nu[k-1]) ||
+           !isfinite(width[k]) || width[k]<0. || !isfinite(j[k]) || j[k]<0. ||
+           !isfinite(absorption[k]) || absorption[k]<0. ||
+           !isfinite(stimulated[k]) || stimulated[k]<0. ||
+           !isfinite(eta[k]) || eta[k]<0.) return -1;
+        long double weight=4.L*M_PI*width[k]/((long double)BF_H_CGS*nu[k]);
+        long double terms[3]={weight*absorption[k]*j[k],weight*eta[k],
+                              weight*stimulated[k]*j[k]};
+        long double energy=(long double)BF_H_CGS*(nu[k]-edge);
+        for(int q=0;q<3;q++) {sum[q]+=terms[q];sum[q+3]+=terms[q]*energy;}
+    }
+    BfPointRates result={(double)sum[0],(double)sum[1],(double)sum[2],
+                         (double)sum[3],(double)sum[4],(double)sum[5]};
+    if(!isfinite(result.photo) || !isfinite(result.spontaneous) ||
+       !isfinite(result.stimulated) || !isfinite(result.heat_photo) ||
+       !isfinite(result.heat_spontaneous) || !isfinite(result.heat_stimulated)) return -1;
+    *out=result;
+    return 0;
+}
+
+int bf_rate_point_get(const BfPointRateView *v,size_t route,size_t shell,
+    uint64_t generation,double t,double ne,BfPointRates *out)
+{
+    if(!out || !v || !v->n_routes || !v->n_shells ||
+       v->n_routes>SIZE_MAX/v->n_shells || !v->rates || !v->temperature ||
+       !v->electron_density || !generation || generation!=v->radiation_generation ||
+       route>=v->n_routes || shell>=v->n_shells || !isfinite(t) || t<=0. ||
+       !isfinite(ne) || ne<=0. || v->temperature[shell]!=t ||
+       v->electron_density[shell]!=ne) return -1;
+    BfPointRates r=v->rates[route*v->n_shells+shell];
+    if(!isfinite(r.photo) || r.photo<0. || !isfinite(r.spontaneous) || r.spontaneous<0. ||
+       !isfinite(r.stimulated) || r.stimulated<0. || !isfinite(r.heat_photo) ||
+       !isfinite(r.heat_spontaneous) || !isfinite(r.heat_stimulated)) return -1;
+    *out=r;
+    return 0;
+}
+
+int bf_rate_point_row(const BfPointRateView *v,size_t nl,size_t ns,
+    size_t lower,uint64_t material_generation,size_t *begin,size_t *end)
+{
+    if(!v || !begin || !end || !nl || !ns || v->n_levels!=nl ||
+       v->n_shells!=ns || lower>=nl || v->n_routes>INT_MAX ||
+       !material_generation || material_generation!=v->material_generation ||
+       !v->offset || v->offset[0]!=0 || v->offset[nl]!=(int)v->n_routes ||
+       (v->n_routes && (!v->target || !v->probability || !v->threshold_Hz ||
+        !v->sigma_edge || !v->phot_grid || !v->saha_lower_per_upper))) return -1;
+    int b=v->offset[lower],e=v->offset[lower+1];
+    if(b<0 || e<b || (size_t)e>v->n_routes) return -1;
+    *begin=(size_t)b; *end=(size_t)e;
+    return 0;
+}
 
 int bf_rate_result_is_consumable(const BfRateResult *result)
 {
