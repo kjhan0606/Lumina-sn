@@ -19,6 +19,7 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import cmfgen_model_continuum as B
+from compare_lumina_checkpoint_rates import TARGETS
 import lumina_native_columns as N
 import lumina_native90_rates as R
 from lumina_model_point_rates import ModelPointBoundRates
@@ -323,7 +324,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                                   for z,stage,old,new in stages if int(z)==Z]
                            for Z in (14,16)}
             physical_full=point.physical_ion_rates(full_rates)
-            target_ions=((14,1),(14,2),(16,1),(16,2))
+            # Route.stage는 이온 이름 번호(II=2, III=3)다. C의 stage0는 전하수다.
+            target_ions=TARGETS
             if any(key not in physical_full for key in target_ions):
                 raise ValueError('Si/S II/III bound BF율 누락')
             full_bound_test=dict(native_node=49,frequencies=len(source.frequency),
