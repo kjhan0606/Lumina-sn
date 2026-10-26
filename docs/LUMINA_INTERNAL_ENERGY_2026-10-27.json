@@ -1,0 +1,84 @@
+{
+  "status": "FULL_90_POINT_ENERGY_INPUTS_CONSUMED_BY_EXISTING_C_ADIABATIC_OPERATOR",
+  "source_BF_run": "lumina_material_bf90_20261027-B64JUq",
+  "source_BF_result_sha256": "482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6",
+  "points": 90,
+  "energy_reference": {
+    "physical_neutral": "중성 바닥 기준, 원 FL 들뜸·이온화 에너지와 trial within-SL 분율",
+    "native_static_raw": "원 native의 첫 활성 SL 기준, g-평균 EDGE와 누적 대표 이온화 에너지",
+    "native_static_aligned": "native_static_raw에 원소별 상수만 더해 첫 바닥 SL 대표값의 영점을 물리 기준에 정렬; 물리 에너지와 동일하다는 뜻은 아님"
+  },
+  "code_sha256": {
+    "scripts/lumina_model_energy.py": "9788d7de633c28e4dc5538dc757d89a51b88514ba2eb39c6f504d33063220420",
+    "scripts/compare_lumina_internal_energy.py": "cd8e2ce7a05473334251651e127c538b396b9102a9830fbd188bfcc0ee248bd5",
+    "src/cmfgen_adiabatic.c": "6a65853e27e79fd2c3de26376fccd6dc7b34f1ca74216608d577a6459c7cdbfb",
+    "src/cmfgen_adiabatic.h": "b166762e4fb75f58cbf81afcce3fa41b1cfbfa70a4ff5e399af8e172f9d2155f"
+  },
+  "neutral_ionization_reference_sha256": "660141ef55e5b9028f6a8f374a28a149bcf81e67f1f888fc0e157397aea4fa9a",
+  "adiabatic_comparison_binary_sha256": "4aed00db5b92c0b9e5c3cf56a681c1eff0d631556455844d0519fbc230ea7648",
+  "summaries": {
+    "physical_neutral": {
+      "energy_min_erg_per_atom": 4.285203282698873e-11,
+      "energy_max_erg_per_atom": 1.4882369072016387e-10,
+      "maximum_adiabatic_delta_erg_cm3_s": 0.0,
+      "worst_native_node": 0
+    },
+    "native_static_raw": {
+      "energy_min_erg_per_atom": 2.8955489747296042e-11,
+      "energy_max_erg_per_atom": 1.3583433148058168e-10,
+      "maximum_adiabatic_delta_erg_cm3_s": 1.0176050622801648e-9,
+      "worst_native_node": 56
+    },
+    "native_static_aligned": {
+      "energy_min_erg_per_atom": 4.280347235026969e-11,
+      "energy_max_erg_per_atom": 1.4853193178258975e-10,
+      "maximum_adiabatic_delta_erg_cm3_s": 3.3632942796994736e-10,
+      "worst_native_node": 58
+    }
+  },
+  "independent_delta_error_over_adiabatic_scale": {
+    "native_static_raw": 5.92093060139402e-14,
+    "native_static_aligned": 5.92093060139402e-14
+  },
+  "selected_native_nodes": [
+    {
+      "native_node": 49,
+      "physical_internal_energy_erg_per_atom": 4.364143752975793e-11,
+      "native_raw_internal_energy_erg_per_atom": 2.959933266260228e-11,
+      "native_aligned_internal_energy_erg_per_atom": 4.360537733147501e-11,
+      "physical_adiabatic_erg_cm3_s": 1.516270222791974e-9,
+      "native_raw_adiabatic_erg_cm3_s": 1.4992347597303246e-9,
+      "native_aligned_adiabatic_erg_cm3_s": 1.5181045177331957e-9
+    },
+    {
+      "native_node": 89,
+      "physical_internal_energy_erg_per_atom": 1.4882369072016387e-10,
+      "native_raw_internal_energy_erg_per_atom": 1.3583433148058168e-10,
+      "native_aligned_internal_energy_erg_per_atom": 1.4853193178258975e-10,
+      "physical_adiabatic_erg_cm3_s": -4.267294406997383e-7,
+      "native_raw_adiabatic_erg_cm3_s": -4.2649410933885233e-7,
+      "native_aligned_adiabatic_erg_cm3_s": -4.264941093388356e-7
+    }
+  ],
+  "python_direct_tests": {"tests": 4, "result": "PASS", "seconds": 0.033},
+  "C_direct_tests": {
+    "result": "BF_POINT_TEST_BUNDLE PASS",
+    "node": "grammar-debug",
+    "build_root": "/tmp/lumina-thermal-ABI-C-nyZrLJ",
+    "source_before_manifest_sha256": "810910e6b7878e641affdff1e7444eeedb336939bed6f24d64ea10c4b35f8a25",
+    "source_after_check_sha256": "295d077a8a17c5116e0b93fca0bd2b0c50029e245d2969a81bd213acda6cb279",
+    "binary_manifest_sha256": "fc125ddd98e9b385c50ec110a9c1ec42a5b41a34de3da2e1ac3d2f19410d544d",
+    "model_element_bf_binary_sha256": "42ced07d224a5b57e6f44b989ff1ca0a6c16c56b821d5c3504288fb95996cb23",
+    "existing_BB_view_ABI_preserved": true,
+    "physical_BB_matrix_and_photon_heat_byte_unchanged": true,
+    "late_NaN_or_negative_thermal_factor_rejected_without_publication": true,
+    "native_BB_thermal_array_scope": "합성 C 직접시험; 전90점 실제 BB C 소비 완료는 아님"
+  },
+  "native_residual_Jv_equivalence": false,
+  "full_coupled_SE_charge_RE_solved": false,
+  "new_transport": 0,
+  "new_native": 0,
+  "new_BF_BB_integrals": 0,
+  "public_material_updates": 0,
+  "final_goal": "NOT_MET"
+}

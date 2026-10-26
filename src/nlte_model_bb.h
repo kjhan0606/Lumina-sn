@@ -23,12 +23,20 @@ typedef struct {
     uint64_t material_generation, radiation_generation;
     size_t n_variables, lines, intra_super_lines;
     double *radiative, *radiative_heat;
+    double *native_thermal_heat; /* 선택적 native 열장부; radiative_heat와 구분 */
 } NLTEModelBBBlock;
 
 int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
     const NLTEModelElement *element,const NLTEConfig *nlte,
     const AtomicData *atom,const PlasmaState *plasma,
     const NLTEModelBBView *view);
+/* 기존 BB view ABI를 유지하는 별도 진입점. caller가 같은 trial의 SCL_LN과
+ * POP_ATOM 분기를 평가한 선 계수와 정책 신원을 소유한다. NULL이면 미생산.
+ * 물리율/광자 에너지는 바꾸지 않는다. */
+int nlte_model_element_bb_assemble_with_native_thermal(NLTEModelBBBlock *out,
+    const NLTEModelElement *element,const NLTEConfig *nlte,
+    const AtomicData *atom,const PlasmaState *plasma,
+    const NLTEModelBBView *view,const double *native_thermal_factor);
 void nlte_model_bb_block_free(NLTEModelBBBlock *block);
 
 #endif

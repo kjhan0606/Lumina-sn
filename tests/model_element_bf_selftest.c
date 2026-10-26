@@ -93,7 +93,26 @@ int main(void)
     assert(fabs(bb.radiative_heat[0]-6.62607015e-12*14.)<1.e-25);
     assert(fabs(bb.radiative_heat[1]+6.62607015e-12*10.)<1.e-25);
     assert(fabs(bb.radiative_heat[2]+6.62607015e-12*1.4)<1.e-25);
+    assert(!bb.native_thermal_heat);
+    double original_bb_matrix[16],original_bb_heat[4];
+    memcpy(original_bb_matrix,bb.radiative,sizeof(original_bb_matrix));
+    memcpy(original_bb_heat,bb.radiative_heat,sizeof(original_bb_heat));
     nlte_model_bb_block_free(&bb);
+    double thermal_factor[2]={1.,.8}; /* same-SL은 fallback1, 다른 선의 열장부만 재척도 */
+    assert(!nlte_model_element_bb_assemble_with_native_thermal(&bb,&bb_element,&bb_n,&a,&p,&bb_view,thermal_factor));
+    assert(bb.native_thermal_heat && bb.intra_super_lines==1);
+    assert(!memcmp(bb.radiative,original_bb_matrix,sizeof(original_bb_matrix)));
+    assert(!memcmp(bb.radiative_heat,original_bb_heat,sizeof(original_bb_heat)));
+    assert(fabs(bb.native_thermal_heat[0]-.8*original_bb_heat[0])<1.e-25);
+    assert(fabs(bb.native_thermal_heat[1]-.8*original_bb_heat[1])<1.e-25);
+    assert(bb.native_thermal_heat[2]==original_bb_heat[2]);
+    nlte_model_bb_block_free(&bb);
+    thermal_factor[1]=NAN;
+    assert(nlte_model_element_bb_assemble_with_native_thermal(&bb,&bb_element,&bb_n,&a,&p,&bb_view,thermal_factor)!=0 &&
+           !bb.native_thermal_heat && !bb.radiative && !bb.n_variables);
+    thermal_factor[1]=-1.;
+    assert(nlte_model_element_bb_assemble_with_native_thermal(&bb,&bb_element,&bb_n,&a,&p,&bb_view,thermal_factor)!=0 &&
+           !bb.native_thermal_heat && !bb.radiative);
     bb_status[1]=3;
     assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0 &&
            !bb.n_variables && !bb.radiative);

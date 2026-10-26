@@ -3,14 +3,15 @@
 void nlte_model_bb_block_free(NLTEModelBBBlock *b)
 {
     if(!b)return;
-    free(b->radiative);free(b->radiative_heat);memset(b,0,sizeof(*b));
+    free(b->radiative);free(b->radiative_heat);free(b->native_thermal_heat);memset(b,0,sizeof(*b));
 }
 
-int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
+int nlte_model_element_bb_assemble_with_native_thermal(NLTEModelBBBlock *out,
     const NLTEModelElement *e,const NLTEConfig *n,
-    const AtomicData *a,const PlasmaState *p,const NLTEModelBBView *v)
+    const AtomicData *a,const PlasmaState *p,const NLTEModelBBView *v,
+    const double *native_thermal_factor)
 {
-    if(!out || out->n_variables || out->radiative || out->radiative_heat ||
+    if(!out || out->n_variables || out->radiative || out->radiative_heat || out->native_thermal_heat ||
        !e || !n || !a || !p || !v || !e->n_variables || !e->super_to_row ||
        !n->model_atom_projection || !n->global_to_nlte_level || !n->fl_to_super ||
        !n->within_sl_frac || !a->level_Z || !a->level_ion ||
@@ -40,8 +41,14 @@ int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
         .radiation_generation=v->radiation_generation,
         .n_variables=nv};
     long double *heat=calloc(nv,sizeof(*heat));
+    long double *native_heat=NULL;
     b.radiative=calloc(nv*nv,sizeof(double));b.radiative_heat=calloc(nv,sizeof(double));
     if(!heat || !b.radiative || !b.radiative_heat)goto fail;
+    if(native_thermal_factor){
+        native_heat=calloc(nv,sizeof(*native_heat));
+        b.native_thermal_heat=calloc(nv,sizeof(*b.native_thermal_heat));
+        if(!native_heat || !b.native_thermal_heat)goto fail;
+    }
     for(size_t i=0;i<v->n_lines;i++){
         int lo=v->lower[i],up=v->upper[i];
         if(lo<0 || up<0 || lo>=a->n_levels || up>=a->n_levels || lo==up ||
@@ -50,6 +57,8 @@ int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
            !isfinite(v->absorption[i]) || v->absorption[i]<0. ||
            !isfinite(v->stimulated[i]) || v->stimulated[i]<0. ||
            !isfinite(v->spontaneous[i]) || v->spontaneous[i]<0. ||
+           (native_thermal_factor && (!isfinite(native_thermal_factor[i]) ||
+                                     native_thermal_factor[i]<0.)) ||
            (v->status[i]!=1 && v->status[i]!=2) ||
            (v->status[i]==2 && (v->absorption[i]!=0. || v->stimulated[i]!=0.)))goto fail;
         if(a->level_Z[lo]!=e->Z)continue;
@@ -72,6 +81,10 @@ int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
         }
         long double energy=6.62607015e-27L*v->frequency_Hz[i];
         heat[lower]+=energy*forward;heat[upper]-=energy*reverse;
+        if(native_heat){
+            long double scaled_energy=energy*native_thermal_factor[i];
+            native_heat[lower]+=scaled_energy*forward;native_heat[upper]-=scaled_energy*reverse;
+        }
         b.lines++;
     }
     for(size_t j=0;j<nv;j++){
@@ -82,9 +95,20 @@ int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
         }
         b.radiative[j*nv+j]=-(double)outflow;
         b.radiative_heat[j]=(double)heat[j];
+        if(native_heat){
+            b.native_thermal_heat[j]=(double)native_heat[j];
+            if(!isfinite(b.native_thermal_heat[j]))goto fail;
+        }
         if(!isfinite(b.radiative[j*nv+j]) || !isfinite(b.radiative_heat[j]))goto fail;
     }
-    free(heat);*out=b;return 0;
+    free(heat);free(native_heat);*out=b;return 0;
 fail:
-    free(heat);nlte_model_bb_block_free(&b);return -1;
+    free(heat);free(native_heat);nlte_model_bb_block_free(&b);return -1;
+}
+
+int nlte_model_element_bb_assemble(NLTEModelBBBlock *out,
+    const NLTEModelElement *element,const NLTEConfig *nlte,
+    const AtomicData *atom,const PlasmaState *plasma,const NLTEModelBBView *view)
+{
+    return nlte_model_element_bb_assemble_with_native_thermal(out,element,nlte,atom,plasma,view,NULL);
 }
