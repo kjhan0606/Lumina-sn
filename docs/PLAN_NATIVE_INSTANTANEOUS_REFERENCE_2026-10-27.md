@@ -40,6 +40,14 @@ Jv에 일관되게 적용하고 물리 광자 장부는 별도로 보존한다.
 PREVENT_LOW_T/T_MIN 인공열은 표시하며 최종 앵커를 온도 보호항에
 의존한 수렴으로 인증하지 않는다.
 
+현재 입력에는 USE_EHB/COMP_EHB가 없고, 원 rd_control_variables.f:979–984는
+두 값을F로 정한다. 원70의 실제 STEQ_VALS 마지막 구간도 `Electron Energy
+Balance Equation (not computed)`와 복사평형 행을 출력한다. 따라서 현재
+열방정식이 전자 열평형으로 몰래 바뀌었다는 후보는 지지되지 않는다.
+광자 RE에 CI/C3 전자 열량을 추가해 차이를 맞추지 않는다. 이것은 현재
+입력의 경로 확인이며 EHB를 켠 다른 모델의 지원이나 native 전체 잔차/Jv
+동등성을 증명한 것이 아니다. 실행 입력/스위치를 바꾸지는 않았다.
+
 source70은 raw 개체수 보정 약88/76%, MAX_LAM=1e6이며 안정화된 seed가
 아니다. 원70의 로그 광도1.513e15 Lsun은 USE_FIXED_J=T의 대용 H 결과다.
 `comp_j_blank.f:161–165`는 RSQHNU=1/HFLUX_AT_OB=0.001/HFLUX_AT_IB=0으로
