@@ -1371,3 +1371,51 @@ CPU1·4GiB·300초 한도로 `python3 -m pytest -q -p no:cacheprovider tests/`,
 연결하는 일이다. 현재 증거는 참조의 원ν에서 얻었으므로 자체 미세 격자에
 대응을 임의 외삽해 실행하지 않는다. 새 F의 입력 규약과 기존 SE의 점값
 소비 연결을 명시해야 하며,GPU2/2 소진을 바꾸어 세 번째 할당을 실행하지 않는다.
+
+## 직접평가 공통입력의 새 참조 장 — 사용자 CPU 단회 승인
+
+Astra는 own 미세ν에 cached 매핑을 새로 외삽/보간하는 방법보다 native의
+직접평가 참조를 우선 권고했다. 운전자가 실제 RD_CONTROL_VARIABLES와
+DET_MAIN_CONT_FREQ를 확인했다. VADAT의 CROSS는 COMPUTE_ALL_CROSS로
+읽히며,T 분기에서는 NU_EVAL(:)=NU(:)로 설정한다. 주 루프는 서로 다른
+FL마다 COMPUTE_NEW_CROSS=T가 되어 실제ν에서 새 BF/FF/용해를 계산한다.
+DELV_CONT=0도 같은 if에 있으나 두 제어를 동시에 바꾸지 않고 CROSS만
+F→T로 바꾼다. 기준 V_CROSS=750km/s는 보존한다.
+
+사용자는 grammar에서 CPU16·32GiB·최대30분·GPU0·재시도0의 복사장 단회에
+명시적으로 승인했다. 물질70·원90점·원197291개 격자·같은 원자/경계/초기
+복사장·같은 pre-pop STOP97 실행파일을 재사용하며 물질 갱신이나 새 자체
+GPU F는 포함하지 않는다. 기존 참조/자체 장과 전체 물리 목표를 보존한다.
+이 선택은 직접평가에 맞춘 비교 입력을 확보하기 위한 것이며,참조 물리량이
+own 결과 쪽으로 바뀔 것이라고 미리 가정하지 않는다.
+
+`run_cmfgen_formal_primary.py`의 stage는59 전용이므로70에 맞게 검사를
+약화하지 않는다. 새 field-only 실행기는 검증된 `clone_material`을 재사용해
+원59 seed에서 같은 방식으로 복제한 뒤 물질70의 원 restart와 초기 EDD를
+얹는다. 완료 참조 field의 EDD는 새 J71 출력이므로 초기장으로 복사하지
+않는다. 원 reference `feedback-stage.json`의 모든 restart/제어 해시와
+대조하고,CROSS 외의 VADAT/IN_ITS 차이가 있으면 실행하지 않는다.
+
+명시적 실행은 `run_cmfgen_direct_continuum.py --execute`이며 Slurm16CPU/
+32GiB/OMP16을 요구한다. 같은 봉인 build와 STOP97을 확인하고 물질/스펙트럼
+후속 실행은 없다. 복제된 과거 CONT_FREQ는 CROSS=T에서 native가 새로
+쓰지 않으므로 `CONT_FREQ.cached_input`으로 보존해 새 대응표로 오인하지 않는다.
+전체 wall1800초 안에서 복제 포함 child 기한1720초와 종료/검증 여유를 둔다.
+정상 완료에서는 원ν/기하 불변,SCRTEMP 불변,197291 coverage와 각ν의
+source/J/H 잔차1e-8,EDD/실제J 동일성을 확인한다. 이는 SE/RE 공동수렴이나
+최종 이온분포·observer 스펙트럼 합격이 아니다. 시간초과/실패는 부분 출력을
+보존하고 자동 재시도하지 않는다. 소형 직접시험을 먼저 확인한다.
+
+grammar-debug의 부하/프로젝트를 확인한 뒤 CPU1·가상메모리4GiB·OMP/BLAS1·
+최대35초의 격리 직접시험8개가0.14초에 통과했다. 별도 읽기 전용 준비 검산도
+같은 소형 환경에서 원 build·물질70 restart/초기 EDD·VADAT/IN_ITS가 실제
+참조와 같음을 확인했다(`PROVENANCE_AND_INITIAL_CONTROLS_IDENTICAL_M70_PREPOP71`).
+이 과정에서 native 복사장 실행은0이다. 실제 단회는 격리 트리
+`lumina_direct_reference_20261026-xlgt9n/run`에 제출하며 Slurm 안에서8개 시험을
+한 번 더 확인하고 실행한다. 코드와9개 실행 의존 파일은 별도 scripts로
+복사돼 작업 중 저장소 편집의 영향을 받지 않는다.
+
+- 실행기 SHA256: `e2ec0eedac643f4810a3b7a7f51c1c88e62dedf59667eeee1598aff6baacb0bc`.
+- 직접시험 SHA256: `2dd176924b53b120dc0a5b5d280e39888cee2a02a2f8e9121ef7d0ad474cffab`.
+- 재사용 native 실행파일: `81397292cb9a5a23abd62051e7abefb5e4e22aa7fcd225a0138417747502947b`.
+- baseline input SCRTEMP: `70c3d362fbc6c9e4d2ef350500eb2bbfd71f6767b9338037f44a53bad87af137`.
