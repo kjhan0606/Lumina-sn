@@ -11,7 +11,7 @@ module purge
 module load gnu13/13.2.0
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 export PYTHONDONTWRITEBYTECODE=1
-core=(lumina_plasma lumina_element_wide nlte_model_se nlte_model_bb population_contract opacity_publication
+core=(lumina_plasma lumina_element_wide nlte_model_se nlte_model_bb nlte_model_coll_bb population_contract opacity_publication
       emissivity_publication radeq_publication line_net_rate cmfgen_adiabatic
       bf_rate_jnu radiation_field seed_capability atomic_internal_energy
       nlte_population_candidate line_jbar lumina_atomic)
@@ -22,6 +22,7 @@ sha256sum src/*.h "${source_files[@]}" tests/a2_05_bf_rate_selftest.c \
     tests/bf_point_matrix_selftest.c tests/model_element_bf_selftest.c tests/nlte_element_wide_layout_selftest.c \
     tests/nlte_population_candidate_selftest.c tests/a2_07_population_selftest.c \
     tests/model_atom_projection_selftest.c tests/model_occupation_native_test.py \
+    tests/model_collision_bb_selftest.c \
     scripts/cmfgen_model_continuum.py scripts/lumina_native90_rates.py scripts/lumina_native_columns.py \
     scripts/lumina_model_point_rates.py \
     data/atomic/topion_levels.csv data/atomic/ionization_reference.csv \
@@ -40,6 +41,8 @@ done
 ./bf_matrix
 "${cc[@]}" -o model_element_bf "$project/tests/model_element_bf_selftest.c" "${objects[@]}" -lm
 ./model_element_bf
+"${cc[@]}" -o model_collision_bb "$project/tests/model_collision_bb_selftest.c" "${objects[@]}" -lm
+./model_collision_bb
 "${cc[@]}" -DLUMINA_EW_SYNTHETIC_TEST -o ew_layout \
     "$project/tests/nlte_element_wide_layout_selftest.c" "${objects[@]}" -lm
 ./ew_layout
@@ -65,5 +68,5 @@ cd "$project"
 sha256sum -c "$output/source-before.sha256" > "$output/source-after-check.txt"
 sha256sum "$output/bf_rate" "$output/bf_matrix" "$output/ew_layout" \
     "$output/population_candidate" "$output/population_contract" "$output/model_projection" \
-    "$output/model_element_bf" > "$output/binary.sha256"
+    "$output/model_element_bf" "$output/model_collision_bb" > "$output/binary.sha256"
 printf 'BF_POINT_TEST_BUNDLE PASS\n'
