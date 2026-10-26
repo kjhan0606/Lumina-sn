@@ -60,6 +60,71 @@
     "identity": "R_native = R_photon + delta_R; native root에서 R_photon = -delta_R",
     "next_action": "같은 갱신 후보의 두 장부·국소/signed/L1을 함께 유지. 현재1223908과 SCL 설정은 보존"
   },
+  "first_actual_temperature_probe": {
+    "existing_job_id": 1224060,
+    "run_id": "lumina_coupled_Tne_20261027-6W0owt",
+    "evaluation": 1,
+    "phase": "T+",
+    "generation": 11,
+    "report_sha256": "14356671df6eee668ca48538414c58aed23427b0b095309568fc0ef3a834e4e8",
+    "response_sha256": "1f38014f63055e42bc570fd83377b00a9d75a6f1ea2155f2efb64f2e51b643ca",
+    "balance_sha256": "45e2c8b53780aefc0c2271c6d1381e25bb24cc97979a1ce66b20e2b418505cab",
+    "baseline_common_charge_report_sha256": "9a2b02ecaedb0f4791fbf9ee84f1bc036c1739b3d5e5a5e6cf572e52bbf95468",
+    "same_columns_and_ne_exactly_verified": true,
+    "temperature_exact_multiplier": "exp(1e-4)",
+    "temperature_delta_K_range": [0.8879225960762732, 2.3027417399407053],
+    "BF_seconds": 1625.2609562319994,
+    "BF_and_SE_response_seconds": 1672.900960123996,
+    "bound_direct_routes": 24667,
+    "bound_reused_routes": 0,
+    "SE_residual": 1.0526724471852761e-16,
+    "off_root_charge_relative": 8.581244460139605e-6,
+    "max_abs_stage_fraction_change": {
+      "Si_II": 4.751939805379022e-9,
+      "Si_III": 1.5138158316219119e-5,
+      "S_II": 3.0101734494226984e-6,
+      "S_III": 1.0164133427748023e-5
+    },
+    "native_instantaneous_Q": {
+      "base_max_abs": 0.004728301453260128,
+      "probe_max_abs": 0.004371489575537736,
+      "base_and_probe_worst_node": 89,
+      "max_abs_delta": 0.0003585600576576898,
+      "worst_delta_node": 88
+    },
+    "physical_instantaneous_Q": {
+      "base_max_abs": 0.0054189733142800695,
+      "base_worst_node": 89,
+      "probe_max_abs": 0.008557560420677424,
+      "probe_worst_node": 83,
+      "probe_signed_at_worst": -0.008557560420677424,
+      "node89_base": 0.0054189733142800695,
+      "node89_probe": 6.959409153877416e-5
+    },
+    "gap_native_minus_physical_node89": {
+      "base": -0.0006906718610199414,
+      "probe": 0.004301895483998962
+    },
+    "physical_C_photon_response_node89": {
+      "Si_BB_delta": -4.18036971382462e-34,
+      "S_BB_delta": -2.518959541743537e-33,
+      "Ca_BB_delta": -9.399186696466069e-34,
+      "Fe_BB_delta": -0.0003477548160908501,
+      "Co_BB_delta": -0.004329976838675396,
+      "Ni_BB_delta": -0.000671110264208519,
+      "Fe_BF_delta": -3.2748149719121e-8,
+      "Co_BF_delta": -4.4013707742633705e-7,
+      "Ni_BF_delta": -1.576998116942308e-8,
+      "interpretation": "이 점의 물리 BB 열응답은 Co가 약81%로 지배한다. native/물리 장부 차이의 원소별 기여를 따로 산출한 것은 아님"
+    },
+    "energy_unit": "erg cm^-3 s^-1",
+    "operator_reproduction": "완료 probe의 phase·응답/열장부 해시와 같은 주소/ne·정확한 T 변위를 소형 노드에서 독립 확인",
+    "interpretation": "작은 stage 분율 변화가 열잔차의 작은 변화를 보장하지 않는다. 서로 다른 최대점의 값을 같은 점의 개선으로 읽지 않는다",
+    "accepted_material": false,
+    "centered_derivative_verified": false,
+    "temperature_equilibrium_solved": false,
+    "additional_physics_runs_by_this_analysis": 0
+  },
   "new_physics_runs": 0,
   "final_goal": "NOT_MET"
 }
