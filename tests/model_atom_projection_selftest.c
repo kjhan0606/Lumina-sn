@@ -20,6 +20,23 @@ typedef struct {
 
 static int fixed_field_slot(int Z) {return Z==14 ? 0 : (Z==16 ? 1 : -1);}
 
+/* 원 물질의 항별 잔차: 정상해 후보의 작은 잔차와 혼동하지 않는다. */
+static void print_input_residual(int Z,int stage,int sl,size_t row,
+    const NLTEModelElement *e,const NLTEModelBFBlock *bf,
+    const NLTEModelBBBlock *bb,const NLTEModelCollisionBBBlock *col,
+    const NLTEModelCombinedGenerator *combined)
+{
+    const double *matrix[4]={bf->radiative,bf->collisional,bb->radiative,col->collisional};
+    long double term[4]={0.},absolute_flow=0.;
+    for(int k=0;k<4;k++)for(size_t j=0;j<e->n_variables;j++){
+        long double flow=(long double)matrix[k][j*e->n_variables+row]*e->initial_population[j];
+        term[k]+=flow;absolute_flow+=fabsl(flow);
+    }
+    printf("[MODEL-SE][INPUT-RESIDUAL-ROW] Z=%d stage0=%d super0=%d bf_rad=%.17g bf_col=%.17g bb_rad=%.17g bb_col=%.17g total=%.17g absolute_flow=%.17g\n",
+        Z,stage,sl,(double)term[0],(double)term[1],(double)term[2],(double)term[3],
+        combined->fixed_residual[row],(double)absolute_flow);
+}
+
 static void native_fixed_field_free(NativeFixedFieldBlocks *b)
 {
     if(!b)return;
@@ -314,6 +331,8 @@ static int solve_native_fixed_field(NativeFixedFieldBlocks *cache,
             printf("[MODEL-SE][FIXED-FIELD-ROW] Z=%d stage0=%d super0=%d original=%.17g candidate=%.17g\n",
                 Z,row_stage[row],a->level_super[anchor],
                 e->initial_population[row],candidate[row]);
+            print_input_residual(Z,row_stage[row],a->level_super[anchor],(size_t)row,e,
+                &cache->bf[slot],&cache->bb[slot],&cache->collision[slot],&combined);
             emitted++;
         }
         for(int ip=0;ip<a->n_ion_pops;ip++)if(e->terminal_to_row[ip]>=0){
@@ -321,6 +340,8 @@ static int solve_native_fixed_field(NativeFixedFieldBlocks *cache,
             if(a->ion_pop_Z[ip]!=Z || a->ion_pop_stage[ip]!=row_stage[row])goto done;
             printf("[MODEL-SE][FIXED-FIELD-ROW] Z=%d stage0=%d super0=-1 original=%.17g candidate=%.17g\n",
                 Z,row_stage[row],e->initial_population[row],candidate[row]);
+            print_input_residual(Z,row_stage[row],-1,(size_t)row,e,
+                &cache->bf[slot],&cache->bb[slot],&cache->collision[slot],&combined);
             emitted++;
         }
         if(emitted!=nv)goto done;

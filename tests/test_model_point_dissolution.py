@@ -27,7 +27,7 @@ def synthetic_point(tmp_path):
                  full=np.array([[1e7], [1e5]]),
                  superlevel=np.array([[1e7], [1e5], [1e-4]]),
                  occupation=np.ones((2, 1)),
-                 sl_index={(14, 2, 0): 0, (14, 3, 0): 1, (14, 3, -1): 2},
+                 sl_index={(14, 1, 0): 0, (14, 2, 0): 1, (14, 3, -1): 2},
                  temperature=np.array([1e4]), ne=np.array([1e8]))
     edge = 5e15
     route = B.Route(14, 2, 0, 1, 0, 0, .7, 2., 0., edge,
@@ -44,6 +44,8 @@ def synthetic_point(tmp_path):
     point.upper_population = np.array([1e5])
     point.library = C.CDLL(str(library))
     point.ptr = C.POINTER(C.c_double)
+    assert all(state['sl_index'][tuple(column)] == i
+               for i,column in enumerate(state['columns']))
     return point
 
 
