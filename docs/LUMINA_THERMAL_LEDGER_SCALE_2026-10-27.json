@@ -1,0 +1,65 @@
+{
+  "scope": "완료한 같은 비수렴 C 후보의 열채널·기하 적분 규모 분석. 새 율·물질 갱신·수송 없음",
+  "input_sha256": {
+    "balance_result": "a0e7800b065546a1dfb5a06bc790cccd4441a6978380742a9f8bb37f13a41d56",
+    "balance_arrays": "5a575a6f67f8578265706b6d6bca3015899eb83a255618ca7632eaac4872be8f",
+    "native_nodes": "50e7b2c6f810b1c4fcfb4a59812ea88d07d17e985c878adcbe3974a821f99a3a"
+  },
+  "inputs": {
+    "balance": "$LUMINA_RUNS_ROOT/lumina_fixed_state_balance_20261027-Yy1vXm/run/balance.npz",
+    "geometry": "$LUMINA_RUNS_ROOT/lumina_native70_seed_20261020-DphYnQ/seed/native_material_nodes.bin",
+    "material": "$LUMINA_RUNS_ROOT/lumina_full_model_response_20261027-vzt2uX/run/response.npz"
+  },
+  "processing": "grammar-debug CPU1/4GiB/60초 이내 읽기 전용 후처리",
+  "quadrature": {
+    "formula": "L[solar] = 0.0032845 * sum_i (R_i-R_(i+1))*(Q_i*R_i^2+Q_(i+1)*R_(i+1)^2)/2; R in 1e10 cm",
+    "count": 90,
+    "meaning": "진단용 사다리꼴 적분이며 native 적분식이나 최종 에너지 폐합 판정이 아님",
+    "native_LINMON_Euler_Maclaurin_equivalence": false,
+    "no_grid_convergence_claim": true
+  },
+  "integrals_Lsun": {
+    "deposition": {"signed": 2957971957.5538535, "absolute": 2957971957.5538535},
+    "physical_BB": {"signed": -2153148815.206663, "absolute": 6152951468.172042},
+    "native_BB": {"signed": -885634716.7263163, "absolute": 4496937104.228689},
+    "BB_native_minus_physical": {"signed": 1267514098.480347, "absolute": 2023043869.6144786},
+    "FF_native_minus_physical": {"signed": 706.5165999642214, "absolute": 706.5165999642214},
+    "adiabatic_native_minus_physical": {"signed": -3378.5389285711003, "absolute": 3474.27855330108},
+    "physical_instantaneous_net": {"signed": 837217355.3694584, "absolute": 3514928977.6598706},
+    "native_instantaneous_net": {"signed": 2104735538.9053338, "absolute": 2896941520.5722976}
+  },
+  "ratios_to_same_deposition": {
+    "BB_signed_difference": 0.4285078143636425,
+    "BB_absolute_difference": 0.683929360604037,
+    "native_signed_net": 0.7115468196141661,
+    "native_L1_net": 0.9793674727626471
+  },
+  "full_native_startup_observation": {
+    "job_id": 1223908,
+    "run_id": "lumina_instant_fixedt_20261027-Y8MkLi",
+    "source": "material/OUTGEN: Delta_t=0, Ni56-Co56 chain and TOTAL",
+    "reported_deposition_Lsun": 2957700000.0,
+    "surface_luminosity_or_energy_closure_proven": false
+  },
+  "local_examples_native_node_zero_based": [
+    {"node": 35, "native_BB_net": 0.000014043017807043642, "native_total_net": 0.000014043643505690982, "deposition": 2.771876486002191e-15},
+    {"node": 65, "native_BB_net": -0.0010053612581340104, "physical_BB_net": -0.0018628446478589772, "deposition": 0.0012836490118772056, "native_total_net": 0.0002900500460151059},
+    {"node": 89, "native_BB_net": 0.00010297466793307564, "deposition": 0.0045973145632294534, "native_total_net": 0.0047283473097776965}
+  ],
+  "interpretation": [
+    "중간층의 실제 순잔차는 BB 선천이 순열량이 지배하고 가장 안쪽에서는 순간 침적열이 지배한다",
+    "이 같은 고정 J/T/ne 후보의 열장부 차이는 작지 않다. 순간열 복원만으로 전체 불일치가 해결됐다고 할 수 없다",
+    "SCL_LN 열행 변경을 광자 opacity/emissivity 변경과 혼동하지 않는다",
+    "비수렴 후보의 진단용 적분이며 최종 수렴해의 SCL 오차·표면광도·에너지 폐합 실패를 증명한 것은 아니다",
+    "native 호환 root와 실제 광자 에너지 폐합을 함께 추적해야 하며 v2 수용 기준은 변경하지 않는다"
+  ],
+  "astra_evaluation": {
+    "agent": "01a178b2-657c-7ba1-ab5a-637a898d5198",
+    "scope": "읽기 전용 물리 평가; 입력3개 해시와 SCL 소스 확인, 공간적분 독립 재계산은 하지 않음",
+    "conclusion": "차이는 중요하나 최종 오차 미확정. 호환 root만으로 실제 광자 에너지 폐합은 보장되지 않음",
+    "identity": "R_native = R_photon + delta_R; native root에서 R_photon = -delta_R",
+    "next_action": "같은 갱신 후보의 두 장부·국소/signed/L1을 함께 유지. 현재1223908과 SCL 설정은 보존"
+  },
+  "new_physics_runs": 0,
+  "final_goal": "NOT_MET"
+}

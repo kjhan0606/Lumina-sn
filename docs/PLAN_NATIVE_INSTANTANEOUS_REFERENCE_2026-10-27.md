@@ -40,8 +40,11 @@ Jv에 일관되게 적용하고 물리 광자 장부는 별도로 보존한다.
 PREVENT_LOW_T/T_MIN 인공열은 표시하며 최종 앵커를 온도 보호항에
 의존한 수렴으로 인증하지 않는다.
 
-source70은 raw 개체수 보정 약88/76%, 광도1.513e15 Lsun, MAX_LAM=1e6이며
-안정화된 seed가 아니다. 열원 교정은 fixed-T·thermal-only에서 이 불안정을
+source70은 raw 개체수 보정 약88/76%, MAX_LAM=1e6이며 안정화된 seed가
+아니다. 원70의 로그 광도1.513e15 Lsun은 USE_FIXED_J=T의 대용 H 결과다.
+`comp_j_blank.f:161–165`는 RSQHNU=1/HFLUX_AT_OB=0.001/HFLUX_AT_IB=0으로
+놓으므로 그 숫자를 실제 광도나 발산 근거로 사용한 앞선 설명은 철회한다.
+새 자체장 실행의 실제 광도를 별도로 판단한다. 열원 교정은 fixed-T·thermal-only에서 이 불안정을
 해결하는 수단이 아니다. iteration 번호나 cap으로 작아진 적용 보정만으로
 후보를 선택하지 않는다. 같은 세대 restart의 active raw 보정·실제 인구 변화·
 J/moment·광도 연속 기록으로 선택한다. 증가 cap, LAMBDA/full 운용, 시작
