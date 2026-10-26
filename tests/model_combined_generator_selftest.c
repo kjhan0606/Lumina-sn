@@ -35,6 +35,23 @@ int main(void)
     assert(population_generator_stationary_gth(combined.generator,3,11.,solved,&diagnostic)==POP_OK);
     assert(diagnostic.generator_recognized &&
            diagnostic.exact_generator_componentwise_residual<1.e-12);
+    double private_candidate[]={-1.,-1.,-1.};
+    assert(nlte_model_element_fixed_field_candidate(&combined,&element,
+        private_candidate,&diagnostic)==POP_OK);
+    for(int i=0;i<3;i++)assert(near(private_candidate[i],solved[i]));
+    assert(diagnostic.generator_recognized &&
+           diagnostic.exact_generator_componentwise_residual<1.e-12);
+    combined.material_generation++;
+    assert(nlte_model_element_fixed_field_candidate(&combined,&element,
+        private_candidate,&diagnostic)!=POP_OK);
+    combined.material_generation--;
+    for(int i=0;i<3;i++)assert(near(private_candidate[i],solved[i]));
+    double saved_generator[9];memcpy(saved_generator,combined.generator,sizeof(saved_generator));
+    memset(combined.generator,0,sizeof(saved_generator));
+    assert(nlte_model_element_fixed_field_candidate(&combined,&element,
+        private_candidate,&diagnostic)==POP_RANK_INCOMPLETE);
+    for(int i=0;i<3;i++)assert(near(private_candidate[i],solved[i]));
+    memcpy(combined.generator,saved_generator,sizeof(saved_generator));
     nlte_model_combined_generator_free(&combined);
     bb.radiation_generation++;
     assert(nlte_model_element_generator_combine(&combined,&element,&bf,&bb,&col)!=0 &&
@@ -51,6 +68,6 @@ int main(void)
     col.collisional=NULL;
     assert(nlte_model_element_generator_combine(&combined,&element,&bf,&bb,&col)!=0 &&
            !combined.generator);
-    puts("MODEL_COMBINED_GENERATOR_SELFTEST PASS synthetic_only physical_SE_RE=NOT_SOLVED");
+    puts("MODEL_COMBINED_GENERATOR_SELFTEST PASS synthetic_only private_fixed_field_candidate=PASS physical_SE_RE=NOT_SOLVED");
     return 0;
 }

@@ -260,3 +260,41 @@ int nlte_model_element_generator_combine(NLTEModelCombinedGenerator *out,
 fail:
     nlte_model_combined_generator_free(&b);return -1;
 }
+
+PopulationStatus nlte_model_element_fixed_field_candidate(
+    const NLTEModelCombinedGenerator *combined,const NLTEModelElement *element,
+    double *candidate,PopulationGeneratorSolveDiagnostic *diagnostic)
+{
+    if(!combined || !element || !candidate || !diagnostic ||
+       !combined->generator || !element->initial_population ||
+       !combined->n_variables || combined->n_variables!=element->n_variables ||
+       combined->Z!=element->Z || combined->shell!=element->shell ||
+       !combined->material_generation || !combined->radiation_generation ||
+       combined->material_generation!=element->material_generation ||
+       combined->n_variables>SIZE_MAX/combined->n_variables ||
+       combined->n_variables*combined->n_variables>SIZE_MAX/sizeof(double) ||
+       combined->n_variables>SIZE_MAX/sizeof(double) ||
+       !isfinite(element->total_nuclei) || !(element->total_nuclei>0.) ||
+       candidate==element->initial_population || candidate==combined->generator ||
+       model_generator_closed(combined->generator,combined->n_variables))
+        return POP_SOLVE_FAILED;
+    size_t n=combined->n_variables;
+    double *work=malloc(n*sizeof(*work));
+    if(!work)return POP_SOLVE_FAILED;
+    PopulationStatus status=population_generator_stationary_gth(
+        combined->generator,n,element->total_nuclei,work,diagnostic);
+    if(status==POP_OK){
+        long double total=0.;
+        for(size_t i=0;i<n;i++){
+            if(!isfinite(work[i]) || !(work[i]>0.)){status=POP_NONFINITE;break;}
+            total+=work[i];
+        }
+        if(status==POP_OK &&
+           fabsl(total-element->total_nuclei)>
+           1.e-12L*fmaxl(total,(long double)element->total_nuclei))
+            status=POP_SOLVE_FAILED;
+    }
+    if(status==POP_OK)memcpy(candidate,work,n*sizeof(*candidate));
+    free(work);
+    return status;
+}
