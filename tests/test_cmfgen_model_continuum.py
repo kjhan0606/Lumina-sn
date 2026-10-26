@@ -289,3 +289,25 @@ def test_dissolved_continuum_is_not_zero_below_primary_edge():
     assert summary['active_route_sample_terms']>0
     assert result['chi_abs'][0,0]>0 and result['eta_spont'][0,0]>0
     assert result['chi_abs'][0,1]==0 and result['eta_spont'][0,1]==0
+
+
+def test_native_se_support_is_explicit_and_does_not_change_opacity_support():
+    rows=[dict(atomic_number='20',ion_number='4',super_level='0',energy_eV='0',g='2')]
+    models={(20,5):dict(ionization_eV=M.H*1e14/M.EV,z_screen=5.,terminal_g=2.)}
+    state=dict(temperature=np.array([1e4]),ne=np.array([1e15]),
+        columns=np.array([[20,4,0],[20,5,-1]]),superlevel=np.array([[1e14],[1e14]]),
+        sl_index={(20,4,0):0,(20,5,-1):1},full=np.array([[1e14]]),occupation=np.array([[.9]]))
+    nu=np.array([.79e14,.8e14,.81e14,1.1e14])
+    route=M.Route(20,5,0,-1,-1,0,1.,2.,0.,1e14,
+        ((lambda q:np.full_like(q,1e-18),np.array([1e14]),1e14,'tab'),),True)
+    outputs=[]
+    for policy in ('opacity','native-SE'):
+        result={name:np.zeros((1,len(nu))) for name in ('chi_abs','chi_stim','chi_net','eta_spont')}
+        M.add_dissolved_continuum(result,[route],rows,models,state,nu,support_policy=policy)
+        outputs.append(result)
+    for key in ('chi_abs','chi_stim','eta_spont'):
+        assert np.all(outputs[0][key][0,:3]>0)
+        np.testing.assert_array_equal(outputs[1][key][0,:2],0)
+        assert outputs[1][key][0,2]==outputs[0][key][0,2]
+    with pytest.raises(ValueError):
+        M.add_dissolved_continuum(outputs[0],[route],rows,models,state,nu,support_policy='unknown')

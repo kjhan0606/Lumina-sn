@@ -317,7 +317,10 @@ def _dissolution_candidate_start(k,xdis,ydis):
     return lo
 
 
-def add_dissolved_continuum(result,routes,rows,models,state,nu):
+def add_dissolved_continuum(result,routes,rows,models,state,nu,*,support_policy='opacity'):
+    """native 소광/SE의 서로 다른 pseudo-continuum 지지를 명시한다."""
+    if support_policy not in ('opacity','native-SE'):
+        raise ValueError('알 수 없는 준위 용해 소비 규약')
     b,a,x=dissolution_vectors(state);reference=ground_lte_reference(rows,models,state)
     t=state['temperature'];ns=len(t)
     absorption=np.zeros((ns,len(nu)));stimulated=np.zeros_like(absorption)
@@ -328,6 +331,8 @@ def add_dissolved_continuum(result,routes,rows,models,state,nu):
             raise ValueError('미지원인 비바닥 PHOT 첫 route의 level dissolution')
         z=models[route.Z,route.stage]['z_screen'];edge=route.threshold_Hz
         active=(nu<edge)&(nu>edge-3.289395e15/4)
+        # QUAD_MULTI_V10의 조건. GENOPAETA_V10 소광에는 이 조건이 없다.
+        if support_policy=='native-SE':active &= nu>.8*edge
         if not np.any(active):continue
         sigma_edge=float(route.sigma(np.array([edge*(1+1e-14)]))[0])*route.probability
         if sigma_edge==0:continue

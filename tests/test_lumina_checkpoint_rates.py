@@ -80,6 +80,52 @@ def test_lte_planck_rate_balance_and_induced_counted_once():
     np.testing.assert_allclose(rates['total']['LTE']['photo'], rates['total']['LTE']['reverse'], rtol=3e-14)
 
 
+@pytest.mark.parametrize('block',[1,3,7,41,64])
+def test_mapped_cross_sections_keep_actual_frequency_photon_weights_and_thermal_factors(block):
+    nu,rows,state,route=fixture()
+    evaluation=nu[(np.arange(len(nu))//4)*4]
+    j=np.broadcast_to(np.linspace(1e-8,2e-6,len(nu)),(2,len(nu))).copy()
+    [(key,result)]=list(R.ion_rates_stream(nu,lambda sl:{'J':j[:,sl]},[route],rows,{},state,
+        False,targets=((14,2),),integration_block_bins=block,continuum_evaluation_Hz=evaluation))
+    upper=state['full'][1]*state['occupation'][0]/state['occupation'][1]
+    a,s,e=R.B.milne_route(nu,route.sigma(evaluation),state['full'][0],upper,
+        state['temperature'],state['ne'],2.,6.,route.threshold_Hz,route.probability)
+    weights=R.photon_weights(nu)
+    expected=dict(photo=(a*j)@weights,stimulated=(s*j)@weights,spontaneous=e@weights)
+    for process,value in expected.items():
+        np.testing.assert_allclose(result['total']['J'][process],value,rtol=4e-14)
+    [(key,full)]=list(R.ion_rates(nu,{'J':j},[route],rows,{},state,False,
+        targets=((14,2),),continuum_evaluation_Hz=evaluation))
+    for process,value in full['total']['J'].items():
+        np.testing.assert_allclose(result['total']['J'][process],value,rtol=4e-14)
+
+
+def test_mapped_lte_balance_and_identity_direct_are_preserved():
+    nu,rows,state,route=fixture();state['occupation'][:]=1
+    t=state['temperature']
+    nstar=state['full'][1]*state['ne']*(R.B.H**2/(2*np.pi*R.B.ME*R.B.KB*t))**1.5/6
+    state['full'][0]=nstar*np.exp(R.B.H*route.threshold_Hz/(R.B.KB*t))
+    j=(2*R.B.H*nu**3/R.B.C**2)[None,:]/np.expm1(R.B.H*nu[None,:]/(R.B.KB*t[:,None]))
+    values=[]
+    for evaluation in (None,nu,nu[(np.arange(len(nu))//4)*4]):
+        values.append(next(R.ion_rates(nu,{'J':j},[route],rows,{},state,False,
+            targets=((14,2),),continuum_evaluation_Hz=evaluation))[1]['total']['J'])
+    for result in values:
+        np.testing.assert_allclose(result['photo'],result['reverse'],rtol=4e-14)
+    for key in values[0]:np.testing.assert_array_equal(values[0][key],values[1][key])
+
+
+@pytest.mark.parametrize('policy,evaluation',[
+    ('unknown',None),('opacity',[1.]),('native-SE',[1.,np.nan]),('opacity',[-1.,2.])])
+def test_invalid_rate_sampling_is_rejected_before_reading_any_field(policy,evaluation):
+    nu,rows,state,route=fixture();called=[]
+    def field(sl):called.append(sl);return {'J':np.ones((2,sl.stop-sl.start))}
+    with pytest.raises(ValueError):
+        list(R.ion_rates_stream(nu,field,[route],rows,{},state,False,
+            targets=((14,2),),dissolution_policy=policy,continuum_evaluation_Hz=evaluation))
+    assert called==[]
+
+
 @pytest.mark.parametrize('block_bins', [None, 1, 7, 128])
 def test_model_dissolution_uses_same_production_coefficients(block_bins):
     nu, rows, state, route = fixture()

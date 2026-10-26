@@ -15,6 +15,7 @@ import time
 import numpy as np
 
 import cmfgen_model_continuum as B
+import cmfgen_model_sources as S
 from compare_lumina_bridge_field0 import fields, matched_shells
 from lumina_field_checkpoint import digest
 from run_lumina_cell_candidate import read_material
@@ -58,19 +59,53 @@ def contract_rates(coefficients, radiation, weights):
     return result
 
 
+def mapped_rate_coefficients(coefficients,nu,evaluation,index,temperature):
+    """CONT_FREQ의 흡수는 유지하고 유도항/진η만 실제ν로 옮긴다.
+
+    순χ로 광흡수를 대체하지 않는다. 입력은 재사용 전의 원 계수이며
+    이미 보정된 source binary를 다시 보정하는 경로가 아니다.
+    """
+    if index is None:return coefficients
+    # identity에서 fancy indexing의 배열 stride까지 바꾸면 BLAS 합산이
+    # 마지막 bit에서 달라질 수 있다. 원 계수를 그대로 소비한다.
+    if np.array_equal(evaluation,nu) and np.array_equal(index,np.arange(len(nu))):
+        return coefficients
+    mapped={key:value[:,index] for key,value in coefficients.items()}
+    evaluation=evaluation[index]
+    _,eta=S.rescale_continuum(nu,evaluation,temperature,mapped['chi_net'],mapped['eta_spont'])
+    with np.errstate(over='raise',invalid='raise',divide='raise'):
+        stimulated=mapped['chi_stim']*np.exp(
+            -B.H*(nu-evaluation)[None,:]/(B.KB*np.asarray(temperature)[:,None]))
+    if not np.isfinite(stimulated).all():raise ValueError('CONT_FREQ 유도항 비유한')
+    return dict(chi_abs=mapped['chi_abs'],chi_stim=stimulated,
+                chi_net=mapped['chi_abs']-stimulated,eta_spont=eta)
+
+
+def rate_sampling(nu,evaluation,support_policy):
+    if support_policy not in ('opacity','native-SE'):
+        raise ValueError('알 수 없는 준위 용해 소비 규약')
+    return S.continuum_frequencies(nu,evaluation)
+
+
 def ion_rates(nu, radiation, routes, rows, models, state, do_dis, targets=TARGETS,
-              block_bins=512):
+              block_bins=512,continuum_evaluation_Hz=None,dissolution_policy='opacity'):
     """각 실제 이온의 모든 route를 합한다. 작은 인구·단면을 자르지 않는다."""
     weights = photon_weights(nu)
+    evaluation,index=rate_sampling(nu,continuum_evaluation_Hz,dissolution_policy)
     for key in targets:
         selected = [r for r in routes if (r.Z, r.stage) == key]
         if not selected:
             raise ValueError(f'요청 이온의 실제 PHOT route 누락: {key}')
-        coefficients = B.continuum_grid(selected, rows, state, nu, block_bins)
-        bound = contract_rates(coefficients, radiation, weights)
+        coefficients = B.continuum_grid(selected, rows, state, evaluation, block_bins)
+        sampled=mapped_rate_coefficients(coefficients,nu,evaluation,index,state['temperature'])
+        bound = contract_rates(sampled, radiation, weights)
+        del sampled
         if do_dis:
-            B.add_dissolved_continuum(coefficients, selected, rows, models, state, nu)
-            total = contract_rates(coefficients, radiation, weights)
+            B.add_dissolved_continuum(coefficients, selected, rows, models, state, evaluation,
+                                     support_policy=dissolution_policy)
+            sampled=mapped_rate_coefficients(coefficients,nu,evaluation,index,state['temperature'])
+            total = contract_rates(sampled, radiation, weights)
+            del sampled
         else:
             total = bound
         yield key, dict(routes=len(selected), bound=bound, total=total)
@@ -79,13 +114,16 @@ def ion_rates(nu, radiation, routes, rows, models, state, do_dis, targets=TARGET
 
 
 def ion_rates_stream(nu, field_block, routes, rows, models, state, do_dis,
-                     targets=TARGETS, integration_block_bins=8192, block_report=None):
+                     targets=TARGETS, integration_block_bins=8192, block_report=None,
+                     continuum_evaluation_Hz=None,dissolution_policy='opacity'):
     """생산 격자 점을 버리지 않고 같은 점값 적분을 제한된 메모리로 합한다.
 
     선택 block_report는 이미 합산한 블록의 과정별 기여만 관측한다.
     전역 사다리꼴 가중치나 계수 계산은 이 선택으로 바꾸지 않는다.
     """
     weights = photon_weights(nu)
+    # 전체 대응을 먼저 검증해 뒤 블록의 손상이 부분 율을 만들어 내지 않게 한다.
+    rate_sampling(nu,continuum_evaluation_Hz,dissolution_policy)
     if type(integration_block_bins) is not int or integration_block_bins < 1:
         raise ValueError('양의 적분 블록 크기 필요')
     for key in targets:
@@ -96,11 +134,18 @@ def ion_rates_stream(nu, field_block, routes, rows, models, state, do_dis,
         for begin in range(0, len(nu), integration_block_bins):
             sl = slice(begin, min(len(nu), begin+integration_block_bins))
             radiation = field_block(sl)
-            coefficients = B.continuum_grid(selected, rows, state, nu[sl], 512)
-            bound = contract_rates(coefficients, radiation, weights[sl])
+            evaluation,index=rate_sampling(nu[sl],
+                None if continuum_evaluation_Hz is None else continuum_evaluation_Hz[sl],dissolution_policy)
+            coefficients = B.continuum_grid(selected, rows, state, evaluation, 512)
+            sampled=mapped_rate_coefficients(coefficients,nu[sl],evaluation,index,state['temperature'])
+            bound = contract_rates(sampled, radiation, weights[sl])
+            del sampled
             if do_dis:
-                B.add_dissolved_continuum(coefficients, selected, rows, models, state, nu[sl])
-                total = contract_rates(coefficients, radiation, weights[sl])
+                B.add_dissolved_continuum(coefficients, selected, rows, models, state, evaluation,
+                                         support_policy=dissolution_policy)
+                sampled=mapped_rate_coefficients(coefficients,nu[sl],evaluation,index,state['temperature'])
+                total = contract_rates(sampled, radiation, weights[sl])
+                del sampled
             else:
                 total = bound
             for scope, rates in (('bound', bound), ('total', total)):
