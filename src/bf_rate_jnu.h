@@ -64,12 +64,22 @@ typedef struct {
     char material_model_sha256[65];
     const int *offset;             /* n_levels+1 */
     const int *target;             /* n_routes; upper SL의 실제 FL anchor */
+    const int *terminal_ion;       /* n_routes; target=-1일 때 실제 ion-pop index */
     const double *probability, *threshold_Hz, *sigma_edge;
     const int *phot_grid;          /* 원 PHOT grid; CI 경로 선택용 */
     const double *saha_lower_per_upper; /* route-major; 점유확률 포함 */
     const double *temperature, *electron_density; /* n_shells */
+    const uint8_t *shell_ready;   /* NULL=전체; 0=미계산 원래점, exact zero 아님 */
     const BfPointRates *rates;     /* route-major [n_routes*n_shells] */
 } BfPointRateView;
+
+/* 확률만 한 번 적용한 물리율. FL→SL fraction은 행렬 조립 때 적용한다.
+ * terminal은 가짜 FL이 아니라 실제 ion-pop scalar로 식별한다. */
+typedef struct {
+    int target_level, target_ion;
+    BfPointRates radiative;
+    double collisional_ionization, three_body_recombination;
+} BfPointTransition;
 
 int bf_rate_point_get(const BfPointRateView *view, size_t route, size_t shell,
     uint64_t generation, double temperature, double electron_density,

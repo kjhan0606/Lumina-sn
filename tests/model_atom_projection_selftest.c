@@ -1,15 +1,77 @@
 /* 실제 원자모형 등록에서 상위 이온 누락과 terminal 혼입을 확인한다. */
 #include "nlte_population_candidate.h"
+#include "nlte_model_se.h"
 
 static int check(int yes, const char *message) {
     if (!yes) fprintf(stderr, "[MODEL-PROJECTION][FAIL] %s\n", message);
     return yes ? 0 : 1;
 }
 
+/* 선택 ν 기여의 전 경로 handoff 시험. 전체 BF 적분/SE 해가 아니다. */
+static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
+{
+    FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
+    if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMBFPTS1",8) || fread(shape,4,4,fp)!=4 ||
+       fread(snapshot,8,2,fp)!=2 || shape[0]!=(uint32_t)a->n_levels ||
+       shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] || !shape[1])return 1;
+    size_t nr=shape[1],ns=shape[2],node=shape[3];
+    if(nr>SIZE_MAX/ns || nr*ns>(512*1024*1024)/sizeof(BfPointRates) ||
+       snapshot[0]!=p->T_e[node] || snapshot[1]!=p->n_electron[node])return 1;
+    int *offset=calloc((size_t)a->n_levels+1,sizeof(int));
+    int *target=malloc(nr*sizeof(int)),*terminal=malloc(nr*sizeof(int)),*grid=malloc(nr*sizeof(int));
+    double *prob=malloc(nr*sizeof(double)),*edge=malloc(nr*sizeof(double)),*sigma=malloc(nr*sizeof(double));
+    double *saha=calloc(nr*ns,sizeof(double)),*te=calloc(ns,sizeof(double)),*ne=calloc(ns,sizeof(double));
+    BfPointRates *rates=calloc(nr*ns,sizeof(*rates));uint8_t *ready=calloc(ns,1);
+    if(!offset || !target || !terminal || !grid || !prob || !edge || !sigma ||
+       !saha || !te || !ne || !rates || !ready)return 1;
+    int previous=-1;
+    for(size_t r=0;r<nr;r++){
+        int32_t ids[5];double values[10];
+        if(fread(ids,4,5,fp)!=5 || fread(values,8,10,fp)!=10 || ids[0]<previous ||
+           ids[0]<0 || ids[0]>=a->n_levels)return 1;
+        previous=ids[0];offset[ids[0]+1]++;
+        target[r]=ids[1];terminal[r]=-1;grid[r]=ids[4];
+        if(target[r]<0){
+            for(int ip=0;ip<a->n_ion_pops;ip++)if(a->ion_pop_Z[ip]==ids[2] && a->ion_pop_stage[ip]==ids[3]){
+                if(terminal[r]>=0)return 1;terminal[r]=ip;
+            }
+            if(terminal[r]<0)return 1;
+        }
+        prob[r]=values[0];edge[r]=values[1];sigma[r]=values[2];saha[r*ns+node]=values[3];
+        rates[r*ns+node]=(BfPointRates){values[4],values[5],values[6],values[7],values[8],values[9]};
+    }
+    if(fgetc(fp)!=EOF)return 1;fclose(fp);
+    for(int gl=0;gl<a->n_levels;gl++)offset[gl+1]+=offset[gl];
+    te[node]=snapshot[0];ne[node]=snapshot[1];ready[node]=1;
+    BfPointRateView view={.n_levels=(size_t)a->n_levels,.n_routes=nr,.n_shells=ns,
+        .radiation_generation=1,.material_generation=a->population_committed_generation,
+        .offset=offset,.target=target,.terminal_ion=terminal,.phot_grid=grid,
+        .probability=prob,.threshold_Hz=edge,.sigma_edge=sigma,.saha_lower_per_upper=saha,
+        .temperature=te,.electron_density=ne,.shell_ready=ready,.rates=rates};
+    memcpy(view.material_model_sha256,a->partition_stamp.atomic_model_sha256,65);
+    const BfPointRateView *old=n->point_bf_rates;RadiationFieldView saved=n->radfield_view;
+    int saved_status=n->radfield_view_status;
+    n->point_bf_rates=&view;n->radfield_view.generation=1;n->radfield_view_status=RADIATION_FIELD_VIEW_OK;
+    size_t used=0,terminal_used=0;
+    for(int e=0;e<a->n_elements;e++){
+        NLTEModelElement layout={0};NLTEModelBFBlock block={0};
+        if(nlte_model_element_init(&layout,n,a,p,a->element_Z[e],(int)node) ||
+           nlte_model_element_bf_assemble(&block,&layout,n,a,p))return 1;
+        used+=block.routes;terminal_used+=block.terminal_routes;
+        nlte_model_bf_block_free(&block);nlte_model_element_free(&layout);
+    }
+    if(nlte_point_bf_view_check(n,a,p,node ? 0 : 1)==0 || used!=nr)return 1;
+    n->point_bf_rates=old;n->radfield_view=saved;n->radfield_view_status=saved_status;
+    printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=0 SE_RE_solved=0\n",node,used,terminal_used);
+    free(offset);free(target);free(terminal);free(grid);free(prob);free(edge);free(sigma);
+    free(saha);free(te);free(ne);free(rates);free(ready);return 0;
+}
+
 static int import_native_nodes(const char *path, AtomicData *atom,
                                NLTEConfig *nlte, int ns, const char *export_path,
                                const double *occupation,
-                               const PopulationOccupationModel *occupation_model) {
+                               const PopulationOccupationModel *occupation_model,
+                               const char *point_contributions) {
     FILE *fp=fopen(path,"rb");if (!fp) return 1;
     char magic[8];uint32_t nd,nc,nl;double epoch;
     if (fread(magic,1,8,fp)!=8 || (memcmp(magic,"LUMNOD01",8) && memcmp(magic,"LUMCEL01",8)) ||
@@ -107,6 +169,20 @@ static int import_native_nodes(const char *path, AtomicData *atom,
         checked++;
     }
     printf("[MATERIAL-IMPORT][LINE-OWNER] elements=%d imported_NLTE=EXACT unowned_generation=REJECTED\n",checked);
+    size_t bound_rows=0,terminal_rows=0,max_rows=0;
+    for(int element=0;element<atom->n_elements;element++){
+        NLTEModelElement layout={0};int node=ns>49 ? 49 : 0;
+        if(check(nlte_model_element_init(&layout,nlte,atom,&p,
+             atom->element_Z[element],node)==0,"actual full-model element layout"))return 1;
+        bound_rows+=layout.n_bound;terminal_rows+=layout.n_terminals;
+        if(layout.n_variables>max_rows)max_rows=layout.n_variables;
+        nlte_model_element_free(&layout);
+    }
+    if(check(bound_rows==(size_t)nlte->n_super_total && terminal_rows==6,
+             "actual full-model SL/terminal coverage"))return 1;
+    printf("[MODEL-SE][ACTUAL-LAYOUT] elements=%d SL=%zu terminal=%zu maximum_element_rows=%zu field_or_SE_solved=0\n",
+        atom->n_elements,bound_rows,terminal_rows,max_rows);
+    if(point_contributions && import_point_contributions(point_contributions,atom,nlte,&p))return 1;
     if (occupation_model) {
         NLTEPopulationCandidate candidate={0};
         size_t count=(size_t)atom->n_levels*ns;
@@ -153,7 +229,7 @@ static int import_native_nodes(const char *path, AtomicData *atom,
 }
 
 int main(int argc, char **argv) {
-    if (argc>=2 && argc<=7) {
+    if (argc>=2 && argc<=8) {
         AtomicData actual = {0}; OpacityState op = {0}; NLTEConfig model = {0};
         int ns=argc>=3 ? atoi(argv[2]):1;
         if (ns<=0 || ns>1000) return 2;
@@ -181,7 +257,7 @@ int main(int argc, char **argv) {
             fclose(input);
         }
         PopulationOccupationModel occupation_model={0};double *occupation_parameters=NULL;
-        if(argc==7){
+        if(argc>=7){
             FILE *input=fopen(argv[6],"rb");char tag[8];uint32_t count;
             if(!input || fread(tag,1,8,input)!=8 || memcmp(tag,"LMOCPAR1",8) ||
                fread(&count,4,1,input)!=1 || count!=(uint32_t)actual.n_levels)return 1;
@@ -192,7 +268,8 @@ int main(int argc, char **argv) {
             occupation_model=(PopulationOccupationModel){count,occupation_parameters,occupation_parameters+count};
         }
         if (argc>=4 && import_native_nodes(argv[3],&actual,&model,ns,argc>=5?argv[4]:NULL,occupation,
-                                          argc==7 ? &occupation_model : NULL)) return 1;
+                                          argc>=7 ? &occupation_model : NULL,
+                                          argc==8 ? argv[7] : NULL)) return 1;
         free(occupation_parameters);
         free(occupation);
         if (actual.element_density.source==POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {

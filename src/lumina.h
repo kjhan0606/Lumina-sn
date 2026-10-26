@@ -1386,6 +1386,12 @@ typedef struct {
 /* NLTE: Assemble rate matrix (column-major A[N*N] + RHS b[N]) for GPU/CPU solve.
  * pair_idx is the index in the GPU pair list (0..n_pairs-1) when lookup != NULL;
  * ignored otherwise. */
+int nlte_point_bf_view_check(const NLTEConfig *nlte, const AtomicData *atom,
+                            const PlasmaState *plasma, int shell);
+int nlte_point_bf_transition(const NLTEConfig *nlte, const AtomicData *atom,
+    const PlasmaState *plasma, int lower_global, size_t route, int shell,
+    BfPointTransition *out);
+
 int nlte_assemble_rate_matrix(NLTEConfig *nlte, AtomicData *atom,
                                 PlasmaState *plasma, OpacityState *opacity,
                                 int ion_idx_lo, int ion_idx_hi,

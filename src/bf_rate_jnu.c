@@ -43,7 +43,8 @@ int bf_rate_point_get(const BfPointRateView *v,size_t route,size_t shell,
     if(!out || !v || !v->n_routes || !v->n_shells ||
        v->n_routes>SIZE_MAX/v->n_shells || !v->rates || !v->temperature ||
        !v->electron_density || !generation || generation!=v->radiation_generation ||
-       route>=v->n_routes || shell>=v->n_shells || !isfinite(t) || t<=0. ||
+       route>=v->n_routes || shell>=v->n_shells ||
+       (v->shell_ready && !v->shell_ready[shell]) || !isfinite(t) || t<=0. ||
        !isfinite(ne) || ne<=0. || v->temperature[shell]!=t ||
        v->electron_density[shell]!=ne) return -1;
     BfPointRates r=v->rates[route*v->n_shells+shell];

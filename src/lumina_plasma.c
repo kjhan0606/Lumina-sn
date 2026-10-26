@@ -516,6 +516,80 @@ int nlte_ew_test_bf_ci_route_included(int phot_grid,
 }
 #endif
 
+int nlte_point_bf_view_check(const NLTEConfig *n,const AtomicData *a,
+                            const PlasmaState *p,int shell)
+{
+    if(!n || !a || !p || !n->point_bf_rates || a->n_levels<=0 || p->n_shells<=0 ||
+       shell<0 || shell>=p->n_shells || !p->T_e || !p->n_electron)return -1;
+    const BfPointRateView *v=n->point_bf_rates;
+    if(v->n_levels!=(size_t)a->n_levels || v->n_shells!=(size_t)p->n_shells ||
+       !v->temperature || !v->electron_density ||
+       (v->shell_ready && !v->shell_ready[shell]) ||
+       !isfinite(p->T_e[shell]) || p->T_e[shell]<=0. ||
+       !isfinite(p->n_electron[shell]) || p->n_electron[shell]<=0. ||
+       v->temperature[shell]!=p->T_e[shell] || v->electron_density[shell]!=p->n_electron[shell] ||
+       !v->material_generation || v->material_generation!=a->population_committed_generation ||
+       n->radfield_view_status!=RADIATION_FIELD_VIEW_OK || !v->radiation_generation ||
+       n->radfield_view.generation!=v->radiation_generation ||
+       (a->model_level_occupation &&
+        (a->partition_stamp.status!=POP_OK || v->material_model_sha256[64]!='\0' ||
+         a->partition_stamp.atomic_model_sha256[64]!='\0' ||
+         !v->material_model_sha256[0] ||
+         strcmp(v->material_model_sha256,a->partition_stamp.atomic_model_sha256))) ||
+       (n->line_view.n_lines && (n->line_view_status!=LINE_JBAR_VIEW_OK ||
+        n->line_view.generation!=v->radiation_generation)))return -1;
+    return 0;
+}
+
+int nlte_point_bf_transition(const NLTEConfig *n,const AtomicData *a,
+    const PlasmaState *p,int lower,size_t route,int shell,BfPointTransition *out)
+{
+    if(!out || nlte_point_bf_view_check(n,a,p,shell) || lower<0 ||
+       lower>=a->n_levels || !a->level_Z || !a->level_ion)return -1;
+    if(a->level_Z[lower]<=0 || a->level_ion[lower]<0 ||
+       a->level_ion[lower]>=a->level_Z[lower])return -1;
+    const BfPointRateView *v=n->point_bf_rates;
+    size_t begin,end;
+    if(bf_rate_point_row(v,(size_t)a->n_levels,(size_t)p->n_shells,(size_t)lower,
+        a->population_committed_generation,&begin,&end) || route<begin || route>=end)return -1;
+    int target=v->target[route],terminal=-1;
+    if(target>=0){
+        if(target>=a->n_levels || a->level_Z[target]!=a->level_Z[lower] ||
+           a->level_ion[target]!=a->level_ion[lower]+1)return -1;
+    }else{
+        if(target!=-1 || !v->terminal_ion || !a->ion_pop_Z || !a->ion_pop_stage ||
+           !a->level_offset)return -1;
+        terminal=v->terminal_ion[route];
+        if(terminal<0 || terminal>=a->n_ion_pops ||
+           a->ion_pop_Z[terminal]!=a->level_Z[lower] ||
+           a->ion_pop_stage[terminal]!=a->level_ion[lower]+1 ||
+           a->level_offset[terminal]!=a->level_offset[terminal+1])return -1;
+    }
+    double probability=v->probability[route],edge=v->threshold_Hz[route],sigma=v->sigma_edge[route];
+    double ne=p->n_electron[shell],te=p->T_e[shell];
+    if(!isfinite(probability) || probability<=0. || probability>1. ||
+       !isfinite(edge) || edge<=0. || !isfinite(sigma) || sigma<0. ||
+       v->phot_grid[route]<0)return -1;
+    BfPointRates r;
+    if(bf_rate_point_get(v,route,(size_t)shell,n->radfield_view.generation,te,ne,&r))return -1;
+    double nstar=v->saha_lower_per_upper[route*v->n_shells+shell];
+    if(!isfinite(nstar) || nstar<0.)return -1;
+    double ci=0.;
+    if(nlte_bf_collisional_enabled() &&
+       nlte_bf_cmfgen_ci_route_included(v->phot_grid[route],target>=0))
+        ci=nlte_bf_cmfgen_collisional_ionization_rate(te,ne,
+            edge*H_PLANCK/EV_TO_ERG,sigma,a->level_ion[lower]);
+    BfPointTransition result={.target_level=target,.target_ion=terminal,
+        .radiative={probability*r.photo,probability*r.spontaneous,probability*r.stimulated,
+            probability*r.heat_photo,probability*r.heat_spontaneous,probability*r.heat_stimulated},
+        .collisional_ionization=probability*ci,.three_body_recombination=probability*ci*nstar};
+    if(!isfinite(ci) || ci<0. || !isfinite(result.collisional_ionization) ||
+       !isfinite(result.three_body_recombination) ||
+       !isfinite(result.radiative.spontaneous+result.radiative.stimulated))return -1;
+    *out=result;
+    return 0;
+}
+
 /* A2-05 (SPEC_A2_05_V2): single choke point for the CPU bound-free
  * photoionization rate.  Legacy field sources 0 (pref*J) and 1 (sigma*Gamma
  * estimator) both collapse to a conservative integral of the canonical
@@ -18247,20 +18321,7 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
      * 여기서 한 번만 적용하며 inverse는 이미 상위 SL 입자당이다. */
     if (nlte->point_bf_rates) {
         const BfPointRateView *v = nlte->point_bf_rates;
-        if (shell < 0 || shell >= n_shells ||
-            nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
-            !v->radiation_generation ||
-            nlte->radfield_view.generation != v->radiation_generation ||
-            (atom->model_level_occupation &&
-             (atom->partition_stamp.status != POP_OK ||
-              v->material_model_sha256[64] != '\0' ||
-              !v->material_model_sha256[0] ||
-              strcmp(v->material_model_sha256,atom->partition_stamp.atomic_model_sha256))) ||
-            (nlte->line_view.n_lines &&
-             (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
-              nlte->line_view.generation != v->radiation_generation))) {
-            bf_channel_error = 1;
-        }
+        if (nlte_point_bf_view_check(nlte,atom,plasma,shell)) bf_channel_error = 1;
         for (int lev = 0; lev < n_lo_levels && !bf_channel_error; ++lev) {
             int gl = nlte->nlte_to_global_level[lev_start + lev];
             int lower = SOLVE_OF(lev_start + lev);
@@ -18275,46 +18336,23 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
                 break;
             }
             for (size_t r = begin; r < end; ++r) {
-                int upper_global = v->target[r];
-                double p = v->probability[r], edge = v->threshold_Hz[r];
-                double sigma = v->sigma_edge[r];
-                BfPointRates rates;
-                if (upper_global < 0 || upper_global >= atom->n_levels ||
-                    atom->level_Z[upper_global] != atom->level_Z[gl] ||
-                    atom->level_ion[upper_global] != atom->level_ion[gl] + 1 ||
-                    !isfinite(p) || p <= 0.0 || p > 1.0 ||
-                    !isfinite(edge) || edge <= 0.0 ||
-                    !isfinite(sigma) || sigma < 0.0 ||
-                    bf_rate_point_get(v, r, (size_t)shell,
-                        nlte->radfield_view.generation, T_e, n_e, &rates)) {
-                    /* level-less terminal은 별도 scalar 노드가 필요하다.
-                     * 이 pair API는 이를 가짜 FL/ground로 대체하지 않는다. */
+                BfPointTransition tr;
+                if (nlte_point_bf_transition(nlte,atom,plasma,gl,r,shell,&tr) ||
+                    tr.target_level<0) {
+                    /* terminal은 실제 scalar 노드를 가진 full-model 조립기가 소비한다. */
                     bf_channel_error = 1;
                     break;
                 }
-                int ng = nlte->global_to_nlte_level[upper_global];
+                int ng = nlte->global_to_nlte_level[tr.target_level];
                 int upper = ng >= 0 ? SOLVE_OF(ng) : -1;
                 if (upper < n_lo_super || upper >= N) {
                     bf_channel_error = 1;
                     break;
                 }
-                double nstar = v->saha_lower_per_upper[r*v->n_shells+shell];
-                double ci = 0.0;
-                if (nlte_bf_collisional_enabled() &&
-                    nlte_bf_cmfgen_ci_route_included(v->phot_grid[r], 1)) {
-                    ci = nlte_bf_cmfgen_collisional_ionization_rate(
-                        T_e, n_e, edge*H_PLANCK/EV_TO_ERG, sigma,
-                        nlte->nlte_ion[ion_idx_lo]);
-                }
-                double photo = p*rates.photo*f;
-                double rec = p*(rates.spontaneous+rates.stimulated);
-                double coll_ion = p*ci*f, coll_rec = p*ci*nstar;
-                if (!isfinite(nstar) || nstar < 0.0 || !isfinite(ci) || ci < 0.0 ||
-                    !isfinite(photo) || !isfinite(rec) ||
-                    !isfinite(coll_ion) || !isfinite(coll_rec)) {
-                    bf_channel_error = 1;
-                    break;
-                }
+                double photo = tr.radiative.photo*f;
+                double rec = tr.radiative.spontaneous+tr.radiative.stimulated;
+                double coll_ion = tr.collisional_ionization*f;
+                double coll_rec = tr.three_body_recombination;
                 ACM(upper, lower) += photo+coll_ion;
                 ACM(lower, lower) -= photo+coll_ion;
                 ACM(lower, upper) += rec+coll_rec;

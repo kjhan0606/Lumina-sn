@@ -20,6 +20,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import cmfgen_model_continuum as B
 import lumina_native_columns as N
 import lumina_native90_rates as R
+from lumina_model_point_rates import ModelPointBoundRates
 
 
 class Model(C.Structure):
@@ -27,7 +28,7 @@ class Model(C.Structure):
               ('z_screen',C.POINTER(C.c_double))]
 
 
-def run(base_path,library,projection,output):
+def run(base_path,library,projection,output,point_library=None):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
@@ -103,6 +104,58 @@ def run(base_path,library,projection,output):
              LUMINA_IONIZATION_REFERENCE_FILE=str(reference))
     subprocess.run(command,check=True,env=env,timeout=max(1.,250.-(time.monotonic()-started)))
     imported=B.consume_c_full_population(exported,dict(state))
+    point_test=None
+    if point_library is not None:
+        point=ModelPointBoundRates(routes,rows,models,state,49,Path(point_library).resolve())
+        indices=np.unique(np.linspace(0,len(source.frequency)-1,33).astype('i8'))
+        frequency=np.ascontiguousarray(source.frequency[indices]);width=np.zeros_like(frequency)
+        left=indices>0;right=indices<len(source.frequency)-1
+        width[left]+=.5*(source.frequency[indices[left]]-source.frequency[indices[left]-1])
+        width[right]+=.5*(source.frequency[indices[right]+1]-source.frequency[indices[right]])
+        j_path=Path('/gpfs/kjhan/cmfgen_runs/lumina_resident_field_20261026-qFP5rJ/run/J.npy')
+        with N.FrozenNativeField(j_path,source,source.radius,source.frequency) as field:
+            j=np.ascontiguousarray(field.read(np.array([49]),indices)[0])
+        block=point.contract_bound_block(frequency,width,j)
+        physical=point.physical_ion_rates(block)
+        single=dict(state)
+        for key in ('full','occupation','superlevel'):single[key]=state[key][:,49:50]
+        for key in ('temperature','ne'):single[key]=state[key][49:50]
+        coefficients=B.continuum_grid(routes,rows,single,frequency,33)
+        photon=4*np.pi*width/(B.H*frequency)
+        expected=np.array([np.sum(coefficients['chi_abs'][0]*j*photon),
+            np.sum(coefficients['eta_spont'][0]*photon),np.sum(coefficients['chi_stim'][0]*j*photon)])
+        got=np.sum(list(physical.values()),axis=0)
+        np.testing.assert_allclose(got,expected,rtol=5.e-12,atol=0.)
+        per_ion=[]
+        for key,actual in sorted(physical.items()):
+            selected=[r for r in routes if (r.Z,r.stage)==key]
+            ion=B.continuum_grid(selected,rows,single,frequency,33)
+            wanted=np.array([np.sum(ion['chi_abs'][0]*j*photon),np.sum(ion['eta_spont'][0]*photon),
+                             np.sum(ion['chi_stim'][0]*j*photon)])
+            np.testing.assert_allclose(actual,wanted,rtol=5.e-12,atol=0.)
+            per_ion.append(dict(Z=key[0],stage=key[1],C=actual.tolist(),python=wanted.tolist()))
+        contributions=output.with_name('bound-selected-frequency-contributions.bin')
+        dtype=np.dtype([('ids','<i4',(5,)),('values','<f8',(10,))])
+        records=np.zeros(len(point.routes),dtype=dtype)
+        for i,r in enumerate(point.routes):
+            records['ids'][i]=[r.lower,r.target,r.Z if r.target<0 else 0,r.stage if r.target<0 else 0,r.phot_grid]
+            records['values'][i]=[r.probability,r.threshold_Hz,point.sigma_edge[i],point.saha[i],*block[i]]
+        with contributions.open('xb') as stream:
+            stream.write(struct.pack('<8sIIII2d',b'LMBFPTS1',nl,len(point.routes),ns,49,point.temperature,point.ne))
+            stream.write(records.tobytes())
+        point_command=list(command)
+        point_command[4]=str(output.with_name('model-point-imported-full.bin'))
+        point_command.append(str(contributions))
+        subprocess.run(point_command,check=True,env=env,timeout=max(1.,250.-(time.monotonic()-started)))
+        point_test=dict(native_node=49,routes=len(point.routes),ions=len(physical),selected_frequencies=len(frequency),
+            terminal_ions=[dict(Z=key[0],lower_stage=key[1],energy_eV=value[0],g=value[1])
+                           for key,value in sorted(point.terminal.items())],
+            terminal_inverse='native ground scalar; all PHOT EION=0 and GION identical per ion',
+            C_photo_spont_stim=got.tolist(),python_photo_spont_stim=expected.tolist(),
+            per_ion=per_ion,contributions_sha256=B.sha(contributions),
+            actual_C_all_elements_BF_assembly=True,uncomputed_native_nodes='REJECTED',
+            bound_only=True,pseudo_included=False,complete_frequency_integral=False,
+            SE_RE_solution=False,point_library_sha256=B.sha(Path(point_library)))
     result=dict(state='PASS',scope='actual native90 full-model occupation and private thermodynamics',
         cases=cases,input_identity=identity,source_population_check=full_check,
         imported_population_check=imported,failed_fit_preserves_output=True,
@@ -111,7 +164,7 @@ def run(base_path,library,projection,output):
         auxiliary_atomic_sha256={p.name:B.sha(p) for p in (catalog,reference)},
         script_sha256=B.sha(Path(__file__)),wall_seconds=time.monotonic()-started,
         fit_sensitivity_is_SE_RE_solution=False,public_material_updates=0,
-        new_transport=0,final_goal='NOT_MET')
+        point_bound_test=point_test,new_transport=0,final_goal='NOT_MET')
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('MODEL_OCCUPATION_NATIVE_TEST PASS values='+str(nl*ns),flush=True)
 
@@ -119,5 +172,6 @@ def run(base_path,library,projection,output):
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--base',required=True)
     p.add_argument('--library',required=True);p.add_argument('--projection',required=True)
+    p.add_argument('--point-library')
     p.add_argument('--out',required=True);args=p.parse_args()
-    run(args.base,args.library,args.projection,args.out)
+    run(args.base,args.library,args.projection,args.out,args.point_library)
