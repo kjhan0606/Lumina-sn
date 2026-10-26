@@ -32,6 +32,16 @@ from run_lumina_fixed_state_balance import BF,BB,RESPONSE,npz,load_report,adiaba
 from run_lumina_full_material_response import BASE,PARAMETERS
 
 
+def absent_partial_auto_inputs(material,models):
+    # STEQ_AUTO_V2는 DIE 플래그와 별개로 파일 존재 시 처리한다. 없을 때만 RETURN.
+    names=[m['label']+'_AUTO_DATA' for _,m in sorted(models.items())]
+    for name in names:
+        path=Path(material)/name
+        if path.exists() or path.is_symlink():
+            raise ValueError('부분 autoionization 입력을 비활성으로 간주할 수 없음: '+name)
+    return names
+
+
 def run(args):
     if (os.environ.get('SLURM_CPUS_PER_TASK')!='16' or os.environ.get('SLURM_MEM_PER_NODE')!='32768' or
         os.environ.get('OMP_NUM_THREADS')!='16'):raise ValueError('CPU16/32GiB/OpenMP16 전용')
@@ -86,6 +96,7 @@ def run(args):
         if coupled else (initial,None,None))
     roster=npz(BF/'route-roster.npz');lines=npz(BB/'line-roster.npz')
     rows,models,routes,policy,smoothing,_=B.load_model(material,atomic,Path(config['phot_library']))
+    absent_auto=absent_partial_auto_inputs(material,models)
     source_report=json.loads((Path(config['reuse_sources']['boundary_sources']['directory'])/'sources.json').read_text())
     if policy!=source_report['process_selection']:raise ValueError('전 원자 과정 계약 변경')
     rows_hash=br['data_sha256'][str(Path(config['cells'])/'atomic/levels.csv')]
@@ -149,6 +160,7 @@ def run(args):
         resources='CPU16/32GiB/2h/OpenMP16/GPU0/retry0',scope=__doc__,max_charge_evaluations=8,
         temperature_update=coupled,thermal_policy=args.thermal_policy,max_coupled_evaluations=(1 if continuing else 5) if coupled else 0,
         reused_numerical_direction=basis_identity,frozen_alpha=args.frozen_alpha,
+        absent_partial_auto_inputs=absent_auto,
         material_boundary=boundary,temperature_degrees='all90 free in private fixed-J trial; not native release' if coupled else 'fixed70',
         new_native=0,new_transport=0),indent=2)+'\n')
     evaluations=[];latest={}
@@ -207,6 +219,7 @@ def run(args):
                 charge=outer['packet'].charge,payload=selected_outer,history=outer['history'])
         collision_identities={k:v for ion in response.ions.values() for k,v in ion.identity.items()}
     inputs.update(collision_identities)
+    absent_partial_auto_inputs(material,models)
     if any(B.sha(Path(p))!=h for p,h in inputs.items()):raise ValueError('공통 물질응답 중 원 입력 변경')
     selected=solved['payload']
     stages=[];similarity={}
