@@ -95,11 +95,18 @@ def state_summary(run, input_state, first=70):
         active_population_statistics='미판정: 위 통계는 양수 support 전체이며 v2 active 기준 대체 아님')
 
 
+def check_resources(memory_gib, environment=None):
+    env = os.environ if environment is None else environment
+    if type(memory_gib) is not int or memory_gib not in (32, 128):
+        raise ValueError('native 메모리는 명시한32/128GiB만 허용')
+    if (env.get('OMP_NUM_THREADS') != '16' or env.get('SLURM_CPUS_PER_TASK') != '16' or
+        env.get('SLURM_MEM_PER_NODE') != str(memory_gib * 1024) or not env.get('SLURM_JOB_ID')):
+        raise ValueError(f'Slurm CPU16/OMP16/{memory_gib}GiB 할당과 명시 인수 일치 필요')
+    return f'CPU16/OMP16/{memory_gib}GiB/2h/GPU0/retry0; child6600s'
+
+
 def run(args):
-    if (os.environ.get('OMP_NUM_THREADS') != '16' or
-        os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
-        os.environ.get('SLURM_MEM_PER_NODE') != '32768' or not os.environ.get('SLURM_JOB_ID')):
-        raise ValueError('Slurm CPU16/OMP16/32GiB 전용')
+    resources = check_resources(args.memory_gib)
     if args.out.exists():
         raise FileExistsError('기존 실행 보존')
     build = args.build.resolve()
@@ -130,7 +137,7 @@ def run(args):
         executable=variant, source_commit=args.source_commit,
         changed_vadat=VADAT_CHANGES, DO_LAM_IT='F: 최초 full, 이후 native fallback 유지',
         unchanged_fallback=dict(LAM_VAL=400, NUM_LAM=2), controls_sha256=expected_controls,
-        inherited_stage=inherited, resources='CPU16/OMP16/32GiB/2h/GPU0/retry0; child6600s',
+        inherited_stage=inherited, resources=resources, memory_gib=args.memory_gib,
         end_result='자체장 fixed-T 안정화 방향 판단; certified anchor 아님',
         J_history='native는 최종 J/H만 저장; 마지막3회 J 안정성은 이 실행만으로 인증 불가',
         final_goal='NOT_MET')
@@ -198,4 +205,6 @@ if __name__ == '__main__':
         p.add_argument('--' + name, type=Path, required=True)
     p.add_argument('--source-commit', required=True)
     p.add_argument('--build-report-sha256', required=True)
+    p.add_argument('--memory-gib', type=int, choices=(32, 128), default=32,
+                   help='기본32GiB 유지.128GiB는 별도 사용자 승인과 같은 Slurm 할당 필요')
     raise SystemExit(run(p.parse_args()))

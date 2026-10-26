@@ -129,9 +129,9 @@
       "interpretation": "선형 방향은 같은180변수 계를 작게 남긴 잔차로 푼다. 조건수는 크지만 이것만으로 구현/물리 오류를 판정하지 않는다. 예측 개선은 약8.75%이며 실제 후보 수용·열평형·새 수송의 증거가 아니다"
     }
   },
-  "128GiB_memory_expansion": "사용자 승인 미응답·미실행. 새32GiB 단일 후보는 이 증액 제안과 별개",
+  "128GiB_memory_expansion": "2026-10-27 사용자 별도 승인 완료. 같은 원70·검증 실행파일·CPU16/2h/최대4회/GPU0/retry0의 단회 준비. 최신 실행 신원은 LUMINA_NATIVE_REFERENCE_BUILD_2026-10-27.json",
   "operator_reproduction": "완료 작업 sacct·12개 시험·메모리/빌드 JSON·교정 실행파일/소스 SHA·실제 nm/ld 선택 및 원 native main/init SHA 재확인",
   "anchor_status": "NOT_AVAILABLE",
   "final_goal": "NOT_MET",
-  "remaining": ["32GiB native는 조립 중 재OOM으로 중단·보존됨. 자동 재제출하지 않으며128GiB 증액은 사용자 결정 대기", "실행 중인 공동 T/ne 후보의 실제 잔차와 CMFGEN70 대비 분포 판독", "released-T 기준 자기일관 해 확보", "새 장에서 공동 물질 응답 및 원 v2의 물리량·스펙트럼·격자 기준 충족"]
+  "remaining": ["32GiB native는 조립 중 재OOM으로 보존. 별도 승인128GiB 단회 결과의 실제 BA/완료 상태 판독", "공동 T/ne 첫 후보는 거부됐고 승인된 전하 재평형1224249는 별도 실행 중. 현재 결과는 LUMINA_COMMON_MATERIAL_2026-10-27.json", "released-T 기준 자기일관 해 확보", "새 장에서 공동 물질 응답 및 원 v2의 물리량·스펙트럼·격자 기준 충족"]
 }

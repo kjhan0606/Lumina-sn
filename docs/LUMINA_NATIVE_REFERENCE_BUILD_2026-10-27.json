@@ -110,17 +110,35 @@
     "major_arrays_GiB": 92.24632188677788,
     "thread_count_reduction_is_sufficient": false,
     "proposed_memory_GiB": 128,
-    "additional_memory_execution_approved": false,
+    "additional_memory_execution_approved": true,
     "astra_evaluation": "소스 확인 후128GiB 단일 시도 제안 지지. 충분성 보장은 아니며 사용자 추가 승인 전 실행 금지",
-    "pending_choice": "CPU16/2h/최대4회/GPU0/retry0·원70·코드·MAX_SIM은 유지하고 메모리만128GiB로 변경할지 사용자 결정",
-    "implementation_note": "현재 runner는32GiB를 검사한다. 승인 시 명시 한도/메모리 검사와 실행 기록을 함께 수정한 봉인 소스로 제출하며 단순 sbatch override만 하지 않는다"
+    "pending_choice": "2026-10-27 사용자128GiB 승인 완료. CPU16/2h/최대4회/GPU0/retry0·원70·검증한 실행파일·MAX_SIM은 유지",
+    "implementation_note": "기본32GiB는 보존하고 --memory-gib128과 실제 Slurm131072MiB가 함께 일치할 때만 승인128GiB를 사용. runner·launcher 명시 인수 및 실행 기록을 함께 봉인",
+    "direct_resource_and_existing_physics_tests": "grammar-debug CPU1/4GiB/120초 이내6개 통과(0.011초). shell 문법 PASS"
   },
   "remaining": [
     "1223908은 명시 BA 요청을 첫 단계에서 미수행해 종료·보존됨. 실패71을 새 seed로 쓰지 않음",
-    "1224011 및 비관측 dZ 쓰기 제거의32GiB 단일 후보1224201 모두 첫 갱신 전 OOM.128GiB는 미승인·미실행이며 native 자동 재제출은 하지 않음",
+    "1224011 및 비관측 dZ 쓰기 제거의32GiB 후보1224201 모두 첫 갱신 전 OOM으로 보존. 사용자 별도 승인128GiB 단회 준비 중이며 이후 자동 재제출 없음",
     "고정T 안정화 및 별도 reviewed released-T reference는 여전히 미확보",
     "공통 물질/장 잔차·Jv와 새 자기일관 해 및 원래 v2 물리량·스펙트럼·격자 수용"
   ],
+  "approved_128GiB_candidate": {
+    "state": "APPROVED_PREPARING",
+    "run_id": "lumina_native128_1224201_20261027",
+    "single_execution_owner": "현재 Codex 흐름이 단일 제출. 같은 승인으로 중복 발주 금지",
+    "user_approval": "2026-10-27:128GiB도 승인함",
+    "resources": "grammar CPU16/OpenMP16/128GiB/최대2시간/GPU0/추가최대4회/retry0; child6600초",
+    "build_run_id": "lumina_lazy_dz_bounded_20261027-EiFlTS",
+    "build_report_sha256": "8caaa1bd11c0a958640b829879454febc2aa1f20013ef51b074a1f748a00774d",
+    "executable_sha256": "a6d2844a1561feb8cea48ff173cd59e6e6b9bb5ec5d4658b2f7d3d702f496581",
+    "same_executable_as_failed_1224201": true,
+    "initial_completed_record": 70,
+    "failed_or_partial_71_used": false,
+    "temperature_release": false,
+    "new_Lumina_transport": 0,
+    "on_failure": "원본·부분 출력 보존 후 중단. 자동 재제출·메모리/시간 재증액 없음",
+    "physical_acceptance": "새 자체장·fresh BA·완료 상태/실제 보정·Si/S를 판독. fixed-T4회나 메모리 통과를 최종 앵커/스펙트럼 동등성으로 대체하지 않음"
+  },
   "latest_32GiB_native_candidate": {
     "job_id": 1224201,
     "state": "FAILED",

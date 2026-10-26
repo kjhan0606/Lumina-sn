@@ -22,6 +22,25 @@ def fixture():
 
 
 class FixedTTests(unittest.TestCase):
+    def test_explicit_memory_must_match_actual_slurm_allocation(self):
+        for memory in (32, 128):
+            env = dict(OMP_NUM_THREADS='16', SLURM_CPUS_PER_TASK='16',
+                       SLURM_MEM_PER_NODE=str(memory * 1024), SLURM_JOB_ID='123')
+            self.assertIn(f'/{memory}GiB/', R.check_resources(memory, env))
+            with self.assertRaises(ValueError):
+                R.check_resources(128 if memory == 32 else 32, env)
+            for key, value in (('OMP_NUM_THREADS', '8'), ('SLURM_CPUS_PER_TASK', '8'),
+                               ('SLURM_JOB_ID', ''), ('SLURM_MEM_PER_NODE', '')):
+                with self.subTest(memory=memory, key=key), self.assertRaises(ValueError):
+                    R.check_resources(memory, dict(env, **{key: value}))
+
+    def test_unapproved_memory_sizes_or_missing_allocation_rejected(self):
+        for memory in (True, 64, 256, '128', 128.):
+            with self.assertRaises(ValueError):
+                R.check_resources(memory, {})
+        with self.assertRaises(ValueError):
+            R.check_resources(128, {})
+
     def test_partial_checkpoint_survives_stale_final_RVTJ(self):
         initial = np.array([[1., 1.], [2., 2.], [4., 4.], [100., 100.]])
         updated = initial.copy()

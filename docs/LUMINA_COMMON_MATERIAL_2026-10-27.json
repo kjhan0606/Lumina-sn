@@ -254,6 +254,6 @@
       "result_and_acceptance": "미확인: 실제 전하 폐합·전체 깊이 열잔차·90점 Si/S 판독이 필요"
     }
   },
-  "next": "승인된 전하 재평형 후보1개를 새 고유 출력에 단일 제출하고 실제 전하 폐합·열잔차·90점 Si/S를 판독한다. 별도 native128GiB는 미승인·미제출. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
+  "next": "승인된 전하 재평형1224249의 실제 전하 폐합·열잔차·90점 Si/S를 판독한다. 이후 사용자가 별도로 native128GiB도 승인했으며 그 단회 실행은 LUMINA_NATIVE_REFERENCE_BUILD_2026-10-27.json에서 관리한다. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
   "final_goal": "NOT_MET"
 }
