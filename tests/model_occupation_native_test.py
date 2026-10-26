@@ -71,13 +71,37 @@ def load_complete_full_bound(path,point,identity,n_frequency):
 
 
 def run(base_path,library,projection,output,point_library=None,bb_result=None,col_result=None,
-        full_bound_result=None):
+        full_bound_result=None,direct_j_projection=None):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
     if full_bound_result is not None and point_library is None:
         raise ValueError('완성 BF handoff에는 point C 라이브러리가 필요')
     if full_bound_result is not None and (bb_result is None or col_result is None):
         raise ValueError('완성 BF의 고정장 SE 후보에는 같은 장 BB와 전쌍 충돌이 필요')
+    direct_j=None
+    if direct_j_projection is not None:
+        if full_bound_result is None or bb_result is None:
+            raise ValueError('직접 J 비교에는 완성 BF와 BB가 모두 필요')
+        direct_j_projection=Path(direct_j_projection)
+        direct_j=json.loads(direct_j_projection.read_text())
+        if (direct_j.get('schema')!='lumina-cmfgen-direct-native90-j-v1' or
+            direct_j.get('status')!='FIELD_PROJECTED_NOT_SELF_CONSISTENT' or
+            direct_j.get('material_record')!=70 or
+            direct_j.get('extrapolated_frequency_count')!=0 or
+            B.sha(Path(direct_j['J_path']))!=direct_j['J_sha256']):
+            raise ValueError('직접 J 입력 신원 불일치')
+        bf_result=Path(full_bound_result)
+        bound_input=bf_result.with_name('radiation-input.json')
+        attest=json.loads(bound_input.read_text())
+        if (attest.get('schema')!='lumina-bound-direct-input-v1' or
+            attest.get('status')!='COMPLETE_INPUT_SEALED' or
+            attest.get('projection_sha256')!=B.sha(direct_j_projection) or
+            attest.get('J_sha256_before')!=direct_j['J_sha256'] or
+            attest.get('J_sha256_after')!=direct_j['J_sha256'] or
+            attest.get('bound_result_sha256')!=B.sha(bf_result) or
+            attest.get('helper_sha256')!=B.sha(
+                Path(__file__).resolve().parents[1]/'scripts/run_lumina_model_point_bound_direct.py')):
+            raise ValueError('BF 직접장 실행과 보간장 결박 실패')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
         raise ValueError('다른 원 native 계획')
     base=json.loads(base_path.read_text());c=json.loads(Path(base['config']).read_text())
@@ -89,6 +113,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
     with N.open_sealed_native(base['config'],base['preparation'],base['preparation_sha256']) as source:
         rows,models,routes,state,do_dis,full_check,smoothing=R.material_state(c,plan,source,report)
         identity=dict(source.identity)
+    if direct_j is not None and identity!=direct_j['source_identity']:
+        raise ValueError('직접 J와 private 원물질 세대 불일치')
     if not do_dis:raise ValueError('실제 DO_DIS 물질이 아님')
     nl,ns=state['full'].shape
     edge=np.empty(nl);z=np.empty(nl)
@@ -162,7 +188,8 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         left=indices>0;right=indices<len(source.frequency)-1
         width[left]+=.5*(source.frequency[indices[left]]-source.frequency[indices[left]-1])
         width[right]+=.5*(source.frequency[indices[right]+1]-source.frequency[indices[right]])
-        j_path=Path('/gpfs/kjhan/cmfgen_runs/lumina_resident_field_20261026-qFP5rJ/run/J.npy')
+        j_path=(Path(direct_j['J_path']) if direct_j is not None else
+            Path('/gpfs/kjhan/cmfgen_runs/lumina_resident_field_20261026-qFP5rJ/run/J.npy'))
         with N.FrozenNativeField(j_path,source,source.radius,source.frequency) as field:
             j=np.ascontiguousarray(field.read(np.array([49]),indices)[0])
         block=point.contract_bound_block(frequency,width,j)
@@ -209,7 +236,14 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             bb_result=Path(bb_result)
             sealed=json.loads(bb_result.read_text())
             bb_catalog=bb_result.with_name('point-lines.npz')
-            if (B.sha(bb_result)!='94070d528e9e84de48711519d0b4ea38f76157177f6e077f3d5d3dad583b09fe' or
+            bb_identity_ok=(
+                B.sha(bb_result)=='94070d528e9e84de48711519d0b4ea38f76157177f6e077f3d5d3dad583b09fe'
+                if direct_j is None else
+                sealed.get('radiation_provenance')=='CMFGEN_DIRECT_NATIVE90_LOGNU_FIXED_MATERIAL' and
+                sealed.get('radiation_J_sha256')==direct_j['J_sha256'] and
+                sealed.get('radiation_projection_sha256')==B.sha(direct_j_projection) and
+                sealed.get('radiation_unchanged') is True)
+            if (not bb_identity_ok or
                 B.sha(bb_catalog)!=sealed['artifact_sha256'] or not sealed['source_unchanged'] or
                 sealed['native_node']!=49 or sealed['input_identity']!=identity or
                 sealed['state']!='COMPLETE_RADIATIVE_BB_ONLY'):
@@ -335,6 +369,11 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
                 contribution_sha256=B.sha(full_contributions),**full_seal,
                 Si_S_II_III_photo_spont_stim={f'{Z}:{stage}':physical_full[Z,stage].tolist()
                                                  for Z,stage in target_ions})
+            if direct_j is not None:
+                full_bound_test['radiation_provenance']='CMFGEN_DIRECT_NATIVE90_LOGNU_FIXED_MATERIAL'
+                full_bound_test['radiation_J_sha256']=direct_j['J_sha256']
+                full_bound_test['radiation_projection_sha256']=B.sha(direct_j_projection)
+                full_bound_test['radiation_input_attestation_sha256']=B.sha(bound_input)
             matched=re.findall(r'^\[MODEL-BB\]\[ACTUAL\] Z=(\d+) lines=(\d+) intra=(\d+) heat_erg_cm3_s=([^\s]+)$',
                                completed.stdout,re.M)
             if len(matched)!=len(bb_expected) or sum(int(row[1]) for row in matched)!=len(lower):
@@ -381,6 +420,9 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         script_sha256=B.sha(Path(__file__)),wall_seconds=time.monotonic()-started,
         fit_sensitivity_is_SE_RE_solution=False,public_material_updates=0,
         point_bound_test=point_test,point_bb_test=bb_test,new_transport=0,final_goal='NOT_MET')
+    if direct_j is not None:
+        result['fixed_radiation_field']='CMFGEN_DIRECT_NATIVE90_LOGNU_FIXED_MATERIAL'
+        result['fixed_radiation_J_sha256']=direct_j['J_sha256']
     result['point_collision_test']=collision_test
     result['full_bound_test']=full_bound_test
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
@@ -394,6 +436,7 @@ if __name__=='__main__':
     p.add_argument('--bb-result')
     p.add_argument('--col-result')
     p.add_argument('--full-bound-result')
+    p.add_argument('--direct-j-projection')
     p.add_argument('--out',required=True);args=p.parse_args()
     run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result,
-        args.col_result,args.full_bound_result)
+        args.col_result,args.full_bound_result,args.direct_j_projection)
