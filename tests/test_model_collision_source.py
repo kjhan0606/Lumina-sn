@@ -7,6 +7,8 @@ import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from lumina_model_collision_source import IonCollisionSource,ex_e1x,pair_blocks,table_values
 from l1a_collision import _ex_e1x
+from check_lumina_model_collision_source import node_temperatures
+import struct
 
 
 def fixture():
@@ -62,3 +64,16 @@ def test_one_omega_has_lte_collision_detailed_balance_not_two_independent_rates(
         reverse=pop[up]*base/source.g[up]
         assert np.allclose(forward,reverse,rtol=1.e-14,atol=0.)
         assert not np.allclose(forward,1.01*reverse,rtol=1.e-6,atol=0.)
+
+
+def test_node_temperatures_keep_all_90_points_and_reject_bad_source(tmp_path):
+    path=tmp_path/'nodes.bin'
+    physical=np.zeros((90,4));physical[:,0]=np.arange(90,0,-1)
+    physical[:,1]=np.arange(90)+10000.;physical[:,2]=1.e8;physical[:,3]=1.e-13
+    head=struct.pack('<8sIIId',b'LUMNOD01',90,1,3,1.)
+    blob=head+struct.pack('<3i',16,2,0)+physical.astype('<f8').tobytes()+np.ones(90,dtype='<f8').tobytes()
+    path.write_bytes(blob)
+    temperature,density=node_temperatures(path,3)
+    assert np.array_equal(temperature,physical[:,1]) and np.all(density==1.e8)
+    path.write_bytes(blob[:-1])
+    with pytest.raises(ValueError):node_temperatures(path,3)

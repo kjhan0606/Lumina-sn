@@ -26,4 +26,4 @@ python3 -m pytest -q -p no:cacheprovider tests/test_model_collision_source.py
 timeout -k 15 540s python3 scripts/check_lumina_model_collision_source.py \
  --levels /gpfs/kjhan/cmfgen_runs/lumina_material_cells_20261020-PjlGds/cells/atomic/levels.csv \
  --material /gpfs/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material \
- --out "$parent/result.json"
+ --out "$parent/result.json" "${@:2}"
