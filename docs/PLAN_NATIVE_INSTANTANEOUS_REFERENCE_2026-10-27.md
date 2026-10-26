@@ -68,3 +68,32 @@ NEW_PARENT SEALED_COMMIT`. 원본 경로는 runner가 명시하고 새 출력만
 결과·실제 job ID·해시와 남은 안정화 작업은 당일 인수인계서에 기록한다.
 최종 판정은 여전히 released-T의 v2 전체 잔차·마지막3회 변화·에너지 보존,
 실제 격자 사다리와 Si/S·물리량·스펙트럼 증거가 필요하다.
+
+## 자체장 fixed-T 후보 실행 구체화 — Astra 보완 반영
+
+full build1223879는11초에 완료했다. 후속은 같은 원70 완료 restart의 새
+복제본에서 corrected executable만 사용하는 최대4회 자체장 응답이다.
+`USE_FIXED_J=F`로 native가 매번 새 장을 계산하고, 첫 반복은 full BA를
+요청하되 원래 `LAM_VAL=400/NUM_LAM=2` fallback을 보존한다. Astra는
+`LAM_VAL=1e100`이나 `NUM_LAM=0`으로 fallback을 없애는 안을 반대했다.
+DO_LAM_AUTO=F가 fallback 금지라는 과거 주석도 실제 코드와 다르다.
+
+원 MODEL의 COMP_BA=F/N_FIX_BA=2는 과거 행렬을 재사용할 수 있으므로
+이번에는 **COMP_BA=T/N_FIX_BA=0**으로 새 자체장의 BA를 재조립한다.
+STORE_BA/STORE_BA_INV/WR_PRT_INV는F로 두어 재사용과 대형 중복 출력도
+피한다. IT_SPECIFIER를 복제하지 않으며 복제본에 있으면 실행을 거부한다.
+MAX_LIN=3/SCALE_OPT=LOCAL은 유지하고 MAX_LAM은1e6 대신 기존 finite10을
+이번 staging 수치 설정으로 명시한다. 적용 보정 cap을 raw 수렴으로 보지 않는다.
+
+FIX_T=T/FIX_T_AUTO=F/FIX_NE=F/DO_DDT=F/DO_NG=F 및 실제 SCL_LN·LOCAL·
+순간침적·thermal-only·핵종/나이는 유지한다. NUM_ITS=4, DO_LAM_IT=F,
+DO_LAM_AUTO=F, DO_T_AUTO=F다. CPU16/OMP16/32GiB/2시간/GPU0/retry0,
+자식6600초·파일8GiB·실행출력16GiB 한도이며 오류 시 해당 자식만 중단한다.
+원본 및 마지막 유효 checkpoint·부분 출력은 보존하고 자동 재시도하지 않는다.
+
+기존 SCRTEMP의 실제 인구/ne/T 변화·전90점 Si/S stage와 OUTGEN의 raw
+보정·광도·실제 BA/LAMBDA 선택, RVTJ 순간열을 함께 남긴다. native는 최종
+J/H만 저장하므로 마지막3회 J 안정성을 이 실행만으로 인증하지 않는다.
+4회 완주는 앵커나 SE/RE 공동 Newton 수렴이 아니다. 결과는 다음 안정화
+방향 선택에 사용한다. 재현: `sbatch scripts/submit_cmfgen_instantaneous_fixedt.slurm
+NEW_PARENT SEALED_COMMIT`. 중복 같은 job-name이 없을 때만 한 번 제출한다.
