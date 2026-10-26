@@ -1,0 +1,79 @@
+{
+  "status": "COMPLETE_FIXED_T_COMMON_CHARGE_INITIALIZATION",
+  "scope": "전27 bound ion·6 terminal·90점의 동적 SE와 공통 ne. 온도/RE·native E/Jv·새 수송·최종 스펙트럼 동등성 완료 아님.",
+  "job": 1223954,
+  "run": "lumina_common_charge_fix_20261027-Q5O3SG",
+  "sealed_source": "152ee62a8f131374c3236a9f64b8c4e12a12fb79",
+  "result_sha256": "9a2b02ecaedb0f4791fbf9ee84f1bc036c1739b3d5e5a5e6cf572e52bbf95468",
+  "accepted_response_sha256": "f9bfdceefedfee5f42f93f5657f8706cff22d560695d6280e5050d0c05b67e05",
+  "slurm": {
+    "state": "COMPLETED",
+    "exitcode": "0:0",
+    "elapsed_s": 370,
+    "maximum_RSS_KiB": 4669564,
+    "resources": "CPU16/OpenMP16/32GiB/2h/GPU0/retry0",
+    "response_wall_s": 340.208860024999
+  },
+  "actual_ne_evaluations": 3,
+  "all_evaluations_accepted_alpha": 1.0,
+  "charge_relative_history": [0.004400853404849687, 0.00029258726630788126, 4.532039324520111e-7, 5.626013503253322e-11],
+  "maximum_ne_relative_change": 0.004187389046111489,
+  "temperature_unchanged": true,
+  "final_stationary_SE_residual": 9.76347755705532e-17,
+  "original_model_and_input_unchanged": true,
+  "source_after_check": "ALL_PASS",
+  "BF_reuse": {
+    "bound_reused_routes": 24426,
+    "bound_direct_routes": 241,
+    "pseudo": "각 trial의 새 b/a/x와 Milne을 재적분",
+    "direct_comparison_routes": 81,
+    "direct_comparison_points": 90,
+    "maximum_component_relative_difference": 4.3867100570783863e-16,
+    "steady_state_BF_s": [71.16156993700133, 64.57199968201166, 64.48537389400008],
+    "changed_T_cache_reuse": false
+  },
+  "independent_reproduction": {
+    "status": "REPRODUCED_ACCEPTED_RESPONSE_IDENTITIES_AND_CONSERVATION",
+    "location": "grammar-debug CPU1/4GiB/180s",
+    "nuclei_relative_max": 1.6653345369377348e-15,
+    "charge_relative_max": 5.6260111205720646e-11,
+    "charge_vs_C_relative_difference": 8.346244055420533e-16,
+    "accepted_evaluation": 3,
+    "evaluation_output_hashes_verified": 6,
+    "accepted_response_arrays_equal_last_accepted_evaluation": true
+  },
+  "CMFGEN_comparison": {
+    "baseline": "고정 T/ne 물질70 입력. 수렴한 matched released-T 앵커 아님.",
+    "Si_II_max_absolute_fraction_difference": 1.426774086766945e-6,
+    "Si_III_max_absolute_fraction_difference": 0.020278995580863213,
+    "S_II_max_absolute_fraction_difference": 0.0004247512557045696,
+    "S_III_max_absolute_fraction_difference": 0.019393241854084975,
+    "Si_III_max_fraction_change_from_initial_fixed_ne_SE": 0.0008449420898907767,
+    "S_III_max_fraction_change_from_initial_fixed_ne_SE": 0.0007387661950011282,
+    "all_90_point_stage_fractions": "run/result.json:stages"
+  },
+  "remaining_energy_residual_max_erg_cm3_s": {
+    "physical_stored": 0.008070711925334593,
+    "native_stored": 0.0038800085096417983,
+    "physical_instantaneous_scenario": 0.0054189733142800695,
+    "native_instantaneous_scenario": 0.004728301453260128
+  },
+  "coupled_T_ne_implementation": {
+    "module": "scripts/lumina_coupled_material.py",
+    "actual_C_depth_coupling_preserved": true,
+    "direct_tests_total": 14,
+    "native_Jv_verified": false,
+    "actual_material_T_Newton_executed": false
+  },
+  "preserved_failure": {
+    "job": 1223923,
+    "run": "lumina_common_charge_20261027-spFjZC",
+    "state": "FAILED1:0",
+    "elapsed_s": 185,
+    "cause": "기존 C 단열 API의 shared-library 공개 심볼 누락. 물리식 실패 아님.",
+    "correction": "원 식 보존·공개 visibility·선행 API 확인·후처리 전 후보 저장",
+    "new_version_not_requeued_original": true
+  },
+  "next": "온도별 동적 율을 소비하는 깊이 결합 T/ne Newton을 실제 후보에 연결. 두 열장부 차이와 native E/Jv·안정 reference·새 자기일관 수송·스펙트럼을 별도로 입증.",
+  "final_goal": "NOT_MET"
+}
