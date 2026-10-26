@@ -18,8 +18,6 @@ import cmfgen_model_sources as S
 import compare_lumina_checkpoint_rates as C
 import lumina_native90_rates as R
 import lumina_native_columns as N
-from compare_cmfgen_bf_superlevel_rates import (parse_prrr_superlevel_rates,
-                                                parse_prrr_temperature)
 from run_cmfgen_formal_primary import fields
 
 
@@ -132,6 +130,10 @@ def check_prior(prior, Z, stage, node, bound, total):
 
 
 def run(base_path, prrr_dir, continuum_path, prior_path, output, node):
+    # 실제 PRRR 비교에서만 과거 감사 파서를 불러온다. 공통 격자/SE 판독은
+    # 실행하지 않는 감사 도구와 validation 디렉터리를 요구하지 않는다.
+    from compare_cmfgen_bf_superlevel_rates import (parse_prrr_superlevel_rates,
+                                                   parse_prrr_temperature)
     started = time.monotonic()
     base_path, prrr_dir, continuum_path, prior_path, output = map(
         Path, (base_path, prrr_dir, continuum_path, prior_path, output))

@@ -5,6 +5,53 @@ static int near(double actual,double expected)
     return isfinite(actual) && fabs(actual-expected)<=1.e-12*fmax(1.e-30,fabs(expected));
 }
 
+static int stream_cases(const NLTEModelElement *e,const NLTEConfig *n,
+    const AtomicData *a,PlasmaState *p,const NLTEModelCollisionBBView *view)
+{
+    NLTEModelCollisionBBBlock expected={0},actual={0};
+    if(nlte_model_element_collision_bb_assemble(&expected,e,n,a,p,view))return 1;
+    for(size_t chunk=1;chunk<=2;chunk++){
+        NLTEModelCollisionBBStream *s=NULL;
+        if(nlte_model_collision_bb_stream_begin(&s,e,n,a,p,view,19))return 2;
+        for(size_t at=0;at<view->n_pairs;at+=chunk){
+            size_t count=view->n_pairs-at;if(count>chunk)count=chunk;
+            if(nlte_model_collision_bb_stream_push(s,19,view->lower+at,view->upper+at,view->omega+at,count))return 3;
+        }
+        if(nlte_model_collision_bb_stream_finish(s,19,&actual) ||
+           actual.pairs!=expected.pairs ||
+           memcmp(actual.collisional,expected.collisional,e->n_variables*e->n_variables*sizeof(double)) ||
+           memcmp(actual.collisional_heat,expected.collisional_heat,e->n_variables*sizeof(double)))return 4;
+        if(view->dissolution &&
+           (memcmp(actual.dissolution,expected.dissolution,e->n_variables*e->n_variables*sizeof(double)) ||
+            memcmp(actual.dissolution_heat,expected.dissolution_heat,e->n_variables*sizeof(double))))return 5;
+        nlte_model_collision_bb_stream_free(s);nlte_model_collision_bb_block_free(&actual);
+    }
+    for(int defect=0;defect<5;defect++){
+        NLTEModelCollisionBBStream *s=NULL;
+        if(nlte_model_collision_bb_stream_begin(&s,e,n,a,p,view,20) ||
+           nlte_model_collision_bb_stream_push(s,20,view->lower,view->upper,view->omega,1))return 6;
+        int rc;
+        if(defect==0){ /* 미완결 */
+            rc=nlte_model_collision_bb_stream_finish(s,20,&actual);
+        }else if(defect==1){ /* 중복 */
+            rc=nlte_model_collision_bb_stream_push(s,20,view->lower,view->upper,view->omega,1);
+        }else if(defect==2){ /* 다른 후보의 신원 */
+            rc=nlte_model_collision_bb_stream_push(s,21,view->lower+1,view->upper+1,view->omega+1,1);
+        }else if(defect==3){ /* 블록 사이 T 변경 */
+            double saved=p->T_e[e->shell];p->T_e[e->shell]+=1.;
+            rc=nlte_model_collision_bb_stream_push(s,20,view->lower+1,view->upper+1,view->omega+1,1);
+            p->T_e[e->shell]=saved;
+        }else{ /* 좋은 앞 블록 뒤의 비유한 값 */
+            double bad=NAN;
+            rc=nlte_model_collision_bb_stream_push(s,20,view->lower+1,view->upper+1,&bad,1);
+        }
+        if(!rc || !nlte_model_collision_bb_stream_finish(s,20,&actual) ||
+           actual.n_variables || actual.collisional || actual.collisional_heat)return 7;
+        nlte_model_collision_bb_stream_free(s);
+    }
+    nlte_model_collision_bb_block_free(&expected);return 0;
+}
+
 int main(void)
 {
     int offsets[]={0,3},ion_z[]={16};
@@ -32,6 +79,7 @@ int main(void)
         .temperature_K=10000.,.electron_density_cm3=1.e8,
         .lower=lower,.upper=upper,.omega=omega};
     memset(view.material_model_sha256,'a',64);
+    if(stream_cases(&layout,&nlte,&atom,&plasma,&view))return 17;
     NLTEModelCollisionBBBlock block={0};
     if(nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view) ||
        block.pairs!=3 || block.cross_super_pairs!=2 || block.intra_super_pairs!=1)return 1;
@@ -63,6 +111,7 @@ int main(void)
         .ground_row=ground_row,.saha=saha,.threshold_Hz=threshold};
     memset(dissolution.material_model_sha256,'a',64);
     view.dissolution=&dissolution;layout.n_variables=3;
+    if(stream_cases(&layout,&nlte,&atom,&plasma,&view))return 18;
     if(nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view) ||
        block.dissolution_pairs!=3 || block.intra_super_dissolution_pairs!=1)return 8;
     const double q01=factor*.1*exp(-1./kT)/2.*(1.-.8);
