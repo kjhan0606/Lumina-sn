@@ -5,6 +5,7 @@ occupation·Saha·Milne·용해·CI/C3·BB·전쌍 충돌은 매 후보마다 �
 공개 물질을 게시하거나 고정 T 전하를 전체 공동수렴으로 표시하지 않는다.
 """
 import time
+import json
 
 import numpy as np
 
@@ -34,12 +35,14 @@ class ModelResponse:
         trial=self.provider.prepare({**self.seed,'temperature':temperature,'ne':ne},
                                     material_generation=self.generation)
         fixed_T=np.array_equal(trial.state['temperature'],self.bound_cache.temperature)
+        print(json.dumps(dict(phase='DYNAMIC_MATERIAL_BF_BEGIN',generation=self.generation,
+            fixed_reference_temperature=fixed_T)),flush=True)
         if fixed_T:
             bound,total=self.bound_cache.integrate(trial,material_generation=self.generation,
                                                   radiation_generation=self.provider.radiation_generation)
         else:
             bound,total=self.provider.integrate(trial,material_generation=self.generation,
-                                                radiation_generation=self.provider.radiation_generation)
+                radiation_generation=self.provider.radiation_generation,check=self.check_time)
         if self.direct_check is None:
             selected=[]
             for key in sorted(self.source.models):

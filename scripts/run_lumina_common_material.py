@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""동적 전모형 평가기의 공통 ne 초기화와 같은 후보의 전체 깊이 에너지 잔차.
+"""동적 전모형 공통 ne 초기화 또는 완료 후보에서 깊이 결합 T/ne Newton.
 
 원70/J70/T70을 보존하며 전하 해가 전체 RE/native/수송/스펙트럼 동등성은 아니다.
 이 평가기는 이후 T 변화의 전적분을 지원하고 깊이 AD를 독립점으로 쪼개지 않는다.
@@ -18,6 +18,8 @@ import cmfgen_model_continuum as B
 import cmfgen_model_sources as S
 from compare_native_prrr_common_grid import continuum_mapping
 from lumina_common_charge import solve
+from lumina_coupled_material import packet,solve_coupled
+from lumina_material_restart import common_start
 from lumina_model_collision_source import ModelCollisionSource
 from lumina_model_freefree import ModelFreeFree
 from lumina_model_material_bridge import MaterialBridge
@@ -25,7 +27,7 @@ from lumina_model_material_rates import ModelMaterialRates
 from lumina_model_response import ModelResponse
 from lumina_model_response_balance import ResponseBalance
 from run_cmfgen_formal_primary import fields
-from run_lumina_fixed_state_balance import BF,BB,RESPONSE,npz,load_report
+from run_lumina_fixed_state_balance import BF,BB,RESPONSE,npz,load_report,adiabatic
 from run_lumina_full_material_response import BASE,PARAMETERS
 
 
@@ -43,7 +45,7 @@ def run(args):
     inputs={}
     br=load_report(BF,'COMPLETE_FROZEN_MATERIAL_BF_90',
         '482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6',inputs)
-    load_report(BB,'COMPLETE_LINEAR_FIELD_BB90',
+    bb_report=load_report(BB,'COMPLETE_LINEAR_FIELD_BB90',
         'b95b16e3401068bc8239116a87c872f392e970ec5780b7ce04d32cf51d1e9ec9',inputs)
     load_report(RESPONSE,'COMPLETE_PRIVATE_FIXED_FIELD_ALL_MODEL_RESPONSE',
         'a93e5127286bf0b3ef0e3bf41ba39549b4877675518f2bcffb95923cde46cf68',inputs)
@@ -70,6 +72,11 @@ def run(args):
         raise ValueError('다른 공통 J/Gaunt')
     if any(B.sha(Path(p))!=h for p,h in inputs.items()):raise ValueError('계산 전 입력 변경')
     snapshot=npz(BF/'material-snapshot.npz');initial=npz(RESPONSE/'response.npz')
+    coupled=bool(args.common_result)
+    if coupled!=bool(args.common_result_sha) or coupled!=bool(args.thermal_policy):
+        raise ValueError('공동 Newton은 완료 전하 보고서/hash/명시한 열정책이 함께 필요')
+    start_candidate,start_energy,start_directory=(common_start(args.common_result,args.common_result_sha,snapshot,inputs)
+        if coupled else (initial,None,None))
     roster=npz(BF/'route-roster.npz');lines=npz(BB/'line-roster.npz')
     rows,models,routes,policy,smoothing,_=B.load_model(material,atomic,Path(config['phot_library']))
     source_report=json.loads((Path(config['reuse_sources']['boundary_sources']['directory'])/'sources.json').read_text())
@@ -77,6 +84,26 @@ def run(args):
     rows_hash=br['data_sha256'][str(Path(config['cells'])/'atomic/levels.csv')]
     if B.sha(atomic/'levels.csv')!=rows_hash:raise ValueError('FL 주소 변경')
     original=B.read_material(nodes,rows,models)
+    if S.fixed_profile(material/'MODEL')!=bb_report['profile']:
+        raise ValueError('T 갱신에 재사용할 수 없는 가변/변경 선 profile')
+    boundary=dict(FIX_T_AUTO=S.control(material/'MODEL','FIX_T_AUTO'),
+        TAU_SCL_T=S.number(material/'MODEL','TAU_SCL_T'),
+        FIX_INB_T=S.control(material/'MODEL','FIX_INB_T','F'),
+        FIX_X_DPTH=S.number(material/'MODEL','FIX_X_DPTH','0'),
+        D2_EQ_D1=S.control(material/'MODEL','D2_EQ_D1','F'))
+    if coupled and boundary!=dict(FIX_T_AUTO='F',TAU_SCL_T=0.,FIX_INB_T='F',FIX_X_DPTH=0.,D2_EQ_D1='F'):
+        raise ValueError('현재90개 자유 T/ne 평가기가 지원하지 않는 경계 제약')
+    if coupled:
+        native=Path('/gpfs/kjhan/cmfgen_src/cur_cmf')
+        boundary_sources={
+            'new_main/cmfgen_sub.f':'092f8526661b1f9a5eaeb7a875f07f55623f427ad07c383f2659f2fb67143374',
+            'new_main/mod_subs/rd_control_variables.f':'1f065997994a61681abc8e34426aa4f4cb95f5aaaaa8ec4518f27a9bbedc8e88',
+            'new_main/mod_subs/solve_for_pops.f':'21b7398bcdb9f331639395320961dcae13d7c6c9abae560ed2060d09528357dc',
+            'new_main/subs/solveba_v13.f':'8210020b3a3df9a0c1af31de26eedd73fefcdb365547a2677e21b3b83faa63e8'}
+        for name,h in boundary_sources.items():
+            p=native/name
+            if B.sha(p)!=h:raise ValueError('기본 경계 제약의 native 근거 소스 변경')
+            inputs[str(p)]=h
     if any(not np.array_equal(original[k],snapshot[k]) for k in ('columns','superlevel','temperature','ne')):
         raise ValueError('원 물질 snapshot 불일치')
     if any(not np.array_equal(initial[k],snapshot[k]) for k in ('columns','temperature','ne')):
@@ -113,7 +140,9 @@ def run(args):
     inputs.update(balance.owner.input_sha256);inputs.update(balance.decay_metadata['input_sha256'])
     (out/'inputs.json').write_text(json.dumps(dict(source_commit=args.source_commit,input_sha256=inputs,
         resources='CPU16/32GiB/2h/OpenMP16/GPU0/retry0',scope=__doc__,max_charge_evaluations=8,
-        temperature_update=False,new_native=0,new_transport=0),indent=2)+'\n')
+        temperature_update=coupled,thermal_policy=args.thermal_policy,max_coupled_evaluations=5 if coupled else 0,
+        material_boundary=boundary,temperature_degrees='all90 free in private fixed-J trial; not native release' if coupled else 'fixed70',
+        new_native=0,new_transport=0),indent=2)+'\n')
     evaluations=[];latest={}
     def record(result,metrics,trial,total):
         number=len(evaluations)+1;root=out/('evaluation-'+str(number));root.mkdir()
@@ -125,7 +154,7 @@ def run(args):
         np.savez(root/'balance.npz',**energy)
         entry=dict(**metrics,**energy_summary,output_sha256={name:B.sha(root/name) for name in ('response.npz','balance.npz')})
         (root/'result.json').write_text(json.dumps(entry,indent=2,allow_nan=False)+'\n')
-        evaluations.append(entry);latest.update(result=result,trial=trial,rates=total,root=root)
+        evaluations.append(entry);latest.update(result=result,trial=trial,rates=total,root=root,energy=energy)
         print(json.dumps(dict(evaluation=number,**entry)),flush=True)
     def decision(data,decision):
         (latest['root']/'decision.json').write_text(json.dumps(decision,indent=2)+'\n')
@@ -137,7 +166,33 @@ def run(args):
         for Z in response.species:
             selected=columns[:,0]==Z;n=snapshot['superlevel'][selected].sum(axis=0)
             lower+=int(columns[selected,1].min())*n;upper+=int(columns[selected,1].max())*n
-        solved=solve(evaluate,snapshot['ne'],initial['charge_residual'],lower,upper,on_evaluation=decision)
+        if not coupled:
+            solved=solve(evaluate,snapshot['ne'],initial['charge_residual'],lower,upper,on_evaluation=decision)
+        else:
+            base_packet=packet(start_candidate,start_energy,args.thermal_policy)
+            packet_roots={id(base_packet):start_directory}
+            def evaluate_coupled(t,ne):
+                response.evaluate(t,ne,save=record)
+                value=packet(latest['result'],latest['energy'],args.thermal_policy)
+                packet_roots[id(value)]=latest['root']
+                return value
+            def coupled_decision(value,entry):
+                (packet_roots[id(value)]/'phase.json').write_text(json.dumps(entry,indent=2)+'\n')
+            def full_ad(t,ne,ni,u):
+                return adiabatic(args.library,original['physical'][:,0],original['epoch_seconds'],t,ne,ni,u)['signed_total']
+            def direction_record(base,j,f,direction,c,h):
+                np.savez(out/'newton-linearization.npz',jacobian=j,scaled_residual=f,direction=direction,
+                    temperature=base.temperature,ne=base.ne,charge_scale=c,thermal_scale=h)
+            try:
+                outer=solve_coupled(evaluate_coupled,base_packet,full_ad,max_evaluations=5,
+                    on_evaluation=coupled_decision,on_direction=direction_record)
+            except TimeoutError as error:
+                (out/'incomplete.json').write_text(json.dumps(dict(reason=str(error),final_goal='NOT_MET'))+'\n')
+                raise
+            accepted_root=packet_roots[id(outer['packet'])]
+            selected_outer=npz(accepted_root/'response.npz')
+            solved=dict(converged=outer['numerical_converged'],ne=outer['packet'].ne,
+                charge=outer['packet'].charge,payload=selected_outer,history=outer['history'])
         collision_identities={k:v for ion in response.ions.values() for k,v in ion.identity.items()}
     inputs.update(collision_identities)
     if any(B.sha(Path(p))!=h for p,h in inputs.items()):raise ValueError('공통 물질응답 중 원 입력 변경')
@@ -159,17 +214,25 @@ def run(args):
                         max_abs_fraction_vs_CMFGEN70=float(abs(new-old).max()),
                         worst_node=int(np.argmax(abs(new-old))),
                         max_abs_fraction_change_from_fixed_ne=float(abs(new-fixed).max()))
-    report=dict(state='COMPLETE_FIXED_T_COMMON_CHARGE_INITIALIZATION' if solved['converged'] else
-        'INCOMPLETE_FIXED_T_COMMON_CHARGE_INITIALIZATION',source_commit=args.source_commit,
+    state=('COMPLETE_FIXED_T_COMMON_CHARGE_INITIALIZATION' if solved['converged'] else
+        'INCOMPLETE_FIXED_T_COMMON_CHARGE_INITIALIZATION')
+    if coupled:state='COMPLETE_DEPTH_COUPLED_MATERIAL_STEP' if outer['iterations'] else 'INCOMPLETE_DEPTH_COUPLED_MATERIAL_STEP'
+    report=dict(state=state,source_commit=args.source_commit,
         input_sha256=inputs,history=solved['history'],evaluations=evaluations,
-        initial_charge_relative=float(np.max(abs(initial['charge_residual']/initial['ne']))),
+        initial_charge_relative=float(np.max(abs(start_candidate['charge_residual']/start_candidate['ne']))),
         final_charge_relative=float(np.max(abs(solved['charge']/solved['ne']))),
         max_ne_relative_change=float(np.max(abs(solved['ne']/snapshot['ne']-1))),
         stages=stages,Si_S_similarity=similarity,
         comparison_baseline='CMFGEN material70 fixed-T input; not converged matched released-T anchor',
         accepted_output_sha256=B.sha(out/'accepted-response.npz') if selected is not None else None,
-        all_elements=6,bound_ions=27,points=90,terminal=6,charge_solved=solved['converged'],
-        temperature_updated=False,RE_solved=False,native_E_Jv_verified=False,new_native=0,new_transport=0,
+        all_elements=6,bound_ions=27,points=90,terminal=6,
+        charge_solved=bool(np.max(abs(solved['charge']/solved['ne']))<=1.e-10),
+        temperature_updated=bool(selected is not None and not np.array_equal(selected['temperature'],snapshot['temperature'])),
+        max_temperature_relative_change=float(np.max(abs(selected['temperature']/snapshot['temperature']-1))) if selected is not None else 0.,
+        internal_fixed_field_numerical_convergence=solved['converged'] if coupled else False,
+        thermal_policy=args.thermal_policy,RE_solved=False,native_E_Jv_verified=False,new_native=0,new_transport=0,
+        accepted_source_directory=str(accepted_root) if coupled else None,
+        newton_linearization_sha256=B.sha(out/'newton-linearization.npz') if coupled and (out/'newton-linearization.npz').exists() else None,
         radioactive_policy='stored/instantaneous_scenario kept separate; no reference installed',
         final_goal='NOT_MET',wall_seconds=time.monotonic()-started)
     (out/'result.json').write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
@@ -179,4 +242,7 @@ def run(args):
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--library',type=Path,required=True)
     p.add_argument('--out',type=Path,required=True);p.add_argument('--source-commit',required=True)
+    p.add_argument('--common-result',type=Path);p.add_argument('--common-result-sha')
+    p.add_argument('--thermal-policy',choices=('physical_stored','physical_instantaneous_scenario',
+        'native_stored','native_instantaneous_scenario'))
     run(p.parse_args())

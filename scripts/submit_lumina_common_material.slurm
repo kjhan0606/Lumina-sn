@@ -1,5 +1,5 @@
 #!/bin/bash -l
-# 공통 ne 초기화 + 같은 후보의 깊이 결합 에너지 잔차. T/RT/native 갱신 없음.
+# 공통 ne 초기화 또는 명시한 완료 후보/열정책에서 T/ne Newton. RT/native 없음.
 #SBATCH --job-name=lumina-common-material
 #SBATCH --partition=normal
 #SBATCH --exclude=grammar072,grammar078,grammar080
@@ -19,6 +19,7 @@ module load gnu13/13.2.0
 repository=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}
+shift 2
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
 test -d "$parent"
 test ! -e "$parent/source"
@@ -46,10 +47,12 @@ for name in "${core[@]}"; do files+=("src/$name.c"); done
 sha256sum src/*.h "${files[@]}" scripts/lumina_model_material_rates.py \
   scripts/lumina_model_response.py scripts/lumina_model_response_balance.py \
   scripts/lumina_common_charge.py scripts/run_lumina_common_material.py \
+  scripts/lumina_coupled_material.py scripts/lumina_material_restart.py \
   scripts/lumina_model_material_bridge.py scripts/lumina_model_collision_source.py \
   data/atomic/ionization_reference.csv data/atomic/topion_levels.csv > "$parent/build/source-before.sha256"
 OMP_NUM_THREADS=1 python3 -m pytest -q -p no:cacheprovider \
-  tests/test_model_material_rates.py tests/test_lumina_common_charge.py
+  tests/test_model_material_rates.py tests/test_lumina_common_charge.py \
+  tests/test_lumina_coupled_material.py tests/test_lumina_material_restart.py
 python3 -c 'import run_lumina_common_material'
 objects=()
 for name in "${core[@]}"; do
@@ -64,6 +67,6 @@ gcc -shared -fopenmp -Wl,--gc-sections -Wl,-z,defs -o "$parent/build/bridge.so" 
 sha256sum "$parent/build/bridge.so" > "$parent/build/binary.sha256"
 run_status=0
 timeout -k 30 6900s python3 scripts/run_lumina_common_material.py \
-  --library "$parent/build/bridge.so" --source-commit "$source_commit" --out "$parent/run" || run_status=$?
+  --library "$parent/build/bridge.so" --source-commit "$source_commit" --out "$parent/run" "$@" || run_status=$?
 sha256sum -c "$parent/build/source-before.sha256" > "$parent/build/source-after-check.txt"
 exit "$run_status"

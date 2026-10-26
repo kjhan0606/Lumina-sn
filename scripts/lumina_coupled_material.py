@@ -35,7 +35,9 @@ def packet(result,energy,policy):
         raise ValueError('명시한 에너지 정책 필요')
     family=policy.split('_',1)[0];ad=energy[family+'_adiabatic'];net=energy[policy+'_net']
     scale=.5*(energy[policy+'_gross']+abs(net)) # max(전체 가열,전체 냉각), 임의 floor 없음
-    p=MaterialPacket(result['temperature'],result['ne'],result['energy'][:,0],
+    # 열잔차의 AD와 같은 합산 순서를 유지하고 다른 C 집계의 최하위 bit를 섞지 않는다.
+    nuclei=result['population'].sum(axis=0)
+    p=MaterialPacket(result['temperature'],result['ne'],nuclei,
         energy[family+'_internal_energy'],net+ad,result['charge_residual'],scale)
     p.validate();return p
 
@@ -100,7 +102,7 @@ def newton_direction(matrix,scaled_residual):
 
 
 def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-10,
-                  max_evaluations=12,on_evaluation=None):
+                  max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None):
     """동적 물질 생산 callback을 쓰는 전체 깊이 감쇠 Newton.
 
     evaluate(T,ne)는 모든 동적 율과 SE를 갱신한 MaterialPacket을 반환한다.
@@ -109,7 +111,8 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
     """
     base.validate()
     if (type(max_evaluations) is not int or max_evaluations<0 or
-        not np.isfinite(numerical_tolerance) or numerical_tolerance<=0):
+        not np.isfinite(numerical_tolerance) or numerical_tolerance<=0 or
+        not np.isfinite(max_log_step) or max_log_step<=0):
         raise ValueError('공동 Newton 비용/수치 목표 오류')
     c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0
     def call(t,ne,phase):
@@ -132,7 +135,10 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 call(t,ne*np.exp(step),'ne+'),call(t,ne*np.exp(-step),'ne-'))
         j=jacobian(base,*probes,step,adiabatic,charge_scale=c,thermal_scale=h)
         direction=newton_direction(j,f);n=len(t);x=np.r_[np.log(t),np.log(ne)]
-        accepted=False;alpha=1.
+        if on_direction is not None:on_direction(base,j,f,direction,c,h)
+        # 전체 방향에 같은 감쇠를 적용한다. 개별 T/ne의 물리값을 clamp하지 않는다.
+        magnitude=float(abs(direction).max())
+        accepted=False;alpha=min(1.,max_log_step/magnitude) if magnitude>0 else 1.
         while used<max_evaluations and alpha>=2.**-20:
             with np.errstate(over='ignore',under='ignore',invalid='ignore'):
                 trial=np.exp(x+alpha*direction)
@@ -141,6 +147,8 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
             merit=float(abs(residual(candidate,adiabatic,c,h)).max())
             accepted=bool(merit<=numerical_tolerance or merit<norm*(1.-1.e-4*alpha))
             history[-1].update(alpha=alpha,accepted=accepted)
+            history[-1].update(predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()),
+                               scaled_start_max=norm)
             if accepted:base=candidate;iterations+=1;break
             alpha*=.5
         if not accepted:break

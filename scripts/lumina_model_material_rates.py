@@ -198,7 +198,7 @@ class ModelMaterialRates:
         return bound,total
 
     def integrate(self,trial,*,material_generation,radiation_generation,route_indices=None,
-                  frequency_block=1024,route_block=128):
+                  frequency_block=1024,route_block=128,check=None):
         self._check(trial,material_generation,radiation_generation)
         ids=np.arange(len(self.routes)) if route_indices is None else np.asarray(route_indices,dtype='i8')
         if (ids.ndim!=1 or not len(ids) or np.any(ids<0) or np.any(ids>=len(self.routes)) or
@@ -209,6 +209,7 @@ class ModelMaterialRates:
             raise ValueError('경로 블록 크기 오류')
         sums=[np.zeros((len(ids),self.n_points,6),dtype=np.longdouble) for _ in range(2)]
         for start,end in self.frequency_blocks(trial,frequency_block):
+            if check is not None:check()
             for first in range(0,len(ids),route_block):
                 part=slice(first,min(len(ids),first+route_block))
                 values=self.contract_block(trial,start,end,ids[part],

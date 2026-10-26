@@ -59,12 +59,14 @@ def test_wrong_profile_generation_and_invalid_scales_are_rejected(ad):
 
 
 def test_energy_policy_is_explicit_and_uses_original_v2_row_scale():
-    r=dict(temperature=np.full(4,1.e4),ne=np.ones(4),energy=np.ones((4,3)),charge_residual=np.zeros(4))
+    r=dict(temperature=np.full(4,1.e4),ne=np.ones(4),energy=np.ones((4,3)),
+           population=np.ones((2,4)),charge_residual=np.zeros(4))
     e=dict(native_adiabatic=np.full(4,2.),native_internal_energy=np.ones(4),
            native_stored_net=np.full(4,3.),native_stored_gross=np.full(4,9.))
     p=packet(r,e,'native_stored')
     np.testing.assert_array_equal(p.local_heat,5.)
     np.testing.assert_array_equal(p.thermal_scale,6.)
+    np.testing.assert_array_equal(p.nuclei,2.) # 실제 열장부가 사용한 population 합 소유권
     with pytest.raises(ValueError):packet(r,e,'unspecified')
 
 
