@@ -189,7 +189,7 @@
     "automatic_extra_evaluation": false
   },
   "proposed_charge_projected_candidate": {
-    "status": "APPROVED_SINGLE_EXECUTION_SUBMITTED",
+    "status": "APPROVED_SINGLE_EXECUTION_RUNNING",
     "objective": "같은 고정장에서 전하를 다시 닫은 실제 온도 후보가 깊이 결합 열잔차를 개선하는지 판별. 최종 스펙트럼 목표의 대체 아님",
     "inputs": "1223954 수용 전하 해·1224060 봉인 방향·기존 J70/물질70 원자료 및 네 열장부 보존",
     "temperature_candidates_max": 1,
@@ -237,7 +237,13 @@
     "execution": {
       "job": 1224249,
       "run": "lumina_charge_projected_1224060_20261027_argsfix",
-      "state": "SUBMITTED",
+      "state": "RUNNING",
+      "observed_elapsed_seconds": 147,
+      "phase": "PROJECTED_T_BOUND_BEGIN",
+      "input_preflight_passed": true,
+      "direct_tests_passed_in_sealed_source": 28,
+      "inputs_sha256": "824708070977b10bcc740d1f4b57e860aa40f197b608d02631ec16a96ffd3cbc",
+      "bridge_sha256": "f30f241d23368ebc77b0437dff92a50d257091e50028c136fccb13343511679f",
       "source_commit": "3b1ad0f76ea2a5c808c3d7c204d0f8ba0ee6e465",
       "resources": "grammar CPU16/OpenMP16/32GiB/1시간59분/GPU0/retry0; 앞 입력실패31초 포함2시간 이내",
       "fresh_temperature_full_BF_integrations_max": 1,
