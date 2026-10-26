@@ -53,8 +53,10 @@ def provenance(reference):
     return inputs,stage,manifest
 
 
-def prepare(reference,root):
+def prepare(reference,root,wall_seconds=1800):
     reference,root=Path(reference).resolve(),Path(root).resolve()
+    if wall_seconds not in (1800,7200):
+        raise ValueError('승인되지 않은 직접평가 시간 한도')
     if root.exists():raise FileExistsError('기존 직접평가 계산 보존')
     inputs,old,manifest=provenance(reference)
     root.mkdir();(root/'seq_logs').mkdir()
@@ -88,25 +90,28 @@ def prepare(reference,root):
             'run_cmfgen_formal_primary.py','run_cmfgen_lambda_probe.py','configure_cmfgen_stageA.py',
             'prepare_cmfgen_fixed_field_owner.py','ptf_gated_metrics.py','cmfgen_step_precision.py',
             'run_cmfgen_fixed_field.py')},
-        resources=dict(CPU=16,OMP=16,memory_GiB=32,wall_seconds=1800,GPU=0,retries=0),
+        resources=dict(CPU=16,OMP=16,memory_GiB=32,wall_seconds=wall_seconds,GPU=0,retries=0),
         physical_scope='같은 물질의 continuum 직접평가 formal 장; 물질/SE/RE/observer 갱신 아님',
         material_updates=0,observer_calls=0,final_goal='NOT_MET')
     (root/'direct-inputs.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
     return record
 
 
-def run(reference,root):
+def run(reference,root,wall_seconds=1800):
+    if wall_seconds not in (1800,7200):
+        raise ValueError('승인되지 않은 직접평가 시간 한도')
     if (os.environ.get('OMP_NUM_THREADS')!='16' or not os.environ.get('SLURM_JOB_ID') or
             os.environ.get('SLURM_CPUS_PER_TASK')!='16' or os.environ.get('SLURM_MEM_PER_NODE')!='32768'):
         raise ValueError('승인된 Slurm CPU16/OMP16/32GiB에서만 실제 실행')
     started=time.monotonic();root=Path(root).resolve()
-    inputs=prepare(reference,root);field=root/'field'
+    inputs=prepare(reference,root,wall_seconds);field=root/'field'
     resource.setrlimit(resource.RLIMIT_FSIZE,(8*1024**3,8*1024**3))
     env=dict(os.environ,LUMINA_FORMAL_PRIMARY='1',LUMINA_FORMAL_PRIMARY_WHOLE='1',
         LUMINA_FORMAL_CELL_BUDGET='',LUMINA_WHOLE_MODE='',LUMINA_MOM_CAPTURE_MODE='',
         LUMINA_FORMAL_CAPTURE_MODE='',LUMINA_NATIVE_SE_WITNESS='')
-    # 복제/검증 시간을 포함하고 종료·출력 검증 여유80초를 남긴다.
-    execution=F.child(root,field,Path(inputs['executable']),env,started+1720)
+    # 복제/검증 시간을 포함하고 종료·출력 검증 여유를 남긴다.
+    reserve=80 if wall_seconds==1800 else 200
+    execution=F.child(root,field,Path(inputs['executable']),env,started+wall_seconds-reserve)
     result=dict(schema='lumina-direct-continuum-reference-result-v1',state='INCOMPLETE',
         execution=execution,field_complete=False,material_updates=0,observer_calls=0,
         physical_RT_executions=int(execution['returncode'] is not None),final_goal='NOT_MET')
@@ -132,7 +137,7 @@ def run(reference,root):
             source_fixed_point_scope='주파수별 source/J/H 잔차 확인; SE/RE 공동수렴 아님')
     except (ValueError,OSError) as error:result['validation_error']=str(error)
     if execution['stop_reason']=='shared_child_budget_2400s':
-        result['execution']['stop_reason']='direct_reference_1720s_including_preparation'
+        result['execution']['stop_reason']=f'direct_reference_{wall_seconds-reserve}s_including_preparation'
     evidence=('FORMAL_PRIMARY_FIELDS.bin','FORMAL_PRIMARY_SWEEP.csv','FORMAL_PRIMARY_COMPLETE.txt',
               'EDDFACTOR','EDDFACTOR_INFO','MODEL','VADAT','IN_ITS')
     result['evidence_sha256']={n:sha(field/n) for n in evidence if (field/n).is_file()}
@@ -147,6 +152,7 @@ if __name__=='__main__':
     parser.add_argument('--reference',type=Path,required=True)
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--execute',action='store_true',help='승인된 Slurm 실제 복사장 단회 실행')
+    parser.add_argument('--wall-seconds',type=int,default=1800)
     args=parser.parse_args()
-    if args.execute:raise SystemExit(run(args.reference,args.out))
-    print(json.dumps(prepare(args.reference,args.out),ensure_ascii=False))
+    if args.execute:raise SystemExit(run(args.reference,args.out,args.wall_seconds))
+    print(json.dumps(prepare(args.reference,args.out,args.wall_seconds),ensure_ascii=False))

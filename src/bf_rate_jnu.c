@@ -8,6 +8,7 @@
 #endif
 
 #define BF_H_CGS 6.62607015e-27
+#define BF_C_CGS 2.99792458e10
 
 int bf_rate_point_contract(size_t n,const double *nu,const double *width,
     const double *j,const double *absorption,const double *stimulated,
@@ -33,6 +34,44 @@ int bf_rate_point_contract(size_t n,const double *nu,const double *width,
     if(!isfinite(result.photo) || !isfinite(result.spontaneous) ||
        !isfinite(result.stimulated) || !isfinite(result.heat_photo) ||
        !isfinite(result.heat_spontaneous) || !isfinite(result.heat_stimulated)) return -1;
+    *out=result;
+    return 0;
+}
+
+int bf_rate_point_contract_milne(size_t n,const double *nu,const double *width,
+    const double *j,const double *sigma,double edge,double milne_prefactor,
+    double inverse_kT_Hz,BfPointRates *out)
+{
+    if(!out || !n || !nu || !width || !j || !sigma ||
+       !isfinite(edge) || edge<=0. ||
+       !isfinite(milne_prefactor) || milne_prefactor<0. ||
+       !isfinite(inverse_kT_Hz) || inverse_kT_Hz<=0.) return -1;
+    long double sum[6]={0};
+    for(size_t k=0;k<n;k++) {
+        if(!isfinite(nu[k]) || nu[k]<=0. || (k && nu[k]<=nu[k-1]) ||
+           !isfinite(width[k]) || width[k]<0. || !isfinite(j[k]) || j[k]<0. ||
+           !isfinite(sigma[k]) || sigma[k]<0. ||
+           (sigma[k]>0. && nu[k]<edge)) return -1;
+        double stimulated=0.,eta=0.;
+        if(sigma[k]>0.) {
+            stimulated=sigma[k]*milne_prefactor*
+                exp(-(nu[k]-edge)*inverse_kT_Hz);
+            eta=stimulated*(2.*BF_H_CGS*nu[k]*nu[k]*nu[k]/(BF_C_CGS*BF_C_CGS));
+            if(!isfinite(stimulated) || !isfinite(eta) ||
+               stimulated<0. || eta<0.) return -1;
+        }
+        long double weight=4.L*M_PI*width[k]/((long double)BF_H_CGS*nu[k]);
+        long double terms[3]={weight*sigma[k]*j[k],weight*eta,
+                              weight*stimulated*j[k]};
+        long double energy=(long double)BF_H_CGS*(nu[k]-edge);
+        for(int q=0;q<3;q++) {sum[q]+=terms[q];sum[q+3]+=terms[q]*energy;}
+    }
+    BfPointRates result={(double)sum[0],(double)sum[1],(double)sum[2],
+                         (double)sum[3],(double)sum[4],(double)sum[5]};
+    if(!isfinite(result.photo) || !isfinite(result.spontaneous) ||
+       !isfinite(result.stimulated) || !isfinite(result.heat_photo) ||
+       !isfinite(result.heat_spontaneous) ||
+       !isfinite(result.heat_stimulated)) return -1;
     *out=result;
     return 0;
 }

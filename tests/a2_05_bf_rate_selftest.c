@@ -91,6 +91,43 @@ static void run_point_contract_tests(void)
     CHECK(bf_rate_point_get(&view,1,0,3,t,ne[0],&left)!=0,"point-route-bound");
 }
 
+static void run_point_milne_fused_tests(void)
+{
+    const double edge=3.e15,t=25000.;
+    const double inverse=H_CGS/(1.380649e-16*t);
+    const double prefactor=.007*exp(-inverse*edge);
+    double nu[3]={2.e15,3.e15,4.e15},width[3]={.5e15,1.5e15,1.e15};
+    double j[3]={0.,2.e-8,4.e-8},sigma[3]={0.,2.e-18,3.e-18};
+    double stim[3],eta[3];
+    for(int k=0;k<3;k++) {
+        stim[k]=sigma[k]*prefactor*exp(-(nu[k]-edge)*inverse);
+        eta[k]=stim[k]*(2.*H_CGS*nu[k]*nu[k]*nu[k]/
+                         (2.99792458e10*2.99792458e10));
+    }
+    BfPointRates old,now,left,right;
+    CHECK(!bf_rate_point_contract(3,nu,width,j,sigma,stim,eta,edge,&old),
+          "milne-reference-integral");
+    CHECK(!bf_rate_point_contract_milne(3,nu,width,j,sigma,edge,prefactor,inverse,&now),
+          "milne-fused-integral");
+    const double a[6]={old.photo,old.spontaneous,old.stimulated,old.heat_photo,
+                       old.heat_spontaneous,old.heat_stimulated};
+    const double b[6]={now.photo,now.spontaneous,now.stimulated,now.heat_photo,
+                       now.heat_spontaneous,now.heat_stimulated};
+    for(int q=0;q<6;q++)
+        CHECK(fabs(a[q]-b[q])<=2.e-15*fmax(fabs(a[q]),fabs(b[q])),
+              "milne-fused-parity");
+    CHECK(!bf_rate_point_contract_milne(1,nu,width,j,sigma,edge,prefactor,inverse,&left),
+          "milne-fused-left-block");
+    CHECK(!bf_rate_point_contract_milne(2,nu+1,width+1,j+1,sigma+1,edge,prefactor,inverse,&right),
+          "milne-fused-right-block");
+    CHECK(fabs(left.spontaneous+right.spontaneous-now.spontaneous)<=
+          2.e-15*now.spontaneous,"milne-fused-global-quadrature");
+    BfPointRates sentinel=now;
+    sigma[0]=1.e-18;
+    CHECK(bf_rate_point_contract_milne(3,nu,width,j,sigma,edge,prefactor,inverse,&now)!=0 &&
+          !memcmp(&now,&sentinel,sizeof(now)),"milne-fused-below-edge-reject");
+}
+
 static void run_result_contract_tests(void)
 {
     BfRateResult r = {1.25, BF_RATE_VALID, 0.0, 0, 0.0};
@@ -701,6 +738,7 @@ static void run_sh_grid_upper_closure_test(void)
 int main(void)
 {
     run_point_contract_tests();
+    run_point_milne_fused_tests();
     run_result_contract_tests();
     run_log_weight_milne_detailed_balance_test();
     run_integrator_tests();

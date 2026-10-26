@@ -22,9 +22,9 @@ class ModelPointBoundRates:
         self.node=node;self.rows=rows;self.models=models;self.state=state
         self.routes=sorted(routes,key=lambda r:(r.lower,r.phot_grid,r.target_superlevel))
         self.temperature=float(state['temperature'][node]);self.ne=float(state['ne'][node])
-        self.library=C.CDLL(str(library));self.function=self.library.bf_rate_point_contract
+        self.library=C.CDLL(str(library));self.function=self.library.bf_rate_point_contract_milne
         ptr=C.POINTER(C.c_double)
-        self.function.argtypes=[C.c_size_t]+[ptr]*6+[C.c_double,C.POINTER(Rates)]
+        self.function.argtypes=[C.c_size_t]+[ptr]*4+[C.c_double]*3+[C.POINTER(Rates)]
         self.function.restype=C.c_int;self.ptr=ptr
         groups={}
         for l,row in enumerate(rows):
@@ -48,6 +48,8 @@ class ModelPointBoundRates:
             self.terminal[key]=reference
         self.upper_factor=np.empty(len(self.routes));self.upper_population=np.empty(len(self.routes))
         self.saha=np.empty(len(self.routes));self.sigma_edge=np.empty(len(self.routes))
+        self.milne_prefactor=np.empty(len(self.routes))
+        self.inverse_kT_Hz=B.H/(B.KB*self.temperature)
         counts=np.zeros(len(rows),dtype='i4')
         thermal=self.ne*(B.H*B.H/(2*np.pi*B.ME*B.KB*self.temperature))**1.5
         for i,r in enumerate(self.routes):
@@ -66,10 +68,12 @@ class ModelPointBoundRates:
             gl=float(rows[r.lower]['g'])
             if factor==0:self.saha[i]=0.
             else:self.saha[i]=np.exp(np.log(thermal*gl/(2*gt))+np.log(factor)+exponent)
+            self.milne_prefactor[i]=thermal*gl/(2*gt)*factor
             self.sigma_edge[i]=float(r.sigma(np.array([r.threshold_Hz*(1+1e-14)]))[0])
         self.offset=np.r_[0,np.cumsum(counts,dtype='i8')]
         if self.offset[-1]!=len(self.routes) or not all(np.isfinite(x).all() and np.all(x>=0)
-            for x in (self.upper_factor,self.upper_population,self.saha,self.sigma_edge)):
+            for x in (self.upper_factor,self.upper_population,self.saha,self.sigma_edge,
+                      self.milne_prefactor)):
             raise ValueError('PHOT roster/역과정 정규화 오류')
 
     def contract_bound_block(self,frequency,quadrature_Hz,J):
@@ -90,14 +94,12 @@ class ModelPointBoundRates:
         nu,width,j=[np.ascontiguousarray(a,dtype='f8') for a in (frequency,quadrature_Hz,J)]
         if nu.ndim!=1 or not len(nu) or width.shape!=nu.shape or j.shape!=nu.shape:
             raise ValueError('단일 route 블록 차원 오류')
-        sigma=r.sigma(nu)
-        target_g=float(self.rows[r.target]['g']) if r.target>=0 else r.target_g
-        coef=B.milne_route(nu,sigma,np.ones(1),np.array([self.upper_factor[index]]),
-            np.array([self.temperature]),np.array([self.ne]),float(self.rows[r.lower]['g']),
-            target_g,r.threshold_Hz,1.)
-        arrays=[nu,width,j,*[np.ascontiguousarray(a[0]) for a in coef]]
+        sigma=np.ascontiguousarray(r.sigma(nu),dtype='f8')
+        arrays=[nu,width,j,sigma]
         result=Rates()
-        if self.function(len(nu),*[a.ctypes.data_as(self.ptr) for a in arrays],r.threshold_Hz,C.byref(result)):
+        if self.function(len(nu),*[a.ctypes.data_as(self.ptr) for a in arrays],
+                r.threshold_Hz,float(self.milne_prefactor[index]),
+                self.inverse_kT_Hz,C.byref(result)):
             raise ValueError('전모형 경로의 C 점값 적분 실패')
         return np.array([getattr(result,key) for key,_ in result._fields_])
 

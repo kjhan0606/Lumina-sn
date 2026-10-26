@@ -54,6 +54,15 @@ int bf_rate_point_contract(size_t n, const double *frequency_Hz,
     const double *forward_sigma, const double *inverse_sigma,
     const double *inverse_eta, double threshold_Hz, BfPointRates *out);
 
+/* 같은 Milne 물리식을 경로당 한 번만 정규화해 전ν 블록에서 직접 적분한다.
+ * inverse_sigma = forward_sigma * milne_prefactor *
+ * exp[-inverse_kT_Hz * (frequency_Hz-threshold_Hz)].
+ * 중간 stimulated/eta 배열을 만들지 않으며 기존 점값 C 적분과 동등해야 한다. */
+int bf_rate_point_contract_milne(size_t n, const double *frequency_Hz,
+    const double *quadrature_Hz, const double *J_nu,
+    const double *forward_sigma, double threshold_Hz,
+    double milne_prefactor, double inverse_kT_Hz, BfPointRates *out);
+
 /* 원자 경로 순서의 불변 snapshot. T/ne가 바뀌면 재생산해야 하며
  * stale snapshot을 bin 경로로 대체하지 않는다. 배열은 caller 소유다. */
 typedef struct {

@@ -33,3 +33,9 @@ def test_native_process_cannot_start_without_the_exact_approved_allocation(monke
     monkeypatch.delenv('SLURM_JOB_ID',raising=False)
     monkeypatch.setattr(D,'prepare',lambda *args:pytest.fail('승인 할당 밖 준비/실행'))
     with pytest.raises(ValueError):D.run(tmp_path,tmp_path/'new')
+
+
+def test_extended_budget_requires_the_registered_value(monkeypatch,tmp_path):
+    monkeypatch.setattr(D,'prepare',lambda *args:pytest.fail('예산 거부 전에 준비'))
+    with pytest.raises(ValueError,match='시간 한도'):
+        D.run(tmp_path,tmp_path/'new',7199)
