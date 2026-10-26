@@ -1,0 +1,53 @@
+{
+  "scope": "순간 침적열 최소 교정의 실제 full CMFGEN 링크 및 후속 자체장 fixed-T 단일 실행 등록",
+  "build": {
+    "job_id": 1223879,
+    "state": "COMPLETED",
+    "exit_code": "0:0",
+    "slurm_elapsed_seconds": 11,
+    "build_elapsed_seconds": 4.602761087997351,
+    "max_rss_KiB": 250340,
+    "source_commit": "419a774bfeeb45eb041998024862451d554ade34",
+    "run_id": "lumina_instant_reference_build_20261027-BQwg8Q",
+    "result": "$LUMINA_RUNS_ROOT/lumina_instant_reference_build_20261027-BQwg8Q/build/result.json",
+    "result_sha256": "0d13e9849643ff3fc6d0a97abacdfe016924fcdda3b41628e6d200f16415abff",
+    "original_decay_executable_sha256": "d218b0e7125369247e82c1d4959ed1150d2d87b9feaf114a16d1e4666f78d525",
+    "corrected_decay_executable_sha256": "d76bcfdc52b9963a83849a435a2c3b945738d98abc427999c6e194f26cffcd80",
+    "common_source_sha256": "55f5108ae7e1dc37bd5ac0dfa78bd4f91f37562b3fa1e74fda838a34bf2859fb",
+    "common_object_sha256": "ab7bee8eea6a624d47df3ace874b9a83b916b3332318200a0bc8d80de6985c29",
+    "corrected_decay_source_sha256": "26764c62d0a2418871a5ff58629acfb609748307172ab84daef87c38dbd64b04",
+    "corrected_decay_object_sha256": "7de14f35b1c6c425595e1106070661893a7e628c52b7b50f46e78acd1ac34248",
+    "corrected_link_map_sha256": "005ad72a1993203b2339565c5e1749bbe6d98a3ec34f7b35308faef2b1227c0f",
+    "explicit_private_decay_definition_count_each": 1,
+    "archive_old_decay_object_linked": false,
+    "test_stubs_linked": false,
+    "original_native_unchanged": true,
+    "installed_in_original_native": false,
+    "direct_tests_passed": 4,
+    "operator_reproduction": "COMPLETED: 실제 sacct·직접시험 종료상태·결과 해시·수정 함수 nm/ld 선택을 재확인",
+    "physical_equivalence": "NOT_PROVEN"
+  },
+  "fixed_temperature_candidate": {
+    "job_id": 1223908,
+    "last_observed_state": "RUNNING",
+    "run_id": "lumina_instant_fixedt_20261027-Y8MkLi",
+    "source_commit": "1b1d83fe462e681bcd0b48434a182ed1960be7a9",
+    "resources": "grammar CPU16/OMP16/32GiB/2h/GPU0/retry0; child6600s; additional_iterations<=4",
+    "initial_completed_record": 70,
+    "maximum_completed_record": 74,
+    "temperature_fixed": true,
+    "native_self_field_recomputed": true,
+    "BA_reassembled": "COMP_BA=T/N_FIX_BA=0; 실제 결과 로그 확인 필요",
+    "fallback": "LAM_VAL=400/NUM_LAM=2 보존, MAX_LAM=10",
+    "automatic_temperature_release": false,
+    "direct_control_tests_passed": 2,
+    "anchor_status": "NOT_AVAILABLE",
+    "final_goal": "NOT_MET"
+  },
+  "remaining": [
+    "동일1223908의 실제 종료·오류 및 부분 checkpoint를 확인하고 중복 제출하지 않음",
+    "실제 BA/LAMBDA·원시/적용 보정·전90점 Si/S·ne/T·광도·순간열 연결을 평가",
+    "고정T 안정화 및 별도 reviewed released-T reference는 여전히 미확보",
+    "공통 물질/장 잔차·Jv와 새 자기일관 해 및 원래 v2 물리량·스펙트럼·격자 수용"
+  ]
+}
