@@ -1,11 +1,41 @@
 import tempfile
 from pathlib import Path
 import unittest
+import json
 import numpy as np
-from compare_lumina_ionization_profiles import compare, diagnostics
+from compare_lumina_ionization_profiles import compare, diagnostics, response_selection
 
 
 class ProfileTests(unittest.TestCase):
+    def test_rejected_actual_candidate_is_not_accepted_or_derivative_probe(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            evaluation = root / 'evaluation-1'
+            evaluation.mkdir()
+            entry = {'output_sha256': {'response.npz': 'candidate-hash'}}
+            metadata = evaluation / 'result.json'
+            metadata.write_text(json.dumps(entry))
+            decision = dict(evaluation=1, phase='line_search', accepted=False)
+            report = dict(accepted_output_sha256='old-hash', evaluations=[entry], history=[decision])
+            path, digest, info = response_selection(report, root / 'result.json')
+            self.assertEqual(path, root / 'accepted-response.npz')
+            self.assertEqual(digest, 'old-hash')
+            self.assertEqual(info, {})
+            path, digest, info = response_selection(report, root / 'result.json', 1)
+            self.assertEqual(path, evaluation / 'response.npz')
+            self.assertEqual(digest, 'candidate-hash')
+            self.assertFalse(info['candidate_accepted'])
+            for invalid in (True, 0, 2, -1, 1., '1'):
+                with self.assertRaises(ValueError):
+                    response_selection(report, root / 'result.json', invalid)
+            for change in (dict(accepted=True), dict(phase='T+'), dict(accepted=None)):
+                bad = dict(report, history=[dict(decision, **change)])
+                with self.assertRaises(ValueError):
+                    response_selection(bad, root / 'result.json', 1)
+            metadata.write_text('{}')
+            with self.assertRaises(ValueError):
+                response_selection(report, root / 'result.json', 1)
+
     def test_positive_subnormal_is_not_lost_in_ratio_underflow(self):
         log, summary = diagnostics([1., 1.e-320], [1.e-320, 1.])
         self.assertTrue(np.isfinite(log).all())

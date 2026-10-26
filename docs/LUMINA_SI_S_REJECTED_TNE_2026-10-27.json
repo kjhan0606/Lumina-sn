@@ -1,0 +1,97 @@
+{
+  "state": "COMPLETE_REJECTED_CANDIDATE_IONIZATION_DIAGNOSTIC",
+  "candidate_status": "REJECTED_DIAGNOSTIC_ONLY",
+  "rejected_evaluation": 5,
+  "candidate_accepted": false,
+  "runtime_comparison_run": "lumina_rejected_SiS90_20261027-diXbhp",
+  "runtime_result_sha256": "eb773a8a86fcdffaa4863e06bc81fddabd4d26e8826624e43918a1cd9a4da178",
+  "published_csv": "docs/LUMINA_SI_S_REJECTED_TNE_2026-10-27.csv",
+  "published_csv_sha256": "9d6e4de7c7064692cc1ed00d797dd14890a7cd50284a1a55432a4c47e571e2cb",
+  "published_line_endings": "LF; runtime CSV는CRLF이며 숫자/헤더/90개 행 내용은 동일",
+  "comparison_tests": "grammar-debug CPU1/4GiB/120초 이내6개 통과. 새 물리 계산은0회",
+  "accepted_checkpoint_preserved": true,
+  "operator_reproduction": {
+    "location": "grammar-debug CPU1/60초 이내 읽기 전용",
+    "all_90_rows_all_19_fields_match_runtime": true,
+    "raw_population_longdouble_reconstruction_max_abs_difference": 6.92534137675116e-16,
+    "candidate_T_ne_match_raw_response_exactly": true,
+    "rejected_candidate_published_as_accepted": false
+  },
+  "remaining": "공동 열·전하 해 수용, 새 자기일관 장과 수렴 released-T 기준해, 원 v2의 물리량·스펙트럼·격자 수용. 알려진 분율 활성 부분집합의0.1dex 이하만으로 최종 PASS하지 않음",
+  "decision": {
+    "evaluation": 5,
+    "phase": "line_search",
+    "scaled_max": 5.01653484991694e-05,
+    "alpha": 0.08746381384424386,
+    "accepted": false,
+    "predicted_scaled_max": 3.6376175614805622e-06,
+    "scaled_start_max": 3.986272124511319e-06
+  },
+  "evaluation_report_sha256": "8a02eccbacfb86193131ec102aaee729da1ccca0db083856ca343bdec231230c",
+  "baseline": "CMFGEN 물질70 고정T 비수렴 입력; certified released-T 앵커 아님",
+  "source_run": "lumina_coupled_Tne_20261027-6W0owt",
+  "points": 90,
+  "summary": {
+    "Si_II": {
+      "known_fraction_active_points": 30,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 1.4352475980101173e-06,
+      "worst_absolute_node_zero_based": 52,
+      "active_log_abs_median_dex": 0.004966348693991929,
+      "active_log_abs_p95_dex": 0.05745184172516574,
+      "active_log_abs_max_dex": 0.0678170061464618,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "Si_III": {
+      "known_fraction_active_points": 90,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.023517549925675563,
+      "worst_absolute_node_zero_based": 33,
+      "active_log_abs_median_dex": 0.001250276314097451,
+      "active_log_abs_p95_dex": 0.05014368797564308,
+      "active_log_abs_max_dex": 0.05171938812982724,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "S_II": {
+      "known_fraction_active_points": 40,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.0004191342258617614,
+      "worst_absolute_node_zero_based": 52,
+      "active_log_abs_median_dex": 0.009515108562633712,
+      "active_log_abs_p95_dex": 0.07079574593358053,
+      "active_log_abs_max_dex": 0.07415099701515437,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "S_III": {
+      "known_fraction_active_points": 90,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.016144831589873898,
+      "worst_absolute_node_zero_based": 32,
+      "active_log_abs_median_dex": 0.0016385435006771587,
+      "active_log_abs_p95_dex": 0.040372789312169005,
+      "active_log_abs_max_dex": 0.044591583516400135,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    }
+  },
+  "input_sha256": {
+    "result": "0237b36a8d48aeda9361dce90228c0983248a265f5a410c0f7d73fd14478fa53",
+    "accepted": "f9bfdceefedfee5f42f93f5657f8706cff22d560695d6280e5050d0c05b67e05",
+    "candidate_response": "bf5efdc32ea96db6faa4bce2dc73775e04f97de2d612035b2943943e25f72afb",
+    "snapshot": "35b41808ee1e0527216db6d880987da313185a6ed58dbf3fe66ff5625480cc9f",
+    "nodes": "50e7b2c6f810b1c4fcfb4a59812ea88d07d17e985c878adcbe3974a821f99a3a"
+  },
+  "csv_sha256": "89371bead94f0ffd75f194119911b064ba85afd7bba3e42db472afbed19750de",
+  "node_mapping": "동일 원래90점; shell 평균/중심 보간 없음",
+  "weighting": "동일 가중 점별 통계; 최종 v2 질량가중 상태 판정 아님",
+  "active_scope": "fraction>1e-8인 합집합 부분집합. 율/열/불투명도 활성 항목의 완전한 합집합 판정 아님",
+  "zero_floor_applied": false,
+  "new_rates": 0,
+  "new_transport": 0,
+  "final_equivalence": "NOT_JUDGED",
+  "final_goal": "NOT_MET",
+  "source_script_sha256": "72925414034598ac80f1791ca25d6a880407dc6aef335a0f7b9b5e0beb0245ad"
+}

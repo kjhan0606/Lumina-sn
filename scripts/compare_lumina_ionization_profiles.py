@@ -43,15 +43,38 @@ def diagnostics(reference, candidate, threshold=1.e-8):
         active_log_above_0p1_dex_nodes_zero_based=np.flatnonzero(chosen & (abs(log) > .1)).tolist())
 
 
-def compare(result_path, expected_hash, out):
+def response_selection(report, result_path, rejected_evaluation=None):
+    if rejected_evaluation is None:
+        return result_path.parent / 'accepted-response.npz', report['accepted_output_sha256'], {}
+    index = rejected_evaluation
+    if type(index) is not int or not 1 <= index <= len(report.get('evaluations', [])):
+        raise ValueError('완료된 실제 후보 번호 필요')
+    decisions = [row for row in report.get('history', []) if row.get('evaluation') == index]
+    if (len(decisions) != 1 or decisions[0].get('accepted') is not False or
+        decisions[0].get('phase') not in ('line_search', 'frozen_direction')):
+        raise ValueError('명시적으로 거부된 실제 방향 후보만 진단 가능')
+    folder = result_path.parent / ('evaluation-' + str(index))
+    evaluation_report = folder / 'result.json'
+    if json.loads(evaluation_report.read_text()) != report['evaluations'][index - 1]:
+        raise ValueError('완료 보고서와 실제 후보 기록 불일치')
+    return folder / 'response.npz', report['evaluations'][index - 1]['output_sha256']['response.npz'], {
+        'candidate_status': 'REJECTED_DIAGNOSTIC_ONLY', 'rejected_evaluation': index,
+        'candidate_accepted': False, 'decision': decisions[0],
+        'evaluation_report_sha256': sha(evaluation_report)}
+
+
+def compare(result_path, expected_hash, out, rejected_evaluation=None):
     result_path, out = result_path.resolve(), out.resolve()
     if out.exists():
         raise FileExistsError('기존 비교 보존')
     if sha(result_path) != expected_hash:
         raise ValueError('봉인 후보 보고서 변경')
     report = json.loads(result_path.read_text())
+    selected, selected_hash, selection = response_selection(report, result_path, rejected_evaluation)
     accepted = result_path.parent / 'accepted-response.npz'
-    inputs = {result_path: expected_hash, accepted: report['accepted_output_sha256']}
+    inputs = {result_path: expected_hash, accepted: report['accepted_output_sha256'], selected: selected_hash}
+    if selection:
+        inputs[selected.parent / 'result.json'] = selection['evaluation_report_sha256']
     paths = {}
     for name, suffix in (('snapshot', '/material-snapshot.npz'), ('nodes', '/native_material_nodes.bin')):
         matches = [(Path(p), h) for p, h in report['input_sha256'].items() if p.endswith(suffix)]
@@ -63,7 +86,7 @@ def compare(result_path, expected_hash, out):
         raise ValueError('물질/수용 후보 입력 변경')
     with np.load(paths['snapshot']) as f:
         initial = {k: f[k] for k in ('columns', 'superlevel', 'temperature', 'ne')}
-    with np.load(accepted) as f:
+    with np.load(selected) as f:
         candidate = {k: f[k] for k in ('columns', 'population', 'temperature', 'ne')}
     with paths['nodes'].open('rb') as stream:
         tag, ns, nc, nl, epoch = struct.unpack('<8sIIId', stream.read(28))
@@ -97,9 +120,10 @@ def compare(result_path, expected_hash, out):
             velocity_km_s=float(physical[i, 0] / epoch / 1.e5),
             T_reference_K=float(initial['temperature'][i]), T_candidate_K=float(candidate['temperature'][i]),
             ne_reference_cm3=float(initial['ne'][i]), ne_candidate_cm3=float(candidate['ne'][i]))
+        label = 'Lumina' if rejected_evaluation is None else 'Lumina_REJECTED_eval' + str(rejected_evaluation)
         for name, (old, new, log) in values.items():
-            row.update({name + '_CMFGEN70': float(old[i]), name + '_Lumina': float(new[i]),
-                        name + '_log10_Lumina_over_CMFGEN70': float(log[i]) if np.isfinite(log[i]) else ''})
+            row.update({name + '_CMFGEN70': float(old[i]), name + '_' + label: float(new[i]),
+                        name + '_log10_' + label + '_over_CMFGEN70': float(log[i]) if np.isfinite(log[i]) else ''})
         rows.append(row)
     out.mkdir()
     table = out / 'profiles.csv'
@@ -109,10 +133,12 @@ def compare(result_path, expected_hash, out):
         writer.writerows(rows)
     if any(sha(p) != digest for p, digest in inputs.items()):
         raise ValueError('비교 중 원본 변경')
-    summary = dict(state='COMPLETE_SAME_NATIVE_NODE_IONIZATION_COMPARISON',
+    summary = dict(state=('COMPLETE_SAME_NATIVE_NODE_IONIZATION_COMPARISON' if rejected_evaluation is None
+                          else 'COMPLETE_REJECTED_CANDIDATE_IONIZATION_DIAGNOSTIC'),
+        **selection,
         baseline='CMFGEN 물질70 고정T 비수렴 입력; certified released-T 앵커 아님',
         source_run=result_path.parent.parent.name, points=ns, summary=summaries,
-        input_sha256=dict(result=expected_hash, accepted=inputs[accepted],
+        input_sha256=dict(result=expected_hash, accepted=inputs[accepted], candidate_response=selected_hash,
             snapshot=inputs[paths['snapshot']], nodes=inputs[paths['nodes']]),
         csv_sha256=sha(table), node_mapping='동일 원래90점; shell 평균/중심 보간 없음',
         weighting='동일 가중 점별 통계; 최종 v2 질량가중 상태 판정 아님',
@@ -129,5 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('--result', type=Path, required=True)
     parser.add_argument('--sha256', required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--rejected-evaluation', type=int,
+                        help='명시적으로 거부된 실제 후보를 수용 물질과 구분한 진단 전용 비교')
     args = parser.parse_args()
-    compare(args.result, args.sha256, args.out)
+    compare(args.result, args.sha256, args.out, args.rejected_evaluation)
