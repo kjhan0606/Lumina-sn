@@ -117,8 +117,17 @@
   },
   "remaining": [
     "1223908은 명시 BA 요청을 첫 단계에서 미수행해 종료·보존됨. 실패71을 새 seed로 쓰지 않음",
-    "1224011은 첫 갱신 전 메모리 실패. 추가 메모리 승인 전 새 native 계산을 제출하지 않음",
+    "1224011은 첫 갱신 전 메모리 실패.128GiB는 미승인·미실행이며, 별도 검증한 비관측 dZ 쓰기 제거로 기존32GiB 단일 후보1224201을 제출함",
     "고정T 안정화 및 별도 reviewed released-T reference는 여전히 미확보",
     "공통 물질/장 잔차·Jv와 새 자기일관 해 및 원래 v2 물리량·스펙트럼·격자 수용"
-  ]
+  ],
+  "latest_32GiB_native_candidate": {
+    "job_id": 1224201,
+    "run_id": "lumina_lazy_dz_fixedt_20261027-ABEBv8",
+    "source_commit": "acaeee4541970c44dbd7ec4cf5d99ae79105b514",
+    "detailed_evidence": "docs/LUMINA_NATIVE_LAZY_DZ_2026-10-27.json",
+    "physical_dimensions_and_line_list_changed": false,
+    "memory_expansion": false,
+    "full_BA_and_anchor_not_yet_proven": true
+  }
 }
