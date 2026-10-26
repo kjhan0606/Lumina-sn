@@ -47,6 +47,36 @@ T·전자분율·내부에너지 기울기를 사용한다. 따라서 외부 문
 
 ## 최소 구현 경로와 에너지 소유권
 
+### 같은 온도 BF 인수분해와 실제 공통 전하 초기화 연결
+
+Astra `01a1797c-ec37-76f1-a046-5e27e4c04d11`는 고정 T/J의 bound photo와
+전자 열량은 물질 독립, 역률4개는 Milne prefactor에 선형이라는 인수분해를
+조건부 지지했다. 완료 **bound** 적분만 새 pref로 재인수하고 용해는 새
+b/a/x와 새 pref로 직접 적분한다. total-bound 차감 재사용, 옛 용해 mask,
+T 변경 후 캐시 재사용은 하지 않는다.0/subnormal이나 극소항의 복원 위험,
+큰 pref 비율은 해당 경로의 전 직접적분으로 돌아가며 값은 자르지 않는다.
+원 필드/평가점/가중치·모형/σ·경로/점·T·입력 완료 신원을 확인한다.
+
+이 구현은 같은 `MaterialTrial → BF/BB/전쌍 충돌 → 전원소 C SE → charge`
+평가기 안에 넣는다. 고정 T의 logne 감쇠 secant는 공동해법의 초기화일 뿐,
+90개 독립 T/ne 루트나 묶음 종료가 아니다. 단조성·유일근을 가정하지 않고
+매 평가의 실제 전하 잔차 감소로 수용하며, 예산/작은 step을 수렴이라 하지
+않는다. 새 후보의 FF·내부에너지·전체 이웃 AD·물리/native 두 열장부도
+동일 상태로 평가한다. 이후 T 변경은 동적 전적분과 깊이 결합 잔차를
+유지해야 한다. 자체 FD/SE/charge 성공을 native E/Jv 증거로 대체하지 않는다.
+
+직접시험은 grammar-debug CPU1·4GiB·180초 이내다. 실제 초기화는 기존
+CPU16·32GiB·OpenMP16·2시간·GPU0·retry0 안에서 전90점·전27이온과 모든
+terminal/PHOT/전쌍 충돌을 유지한다. 내부 전하 평가 최대8회는 비용 상한이며
+미수렴이면 그대로 보고한다. 원본·완료 BF/BB/SE·거부/수용 후보를 보존하고
+공개 물질·새 수송·native 실행은 하지 않는다. 다음 T/RE 연결의 입력 후보를
+실제로 만드는 목적이며 최종 v2 기준과 앵커·스펙트럼 범위는 그대로다.
+
+이번 쓰기 소유 범위는 `bf_rate_jnu.[ch]`, `lumina_model_material_rates.py`,
+`lumina_model_response.py`, `lumina_common_charge.py`, 이를 소비하는 동적
+driver와 직접시험/runner다. 다른 흐름의 native reference 빌드와 FF/에너지
+소유 구현은 수정하지 않는다. 실제 job ID는 당일 인수인계서에 등록한다.
+
 기존 private 후보, 일반 원소 블록 및 GTH를 재사용한다. legacy pair/Saha
 경로의 model-aware 거부를 없애지 않고 별도 full-model residual을 둔다.
 trial마다 T/ne→occupation·partition·SL 분율→동적 율→전원소 SE→전하·

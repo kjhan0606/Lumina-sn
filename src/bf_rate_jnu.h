@@ -79,8 +79,19 @@ typedef struct {
     const double *sigma_edge, *z_screen, *material_b, *material_a, *material_x;
 } BfMaterialRateBlock;
 
-int bf_rate_material_block_contract(const BfMaterialRateBlock *block,
+#if defined(__GNUC__)
+#define BF_MATERIAL_API __attribute__((visibility("default")))
+#else
+#define BF_MATERIAL_API
+#endif
+BF_MATERIAL_API int bf_rate_material_block_contract(const BfMaterialRateBlock *block,
     BfPointRates *bound, BfPointRates *total);
+
+/* 같은 구현의 용해항만 적분한다. bound_sigma는 NULL이어도 되며 첫 출력은0.
+ * forward/역률 모두 새 trial의 b/a/x와 Milne prefactor를 소비한다.
+ * 기존 물질에서 total-bound를 빼서 새 용해항으로 재사용하지 않는다. */
+BF_MATERIAL_API int bf_rate_material_pseudo_block_contract(const BfMaterialRateBlock *block,
+    BfPointRates *zero_bound, BfPointRates *pseudo);
 
 /* 원자 경로 순서의 불변 snapshot. T/ne가 바뀌면 재생산해야 하며
  * stale snapshot을 bin 경로로 대체하지 않는다. 배열은 caller 소유다. */

@@ -10,7 +10,7 @@ import pytest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import cmfgen_model_continuum as B
-from lumina_model_material_rates import Block,DP,BP,ModelMaterialRates
+from lumina_model_material_rates import Block,DP,BP,ModelMaterialRates,FixedTemperatureBoundRates
 from lumina_model_point_rates import ModelPointBoundRates,Rates
 from lumina_model_point_reference import ReferencePointRates
 
@@ -114,3 +114,63 @@ def test_bad_late_c_input_preserves_both_complete_output_arrays(library):
     bound=np.full((1,2,6),-123.);total=bound.copy()
     assert fn(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates)))!=0
     np.testing.assert_array_equal(bound,-123.);np.testing.assert_array_equal(total,-123.)
+
+
+def test_pseudo_only_and_fixed_T_cache_match_direct_after_ne_and_population_change(library):
+    provider,state=example(library);old=provider.prepare(state,material_generation=1)
+    bound,total=provider.integrate(old,material_generation=1,radiation_generation=7)
+    cache=FixedTemperatureBoundRates(provider,old,bound)
+    changed={**state,'ne':state['ne']*np.array([.6,1.2,1.8]),
+             'superlevel':state['superlevel']*np.array([2.,3.,.5])}
+    trial=provider.prepare(changed,material_generation=2)
+    direct=provider.integrate(trial,material_generation=2,radiation_generation=7)
+    pseudo=provider.integrate_pseudo(trial,material_generation=2,radiation_generation=7,
+                                    frequency_block=4,route_block=1)
+    np.testing.assert_allclose(direct[0]+pseudo,direct[1],rtol=5.e-12,atol=0)
+    reused=cache.integrate(trial,material_generation=2,radiation_generation=7)
+    np.testing.assert_allclose(reused,direct,rtol=5.e-12,atol=0)
+    assert np.any(old.state['occupation']!=trial.state['occupation'])
+    assert np.any(total-direct[1])
+    np.testing.assert_array_equal(bound[:,:,0],direct[0][:,:,0])
+    warmer=provider.prepare({**state,'temperature':state['temperature']*1.001},material_generation=3)
+    with pytest.raises(ValueError,match='온도'):
+        cache.integrate(warmer,material_generation=3,radiation_generation=7)
+    np.testing.assert_allclose(cache.integrate(trial,material_generation=2,radiation_generation=7),
+                               direct,rtol=5.e-12,atol=0)
+    provider.routes[0].probability*=.9
+    with pytest.raises(ValueError,match='원자 경로'):
+        cache.integrate(trial,material_generation=2,radiation_generation=7)
+    with pytest.raises(ValueError,match='stale'):
+        cache.integrate(trial,material_generation=3,radiation_generation=7)
+
+
+def test_lost_inverse_information_uses_direct_route_not_zero_rescaling(library):
+    provider,state=example(library);old=provider.prepare(state,material_generation=1)
+    bound,_=provider.integrate(old,material_generation=1,radiation_generation=7)
+    lost=bound.copy();lost[0,0,1]=0.
+    cache=FixedTemperatureBoundRates(provider,old,lost)
+    assert cache.fallback[0]
+    trial=provider.prepare({**state,'ne':state['ne']*1.2},material_generation=2)
+    reused=cache.integrate(trial,material_generation=2,radiation_generation=7)
+    direct=provider.integrate(trial,material_generation=2,radiation_generation=7)
+    np.testing.assert_allclose(reused,direct,rtol=5.e-12,atol=0)
+    assert reused[0][0,0,1]>0
+    # 모든 원 입력은 캐시 소유 복사와 별개다.
+    lost[:]=0.
+    np.testing.assert_allclose(cache.integrate(trial,material_generation=2,radiation_generation=7),
+                               direct,rtol=5.e-12,atol=0)
+
+
+def test_pseudo_bad_input_preserves_outputs_and_does_not_read_bound_sigma(library):
+    dll=C.CDLL(str(library));fn=dll.bf_rate_material_pseudo_block_contract
+    fn.argtypes=[C.POINTER(Block),C.POINTER(Rates),C.POINTER(Rates)];fn.restype=C.c_int
+    arrays=[np.array(x,dtype='f8') for x in ([1.e15,1.01e15],[1.e15,1.01e15],[1.e12,1.e12],
+        [1.e-5,1.e-5,1.e-5,np.nan],[np.nan,np.nan],[1.e15],[1.e-8,1.e-8],[1.e-14,1.e-14])]
+    block=Block(2,1,2,*[a.ctypes.data_as(DP) for a in arrays],0,BP(),DP(),DP(),DP(),DP(),DP())
+    bound=np.full((1,2,6),-123.);total=bound.copy()
+    def call():return fn(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates)))
+    assert call()!=0
+    np.testing.assert_array_equal(bound,-123.);np.testing.assert_array_equal(total,-123.)
+    arrays[3][-1]=1.e-5;block.bound_sigma=DP()
+    assert call()==0
+    np.testing.assert_array_equal(bound,0.);np.testing.assert_array_equal(total,0.)

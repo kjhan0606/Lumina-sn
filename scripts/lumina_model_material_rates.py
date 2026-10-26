@@ -86,6 +86,9 @@ class ModelMaterialRates:
         self.function=self.library.bf_rate_material_block_contract
         self.function.argtypes=[C.POINTER(Block),C.POINTER(Rates),C.POINTER(Rates)]
         self.function.restype=C.c_int
+        self.pseudo_function=self.library.bf_rate_material_pseudo_block_contract
+        self.pseudo_function.argtypes=self.function.argtypes
+        self.pseudo_function.restype=C.c_int
         digest=hashlib.sha256()
         for a in (self.frequency,self.evaluation,self.width,self.J):
             digest.update(a.tobytes())
@@ -169,7 +172,8 @@ class ModelMaterialRates:
             yield start,end
             start=end
 
-    def contract_block(self,trial,start,end,route_indices,*,material_generation,radiation_generation):
+    def contract_block(self,trial,start,end,route_indices,*,material_generation,radiation_generation,
+                       pseudo_only=False):
         self._check(trial,material_generation,radiation_generation)
         ids=np.asarray(route_indices,dtype='i8')
         if (type(start) is not int or type(end) is not int or not 0<=start<end<=len(self.frequency) or
@@ -178,7 +182,8 @@ class ModelMaterialRates:
             raise ValueError('경로/주파수 블록 주소 오류')
         # 공유 σ만 route×주파수다. route×점×주파수 3D 배열은 만들지 않는다.
         evaluation=np.ascontiguousarray(self.evaluation[start:end])
-        sigma=np.ascontiguousarray([self.routes[int(i)].sigma(evaluation) for i in ids])
+        sigma=(np.zeros((len(ids),len(evaluation))) if pseudo_only else
+               np.ascontiguousarray([self.routes[int(i)].sigma(evaluation) for i in ids]))
         arrays=[np.ascontiguousarray(a) for a in (self.frequency[start:end],evaluation,self.width[start:end],
                 self.J[:,start:end],sigma,self.edge[ids],trial.milne_prefactor[ids],trial.inverse_kT_Hz)]
         prim=np.ascontiguousarray(self.primary[ids])
@@ -187,7 +192,8 @@ class ModelMaterialRates:
                     int(self.dissolved),prim.ctypes.data_as(BP),*[a.ctypes.data_as(DP) for a in dissolved])
         shape=(len(ids),self.n_points,6)
         bound=np.empty(shape);total=np.empty(shape)
-        if self.function(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates))):
+        function=self.pseudo_function if pseudo_only else self.function
+        if function(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates))):
             raise ValueError('다점 BF 율 적분 실패: 입력/지수 블록/비유한 값')
         return bound,total
 
@@ -213,3 +219,89 @@ class ModelMaterialRates:
         if not all(np.isfinite(x).all() and np.all(x[:,:,:3]>=0) for x in result):
             raise ValueError('완성 다점 BF 적분 비유한/음수 율')
         return result
+
+    def integrate_pseudo(self,trial,*,material_generation,radiation_generation,
+                         route_indices=None,frequency_block=1024,route_block=128):
+        """새 occupation 물질의 문턱 아래 항. 실제 지지 밖만 생략한다."""
+        self._check(trial,material_generation,radiation_generation)
+        ids=np.arange(len(self.routes)) if route_indices is None else np.asarray(route_indices,dtype='i8')
+        if (ids.ndim!=1 or np.any(ids<0) or np.any(ids>=len(self.routes)) or
+            np.any(np.diff(ids)<=0) or type(route_block) is not int or route_block<1 or
+            (route_indices is not None and not np.array_equal(ids,np.asarray(route_indices)))):
+            raise ValueError('용해 적분 경로 주소/블록 오류')
+        result=np.zeros((len(ids),self.n_points,6),dtype=np.longdouble)
+        if not self.dissolved:return np.asarray(result,dtype='f8')
+        primary=(self.primary[ids]!=0)&(self.sigma_edge[ids]>0)
+        for start,end in self.frequency_blocks(trial,frequency_block):
+            lo=float(self.evaluation[start:end].min());hi=float(self.evaluation[start:end].max())
+            edge=self.edge[ids]
+            active=np.flatnonzero(primary&(edge>lo)&(.8*edge<hi)&(edge-3.289395e15/4.<hi))
+            for first in range(0,len(active),route_block):
+                selected=active[first:first+route_block]
+                _,pseudo=self.contract_block(trial,start,end,ids[selected],
+                    material_generation=material_generation,radiation_generation=radiation_generation,
+                    pseudo_only=True)
+                result[selected]+=pseudo
+        result=np.asarray(result,dtype='f8')
+        if not np.isfinite(result).all() or np.any(result[:,:,:3]<0):
+            raise ValueError('용해 율 비유한/음수')
+        return result
+
+
+class FixedTemperatureBoundRates:
+    """동일 provider/T의 bound 역률만 새 Milne prefactor로 정확히 재인수한다.
+
+    0/subnormal로 정보를 잃은 역률은 비율로 되살리지 않고 해당 경로 전체를
+    직접 적분한다. 새 pseudo 항은 항상 새 물질에서 적분한다. T 변화는 거부.
+    캐시를 만든 원율/원 pref의 신원 검증은 봉인 입력 소비자의 책임이다.
+    """
+    def __init__(self,provider,trial,bound):
+        provider._check(trial,trial.material_generation,trial.radiation_generation)
+        values=owned(bound)
+        shape=(len(provider.routes),provider.n_points,6)
+        if (values.shape!=shape or not np.isfinite(values).all() or np.any(values[:,:,:3]<0)):
+            raise ValueError('고정온도 bound 율 입력 오류')
+        self.provider=provider;self.field_signature=provider.field_signature
+        self.route_signature=self._routes()
+        self.temperature=owned(trial.state['temperature']);self.pref=owned(trial.milne_prefactor)
+        self.values=values
+        # 각 주파수가 별도 블록인 최악의 double 반올림/underflow 예산도 보수적으로 제외.
+        tiny=max(np.finfo('f8').tiny,len(provider.frequency)*np.nextafter(0.,1.)/1.e-14)
+        inverse=values[:,:,[1,2,4,5]]
+        self.fallback=np.any(self.pref<tiny,axis=1)|np.any(abs(inverse)<tiny,axis=(1,2))
+
+    def _routes(self):
+        p=self.provider;h=hashlib.sha256()
+        h.update(repr((p.rows,p.models,p.dissolved)).encode())
+        for r in p.routes:
+            h.update(repr((r.Z,r.stage,r.lower,r.target,r.target_superlevel,r.phot_grid,
+                r.probability,r.target_g,r.target_energy_eV,r.threshold_Hz,r.dissolution_primary,
+                [(id(f),start,kind) for f,nodes,start,kind in r.models])).encode())
+            for _,nodes,_,_ in r.models:h.update(np.asarray(nodes,dtype='f8').tobytes())
+        for a in (p.edge,p.z,p.primary,p.sigma_edge):h.update(a.tobytes())
+        return h.hexdigest()
+
+    def integrate(self,trial,*,material_generation,radiation_generation):
+        p=self.provider;p._check(trial,material_generation,radiation_generation)
+        if (self.field_signature!=p.field_signature or self.route_signature!=self._routes() or
+            not np.array_equal(self.temperature,trial.state['temperature'])):
+            raise ValueError('고정온도 bound 캐시의 다른 온도/장/원자 경로')
+        # 큰 pref 외삽은 최적화하지 않는다. 직접 적분으로 돌아갈 뿐 물리량은 자르지 않는다.
+        with np.errstate(divide='ignore',invalid='ignore',over='ignore'):
+            ratio=np.asarray(trial.milne_prefactor,dtype=np.longdouble)/self.pref
+        fallback=self.fallback|np.any((ratio<.5)|(ratio>2)|~np.isfinite(ratio),axis=1)
+        reuse=np.flatnonzero(~fallback);fresh=np.flatnonzero(fallback)
+        self.last_direct_routes=len(fresh);self.last_reused_routes=len(reuse)
+        bound=np.empty_like(self.values);total=np.empty_like(bound)
+        if len(reuse):
+            v=np.asarray(self.values[reuse],dtype=np.longdouble)
+            v[:,:,[1,2,4,5]]*=ratio[reuse,:,None]
+            bound[reuse]=v
+            total[reuse]=bound[reuse]+p.integrate_pseudo(trial,
+                material_generation=material_generation,radiation_generation=radiation_generation,
+                route_indices=reuse)
+        if len(fresh):
+            bound[fresh],total[fresh]=p.integrate(trial,material_generation=material_generation,
+                radiation_generation=radiation_generation,route_indices=fresh)
+        if not np.isfinite([bound,total]).all():raise ValueError('고정온도 BF 재인수 비유한')
+        return bound,total

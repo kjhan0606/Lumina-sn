@@ -78,12 +78,12 @@ int bf_rate_point_contract_milne(size_t n,const double *nu,const double *width,
     return 0;
 }
 
-int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
-    BfPointRates *bound,BfPointRates *total)
+static int material_block_contract(const BfMaterialRateBlock *v,
+    BfPointRates *bound,BfPointRates *total,int pseudo_only)
 {
     if(!v || !bound || !total || bound==total || !v->n_frequency ||
        !v->n_routes || !v->n_points || !v->frequency_Hz || !v->evaluation_Hz ||
-       !v->quadrature_Hz || !v->J_nu || !v->bound_sigma || !v->threshold_Hz ||
+       !v->quadrature_Hz || !v->J_nu || (!pseudo_only && !v->bound_sigma) || !v->threshold_Hz ||
        !v->milne_prefactor || !v->inverse_kT_Hz || v->dissolved<0 || v->dissolved>1 ||
        v->n_points>SIZE_MAX/v->n_frequency || v->n_routes>SIZE_MAX/v->n_frequency ||
        v->n_routes>SIZE_MAX/v->n_points)return -1;
@@ -112,7 +112,7 @@ int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
            v->sigma_edge[r]<0. || !isfinite(v->z_screen[r]) || v->z_screen[r]<=0.))return -1;
         for(size_t p=0;p<np;p++)if(!isfinite(v->milne_prefactor[r*np+p]) ||
             v->milne_prefactor[r*np+p]<0.)return -1;
-        for(size_t k=0;k<nf;k++)if(!isfinite(v->bound_sigma[r*nf+k]) ||
+        for(size_t k=0;!pseudo_only && k<nf;k++)if(!isfinite(v->bound_sigma[r*nf+k]) ||
            v->bound_sigma[r*nf+k]<0. ||
            (v->bound_sigma[r*nf+k]>0. && v->evaluation_Hz[k]<edge))return -1;
     }
@@ -137,7 +137,8 @@ int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
         long double sums[2][6]={{0}},normalization=0.;int normalized=0;
         const double edge=v->threshold_Hz[r];
         for(size_t k=0;k<nf;k++){
-            double sigma[2]={v->bound_sigma[r*nf+k],v->bound_sigma[r*nf+k]};
+            double base=pseudo_only?0.:v->bound_sigma[r*nf+k];
+            double sigma[2]={base,base};
             double evaluation=v->evaluation_Hz[k];
             if(v->dissolved && v->dissolution_primary[r] && v->sigma_edge[r]>0. &&
                evaluation<edge && evaluation>.8*edge && evaluation>edge-3.289395e15/4.){
@@ -158,7 +159,7 @@ int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
                 if(!isfinite(normalization) || normalization<0.){failed=1;break;}
             }
             const long double j=v->J_nu[p*nf+k],energy=BF_H_CGS*((long double)v->frequency_Hz[k]-edge);
-            for(int mode=0;mode<2;mode++){
+            for(int mode=pseudo_only?1:0;mode<2;mode++){
                 long double inverse=sigma[mode]*normalization*thermal[p*nf+k];
                 long double terms[3]={weight[k]*sigma[mode]*j,weight[k]*inverse*photon[k],weight[k]*inverse*j};
                 for(int term=0;term<3;term++){
@@ -178,6 +179,19 @@ int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
     if(!failed){memcpy(bound,work_bound,nout*sizeof(*bound));memcpy(total,work_total,nout*sizeof(*total));}
     free(thermal);free(weight);free(photon);free(work_bound);free(work_total);
     return failed?-1:0;
+}
+
+int bf_rate_material_block_contract(const BfMaterialRateBlock *v,
+    BfPointRates *bound,BfPointRates *total)
+{
+    return material_block_contract(v,bound,total,0);
+}
+
+int bf_rate_material_pseudo_block_contract(const BfMaterialRateBlock *v,
+    BfPointRates *zero_bound,BfPointRates *pseudo)
+{
+    /* 같은 fit/열적 지수/실제 nu를 소비하며 bound_sigma는 읽지 않는다. */
+    return material_block_contract(v,zero_bound,pseudo,1);
 }
 
 int bf_rate_point_get(const BfPointRateView *v,size_t route,size_t shell,
