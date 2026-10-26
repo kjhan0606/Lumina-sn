@@ -20,10 +20,11 @@ void nlte_model_element_free(NLTEModelElement *element);
 
 /* BF 블록만의 물리율이다. BB/CE/DR/NT/FF/전체 RE가 완성됐다는 뜻이 아니다.
  * radiative/collisional은 pre-constraint column-major generator이고,
- * heat는 n_variable과 수축할 BF 열량 계수(erg s^-1/입자)다. */
+ * radiative_heat는 복사 BF 전자 운동에너지 계수(erg s^-1/입자)만 담는다.
+ * CI/C3 열량과 전체 RE ledger는 아직 포함하지 않는다. */
 typedef struct {
     size_t n_variables, routes, terminal_routes;
-    double *radiative, *collisional, *heat;
+    double *radiative, *collisional, *radiative_heat;
 } NLTEModelBFBlock;
 
 int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,

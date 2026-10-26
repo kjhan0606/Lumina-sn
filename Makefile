@@ -17,7 +17,7 @@ SOURCES = src/lumina_main.c src/nlte_model_se.c src/lumina_transport.c src/a2_02
 #   T3 잡 226529 진단 중 발각: env_universe.h 를 483→496 으로 재생성했는데
 #   `make` 가 "up to date" 라 했고 바이너리는 옛 전집을 유지했다.
 #   목록은 `python3 scripts/check_makefile_headers.py` 가 기계로 대조한다.
-HEADERS = src/lumina.h src/nlte_model_se.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h \
+HEADERS = src/lumina.h src/nlte_model_se.h src/model_gaussian_profile.h src/a2_02c_segment_capture.h src/radiation_field.h src/bf_rate_jnu.h \
           src/lumina_frequency_grid.h \
           src/line_jbar.h src/seed_capability.h src/jnu_seed.h src/population_contract.h \
           src/population_generator_interval.h \

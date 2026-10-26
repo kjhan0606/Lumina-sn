@@ -41,9 +41,9 @@ int main(void)
     assert(fabs(block.radiative[3]-.75)<1.e-14);
     assert(fabs(block.radiative[5]-1.2)<1.e-14);
     assert(fabs(block.radiative[7]-2.5)<1.e-14);
-    assert(fabs(block.heat[0]-(-.25e-12*.4))<1.e-27);
-    assert(fabs(block.heat[1]-(-.25*5.e-13+.5e-12*.2))<1.e-27);
-    assert(fabs(block.heat[2]-(-.5*7.e-13))<1.e-27);
+    assert(fabs(block.radiative_heat[0]-(-.25e-12*.4))<1.e-27);
+    assert(fabs(block.radiative_heat[1]-(-.25*5.e-13+.5e-12*.2))<1.e-27);
+    assert(fabs(block.radiative_heat[2]-(-.5*7.e-13))<1.e-27);
     for(int j=0;j<3;j++){
         double sum=0.;for(int i=0;i<3;i++)sum+=block.radiative[j*3+i];
         assert(fabs(sum)<1.e-14);

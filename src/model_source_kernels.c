@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "model_gaussian_profile.h"
 
 static size_t lower_bound(const double *x, size_t n, double y) {
     size_t a=0,b=n;
@@ -53,10 +54,8 @@ int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
             double nup=population[(size_t)upper[l]*ns+s];
             double integrated_chi=opacity_constant*f[l]*(nlo-g_ratio[l]*nup);
             double integrated_eta=emission_constant*nu0[l]*A[l]*nup;
-            double width=nu0[l]*width_fraction;
             for(size_t b=bounds[2*l];b<bounds[2*l+1];b++){
-                double x=(nu[b]-nu0[l])/width;
-                double phi=exp(-x*x)/(1.77245385095516*width);
+                double phi=model_gaussian_phi(nu[b],nu0[l],width_fraction);
                 chi[s*nf+b]+=integrated_chi*phi;
                 eta[s*nf+b]+=integrated_eta*phi;
             }
@@ -66,4 +65,43 @@ int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
     for(size_t i=0;i<ns*nf;i++)
         if(!isfinite(chi[i])||!isfinite(eta[i])||eta[i]<0)return 3;
     return 0;
+}
+
+/* 원래점 하나의 source-profile 적분. status: 1=VALID,2=EXACT_ZERO,
+ * 3=OUT_OF_GRID,4=UNSAMPLED. 후자의 Jbar는 NaN이며 0으로 대체하지 않는다.
+ * profile_mass는 관측값일 뿐 Jbar를 나누는 보정 인자가 아니다. */
+int lumina_model_point_gaussian_jbar(size_t nf,size_t nt,const double *nu,
+    const double *dnu,const double *j,const double *nu0,double width_fraction,
+    double support_fraction,double *jbar,double *profile_mass,uint8_t *status)
+{
+    if(nf<2 || !nt || !nu || !dnu || !j || !nu0 || !jbar || !profile_mass || !status ||
+       nt>SIZE_MAX/sizeof(double) || !isfinite(width_fraction) || width_fraction<=0. ||
+       !isfinite(support_fraction) || support_fraction<=0. || support_fraction>=1.)return 1;
+    for(size_t k=0;k<nf;k++)if(!isfinite(nu[k]) || nu[k]<=0. || (k && nu[k]<=nu[k-1]) ||
+        !isfinite(dnu[k]) || dnu[k]<0. || !isfinite(j[k]) || j[k]<0.)return 1;
+    for(size_t l=0;l<nt;l++)if(!isfinite(nu0[l]) || nu0[l]<=0. ||
+        !isfinite(nu0[l]*(1.+support_fraction)) ||
+        !isfinite(nu0[l]*width_fraction) || nu0[l]*width_fraction<=0.)return 1;
+    double *values=malloc(nt*sizeof(double)),*masses=malloc(nt*sizeof(double));
+    uint8_t *states=malloc(nt);
+    if(!values || !masses || !states){free(values);free(masses);free(states);return 2;}
+    for(size_t l=0;l<nt;l++){
+        double lo=nu0[l]*(1.-support_fraction),hi=nu0[l]*(1.+support_fraction);
+        if(lo<nu[0] || hi>nu[nf-1]){values[l]=NAN;masses[l]=NAN;states[l]=3;continue;}
+        size_t first=lower_bound(nu,nf,lo),last=upper_bound(nu,nf,hi);
+        if(first==last){values[l]=NAN;masses[l]=0.;states[l]=4;continue;}
+        long double value=0.,mass=0.;
+        for(size_t k=first;k<last;k++){
+            double phi=model_gaussian_phi(nu[k],nu0[l],width_fraction);
+            long double weight=(long double)phi*dnu[k];
+            mass+=weight;value+=weight*j[k];
+        }
+        values[l]=(double)value;masses[l]=(double)mass;
+        if(!isfinite(values[l]) || values[l]<0. || !isfinite(masses[l]) || masses[l]<=0.){
+            free(values);free(masses);free(states);return 3;
+        }
+        states[l]=values[l]>0. ? 1 : 2;
+    }
+    memcpy(jbar,values,nt*sizeof(double));memcpy(profile_mass,masses,nt*sizeof(double));
+    memcpy(status,states,nt);free(values);free(masses);free(states);return 0;
 }

@@ -11,9 +11,9 @@ build_root=$3
 mkdir "$build_root"
 cp "$source_root/tools/set_kind_module.f" "$source_root/subs/gff.f" \
    "$repo_root/scripts/cmfgen_source_native.f90" \
-   "$repo_root/src/model_source_kernels.c" "$build_root/"
+   "$repo_root/src/model_source_kernels.c" "$repo_root/src/model_gaussian_profile.h" "$build_root/"
 cd "$build_root"
-sha256sum set_kind_module.f gff.f cmfgen_source_native.f90 model_source_kernels.c > source.sha256
+sha256sum set_kind_module.f gff.f cmfgen_source_native.f90 model_source_kernels.c model_gaussian_profile.h > source.sha256
 gfortran -O2 -fPIC -ffixed-line-length-none -c set_kind_module.f gff.f
 gfortran -O2 -fPIC -c cmfgen_source_native.f90
 gcc -O2 -std=c11 -Wall -Wextra -fopenmp -fPIC -c model_source_kernels.c

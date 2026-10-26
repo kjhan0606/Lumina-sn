@@ -85,7 +85,7 @@ fail:
 void nlte_model_bf_block_free(NLTEModelBFBlock *b)
 {
     if(!b)return;
-    free(b->radiative);free(b->collisional);free(b->heat);memset(b,0,sizeof(*b));
+    free(b->radiative);free(b->collisional);free(b->radiative_heat);memset(b,0,sizeof(*b));
 }
 
 static int add_route(double *a,size_t n,size_t lower,size_t upper,double forward,double reverse)
@@ -115,7 +115,7 @@ static int close_columns(double *a,size_t n)
 int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement *e,
     const NLTEConfig *n,const AtomicData *a,const PlasmaState *p)
 {
-    if(!out || out->n_variables || out->radiative || out->collisional || out->heat ||
+    if(!out || out->n_variables || out->radiative || out->collisional || out->radiative_heat ||
        !e || !n || !a || !p || !e->n_variables || !e->super_to_row || !e->terminal_to_row ||
        e->material_generation!=a->population_committed_generation ||
        e->n_super_total!=(size_t)n->n_super_total || e->n_ion_pops!=(size_t)a->n_ion_pops ||
@@ -125,9 +125,9 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
     size_t nv=e->n_variables,ns=(size_t)p->n_shells;
     NLTEModelBFBlock b={.n_variables=nv};
     b.radiative=calloc(nv*nv,sizeof(double));b.collisional=calloc(nv*nv,sizeof(double));
-    b.heat=calloc(nv,sizeof(double));
+    b.radiative_heat=calloc(nv,sizeof(double));
     long double *heat=calloc(nv,sizeof(long double));
-    if(!b.radiative || !b.collisional || !b.heat || !heat)goto fail;
+    if(!b.radiative || !b.collisional || !b.radiative_heat || !heat)goto fail;
     for(int gl=0;gl<a->n_levels;gl++){
         if(a->level_Z[gl]!=e->Z)continue;
         int ng=n->global_to_nlte_level[gl];
@@ -164,7 +164,7 @@ int nlte_model_element_bf_assemble(NLTEModelBFBlock *out,const NLTEModelElement 
         }
     }
     if(close_columns(b.radiative,nv) || close_columns(b.collisional,nv))goto fail;
-    for(size_t i=0;i<nv;i++){b.heat[i]=(double)heat[i];if(!isfinite(b.heat[i]))goto fail;}
+    for(size_t i=0;i<nv;i++){b.radiative_heat[i]=(double)heat[i];if(!isfinite(b.radiative_heat[i]))goto fail;}
     free(heat);*out=b;return 0;
 fail:
     free(heat);nlte_model_bf_block_free(&b);return -1;

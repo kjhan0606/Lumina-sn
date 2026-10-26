@@ -15,6 +15,26 @@ import cmfgen_model_sources as S
 import cmfgen_model_continuum as B
 
 
+def test_native_ir_roster_uses_actual_outer_velocity_and_strict_boundary(tmp_path):
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897D-3 [MIN_CF]\n36000 [VINF]\n')
+    (tmp_path/'RVTJ').write_text('ND: 2\n Velocity (km/s)\n 35975.288045 1000\n Temperature\n')
+    domain=S.native_line_domain(tmp_path)
+    cutoff=3.49897e12*(1+1.1*35975.288045/2.998e5)
+    assert domain['minimum_line_Hz_exclusive']==cutoff
+    assert domain['outer_velocity_kms']!=36000
+    np.testing.assert_array_equal(S.native_radiative_selection(
+        [3.49897e12,cutoff,np.nextafter(cutoff,np.inf),1.e15],domain),[False,False,True,True])
+    assert not domain['collision_selection_changed']
+    assert len(domain['source_sha256'])==2
+
+
+@pytest.mark.parametrize('velocity',['35975','1000 35975','35975 nan','35975 1000 500'])
+def test_native_ir_roster_rejects_incomplete_or_invalid_velocity(tmp_path,velocity):
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n'+velocity+'\n')
+    with pytest.raises(ValueError):S.native_line_domain(tmp_path)
+
+
 def test_full_pair_known_memory_includes_both_states_and_postprocessing():
     result=S.paired_memory_inventory([89,90],1115020,24667)
     assert result['known_allocation_bound_bytes']==21123862912
@@ -212,6 +232,8 @@ def test_fixed_doppler_default_ignores_variable_width_global_profile(tmp_path):
 
 
 def test_model_line_source_rejects_incomplete_transition_list(tmp_path,monkeypatch):
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
     path=tmp_path/'osc'
     path.write_text('2 !Number of energy levels\n2 !Number of transitions\n'
         '100000 !Ionization energy\n2 !Screened nuclear charge\n! E(cm)\n'

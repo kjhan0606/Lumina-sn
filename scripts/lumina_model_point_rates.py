@@ -80,18 +80,26 @@ class ModelPointBoundRates:
         if not all(np.isfinite(x).all() for x in (nu,width,j)) or np.any(nu<=0) or np.any(np.diff(nu)<=0) or np.any(width<0) or np.any(j<0):
             raise ValueError('점값 블록 값 오류')
         out=np.empty((len(self.routes),6))
-        for i,r in enumerate(self.routes):
-            sigma=r.sigma(nu)
-            target_g=float(self.rows[r.target]['g']) if r.target>=0 else r.target_g
-            coef=B.milne_route(nu,sigma,np.ones(1),np.array([self.upper_factor[i]]),
-                np.array([self.temperature]),np.array([self.ne]),float(self.rows[r.lower]['g']),
-                target_g,r.threshold_Hz,1.)
-            arrays=[nu,width,j,*[np.ascontiguousarray(a[0]) for a in coef]]
-            result=Rates()
-            if self.function(len(nu),*[a.ctypes.data_as(self.ptr) for a in arrays],r.threshold_Hz,C.byref(result)):
-                raise ValueError('전모형 경로의 C 점값 적분 실패')
-            out[i]=[getattr(result,key) for key,_ in result._fields_]
+        for i in range(len(self.routes)):
+            out[i]=self.contract_route_block(i,nu,width,j)
         return out
+
+    def contract_route_block(self,index,frequency,quadrature_Hz,J):
+        """단일 route의 동일 적분. 큰 격자는 원 전역 가중치의 연속 블록으로 합한다."""
+        r=self.routes[index]
+        nu,width,j=[np.ascontiguousarray(a,dtype='f8') for a in (frequency,quadrature_Hz,J)]
+        if nu.ndim!=1 or not len(nu) or width.shape!=nu.shape or j.shape!=nu.shape:
+            raise ValueError('단일 route 블록 차원 오류')
+        sigma=r.sigma(nu)
+        target_g=float(self.rows[r.target]['g']) if r.target>=0 else r.target_g
+        coef=B.milne_route(nu,sigma,np.ones(1),np.array([self.upper_factor[index]]),
+            np.array([self.temperature]),np.array([self.ne]),float(self.rows[r.lower]['g']),
+            target_g,r.threshold_Hz,1.)
+        arrays=[nu,width,j,*[np.ascontiguousarray(a[0]) for a in coef]]
+        result=Rates()
+        if self.function(len(nu),*[a.ctypes.data_as(self.ptr) for a in arrays],r.threshold_Hz,C.byref(result)):
+            raise ValueError('전모형 경로의 C 점값 적분 실패')
+        return np.array([getattr(result,key) for key,_ in result._fields_])
 
     def physical_ion_rates(self,unit_rates):
         """선택 블록의 실제 물질 소비율. PHOT 확률은 여기서 한 번만 적용."""

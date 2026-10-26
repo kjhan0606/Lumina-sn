@@ -70,12 +70,59 @@ def gf_selection(lower,upper,f,A,g_lower,Z,model,nlevels):
     return keep
 
 
-def load_lines(run,rows,models):
+def native_line_domain(run):
+    """SET_FREQUENCY_GRID_V2의 최종 복사 선 roster 범위(SN frozen 모델).
+
+    INS_LINE_V6의 격자 삽입용 제외 수와 혼동하지 않는다. VEL_LAW11/12의
+    실제 외곽 V(1)은 MODEL의 명목 VINF가 아니라 보존 RVTJ에서 얻는다.
+    충돌 전이를 제외하는 규칙이 아니며 부족한 J를 0으로 채우지도 않는다.
+    """
+    model=run/'MODEL';rvtj=run/'RVTJ'
+    before={str(p):B.sha(p) for p in (model,rvtj)}
+    if control(model,'RD_CF_FILE')!='F' or number(model,'VEL_LAW') not in (11,12):
+        raise ValueError('원 continuum 격자/SN 외곽 속도 선택을 확인해야 하는 입력')
+    minimum=number(model,'MIN_CF')*1.e15
+    if minimum<=0:raise ValueError('MIN_CF는 양수여야 함')
+    lines=rvtj.read_text().splitlines()
+    dimensions=re.findall(r'^\s*ND:\s*(\d+)\s*$', '\n'.join(lines),re.M)
+    markers=[i for i,s in enumerate(lines) if s.strip()=='Velocity (km/s)']
+    if len(dimensions)!=1 or int(dimensions[0])<2 or len(markers)!=1:
+        raise ValueError('RVTJ 깊이/속도 헤더 누락·중복')
+    nd=int(dimensions[0]);values=[]
+    for line in lines[markers[0]+1:]:
+        try:values.extend(float(s.replace('D','E')) for s in line.split())
+        except ValueError:break
+        if len(values)>=nd:break
+    velocity=np.asarray(values,dtype='f8')
+    if (len(velocity)!=nd or not np.isfinite(velocity).all() or np.any(velocity<=0)
+            or np.any(np.diff(velocity)>=0)):
+        raise ValueError('RVTJ 실제 외곽 우선 속도 격자 손상')
+    vinf=float(velocity[0]);cutoff=minimum*(1.+1.1*vinf/2.998e5)
+    if not np.isfinite(cutoff):raise ValueError('복사 선 하한 수치 범위 초과')
+    if any(B.sha(Path(p))!=digest for p,digest in before.items()):
+        raise ValueError('복사 선 범위 판독 중 입력 변경')
+    return dict(policy='SET_FREQUENCY_GRID_V2_FINAL_IR_ROSTER',
+        minimum_continuum_Hz=minimum,outer_velocity_kms=vinf,
+        outer_velocity_source='RVTJ V(1); text precision, not nominal MODEL VINF',
+        minimum_line_Hz_exclusive=cutoff,comparison='nu0 > cutoff',
+        collision_selection_changed=False,source_sha256=before)
+
+
+def native_radiative_selection(nu,domain):
+    nu=np.asarray(nu,dtype='f8');cutoff=float(domain['minimum_line_Hz_exclusive'])
+    if nu.ndim!=1 or not np.isfinite(nu).all() or np.any(nu<=0) or not np.isfinite(cutoff) or cutoff<=0:
+        raise ValueError('복사 선 주파수/선택 범위 오류')
+    return nu>cutoff
+
+
+def load_lines(run,rows,models,*,line_domain=None):
     """반올림 CSV 파장이 아니라 실제 OSC 에너지와 f로 선을 다시 구성한다."""
     links=B.atomic.load_cmfgen_links(run/'atomic_links.txt')
     lookup={(int(r['atomic_number']),int(r['ion_number'])+1,int(r['level_number'])+1):i
             for i,r in enumerate(rows)}
-    collected={k:[] for k in ('lower','upper','nu0','f','A','g_ratio')};counts={};identities={}
+    domain=native_line_domain(run) if line_domain is None else line_domain
+    collected={k:[] for k in ('lower','upper','nu0','f','A','g_ratio')};counts={}
+    identities=dict(domain['source_sha256'])
     for (Z,stage),model in sorted(models.items()):
         path=Path(links[Z,stage]['osc']);before=B.sha(path)
         osc=B.parse_osc(path);n=int(model['n_full']);trans=osc.transitions
@@ -89,16 +136,22 @@ def load_lines(run,rows,models):
         if np.any((nu<=0)&(f>0)):raise ValueError('양의 f를 가진0/음수 전이 주파수')
         gl=osc.levels['g'][low];gu=osc.levels['g'][up]
         A=B.atomic.A_PREFACTOR*f*(gl/gu)*nu**2
-        keep=gf_selection(low,up,f,A,gl,Z,run/'MODEL',n)&(f>0)
+        gf_keep=gf_selection(low,up,f,A,gl,Z,run/'MODEL',n)&(f>0)
+        # 0인 OSC 항은 주파수0일 수 있으므로 양의 f만 범위를 검사한다.
+        in_domain=np.zeros(len(f),dtype=bool)
+        in_domain[f>0]=native_radiative_selection(nu[f>0],domain)
+        keep=gf_keep&in_domain
         global_rows=np.array([lookup[Z,stage,l+1] for l in range(n)],dtype='i4')
         values=dict(lower=global_rows[low[keep]],upper=global_rows[up[keep]],
             nu0=nu[keep],f=f[keep],A=A[keep],g_ratio=(gl/gu)[keep])
         for key in collected:collected[key].append(values[key])
         counts[f'Z{Z}_stage{stage}']=dict(raw_in_model=int(len(f)),
-            raw_nonzero=int(np.count_nonzero(f)),retained=int(keep.sum()),
+            raw_nonzero=int(np.count_nonzero(f)),retained_after_GF=int(gf_keep.sum()),
+            omitted_by_native_IR=int(np.count_nonzero(gf_keep&~in_domain)),retained=int(keep.sum()),
             omitted_by_native_selection=int(np.count_nonzero((f>0)&~keep)))
         if before!=B.sha(path):raise ValueError('선 생성 중 원자료 변경')
         identities[str(path)]=before
+    if any(B.sha(Path(p))!=v for p,v in identities.items()):raise ValueError('선 roster 생산 중 입력 변경')
     return {k:np.ascontiguousarray(np.concatenate(v)) for k,v in collected.items()},counts,identities
 
 
@@ -342,7 +395,8 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
         for chi,eta in (('chi','eta'),('native_chi','native_eta')):
             ff[chi],ff[eta]=rescale_continuum(nu,evaluation,state['temperature'],
                 ff[chi][:,continuum_index],ff[eta][:,continuum_index])
-    lines,line_counts,osc_identities=load_lines(run,rows,models)
+    line_domain=native_line_domain(run)
+    lines,line_counts,osc_identities=load_lines(run,rows,models,line_domain=line_domain)
     bb_chi,bb_eta=kernels.lines(nu,state['full'],lines,profile)
     es=np.broadcast_to(state['ne'][:,None]*6.6524587321e-25,bb_chi.shape)
     components=dict(bf_chi=bf['chi_net'],bf_eta=bf['eta_spont'],ff_chi=ff['chi'],
@@ -367,7 +421,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
             correction='native COMP_OPAC thermal eta/stimulated correction; BB and ES at requested nu',
             mapping_inferred=False,continuum_sampling_is_physical_truth=False),
         C_full_population_comparison=full_comparison,phot_preprocessing=smoothing,
-        profile=profile,dissolved_continuum=dissolved,inactive_processes=inactive,
+        profile=profile,line_domain=line_domain,dissolved_continuum=dissolved,inactive_processes=inactive,
         free_free=dict(policy='ALL_POSITIVE_IONS',coefficient_cgs=3.69e8,
             native_selection='existing lower PHOT ions -> upper populations only',
             charges=ff['charges'],native_charges=ff['native_charges'],
