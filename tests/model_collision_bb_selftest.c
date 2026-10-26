@@ -56,6 +56,46 @@ int main(void)
         return 2;
     }
     nlte_model_collision_bb_block_free(&block);
+    /* same-SL 쌍도 다음 이온으로 용해 이온화를 전달한다. */
+    int ground_row[]={2,2,2};double saha[]={.03,.01,.02},threshold[]={4.e15,3.e15,2.e15};
+    NLTEModelDissolutionContext dissolution={.Z=16,.shell=0,.n_levels=3,.n_variables=3,
+        .material_generation=1,.temperature_K=te[0],.electron_density_cm3=ne[0],
+        .ground_row=ground_row,.saha=saha,.threshold_Hz=threshold};
+    memset(dissolution.material_model_sha256,'a',64);
+    view.dissolution=&dissolution;layout.n_variables=3;
+    if(nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view) ||
+       block.dissolution_pairs!=3 || block.intra_super_dissolution_pairs!=1)return 8;
+    const double q01=factor*.1*exp(-1./kT)/2.*(1.-.8);
+    const double q02=factor*.2*exp(-3./kT)/2.*(1.-.5);
+    const double q12=factor*.3*exp(-2./kT)/4.*(1.-.5/.8);
+    if(!near(block.dissolution[2],.75*(q01+q02)+.25*q12) ||
+       !near(block.dissolution[6],.03*(q01+q02)+.01*q12))return 9;
+    /* LTE 행별 상세균형/열량0. 고의로 역률을 틀리면 반드시 깨진다. */
+    const double lte[]={.04,.02,1.};long double heat=0.;
+    for(int i=0;i<3;i++){
+        long double net=0.,flow=0.;
+        for(int j=0;j<3;j++){
+            long double term=block.dissolution[j*3+i]*lte[j];net+=term;flow+=fabsl(term);
+        }
+        if(fabsl(net)>1.e-12L*flow)return 10;
+        heat+=lte[i]*block.dissolution_heat[i];
+    }
+    const double expected_heat=6.62607015e-27*(.75*4.e15*(q01+q02)+.25*3.e15*q12);
+    if(!near(block.dissolution_heat[0],expected_heat) || fabsl(heat)>1.e-28L)return 11;
+    double wrong_net=block.dissolution[0]*lte[0]+1.01*block.dissolution[6]*lte[2];
+    if(fabs(wrong_net)<1.e-4*fabs(block.dissolution[6]))return 12;
+    nlte_model_collision_bb_block_free(&block);
+    w[1]=w[2]=1.;
+    if(nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view) ||
+       block.dissolution_pairs)return 13;
+    for(int i=0;i<9;i++)if(block.dissolution[i]!=0.)return 14;
+    nlte_model_collision_bb_block_free(&block);
+    w[0]=.5;w[1]=.8;
+    if(!nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view))return 15;
+    w[0]=1.;w[1]=.8;w[2]=.5;
+    dissolution.material_generation=2;
+    if(!nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view))return 16;
+    dissolution.material_generation=1;view.dissolution=NULL;layout.n_variables=2;
     view.n_pairs=2;
     if(!nlte_model_element_collision_bb_assemble(&block,&layout,&nlte,&atom,&plasma,&view) ||
        block.collisional || block.n_variables)return 3;

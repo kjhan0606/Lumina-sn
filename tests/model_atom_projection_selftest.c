@@ -16,6 +16,7 @@ typedef struct {
     NLTEModelBFBlock bf[2];
     NLTEModelBBBlock bb[2];
     NLTEModelCollisionBBBlock collision[2];
+    NLTEModelDissolutionContext dissolution[2];
 } NativeFixedFieldBlocks;
 
 static int fixed_field_slot(int Z) {return Z==14 ? 0 : (Z==16 ? 1 : -1);}
@@ -35,6 +36,15 @@ static void print_input_residual(int Z,int stage,int sl,size_t row,
     printf("[MODEL-SE][INPUT-RESIDUAL-ROW] Z=%d stage0=%d super0=%d bf_rad=%.17g bf_col=%.17g bb_rad=%.17g bb_col=%.17g total=%.17g absolute_flow=%.17g\n",
         Z,stage,sl,(double)term[0],(double)term[1],(double)term[2],(double)term[3],
         combined->fixed_residual[row],(double)absolute_flow);
+    if(col->dissolution){
+        long double value=0.,flow=0.;
+        for(size_t j=0;j<e->n_variables;j++){
+            long double current=(long double)col->dissolution[j*e->n_variables+row]*e->initial_population[j];
+            value+=current;flow+=fabsl(current);
+        }
+        printf("[MODEL-SE][DISSOLUTION-ROW] Z=%d stage0=%d super0=%d total=%.17g absolute_flow=%.17g\n",
+               Z,stage,sl,(double)value,(double)flow);
+    }
 }
 
 static void native_fixed_field_free(NativeFixedFieldBlocks *b)
@@ -45,6 +55,7 @@ static void native_fixed_field_free(NativeFixedFieldBlocks *b)
         nlte_model_bf_block_free(&b->bf[i]);
         nlte_model_bb_block_free(&b->bb[i]);
         nlte_model_collision_bb_block_free(&b->collision[i]);
+        nlte_model_dissolution_free(&b->dissolution[i]);
     }
     memset(b,0,sizeof(*b));
 }
@@ -107,6 +118,9 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
            nlte_model_element_bf_assemble(&block,&layout,n,a,p))return 1;
         used+=block.routes;terminal_used+=block.terminal_routes;
         if(full_frequency && slot>=0){
+            const char *dissolution=getenv("LUMINA_MODEL_COLLISION_DISSOLUTION");
+            if(dissolution && atoi(dissolution)!=0 &&
+               nlte_model_dissolution_init(&cache->dissolution[slot],&layout,n,a,p))return 1;
             cache->element[slot]=layout;cache->bf[slot]=block;
             memset(&layout,0,sizeof(layout));memset(&block,0,sizeof(block));
         }
@@ -227,6 +241,8 @@ static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,
             .material_generation=a->population_committed_generation,
             .temperature_K=snapshot[0],.electron_density_cm3=snapshot[1],
             .lower=lower+start,.upper=upper+start,.omega=omega+start};
+        if(cache && cache->dissolution[element].n_levels)
+            view.dissolution=&cache->dissolution[element];
         memcpy(view.material_model_sha256,a->partition_stamp.atomic_model_sha256,65);
         if(nlte_model_element_init(&layout,n,a,p,Z,(int)node) ||
            nlte_model_element_collision_bb_assemble(&block,&layout,n,a,p,&view) ||
@@ -236,6 +252,13 @@ static int import_point_collisions(const char *path,AtomicData *a,NLTEConfig *n,
             heat+=(long double)layout.initial_population[row]*block.collisional_heat[row];
         printf("[MODEL-COLL-BB][ACTUAL] Z=%d pairs=%zu cross=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
                Z,block.pairs,block.cross_super_pairs,block.intra_super_pairs,(double)heat);
+        if(block.dissolution){
+            long double dissolution_heat=0.;
+            for(size_t row=0;row<layout.n_variables;row++)
+                dissolution_heat+=(long double)layout.initial_population[row]*block.dissolution_heat[row];
+            printf("[MODEL-COLL-BB][DISSOLUTION] Z=%d pairs=%zu intra=%zu heat_erg_cm3_s=%.17g\n",
+                   Z,block.dissolution_pairs,block.intra_super_dissolution_pairs,(double)dissolution_heat);
+        }
         if(cache && cache->full_frequency){
             if(cache->collision[element].collisional)return 1;
             cache->collision[element]=block;memset(&block,0,sizeof(block));

@@ -302,6 +302,7 @@ def run(args):
                        str(paths['collision'])]
             project = Path(__file__).resolve().parents[1]
             env = dict(os.environ,LUMINA_ARTIS_PARITY='0',LUMINA_NLTE_BF_COLLISION='1',
+                       LUMINA_MODEL_COLLISION_DISSOLUTION='1',
                        LUMINA_TOPION_LEVELS_FILE=str(project/'data/atomic/topion_levels.csv'),
                        LUMINA_IONIZATION_REFERENCE_FILE=str(project/'data/atomic/ionization_reference.csv'))
             child = subprocess.run(command,capture_output=True,text=True,timeout=300,env=env)
@@ -322,6 +323,7 @@ def run(args):
                     difference=delta,difference_over_C_absolute_flow=abs(delta)/flow if flow > 0 else None))
             cases[name] = dict(private_stationary_residual=residual,profile=profile,
                               BF_collisions_enabled=True,unrelated_ARTIS_parity_enabled=False,
+                              collision_dissolution_enabled=True,
                               applied_native_BF_constants=matched,applied_native_BB_profile_mass=matched,
                               scalar_files_sha256={str(path):B.sha(path) for path in (bf_file,bb_file)})
         if (not np.array_equal(j,np.array(field['field'][::-1,0,49])) or
