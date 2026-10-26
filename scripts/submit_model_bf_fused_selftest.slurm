@@ -17,4 +17,10 @@ test "${SLURM_MEM_PER_NODE:-}" = 4096
 test -n "${LUMINA_PROJECT:-}"
 test -d "$LUMINA_PROJECT/src"
 test ! -e "$PWD/source-before.sha256"
-bash "$LUMINA_PROJECT/tests/run_bf_point_tests.sh" "$LUMINA_PROJECT" "$PWD" model-native
+if test -n "${LUMINA_COLL_RESULT:-}"; then
+    bash "$LUMINA_PROJECT/tests/run_bf_point_tests.sh" \
+      "$LUMINA_PROJECT" "$PWD" model-native "$LUMINA_COLL_RESULT"
+else
+    bash "$LUMINA_PROJECT/tests/run_bf_point_tests.sh" \
+      "$LUMINA_PROJECT" "$PWD" model-native
+fi

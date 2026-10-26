@@ -29,9 +29,52 @@ class Model(C.Structure):
               ('z_screen',C.POINTER(C.c_double))]
 
 
-def run(base_path,library,projection,output,point_library=None,bb_result=None,col_result=None):
+def load_complete_full_bound(path,point,identity,n_frequency):
+    """완성된 동일 물질/장 BF 율만 private C handoff 입력으로 허용한다."""
+    path=Path(path);sealed=json.loads(path.read_text())
+    nr=len(point.routes)
+    if (sealed.get('state')!='COMPLETE_BOUND_ONLY' or
+        sealed.get('complete_bound_frequency_integral') is not True or
+        sealed.get('routes_complete')!=nr or sealed.get('routes_expected')!=nr or
+        sealed.get('native_node')!=point.node or sealed.get('frequencies')!=n_frequency or
+        sealed.get('input_identity')!=identity or sealed.get('source_unchanged') is not True or
+        sealed.get('pseudo_included') is not False or sealed.get('BB_included') is not False or
+        sealed.get('SE_RE_solution') is not False or sealed.get('material_updates')!=0 or
+        sealed.get('actual_new_transport')!=0 or
+        not sealed.get('source_sha256')):
+        raise ValueError('전주파수 BF 자료가 완성/동일물질 계약을 충족하지 않음')
+    if any(B.sha(Path(name))!=digest for name,digest in sealed['source_sha256'].items()):
+        raise ValueError('전주파수 BF 생산 소스 신원 변경')
+    root=path.parent
+    values=np.load(root/'unit-rates.npy',allow_pickle=False)
+    done=np.load(root/'routes-complete.npy',allow_pickle=False)
+    if (values.shape!=(nr,6) or done.shape!=(nr,) or done.dtype!=np.dtype(bool) or
+        not done.all() or not np.isfinite(values).all() or np.any(values[:,:3]<0.)):
+        raise ValueError('전주파수 BF 완료 mask/수치 오류')
+    with np.load(root/'roster.npz',allow_pickle=False) as roster:
+        expected={
+            'lower':np.array([r.lower for r in point.routes]),
+            'target':np.array([r.target for r in point.routes]),
+            'Z':np.array([r.Z for r in point.routes]),
+            'stage':np.array([r.stage for r in point.routes]),
+            'probability':np.array([r.probability for r in point.routes]),
+            'threshold':np.array([r.threshold_Hz for r in point.routes]),
+            'saha':point.saha,'sigma_edge':point.sigma_edge,
+        }
+        if set(roster.files)!=set(expected) or any(
+            not np.array_equal(roster[name],wanted) for name,wanted in expected.items()):
+            raise ValueError('전주파수 BF PHOT route/정규화 신원 불일치')
+    digests={name:B.sha(root/name) for name in
+             ('unit-rates.npy','routes-complete.npy','roster.npz')}
+    return values,dict(source_result_sha256=B.sha(path),artifact_sha256=digests)
+
+
+def run(base_path,library,projection,output,point_library=None,bb_result=None,col_result=None,
+        full_bound_result=None):
     started=time.monotonic();base_path=Path(base_path);output=Path(output)
     if output.exists():raise FileExistsError('기존 실제 물질 시험 보존')
+    if full_bound_result is not None and point_library is None:
+        raise ValueError('완성 BF handoff에는 point C 라이브러리가 필요')
     if B.sha(base_path)!='f3b01d29c798e910fe42427283f1a9697189da45926d0bc4b77961e991909bab':
         raise ValueError('다른 원 native 계획')
     base=json.loads(base_path.read_text());c=json.loads(Path(base['config']).read_text())
@@ -108,6 +151,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
     point_test=None
     bb_test=None
     collision_test=None
+    full_bound_test=None
     if point_library is not None:
         point=ModelPointBoundRates(routes,rows,models,state,49,Path(point_library).resolve())
         indices=np.unique(np.linspace(0,len(source.frequency)-1,33).astype('i8'))
@@ -146,6 +190,15 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         with contributions.open('xb') as stream:
             stream.write(struct.pack('<8sIIII2d',b'LMBFPTS1',nl,len(point.routes),ns,49,point.temperature,point.ne))
             stream.write(records.tobytes())
+        full_contributions=None
+        if full_bound_result is not None:
+            full_rates,full_seal=load_complete_full_bound(full_bound_result,point,identity,len(source.frequency))
+            full_contributions=output.with_name('bound-full-frequency-contributions.bin')
+            full_records=records.copy();full_records['values'][:,4:]=full_rates
+            with full_contributions.open('xb') as stream:
+                stream.write(struct.pack('<8sIIII2d',b'LMBFFUL1',nl,len(point.routes),ns,49,
+                                         point.temperature,point.ne))
+                stream.write(full_records.tobytes())
         point_command=list(command)
         point_command[4]=str(output.with_name('model-point-imported-full.bin'))
         point_command.append(str(contributions))
@@ -238,6 +291,28 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
             capture_output=bb_result is not None,text=bb_result is not None)
         if bb_result is not None:
             print(completed.stdout,end='',flush=True)
+        if full_contributions is not None:
+            full_command=point_command.copy()
+            full_command[4]=str(output.with_name('model-full-bound-imported-full.bin'))
+            full_command[7]=str(full_contributions)
+            full_completed=subprocess.run(full_command,check=True,env=env,
+                timeout=max(1.,250.-(time.monotonic()-started)),capture_output=True,text=True)
+            print(full_completed.stdout,end='',flush=True)
+            marker=re.findall(
+                r'^\[MODEL-SE\]\[ACTUAL-BF-CONTRIBUTIONS\] native_node=(\d+) routes=(\d+) terminal_routes=(\d+) uncomputed_nodes=REJECTED full_frequency=(\d+) SE_RE_solved=0$',
+                full_completed.stdout,re.M)
+            if len(marker)!=1 or (int(marker[0][0]),int(marker[0][1]),int(marker[0][3]))!=(49,len(point.routes),1):
+                raise ValueError('완성 BF의 C 전경로 소비 증거 누락')
+            physical_full=point.physical_ion_rates(full_rates)
+            target_ions=((14,1),(14,2),(16,1),(16,2))
+            if any(key not in physical_full for key in target_ions):
+                raise ValueError('Si/S II/III bound BF율 누락')
+            full_bound_test=dict(native_node=49,frequencies=len(source.frequency),
+                routes=len(point.routes),terminal_routes=int(marker[0][2]),
+                full_frequency_C_assembly=True,combined_SE_solution=False,
+                contribution_sha256=B.sha(full_contributions),**full_seal,
+                Si_S_II_III_photo_spont_stim={f'{Z}:{stage}':physical_full[Z,stage].tolist()
+                                                 for Z,stage in target_ions})
             matched=re.findall(r'^\[MODEL-BB\]\[ACTUAL\] Z=(\d+) lines=(\d+) intra=(\d+) heat_erg_cm3_s=([^\s]+)$',
                                completed.stdout,re.M)
             if len(matched)!=len(bb_expected) or sum(int(row[1]) for row in matched)!=len(lower):
@@ -285,6 +360,7 @@ def run(base_path,library,projection,output,point_library=None,bb_result=None,co
         fit_sensitivity_is_SE_RE_solution=False,public_material_updates=0,
         point_bound_test=point_test,point_bb_test=bb_test,new_transport=0,final_goal='NOT_MET')
     result['point_collision_test']=collision_test
+    result['full_bound_test']=full_bound_test
     output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     print('MODEL_OCCUPATION_NATIVE_TEST PASS values='+str(nl*ns),flush=True)
 
@@ -295,5 +371,7 @@ if __name__=='__main__':
     p.add_argument('--point-library')
     p.add_argument('--bb-result')
     p.add_argument('--col-result')
+    p.add_argument('--full-bound-result')
     p.add_argument('--out',required=True);args=p.parse_args()
-    run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result,args.col_result)
+    run(args.base,args.library,args.projection,args.out,args.point_library,args.bb_result,
+        args.col_result,args.full_bound_result)

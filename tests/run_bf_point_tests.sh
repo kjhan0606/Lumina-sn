@@ -23,6 +23,7 @@ sha256sum src/*.h "${source_files[@]}" tests/a2_05_bf_rate_selftest.c \
     tests/model_combined_generator_selftest.c \
     tests/nlte_population_candidate_selftest.c tests/a2_07_population_selftest.c \
     tests/model_atom_projection_selftest.c tests/model_occupation_native_test.py \
+    tests/test_model_full_bound_handoff.py \
     tests/model_collision_bb_selftest.c \
     scripts/cmfgen_model_continuum.py scripts/lumina_native90_rates.py scripts/lumina_native_columns.py \
     scripts/lumina_model_point_rates.py scripts/build_cmfgen_fullpair_omega.py \
@@ -66,6 +67,9 @@ if test "${3:-}" = model-native; then
         --out "$output/native-occupation.json"
         --bb-result /gpfs/kjhan/cmfgen_runs/lumina_model_irfix_20261026-m4OqjA/run/result.json)
     if test -n "${4:-}"; then native_args+=(--col-result "$4"); fi
+    if test -n "${LUMINA_FULL_BOUND_RESULT:-}"; then
+        native_args+=(--full-bound-result "$LUMINA_FULL_BOUND_RESULT")
+    fi
     python3 "$project/tests/model_occupation_native_test.py" "${native_args[@]}"
 fi
 cd "$project"

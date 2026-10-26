@@ -9,13 +9,16 @@ static int check(int yes, const char *message) {
     return yes ? 0 : 1;
 }
 
-/* 선택 ν 기여의 전 경로 handoff 시험. 전체 BF 적분/SE 해가 아니다. */
+/* 선택 또는 완성 ν 적분의 전 경로 handoff. SE/RE 해가 아니다. */
 static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig *n,PlasmaState *p)
 {
     FILE *fp=fopen(path,"rb");char tag[8];uint32_t shape[4];double snapshot[2];
-    if(!fp || fread(tag,1,8,fp)!=8 || memcmp(tag,"LMBFPTS1",8) || fread(shape,4,4,fp)!=4 ||
+    if(!fp || fread(tag,1,8,fp)!=8 ||
+       (memcmp(tag,"LMBFPTS1",8) && memcmp(tag,"LMBFFUL1",8)) ||
+       fread(shape,4,4,fp)!=4 ||
        fread(snapshot,8,2,fp)!=2 || shape[0]!=(uint32_t)a->n_levels ||
        shape[2]!=(uint32_t)p->n_shells || shape[3]>=shape[2] || !shape[1])return 1;
+    int full_frequency=!memcmp(tag,"LMBFFUL1",8);
     size_t nr=shape[1],ns=shape[2],node=shape[3];
     if(nr>SIZE_MAX/ns || nr*ns>(512*1024*1024)/sizeof(BfPointRates) ||
        snapshot[0]!=p->T_e[node] || snapshot[1]!=p->n_electron[node])return 1;
@@ -64,7 +67,7 @@ static int import_point_contributions(const char *path,AtomicData *a,NLTEConfig 
     }
     if(nlte_point_bf_view_check(n,a,p,node ? 0 : 1)==0 || used!=nr)return 1;
     n->point_bf_rates=old;n->radfield_view=saved;n->radfield_view_status=saved_status;
-    printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=0 SE_RE_solved=0\n",node,used,terminal_used);
+    printf("[MODEL-SE][ACTUAL-BF-CONTRIBUTIONS] native_node=%zu routes=%zu terminal_routes=%zu uncomputed_nodes=REJECTED full_frequency=%d SE_RE_solved=0\n",node,used,terminal_used,full_frequency);
     free(offset);free(target);free(terminal);free(grid);free(prob);free(edge);free(sigma);
     free(saha);free(te);free(ne);free(rates);free(ready);return 0;
 }
