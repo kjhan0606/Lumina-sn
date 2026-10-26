@@ -18,9 +18,10 @@ umask 027
 test "${SLURM_CPUS_PER_TASK:-}" = 1
 test "${SLURM_MEM_PER_NODE:-}" = 4096
 test "${LUMINA_BOUND_ROOT:-}" = "$PWD"
-test -d "$PWD/scripts"
+project=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
+test -d "$project/scripts"
 test ! -e "$PWD/run"
 test ! -e "$PWD/point.so"
 export LUMINA_BOUND_WALL_SECONDS=7200
-timeout -k 15 7140s bash tests/run_model_point_bound.sh \
-  /home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn "$PWD"
+timeout -k 15 7140s bash "$project/tests/run_model_point_bound.sh" \
+  "$project" "$PWD"
