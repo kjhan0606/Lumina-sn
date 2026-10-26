@@ -59,6 +59,9 @@ int bf_rate_point_contract(size_t n, const double *frequency_Hz,
 typedef struct {
     size_t n_levels, n_routes, n_shells;
     uint64_t radiation_generation, material_generation;
+    /* occupation 모형에서는 partition stamp의 실제 물질 hash를 값으로 복사.
+     * mutable stamp의 문자열 포인터를 빌려 stale 율이 함께 갱신되지 않게 한다. */
+    char material_model_sha256[65];
     const int *offset;             /* n_levels+1 */
     const int *target;             /* n_routes; upper SL의 실제 FL anchor */
     const double *probability, *threshold_Hz, *sigma_edge;

@@ -353,7 +353,71 @@ PopulationStatus population_atomic_model_sha256(const PopulationAtomicView *a,ch
         pop_hash_f64(&s,a->topion_E_cm[i]);
         pop_hash_f64(&s,a->topion_g[i]);
     }
+    /* occupation이 없는 과거 모델의 hash는 보존한다. 있는 경우 실제 물질
+     * 프로필까지 묶어, T가 같아도 w 변경으로 partition stamp가 무효가 된다. */
+    if(a->occupation){
+        if(!a->occupation_n_shells ||
+           a->n_levels>SIZE_MAX/a->occupation_n_shells)return POP_ATOMIC_MISSING;
+        const char wd[]="CMFGEN:material-occupation:level-major:v1";
+        pop_sha_update(&s,wd,sizeof(wd)-1);
+        pop_hash_u64(&s,a->occupation_n_shells);
+        size_t nw=a->n_levels*a->occupation_n_shells;
+        for(size_t i=0;i<nw;i++){
+            double w=a->occupation[i];
+            if(!isfinite(w)||w<0.0||w>1.0)return POP_INVALID_PARTITION;
+            pop_hash_f64(&s,w);
+        }
+    }
     pop_sha_final(&s,out);return POP_OK;
+}
+
+PopulationStatus population_model_occupation_build(
+    const PopulationOccupationModel *model,size_t ns,const double *te,
+    const double *ne,const double *positive,double *out)
+{
+    if(!model || !model->n_levels || !model->edge_Hz || !model->z_screen ||
+       !ns || !te || !ne || !positive || !out ||
+       model->n_levels>SIZE_MAX/ns || model->n_levels*ns>SIZE_MAX/sizeof(double) ||
+       ns>SIZE_MAX/(3*sizeof(double))) return POP_ATOMIC_MISSING;
+    double *work=malloc(model->n_levels*ns*sizeof(double));
+    double *environment=malloc(3*ns*sizeof(double));
+    if(!work || !environment){free(work);free(environment);return POP_SOLVE_FAILED;}
+    PopulationStatus status=POP_OK;
+    double *b=environment,*a=b+ns,*x=a+ns;
+    for(size_t s=0;s<ns;s++){
+        if(!isfinite(te[s]) || te[s]<=0.0){status=POP_INVALID_TE;goto done;}
+        if(!isfinite(ne[s]) || ne[s]<=0.0 || !isfinite(positive[s]) || positive[s]<=0.0){
+            status=POP_NONFINITE;goto done;
+        }
+        b[s]=pow(8.589e14*pow(positive[s],.333333)/ne[s],1.5);
+        a[s]=.0009*pow(ne[s],.1667)/sqrt(te[s]*1.e-4);
+        x[s]=pow(1.0+a[s],3.15);
+        if(!isfinite(b[s]) || !isfinite(a[s]) || !isfinite(x[s])){
+            status=POP_NONFINITE;goto done;
+        }
+    }
+    for(size_t l=0;l<model->n_levels;l++){
+        double edge=model->edge_Hz[l],z=model->z_screen[l];
+        if(!isfinite(edge) || !isfinite(z) || z<=0.0){status=POP_ATOMIC_MISSING;goto done;}
+        double value=edge!=0.0 ? 3.289395e15*z*z/edge : 0.0;
+        if(!isfinite(value)){status=POP_NONFINITE;goto done;}
+        double effective=value>0.0 && value<961.0 ? sqrt(value) : 0.0;
+        double k=effective>3.0 ? 16.0*effective/pow(1.0+effective,2.0)/3.0 : 1.0;
+        if(effective>2.01*z) k=pow(k/z*pow(z/effective,4.0),1.5);
+        for(size_t s=0;s<ns;s++){
+            double w=1.0;
+            if(effective>2.01*z){
+                double beta=k*b[s],y=1.091*(x[s]+4.0*(z-1.0)*a[s]);
+                double f=y*beta*beta/(7.782+x[s]*beta);
+                w=f/(1.0+f);
+            }
+            if(!isfinite(w) || w<0.0 || w>1.0){status=POP_NONFINITE;goto done;}
+            work[l*ns+s]=w;
+        }
+    }
+    memcpy(out,work,model->n_levels*ns*sizeof(double));
+done:
+    free(work);free(environment);return status;
 }
 static PopulationStatus population_partition_ion_unweighted(const PopulationAtomicView *a,size_t ion,double te,double *out){
     if(!out||!a||!a->level_offset||!a->energy_eV||!a->g||ion>=a->n_ions)

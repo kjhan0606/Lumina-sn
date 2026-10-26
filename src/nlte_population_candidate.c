@@ -158,6 +158,12 @@ void nlte_population_candidate_free(NLTEPopulationCandidate *candidate)
     free(candidate->electron_density);
     free(candidate->partition);
     free(candidate->within_sl_fraction);
+    free(candidate->level_occupation);
+    free(candidate->occupation_edge_Hz);
+    free(candidate->occupation_z_screen);
+    free(candidate->occupation_te);
+    free(candidate->occupation_ne);
+    free(candidate->occupation_positive_ion_density);
     free(candidate->ew_tau_authority);
     free(candidate->tau_sobolev);
     free(candidate->line_source);
@@ -170,7 +176,7 @@ void nlte_population_candidate_free(NLTEPopulationCandidate *candidate)
     memset(candidate, 0, sizeof(*candidate));
 }
 
-NLTEPopulationCandidateStatus nlte_population_candidate_begin(
+static NLTEPopulationCandidateStatus candidate_begin_impl(
     NLTEPopulationCandidate *candidate,
     const NLTEConfig *public_nlte,
     const AtomicData *public_atom,
@@ -178,7 +184,8 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
     const double *trial_te,
     size_t n_shells,
     uint64_t required_te_generation,
-    uint64_t required_population_generation)
+    uint64_t required_population_generation,
+    const PopulationOccupationModel *model)
 {
     if (!candidate) return NLTE_CANDIDATE_INVALID_ARGUMENT;
     memset(candidate, 0, sizeof(*candidate));
@@ -212,10 +219,18 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
     /* 옛 generic trial은 T/ne/양이온수에 따른 점유확률을 갱신하지 않는다.
      * 현재 새 모형은 고정 물질 복원/수송만 지원한다. 이전 프로필을 빌려
      * 새 물질 해로 게시하지 않고 model-aware 갱신 구현까지 명시적으로 거부한다. */
-    if (public_atom->model_level_occupation) {
+    if (public_atom->model_level_occupation && !model) {
         candidate->population_status = POP_FORBIDDEN_FALLBACK;
         return candidate->status = NLTE_CANDIDATE_THERMODYNAMIC_FAILED;
     }
+    size_t nw=0;
+    if (model && (public_atom->n_levels<=0 ||
+        model->n_levels!=(size_t)public_atom->n_levels ||
+        !model->edge_Hz || !model->z_screen || !public_atom->ion_pop_stage ||
+        !public_atom->model_level_occupation ||
+        public_atom->model_occupation_n_shells!=n_shells ||
+        multiply_size(model->n_levels,n_shells,&nw)!=0))
+        return candidate->status=NLTE_CANDIDATE_INVALID_LAYOUT;
 
     candidate->trial_te = copy_values(trial_te, n_shells);
     candidate->ion_population = copy_values(
@@ -228,9 +243,21 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
         public_atom->partition_functions, n_ion_values);
     candidate->within_sl_fraction = copy_values(
         public_nlte->within_sl_frac, n_level_values);
+    if (model) {
+        candidate->level_occupation=copy_values(public_atom->model_level_occupation,nw);
+        candidate->occupation_edge_Hz=copy_values(model->edge_Hz,model->n_levels);
+        candidate->occupation_z_screen=copy_values(model->z_screen,model->n_levels);
+        candidate->occupation_te=copy_values(trial_te,n_shells);
+        candidate->occupation_ne=copy_values(public_plasma->n_electron,n_shells);
+        candidate->occupation_positive_ion_density=calloc(n_shells,sizeof(double));
+        candidate->n_occupation_values=nw;
+    }
     if (!candidate->trial_te || !candidate->ion_population ||
         !candidate->level_population || !candidate->electron_density ||
-        !candidate->partition || !candidate->within_sl_fraction) {
+        !candidate->partition || !candidate->within_sl_fraction ||
+        (model && (!candidate->level_occupation || !candidate->occupation_edge_Hz ||
+         !candidate->occupation_z_screen || !candidate->occupation_te ||
+         !candidate->occupation_ne || !candidate->occupation_positive_ion_density))) {
         nlte_population_candidate_free(candidate);
         return candidate->status = NLTE_CANDIDATE_ALLOCATION_FAILED;
     }
@@ -275,6 +302,10 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
 
     candidate->atom.ion_number_density = candidate->ion_population;
     candidate->atom.partition_functions = candidate->partition;
+    if (model) {
+        candidate->atom.model_level_occupation=candidate->level_occupation;
+        candidate->atom.model_occupation_n_shells=n_shells;
+    }
 
     candidate->nlte.nlte_level_populations = candidate->level_population;
     candidate->nlte.within_sl_frac = candidate->within_sl_fraction;
@@ -296,6 +327,83 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
     candidate->status = NLTE_CANDIDATE_OK;
     candidate->active = 1;
     return NLTE_CANDIDATE_OK;
+}
+
+NLTEPopulationCandidateStatus nlte_population_candidate_begin(
+    NLTEPopulationCandidate *candidate,const NLTEConfig *nlte,
+    const AtomicData *atom,const PlasmaState *plasma,const double *te,
+    size_t ns,uint64_t teg,uint64_t pg)
+{
+    return candidate_begin_impl(candidate,nlte,atom,plasma,te,ns,teg,pg,NULL);
+}
+
+NLTEPopulationCandidateStatus nlte_population_candidate_begin_model(
+    NLTEPopulationCandidate *candidate,const NLTEConfig *nlte,
+    const AtomicData *atom,const PlasmaState *plasma,const double *te,
+    size_t ns,uint64_t teg,uint64_t pg,const PopulationOccupationModel *model)
+{
+    if (!model) {
+        if(candidate){memset(candidate,0,sizeof(*candidate));candidate->status=NLTE_CANDIDATE_INVALID_ARGUMENT;}
+        return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    }
+    NLTEPopulationCandidateStatus status=candidate_begin_impl(
+        candidate,nlte,atom,plasma,te,ns,teg,pg,model);
+    if(status!=NLTE_CANDIDATE_OK)return status;
+    status=nlte_population_candidate_prepare_thermodynamics(candidate);
+    if(status!=NLTE_CANDIDATE_OK){
+        PopulationStatus ps=candidate->population_status;
+        nlte_population_candidate_free(candidate);
+        candidate->status=status;candidate->population_status=ps;
+    }
+    return status;
+}
+
+static PopulationStatus candidate_positive_ion_density(
+    const NLTEPopulationCandidate *c,double *out)
+{
+    if(!c || !out || !c->atom.ion_pop_stage || !c->ion_population ||
+       c->atom.n_ion_pops<=0 || !c->n_shells ||
+       (size_t)c->atom.n_ion_pops>SIZE_MAX/c->n_shells ||
+       c->n_ion_values!=(size_t)c->atom.n_ion_pops*c->n_shells)return POP_ATOMIC_MISSING;
+    for(size_t s=0;s<c->n_shells;s++){
+        double sum=0.,correction=0.;
+        for(int ip=0;ip<c->atom.n_ion_pops;ip++){
+            double value=c->ion_population[(size_t)ip*c->n_shells+s];
+            if(c->atom.ion_pop_stage[ip]<0 || !isfinite(value) || value<0.)return POP_NONFINITE;
+            if(c->atom.ion_pop_stage[ip]>0){
+                double y=value-correction,updated=sum+y;
+                correction=(updated-sum)-y;sum=updated;
+            }
+        }
+        if(!isfinite(sum) || sum<=0.)return POP_NONFINITE;
+        out[s]=sum;
+    }
+    return POP_OK;
+}
+
+PopulationStatus nlte_population_candidate_occupation_check(
+    const NLTEPopulationCandidate *c)
+{
+    if(!c || !c->active)return POP_FORBIDDEN_FALLBACK;
+    if(!c->level_occupation)
+        return c->atom.model_level_occupation ? POP_FORBIDDEN_FALLBACK : POP_OK;
+    if(c->atom.model_level_occupation!=c->level_occupation ||
+       c->atom.model_occupation_n_shells!=c->n_shells ||
+       !c->occupation_te || !c->occupation_ne || !c->occupation_positive_ion_density)
+        return POP_FORBIDDEN_FALLBACK;
+    double *positive=malloc(c->n_shells*sizeof(double));
+    if(!positive)return POP_SOLVE_FAILED;
+    PopulationStatus status=candidate_positive_ion_density(c,positive);
+    for(size_t s=0;s<c->n_shells && status==POP_OK;s++)
+        if(c->trial_te[s]!=c->occupation_te[s] ||
+           c->electron_density[s]!=c->occupation_ne[s] ||
+           positive[s]!=c->occupation_positive_ion_density[s])
+            status=POP_STALE_DERIVED_TEMPERATURE;
+    free(positive);
+    if(status!=POP_OK)return status;
+    PopulationAtomicView view=candidate_atomic_view(&c->atom);
+    return population_partition_view_check(&c->atom.partition_stamp,&view,
+        c->trial_te,c->n_shells,c->required_population_generation,c->required_te_generation);
 }
 
 NLTEPopulationCandidateStatus nlte_population_candidate_prepare_opacity_view(
@@ -386,9 +494,26 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_thermodynamics(
     }
 
     PopulationAtomicView view = candidate_atomic_view(&candidate->atom);
+    double *occupation_work=NULL,*positive=NULL;
+    PopulationStatus status=POP_OK;
+    if(candidate->level_occupation){
+        occupation_work=malloc(candidate->n_occupation_values*sizeof(double));
+        positive=malloc(candidate->n_shells*sizeof(double));
+        if(!occupation_work || !positive)status=POP_SOLVE_FAILED;
+        if(status==POP_OK)status=candidate_positive_ion_density(candidate,positive);
+        PopulationOccupationModel model={(size_t)candidate->atom.n_levels,
+            candidate->occupation_edge_Hz,candidate->occupation_z_screen};
+        if(status==POP_OK)status=population_model_occupation_build(&model,
+            candidate->n_shells,candidate->trial_te,candidate->electron_density,
+            positive,occupation_work);
+        view.occupation=occupation_work;
+        view.occupation_n_shells=candidate->n_shells;
+    }else if(candidate->atom.model_level_occupation){
+        status=POP_FORBIDDEN_FALLBACK;
+    }
     PopulationDerivedStamp partition_stamp;
     PopulationDerivedStamp fraction_stamp;
-    PopulationStatus status = population_partition_build(
+    if(status==POP_OK) status = population_partition_build(
         &view, candidate->trial_te, candidate->n_shells,
         candidate->required_population_generation,
         candidate->required_te_generation,
@@ -411,6 +536,8 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_thermodynamics(
     if (status != POP_OK) {
         free(partition_work);
         free(fraction_work);
+        free(occupation_work);
+        free(positive);
         candidate->population_status = status;
         candidate->status = NLTE_CANDIDATE_THERMODYNAMIC_FAILED;
         candidate->active = 0;
@@ -423,10 +550,18 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_thermodynamics(
            candidate->n_level_values * sizeof(*candidate->within_sl_fraction));
     candidate->atom.partition_stamp = partition_stamp;
     candidate->nlte.within_sl_stamp = fraction_stamp;
+    if(occupation_work){
+        memcpy(candidate->level_occupation,occupation_work,candidate->n_occupation_values*sizeof(double));
+        memcpy(candidate->occupation_te,candidate->trial_te,candidate->n_shells*sizeof(double));
+        memcpy(candidate->occupation_ne,candidate->electron_density,candidate->n_shells*sizeof(double));
+        memcpy(candidate->occupation_positive_ion_density,positive,candidate->n_shells*sizeof(double));
+    }
     candidate->population_status = POP_OK;
     candidate->status = NLTE_CANDIDATE_OK;
     free(partition_work);
     free(fraction_work);
+    free(occupation_work);
+    free(positive);
     return NLTE_CANDIDATE_OK;
 }
 

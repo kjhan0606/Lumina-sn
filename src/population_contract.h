@@ -104,6 +104,21 @@ typedef struct {
     size_t occupation_n_shells;
 } PopulationAtomicView;
 
+/* 원 OSC/PHOT의 준위별 edge와 screening charge. 음/0 edge도 원자료대로
+ * 허용하며 CMFGEN의 유효 주양자수 분기에서 처리한다. 물질값은 아니다. */
+typedef struct {
+    size_t n_levels;
+    const double *edge_Hz;
+    const double *z_screen;
+} PopulationOccupationModel;
+
+/* COMP_LEV_DIS_BLK 계열의 실제 fit. positive_ion_density는 전하 가중 합이
+ * 아니라 charge>0 이온의 입자수 합이다. 실패 시 out의 기존 byte를 보존한다. */
+PopulationStatus population_model_occupation_build(
+    const PopulationOccupationModel *model, size_t n_shells,
+    const double *temperature, const double *electron_density,
+    const double *positive_ion_density, double *out);
+
 typedef struct {
     double *public_ion;
     double *public_level;

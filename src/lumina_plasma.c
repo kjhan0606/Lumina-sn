@@ -18251,6 +18251,11 @@ static int nlte_assemble_rate_matrix_impl(NLTEConfig *nlte, AtomicData *atom,
             nlte->radfield_view_status != RADIATION_FIELD_VIEW_OK ||
             !v->radiation_generation ||
             nlte->radfield_view.generation != v->radiation_generation ||
+            (atom->model_level_occupation &&
+             (atom->partition_stamp.status != POP_OK ||
+              v->material_model_sha256[64] != '\0' ||
+              !v->material_model_sha256[0] ||
+              strcmp(v->material_model_sha256,atom->partition_stamp.atomic_model_sha256))) ||
             (nlte->line_view.n_lines &&
              (nlte->line_view_status != LINE_JBAR_VIEW_OK ||
               nlte->line_view.generation != v->radiation_generation))) {
@@ -21202,6 +21207,10 @@ NLTEPopulationCandidateStatus nlte_population_candidate_prepare_ionization(
         NLTEPopulationCandidate *candidate) {
     if (!candidate || !candidate->active)
         return NLTE_CANDIDATE_INVALID_ARGUMENT;
+    /* 이 함수의 generic Saha ladder는 새 full-model coupled SE가 아니다.
+     * w 재생산만 구현한 후보를 이 경로로 흘려 오래된 율과 혼합하지 않는다. */
+    if (candidate->level_occupation)
+        return candidate_ionization_fail(candidate,POP_FORBIDDEN_FALLBACK);
     AtomicData *atom = &candidate->atom;
     PlasmaState *plasma = &candidate->plasma;
     NLTEConfig *rate_nlte = &candidate->nlte;
@@ -21370,6 +21379,12 @@ NLTEPopulationCandidateStatus nlte_population_candidate_solve_core(
         NLTEPopulationCandidate *candidate,
         double time_explosion,
         GammaDeposition *gamma_dep) {
+    if (candidate && candidate->level_occupation) {
+        candidate->population_status=POP_FORBIDDEN_FALLBACK;
+        candidate->status=NLTE_CANDIDATE_SOLVE_FAILED;
+        candidate->active=0;
+        return candidate->status;
+    }
     if (!candidate || !candidate->active || !candidate->opacity_active ||
         !gamma_dep ||
         candidate->required_population_generation == 0 ||
@@ -21833,6 +21848,7 @@ static int candidate_material_commit_preflight(
         const PlasmaState *plasma,const OpacityState *opacity,
         const BFOpacity *bf) {
     if(!candidate||!nlte||!atom||!plasma||!opacity||!bf||
+       candidate->level_occupation||atom->model_level_occupation||
        !candidate->active||!candidate->bundle_complete||
        !candidate->opacity_active||!candidate->bf_active||
        !candidate->adiabatic_active||candidate->n_shells<2||

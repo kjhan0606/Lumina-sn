@@ -111,6 +111,11 @@ typedef struct {
     double *electron_density;
     double *partition;
     double *within_sl_fraction;
+    /* model-aware 후보만 소유한다. 원 edge/z도 복사해 caller 변경과 분리. */
+    double *level_occupation;
+    double *occupation_edge_Hz, *occupation_z_screen;
+    double *occupation_te, *occupation_ne, *occupation_positive_ion_density;
+    size_t n_occupation_values;
     int ionization_prepared;
     double ionization_max_ne_relative_change;
     double ionization_max_ion_relative_change;
@@ -199,6 +204,19 @@ NLTEPopulationCandidateStatus nlte_population_candidate_begin(
     size_t n_shells,
     uint64_t required_te_generation,
     uint64_t required_population_generation);
+
+/* DO_DIS 모형용 명시적 진입점. private w/partition/within-SL을 함께 생산한다.
+ * generic begin의 stale-profile 거부는 유지한다. 아직 물질 게시/SE 해가 아니다. */
+NLTEPopulationCandidateStatus nlte_population_candidate_begin_model(
+    NLTEPopulationCandidate *candidate, const NLTEConfig *public_nlte,
+    const AtomicData *public_atom, const PlasmaState *public_plasma,
+    const double *trial_te, size_t n_shells,
+    uint64_t required_te_generation, uint64_t required_population_generation,
+    const PopulationOccupationModel *model);
+
+/* 이후 n_e/이온수/T를 바꿨으면 thermo 재생산 전까지 STALE로 거부한다. */
+PopulationStatus nlte_population_candidate_occupation_check(
+    const NLTEPopulationCandidate *candidate);
 
 /* Build partition functions and within-super-level fractions as one private
  * candidate substage.  A failure changes only candidate status; both private

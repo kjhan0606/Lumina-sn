@@ -77,6 +77,19 @@ int main(void)
                                      matrix,rhs,2,&gamma,NULL,-1));
     assert(fabs(matrix[0]-baseline[0]+prob[0]*rates.photo*fraction[0])<1.e-14);
     assert(fabs(matrix[2]-baseline[2]-prob[0]*(rates.spontaneous+rates.stimulated))<1.e-14);
+    double occupation[4]={1.,1.,1.,1.};
+    a.model_level_occupation=occupation;a.model_occupation_n_shells=1;
+    a.partition_stamp.status=POP_OK;
+    memset(a.partition_stamp.atomic_model_sha256,'a',64);
+    memset(view.material_model_sha256,'b',64);
+    memset(matrix,0,sizeof(matrix));memset(rhs,0,sizeof(rhs));
+    assert(nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,1.e6,
+                                     matrix,rhs,2,&gamma,NULL,-1)!=0);
+    memcpy(view.material_model_sha256,a.partition_stamp.atomic_model_sha256,65);
+    memset(matrix,0,sizeof(matrix));memset(rhs,0,sizeof(rhs));
+    assert(!nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,1.e6,
+                                     matrix,rhs,2,&gamma,NULL,-1));
+    a.model_level_occupation=NULL;a.model_occupation_n_shells=0;
     n.radfield_view.generation=6;
     memset(matrix,0,sizeof(matrix)); memset(rhs,0,sizeof(rhs));
     assert(nlte_assemble_rate_matrix(&n,&a,&p,&o,0,1,0,1.e6,

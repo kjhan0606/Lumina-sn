@@ -347,6 +347,64 @@ int main(void)
             trial_te,NS,5,8)!=NLTE_CANDIDATE_THERMODYNAMIC_FAILED ||
         candidate.active || candidate.population_status!=POP_FORBIDDEN_FALLBACK)
         return fail("generic trial reused a stale occupation profile");
+    AtomicData model_atom=atom;
+    PlasmaState model_plasma=plasma;
+    int charge[NI]={0,1,2};model_atom.ion_pop_stage=charge;
+    double model_ne[NS]={1.e10,2.e10};model_plasma.n_electron=model_ne;
+    double edges[NL]={3.289395e15,3.289395e15/400.,3.289395e15,3.289395e15};
+    double screening[NL]={1.,1.,2.,3.};
+    PopulationOccupationModel model={NL,edges,screening};
+    if(nlte_population_candidate_begin_model(&candidate,&nlte,&model_atom,
+            &model_plasma,trial_te,NS,5,8,&model)!=NLTE_CANDIDATE_OK ||
+       candidate.level_occupation==occupation ||
+       candidate.occupation_edge_Hz==edges || candidate.occupation_z_screen==screening ||
+       nlte_population_candidate_occupation_check(&candidate)!=POP_OK ||
+       candidate.occupation_positive_ion_density[0]!=8. ||
+       candidate.occupation_positive_ion_density[1]!=10.)
+        return fail("model-aware private occupation/positive-ion sum failed");
+    for(int i=0;i<NL*NS;i++)if(occupation[i]!=.9)
+        return fail("model candidate changed public occupation");
+    double before_w=candidate.level_occupation[NS];
+    candidate.electron_density[0]*=1.3;
+    if(nlte_population_candidate_occupation_check(&candidate)!=POP_STALE_DERIVED_TEMPERATURE ||
+       nlte_population_candidate_prepare_thermodynamics(&candidate)!=NLTE_CANDIDATE_OK ||
+       nlte_population_candidate_occupation_check(&candidate)!=POP_OK ||
+       candidate.level_occupation[NS]==before_w)
+        return fail("density change did not invalidate and refresh occupation");
+    /* 전하만 바꾸는 charged-stage 재분배는 양이온 수를 바꾸지 않는다. */
+    candidate.ion_population[NS]+=.5;candidate.ion_population[2*NS]-=.5;
+    if(nlte_population_candidate_occupation_check(&candidate)!=POP_OK)
+        return fail("occupation used charge-weighted ion sum");
+    /* 원자수 보존 아래 neutral -> ion 이동은 양이온 수를 바꾼다. */
+    candidate.ion_population[0]-=.25;candidate.ion_population[NS]+=.25;
+    if(nlte_population_candidate_occupation_check(&candidate)!=POP_STALE_DERIVED_TEMPERATURE ||
+       nlte_population_candidate_prepare_thermodynamics(&candidate)!=NLTE_CANDIDATE_OK ||
+       candidate.occupation_positive_ion_density[0]!=8.25)
+        return fail("positive-ion change did not invalidate occupation");
+    candidate.level_occupation[NS]*=.9;
+    if(nlte_population_candidate_occupation_check(&candidate)!=POP_STALE_DERIVED_TEMPERATURE ||
+       nlte_population_candidate_prepare_thermodynamics(&candidate)!=NLTE_CANDIDATE_OK)
+        return fail("occupation mutation kept its partition stamp valid");
+    double saved_w[NL*NS],saved_z[NI*NS],saved_f[NL*NS];
+    PopulationDerivedStamp saved_stamp=candidate.atom.partition_stamp;
+    memcpy(saved_w,candidate.level_occupation,sizeof(saved_w));
+    memcpy(saved_z,candidate.partition,sizeof(saved_z));
+    memcpy(saved_f,candidate.within_sl_fraction,sizeof(saved_f));
+    candidate.electron_density[1]=NAN;
+    if(nlte_population_candidate_prepare_thermodynamics(&candidate)==NLTE_CANDIDATE_OK ||
+       memcmp(saved_w,candidate.level_occupation,sizeof(saved_w)) ||
+       memcmp(saved_z,candidate.partition,sizeof(saved_z)) ||
+       memcmp(saved_f,candidate.within_sl_fraction,sizeof(saved_f)) ||
+       memcmp(&saved_stamp,&candidate.atom.partition_stamp,sizeof(saved_stamp)))
+        return fail("failed model thermodynamics changed staged outputs");
+    nlte_population_candidate_free(&candidate);nlte_population_candidate_free(&candidate);
+    for(int i=0;i<NL*NS;i++)if(occupation[i]!=.9)
+        return fail("model candidate free consumed public occupation");
+    if(memcmp(public_ion,ion_before,sizeof(ion_before)) ||
+       memcmp(public_partition,partition_before,sizeof(partition_before)) ||
+       memcmp(public_within,within_before,sizeof(within_before)))
+        return fail("model candidate changed public material");
+    puts("[MODEL-OCCUPATION][PRIVATE] refresh_T_ne_Npositive=PASS charged_redistribution=UNCHANGED w_stamp=BOUND rollback=PASS public_mutations=0");
     atom.model_level_occupation=NULL;atom.model_occupation_n_shells=0;
     puts("[NLTE-CANDIDATE][MODEL-OCCUPATION] stale_profile_trial=REJECTED public_mutations=0");
 

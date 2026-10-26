@@ -1,5 +1,5 @@
 /* 실제 원자모형 등록에서 상위 이온 누락과 terminal 혼입을 확인한다. */
-#include "lumina.h"
+#include "nlte_population_candidate.h"
 
 static int check(int yes, const char *message) {
     if (!yes) fprintf(stderr, "[MODEL-PROJECTION][FAIL] %s\n", message);
@@ -8,7 +8,8 @@ static int check(int yes, const char *message) {
 
 static int import_native_nodes(const char *path, AtomicData *atom,
                                NLTEConfig *nlte, int ns, const char *export_path,
-                               const double *occupation) {
+                               const double *occupation,
+                               const PopulationOccupationModel *occupation_model) {
     FILE *fp=fopen(path,"rb");if (!fp) return 1;
     char magic[8];uint32_t nd,nc,nl;double epoch;
     if (fread(magic,1,8,fp)!=8 || (memcmp(magic,"LUMNOD01",8) && memcmp(magic,"LUMCEL01",8)) ||
@@ -106,6 +107,35 @@ static int import_native_nodes(const char *path, AtomicData *atom,
         checked++;
     }
     printf("[MATERIAL-IMPORT][LINE-OWNER] elements=%d imported_NLTE=EXACT unowned_generation=REJECTED\n",checked);
+    if (occupation_model) {
+        NLTEPopulationCandidate candidate={0};
+        size_t count=(size_t)atom->n_levels*ns;
+        double *before=malloc(count*sizeof(double));
+        if(!before || !atom->model_level_occupation)return 1;
+        memcpy(before,atom->model_level_occupation,count*sizeof(double));
+        if(check(nlte_population_candidate_begin_model(&candidate,nlte,atom,&p,
+            te,(size_t)ns,p.T_e_generation+1,atom->population_committed_generation+1,
+            occupation_model)==NLTE_CANDIDATE_OK,"actual model candidate begin"))return 1;
+        double max_w=0.;
+        for(size_t i=0;i<count;i++){
+            double expected=before[i],got=candidate.level_occupation[i];
+            double error=expected>0. ? fabs(got/expected-1.) : fabs(got);
+            if(error>max_w)max_w=error;
+        }
+        if(check(max_w<5.e-12,"actual private occupation differs from native fit") ||
+           check(candidate.level_occupation!=atom->model_level_occupation,"occupation alias") ||
+           check(nlte_population_candidate_occupation_check(&candidate)==POP_OK,"actual fresh occupation"))return 1;
+        int node=ns>49 ? 49 : 0;
+        candidate.trial_te[node]*=1.07;candidate.electron_density[node]*=1.11;
+        if(check(nlte_population_candidate_occupation_check(&candidate)==POP_STALE_DERIVED_TEMPERATURE,
+                 "changed T/ne did not stale occupation") ||
+           check(nlte_population_candidate_prepare_thermodynamics(&candidate)==NLTE_CANDIDATE_OK,
+                 "actual T/ne occupation refresh") ||
+           check(nlte_population_candidate_occupation_check(&candidate)==POP_OK,"refreshed occupation not consumable") ||
+           check(!memcmp(before,atom->model_level_occupation,count*sizeof(double)),"private w changed public profile"))return 1;
+        printf("[MODEL-OCCUPATION][ACTUAL-PRIVATE] values=%zu max_relative=%.17g T_ne_refresh=PASS public_w=UNCHANGED SE_RE_solved=0\n",count,max_w);
+        nlte_population_candidate_free(&candidate);free(before);
+    }
     if (export_path) {
         FILE *out=fopen(export_path,"wbx");if (!out) return 1;
         uint32_t shape[2]={(uint32_t)atom->n_levels,(uint32_t)ns};
@@ -123,7 +153,7 @@ static int import_native_nodes(const char *path, AtomicData *atom,
 }
 
 int main(int argc, char **argv) {
-    if (argc>=2 && argc<=6) {
+    if (argc>=2 && argc<=7) {
         AtomicData actual = {0}; OpacityState op = {0}; NLTEConfig model = {0};
         int ns=argc>=3 ? atoi(argv[2]):1;
         if (ns<=0 || ns>1000) return 2;
@@ -142,7 +172,7 @@ int main(int argc, char **argv) {
         printf("[MODEL-PROJECTION][ACTUAL] bound_ions=%d full_levels=%d superlevels=%d lines=%d\n",
                model.n_nlte_ions,model.n_nlte_levels_total,model.n_super_total,actual.n_lines);
         double *occupation=NULL;
-        if (argc==6) {
+        if (argc>=6) {
             FILE *input=fopen(argv[5],"rb");char magic[8];uint32_t shape[2];
             if (!input || fread(magic,1,8,input)!=8 || memcmp(magic,"LMATOCC1",8) ||
                 fread(shape,4,2,input)!=2 || shape[0]!=(uint32_t)actual.n_levels || shape[1]!=(uint32_t)ns) return 1;
@@ -150,7 +180,20 @@ int main(int argc, char **argv) {
             if (!occupation || fread(occupation,sizeof(double),count,input)!=count || fgetc(input)!=EOF) return 1;
             fclose(input);
         }
-        if (argc>=4 && import_native_nodes(argv[3],&actual,&model,ns,argc>=5?argv[4]:NULL,occupation)) return 1;
+        PopulationOccupationModel occupation_model={0};double *occupation_parameters=NULL;
+        if(argc==7){
+            FILE *input=fopen(argv[6],"rb");char tag[8];uint32_t count;
+            if(!input || fread(tag,1,8,input)!=8 || memcmp(tag,"LMOCPAR1",8) ||
+               fread(&count,4,1,input)!=1 || count!=(uint32_t)actual.n_levels)return 1;
+            occupation_parameters=malloc(2*(size_t)count*sizeof(double));
+            if(!occupation_parameters || fread(occupation_parameters,sizeof(double),2*(size_t)count,input)!=2*(size_t)count ||
+               fgetc(input)!=EOF)return 1;
+            fclose(input);
+            occupation_model=(PopulationOccupationModel){count,occupation_parameters,occupation_parameters+count};
+        }
+        if (argc>=4 && import_native_nodes(argv[3],&actual,&model,ns,argc>=5?argv[4]:NULL,occupation,
+                                          argc==7 ? &occupation_model : NULL)) return 1;
+        free(occupation_parameters);
         free(occupation);
         if (actual.element_density.source==POP_ELEMENT_TOTAL_EXPLICIT_NUMBER) {
             PlasmaState p={0};p.n_shells=ns;
