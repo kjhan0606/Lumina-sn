@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from analyze_lumina_inverted_line_photoionization import parse_args, radiative_line_flow, weighted_photoionization
+from analyze_lumina_inverted_line_photoionization import (
+    parse_args, radiative_line_flow, superlevel_line_network, weighted_photoionization)
 
 
 def test_siII_not_siIII_and_probability_applied_once():
@@ -37,3 +38,17 @@ def test_inverted_line_retains_stimulated_and_spontaneous_downward_flow():
     assert result['stimulated'][0] > result['absorption'][0]
     assert np.all(result['net_up'] < 0) and result['net_up'][1] == -600.
     with pytest.raises(ValueError): radiative_line_flow([2.], [6.], [-1.], 1.e13, 100., .5)
+
+
+def test_superlevel_network_excludes_internal_lines_and_signs_cancel():
+    rows = [dict(atomic_number=14, ion_number=1, super_level=sl, level_number=i)
+            for i, sl in enumerate([0, 0, 1])]
+    lines = dict(lower=np.array([0, 0, 1]), upper=np.array([1, 2, 2]),
+                 nu0=np.full(3, 1.e13), A=np.full(3, 100.), g_ratio=np.full(3, .5))
+    full = np.array([[2.], [3.], [6.]])
+    jbar = np.zeros((3, 1)); status = np.ones(3, dtype='u1')
+    result = superlevel_line_network(rows, full, lines, jbar, status, [0, 1], 1, 0)
+    assert result[0]['cross_lines'] == result[1]['cross_lines'] == 2
+    assert result[0]['incoming_cm3_s'] == result[1]['outgoing_cm3_s'] == 1200.
+    assert result[0]['net_cm3_s'] == -result[1]['net_cm3_s']
+    assert result[0]['inverted_line_net_cm3_s'] == 600.

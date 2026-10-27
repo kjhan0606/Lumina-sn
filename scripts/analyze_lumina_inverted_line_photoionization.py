@@ -76,6 +76,41 @@ def radiative_line_flow(lower, upper, jbar, frequency, einstein_A, g_ratio):
                 net_up=absorption-stimulated-spontaneous)
 
 
+def superlevel_line_network(rows, full, lines, jbar, status, groups, target_line, node):
+    """각 SL 경계를 넘는 실제 방사선의 유입/유출. 같은 SL 내부선은 제외한다."""
+    output = []
+    for group in groups:
+        members = np.array([i for i, row in enumerate(rows) if int(row['atomic_number']) == 14 and
+                            int(row['ion_number']) == 1 and int(row['super_level']) == group])
+        if not len(members): raise ValueError('Si II 슈퍼준위 누락')
+        lo_in = np.isin(lines['lower'], members); up_in = np.isin(lines['upper'], members)
+        chosen = np.flatnonzero(lo_in ^ up_in)
+        if not len(chosen) or not np.isin(status[chosen], [1, 2]).all():
+            raise ValueError('슈퍼준위 선 복사장 범위 결손')
+        target = np.flatnonzero(chosen == target_line)
+        if len(target) != 1: raise ValueError('역전선이 두 슈퍼준위를 연결하지 않음')
+        lower, upper = lines['lower'][chosen], lines['upper'][chosen]
+        nu, A, ratio = (lines[name][chosen] for name in ('nu0', 'A', 'g_ratio'))
+        J = np.asarray(jbar[chosen, node]); bul = A*B.C**2/(2*B.H*nu**3)
+        up = full[lower, node]*bul/ratio*J
+        down = full[upper, node]*(A+bul*J)
+        if not np.isfinite([up, down]).all() or np.any(up < 0) or np.any(down < 0):
+            raise ValueError('슈퍼준위 선 전이 비유한/음수')
+        incoming = np.where(lo_in[chosen], down, up); outgoing = np.where(lo_in[chosen], up, down)
+        net = incoming-outgoing; k = int(target[0]); total_in, total_out = float(incoming.sum()), float(outgoing.sum())
+        ranking = np.argsort(-abs(net))[:5]
+        output.append(dict(superlevel_zero_based=group, full_levels=len(members), cross_lines=len(chosen),
+            incoming_cm3_s=total_in, outgoing_cm3_s=total_out, net_cm3_s=float(net.sum()),
+            inverted_line_net_cm3_s=float(net[k]),
+            inverted_line_incoming_fraction=float(incoming[k]/total_in) if total_in else None,
+            inverted_line_outgoing_fraction=float(outgoing[k]/total_out) if total_out else None,
+            largest_net_lines=[dict(lower_FL_1based=int(rows[int(lower[i])]['level_number'])+1,
+                upper_FL_1based=int(rows[int(upper[i])]['level_number'])+1,
+                wavelength_A=float(B.C/nu[i]*1.e8), net_into_superlevel_cm3_s=float(net[i]))
+                for i in ranking]))
+    return output
+
+
 def analyze(root, levels_path, BB_root=None, original_full=None):
     root, levels_path = Path(root).resolve(), Path(levels_path).resolve()
     report_path = root/'result.json'; report = json.loads(report_path.read_text())
@@ -136,6 +171,20 @@ def analyze(root, levels_path, BB_root=None, original_full=None):
         jbar = np.load(bb/'jbar.npy', mmap_mode='r', allow_pickle=False)
         try:
             J = np.array(jbar[index], copy=True)
+            groups = [int(rows[level]['super_level']) for level in target]
+            if len(set(groups)) != 2: raise ValueError('역전선은 서로 다른 두 SL을 연결해야 함')
+            # 각 경계선의 실제 하위/상위 C 인구가 BF snapshot과 같은지 확인한다.
+            membership = np.array([int(row['atomic_number']) == 14 and int(row['ion_number']) == 1 and
+                                   int(row['super_level']) in groups for row in rows])
+            cross = membership[lines['lower']] | membership[lines['upper']]
+            involved = np.unique(np.r_[lines['lower'][cross], lines['upper'][cross]])
+            for level in involved:
+                row = rows[level]; col = lookup[(int(row['atomic_number']), int(row['ion_number']), int(row['super_level']))]
+                actual = snapshot['superlevel'][col, result['node']]*snapshot['fraction'][level, result['node']]
+                expected = full[level, result['node']]; scale = max(abs(actual), abs(expected))
+                if scale > 0 and abs(actual-expected) > 1.e-12*scale:
+                    raise ValueError('슈퍼준위 선망의 C/BF 인구 불일치')
+            network = superlevel_line_network(rows, full, lines, jbar, status, groups, index, result['node'])
         finally: jbar._mmap.close()
         nu, A, ratio = (float(lines[name][index]) for name in ('nu0', 'A', 'g_ratio'))
         flow = radiative_line_flow(full[target[0]], full[target[1]], J, nu, A, ratio)
@@ -148,6 +197,7 @@ def analyze(root, levels_path, BB_root=None, original_full=None):
                                                    if selected_direct > 0 else None),
             negative_net_up_nodes=int(np.count_nonzero(flow['net_up'] < 0)),
             interpretation='같은 이온 내부의 순 BB 전이; 전하를 직접 바꾸는 이온화율이 아님')
+        result['superlevel_radiative_network'] = network
     result.update(baseline='원70 물질·원70 복사장, 고정온도 미수렴; 새 자체장 아님',
         rate_scope='직접 광이온화 n_lower × 경로확률 × 총 BF photo율; 간접 BB 연쇄 미포함',
         input_sha256=identities,
