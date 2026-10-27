@@ -100,6 +100,32 @@ FL124→125 선은 `f=2.975`, `A_ul=3.33097e5 s⁻¹`이다.
 전체 이온화 분포에서의 원인이나 민감도를 이미 입증한 결과는 아니다.
 특히 표의 순값은 방사선만의 합이므로 전체 SE 잔차로 해석하지 않는다.
 
+### 핵심 네 전이의 충돌과 방사 비교
+
+같은 원70 노드54의 `T=10839.13 K`, `n_e=8.34545e8 cm⁻³`와 기존 원자
+충돌자료를 사용했다. 선택한 네 쌍은 모두 표 자료가 아닌 기존 **Van
+Regemorter 근사**로 충돌강도 Ω를 계산한다. 기존 C 충돌 조립과 같은
+점유확률 비, 온도, 상세균형 및 활성 용해항을 사용했다. 원70 전원소 응답이
+사용한 OSC/COL·모형 해시와 일치함을 확인했다.
+
+| Si II FL 전이 | Ω | 충돌 순 상향 (cm⁻³ s⁻¹) | 같은 선의 방사 순 상향 (cm⁻³ s⁻¹) |
+|---|---:|---:|---:|
+| 124→125, 17.26㎛ | 828,188 | −372.39 | −4,999.57 |
+| 115→124, 13.13㎛ | 426,835 | −101.67 | −2,884.53 |
+| 11→125, 2022.86Å | 0.843 | +0.00223 | +5,783.63 |
+| 10→125, 2022.19Å | 0.562 | +0.00148 | +3,869.51 |
+
+역전선의 충돌 상향·하향은 각각1082.64·1455.03 cm⁻³ s⁻¹로, 순 하향의
+크기는 같은 선의 방사 순 하향의7.45%다. 이 전이에서 용해로 빠지는
+상향항은1.12e-5 cm⁻³ s⁻¹이다. 두 자외선 전이의 선택된 쌍에서는 방사가
+충돌보다 매우 크다. **이 네 쌍만의 비교**이므로 다른 수많은 충돌 경로,
+전체 SE 균형 또는 최종 이온화 민감도를 대신하지 않는다.
+
+특히 근사식의 Ω가 역전선에서 약82만으로 크다는 사실은 원자료의 실측
+정확성이나 CMFGEN과의 충돌율 동등성을 증명하지 않는다. 저에너지 전이와
+강한 oscillator strength에서 근사의 타당성을 따져볼 후보이며, 임의로
+자르거나 값을 바꾸지 않았다. 원70 자체도 미수렴 상태다.
+
 최초 탐색에서 내부 stage3을 Si II로 잘못 선택해 Si III를 집계했으나,
 원자주소 대조에서 발견해 해당 수치는 폐기했다. 최종 계산은 lower의
 `ion_number=1`과 roster `stage=2`를 모두 검증한다. 명령 인수 이름 오류도
@@ -113,7 +139,9 @@ python3 scripts/analyze_lumina_inverted_line_photoionization.py \
   --root "$RUNS/lumina_material_bf90_20261027-B64JUq/run" \
   --levels "$RUNS/lumina_accepted_input_20261027-79u5Sp/material/atomic/levels.csv" \
   --BB-root "$RUNS/lumina_linear_BB90_20261027-gfIdax/run" \
-  --original-full "$RUNS/lumina_signed_source_trace_20261020-YbcirG/full_population90.bin"
+  --original-full "$RUNS/lumina_signed_source_trace_20261020-YbcirG/full_population90.bin" \
+  --collision-run "$RUNS/toy06_19p48d_field_feedback_429038/material" \
+  --collision-reference "$RUNS/lumina_full_model_response_20261027-vzt2uX/run/result.json"
 ```
 
 BF 보고서 SHA256은 `482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6`,
@@ -124,6 +152,10 @@ BB 보고서는 `b95b16e3401068bc8239116a87c872f392e970ec5780b7ce04d32cf51d1e9ec
 선 평균 복사장은 `f935c174b3a9e59229713fb52402be5f72d51fdc7aaecb4a8ef7d906a3c4a38a`,
 두 BF/BB 자료의 원 복사장 해시는
 `d9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563`이다.
+Si II COL 자료의 SHA256은 `9ea3a5d31150ebac2e42809488cb6b86f3f2df7be2e388775246a2d4404a0299`,
+기존 전원소 응답 보고서는 `a93e5127286bf0b3ef0e3bf41ba39549b4877675518f2bcffb95923cde46cf68`다.
+분석·충돌 생산기 관련12개 직접시험이 통과했다. 첫 시험 명령의 잘못된
+파일명은 수집 전에 실패했고, 실제 파일명을 확인해 다시 실행했다.
 
 ## 증거와 재현
 

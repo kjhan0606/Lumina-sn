@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from analyze_lumina_inverted_line_photoionization import (
-    parse_args, radiative_line_flow, superlevel_line_network, weighted_photoionization)
+    collision_pair_flow, parse_args, radiative_line_flow, superlevel_line_network, weighted_photoionization)
 
 
 def test_siII_not_siIII_and_probability_applied_once():
@@ -30,7 +30,8 @@ def test_siII_not_siIII_and_probability_applied_once():
 
 def test_cli_names_match_actual_analysis_arguments():
     args = vars(parse_args(['--root', '/tmp/input', '--levels', '/tmp/levels.csv']))
-    assert set(args) == {'root', 'levels_path', 'BB_root', 'original_full'} and args['levels_path'] == Path('/tmp/levels.csv')
+    assert set(args) == {'root', 'levels_path', 'BB_root', 'original_full', 'collision_run', 'collision_reference'}
+    assert args['levels_path'] == Path('/tmp/levels.csv')
 
 
 def test_inverted_line_retains_stimulated_and_spontaneous_downward_flow():
@@ -52,3 +53,13 @@ def test_superlevel_network_excludes_internal_lines_and_signs_cancel():
     assert result[0]['incoming_cm3_s'] == result[1]['outgoing_cm3_s'] == 1200.
     assert result[0]['net_cm3_s'] == -result[1]['net_cm3_s']
     assert result[0]['inverted_line_net_cm3_s'] == 600.
+
+
+def test_collision_pair_uses_occupation_ratio_and_detailed_balance():
+    T, ne, gl, gu, gap, wl, wu = 10000., 1.e8, 2., 4., .3, .9, .8
+    lower = 3.; upper = lower*(gu/gl)*(wu/wl)*np.exp(-gap/(8.617333262145e-5*T))
+    result = collision_pair_flow(lower, upper, T, ne, 5., gl, gu, gap, wl, wu, True)
+    assert result['net_up_cm3_s'] == pytest.approx(0., abs=1.e-12)
+    assert result['dissolution_forward_cm3_s'] > 0
+    assert collision_pair_flow(lower, upper, T, ne, 5., gl, gu, gap, wl, wu, False)['dissolution_forward_cm3_s'] == 0
+    with pytest.raises(ValueError): collision_pair_flow(lower, upper, T, ne, 5., gl, gu, gap, .8, .9, True)

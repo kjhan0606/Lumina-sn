@@ -14,6 +14,7 @@ import numpy as np
 from analyze_cmfgen_material_inventory import sha
 from analyze_cmfgen_signed_sources import read_full
 import cmfgen_model_continuum as B
+from lumina_model_collision_source import ModelCollisionSource
 
 
 def weighted_photoionization(rows, columns, populations, fractions, roster, photo_rates,
@@ -76,6 +77,22 @@ def radiative_line_flow(lower, upper, jbar, frequency, einstein_A, g_ratio):
                 net_up=absorption-stimulated-spontaneous)
 
 
+def collision_pair_flow(lower, upper, temperature, electron_density, omega, g_lower, g_upper,
+                        gap_eV, w_lower, w_upper, dissolution):
+    """기존 전모형 C collision_pair와 같은 점유율·상세균형을 사용한다."""
+    values = (lower, upper, temperature, electron_density, omega, g_lower, g_upper, gap_eV, w_lower, w_upper)
+    if (not np.isfinite(values).all() or lower < 0 or upper < 0 or temperature <= 0 or
+            electron_density <= 0 or omega <= 0 or g_lower <= 0 or g_upper <= 0 or gap_eV < 0 or
+            not 0 < w_upper <= w_lower <= 1 or type(dissolution) is not bool):
+        raise ValueError('충돌 쌍 물질/원자/점유확률 오류')
+    base = 8.63e-6*electron_density/np.sqrt(temperature)*omega
+    excitation = base*np.exp(-gap_eV/(8.617333262145e-5*temperature))/g_lower
+    up = lower*excitation*(w_upper/w_lower); down = upper*base/g_upper
+    lost = lower*excitation*(1.-w_upper/w_lower) if dissolution else 0.
+    return dict(up_cm3_s=float(up), down_cm3_s=float(down), net_up_cm3_s=float(up-down),
+                dissolution_forward_cm3_s=float(lost))
+
+
 def superlevel_line_network(rows, full, lines, jbar, status, groups, target_line, node):
     """각 SL 경계를 넘는 실제 방사선의 유입/유출. 같은 SL 내부선은 제외한다."""
     output = []
@@ -111,7 +128,7 @@ def superlevel_line_network(rows, full, lines, jbar, status, groups, target_line
     return output
 
 
-def analyze(root, levels_path, BB_root=None, original_full=None):
+def analyze(root, levels_path, BB_root=None, original_full=None, collision_run=None, collision_reference=None):
     root, levels_path = Path(root).resolve(), Path(levels_path).resolve()
     report_path = root/'result.json'; report = json.loads(report_path.read_text())
     if report['state'] != 'COMPLETE_FROZEN_MATERIAL_BF_90': raise ValueError('완료 원70 BF만 사용')
@@ -126,7 +143,7 @@ def analyze(root, levels_path, BB_root=None, original_full=None):
         raise ValueError('원70 BF와 다른 원자 준위 주소')
     rows = list(csv.DictReader(levels_path.open()))
     with np.load(root/'material-snapshot.npz', allow_pickle=False) as archive:
-        snapshot = {k: archive[k] for k in ('columns', 'superlevel', 'fraction')}
+        snapshot = {k: archive[k] for k in ('columns', 'superlevel', 'fraction', 'temperature', 'ne', 'occupation')}
     with np.load(root/'route-roster.npz', allow_pickle=False) as archive:
         roster = {k: archive[k] for k in archive.files}
     rates = np.load(root/'total-rates.npy', mmap_mode='r', allow_pickle=False)
@@ -198,6 +215,45 @@ def analyze(root, levels_path, BB_root=None, original_full=None):
             negative_net_up_nodes=int(np.count_nonzero(flow['net_up'] < 0)),
             interpretation='같은 이온 내부의 순 BB 전이; 전하를 직접 바꾸는 이온화율이 아님')
         result['superlevel_radiative_network'] = network
+        if (collision_run is None) != (collision_reference is None):
+            raise ValueError('충돌 원자료 경로와 이전 응답 기록을 함께 지정해야 함')
+        if collision_run is not None:
+            collision_run, collision_reference = Path(collision_run).resolve(), Path(collision_reference).resolve()
+            collision_report = json.loads(collision_reference.read_text())
+            if (collision_report['state'] != 'COMPLETE_PRIVATE_FIXED_FIELD_ALL_MODEL_RESPONSE' or
+                    collision_report['input_sha256'].get(str(report_path)) != identities[str(report_path)] or
+                    collision_report['input_sha256'].get(str(bb_report_path)) != identities[str(bb_report_path)]):
+                raise ValueError('충돌 참조의 원70 BF/BB 계보 불일치')
+            source = ModelCollisionSource(collision_run, rows); ion = source.load(14, 2)
+            if any(collision_report['collision_input_sha256'].get(k) != v for k, v in ion.identity.items()):
+                raise ValueError('원70 응답과 다른 Si II 충돌 자료')
+            wanted = ((10, 125), (11, 125), (115, 124), (124, 125))
+            row_number = {int(row['level_number'])+1: i for i, row in enumerate(rows)
+                          if int(row['atomic_number']) == 14 and int(row['ion_number']) == 1}
+            pairs = {(row_number[a], row_number[b]): (a, b) for a, b in wanted}
+            node = result['node']; temperature = float(snapshot['temperature'][node]); ne = float(snapshot['ne'][node])
+            dissolution = B.dissolution_flag(collision_run/'MODEL'); found = {}
+            for lower, upper, omega, _ in ion.blocks([temperature]):
+                for (lo, up), label in pairs.items():
+                    match = np.flatnonzero((lower == lo) & (upper == up))
+                    if len(match) > 1 or (len(match) and label in found): raise ValueError('충돌쌍 중복')
+                    if not len(match): continue
+                    strength = float(omega[0, match[0]])
+                    key = (lo-ion.offset)*ion.n+(up-ion.offset)
+                    method = 'TABULATED' if key in ion.table_keys else 'VR' if key in ion.vr_keys else 'OMEGA_SET'
+                    flow = collision_pair_flow(float(full[lo, node]), float(full[up, node]), temperature, ne,
+                        strength, float(rows[lo]['g']), float(rows[up]['g']),
+                        float(rows[up]['energy_eV'])-float(rows[lo]['energy_eV']),
+                        float(snapshot['occupation'][lo, node]), float(snapshot['occupation'][up, node]), dissolution)
+                    found[label] = dict(FL_1based=list(label), method=method, omega=strength, **flow)
+            ion.verify_identity()
+            if set(found) != set(wanted): raise ValueError('선택한 Si II 충돌쌍 누락')
+            result['collisional_pairs'] = [found[label] for label in wanted]
+            result['collision_scope'] = '원70 고정 물질에서 선택한 네 쌍만; 전체 충돌망/이온화 민감도 아님'
+            result['collision_temperature_K'] = temperature; result['collision_ne_cm3'] = ne
+            identities.update(ion.identity); identities[str(collision_reference)] = sha(collision_reference)
+    elif collision_run is not None or collision_reference is not None:
+        raise ValueError('충돌 비교에는 같은 원70 BB 자료와 C 인구가 필요')
     result.update(baseline='원70 물질·원70 복사장, 고정온도 미수렴; 새 자체장 아님',
         rate_scope='직접 광이온화 n_lower × 경로확률 × 총 BF photo율; 간접 BB 연쇄 미포함',
         input_sha256=identities,
@@ -209,6 +265,7 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--root', type=Path, required=True); p.add_argument('--levels', dest='levels_path', type=Path, required=True)
     p.add_argument('--BB-root', type=Path); p.add_argument('--original-full', type=Path)
+    p.add_argument('--collision-run', type=Path); p.add_argument('--collision-reference', type=Path)
     return p.parse_args(argv)
 
 
