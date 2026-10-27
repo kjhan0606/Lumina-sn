@@ -95,18 +95,20 @@ def state_summary(run, input_state, first=70):
         active_population_statistics='미판정: 위 통계는 양수 support 전체이며 v2 active 기준 대체 아님')
 
 
-def check_resources(memory_gib, environment=None):
+def check_resources(memory_gib, environment=None, seconds=6600):
     env = os.environ if environment is None else environment
     if type(memory_gib) is not int or memory_gib not in (32, 128):
         raise ValueError('native 메모리는 명시한32/128GiB만 허용')
+    if type(seconds) is not int or seconds not in (6600, 42600):
+        raise ValueError('명시한 내부 시간만 허용')
     if (env.get('OMP_NUM_THREADS') != '16' or env.get('SLURM_CPUS_PER_TASK') != '16' or
         env.get('SLURM_MEM_PER_NODE') != str(memory_gib * 1024) or not env.get('SLURM_JOB_ID')):
         raise ValueError(f'Slurm CPU16/OMP16/{memory_gib}GiB 할당과 명시 인수 일치 필요')
-    return f'CPU16/OMP16/{memory_gib}GiB/2h/GPU0/retry0; child6600s'
+    return f'CPU16/OMP16/{memory_gib}GiB/GPU0/retry0; child{seconds}s'
 
 
 def run(args):
-    resources = check_resources(args.memory_gib)
+    resources = check_resources(args.memory_gib, seconds=args.seconds)
     if args.out.exists():
         raise FileExistsError('기존 실행 보존')
     build = args.build.resolve()
@@ -147,7 +149,7 @@ def run(args):
     resource.setrlimit(resource.RLIMIT_FSIZE, (8 * 1024**3, 8 * 1024**3))
     env = {k: v for k, v in os.environ.items() if not k.startswith('LUMINA_')}
     started = time.monotonic()
-    deadline = started + 6600
+    deadline = started + args.seconds
     cursors, reason = {}, None
     with (material / 'seq_logs/cmfgen.stdout').open('xb') as out, \
          (material / 'seq_logs/cmfgen.stderr').open('xb') as err:
@@ -156,7 +158,7 @@ def run(args):
         while child.poll() is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                reason = 'child_budget_6600s'
+                reason = f'child_budget_{args.seconds}s'
                 stop_child(child)
                 break
             try:
@@ -207,4 +209,6 @@ if __name__ == '__main__':
     p.add_argument('--build-report-sha256', required=True)
     p.add_argument('--memory-gib', type=int, choices=(32, 128), default=32,
                    help='기본32GiB 유지.128GiB는 별도 사용자 승인과 같은 Slurm 할당 필요')
+    p.add_argument('--seconds', type=int, choices=(6600, 42600), default=6600,
+                   help='명시된 내부 계산 시간; 배정 시간과 실행 승인을 대신하지 않음')
     raise SystemExit(run(p.parse_args()))

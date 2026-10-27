@@ -41,6 +41,15 @@ class FixedTTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             R.check_resources(128, {})
 
+    def test_long_runtime_is_explicit_and_preserves_previous_default(self):
+        env = dict(OMP_NUM_THREADS='16', SLURM_CPUS_PER_TASK='16',
+                   SLURM_MEM_PER_NODE=str(128 * 1024), SLURM_JOB_ID='123')
+        self.assertIn('child6600s', R.check_resources(128, env))
+        self.assertIn('child42600s', R.check_resources(128, env, seconds=42600))
+        for seconds in (True, 0, 6601, 43200):
+            with self.assertRaises(ValueError):
+                R.check_resources(128, env, seconds=seconds)
+
     def test_partial_checkpoint_survives_stale_final_RVTJ(self):
         initial = np.array([[1., 1.], [2., 2.], [4., 4.], [100., 100.]])
         updated = initial.copy()
