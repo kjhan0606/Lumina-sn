@@ -234,6 +234,14 @@ def run(args):
             with (out/'Si-S-comparison.csv').open('x') as stream:
                 writer = csv.DictWriter(stream, fieldnames=list(table[0])); writer.writeheader(); writer.writerows(table)
             result['ion_comparison'] = summary
+            np.savez(out/'physical-profiles.npz', radius_cm=source.radius,
+                CMFGEN70_temperature=reference['temperature'], CMFGEN70_ne=reference['ne'],
+                accepted_temperature=state['temperature'], accepted_ne=state['ne'],
+                new_response_temperature=final['temperature'], new_response_ne=final['ne'])
+            result['physical_comparison'] = {
+                name: dict(max_relative_difference=float(np.max(abs(final[key]/reference[key]-1))),
+                           median_relative_difference=float(np.median(abs(final[key]/reference[key]-1))))
+                for name, key in (('temperature_vs_CMFGEN70', 'temperature'), ('ne_vs_CMFGEN70', 'ne'))}
             moments = np.load(last['moments']['path'], mmap_mode='r', allow_pickle=False)
             try:
                 if moments.shape != (3, ns, nf) or moments.dtype != np.dtype('f8'): raise ValueError('모멘트 형상 오류')
@@ -244,6 +252,9 @@ def run(args):
                     for name, node in (('outer_native_point_not_escape_observer', 0), ('inner_native_point', ns-1))}
             finally: moments._mmap.close()
             if any(B.sha(Path(p)) != h for p, h in inputs.items()): raise ValueError('새 장 응답 중 원 입력 변경')
+            result['output_sha256'] = {name: B.sha(out/name) for name in
+                ('Si-S-comparison.csv', 'physical-profiles.npz', 'bound-rates.npy',
+                 'route-roster.npz', 'jbar.npy', 'line-status.npy', 'FF-coefficients.npz')}
             result['state'] = 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE'
     except Exception as error:
         result.update(state='INCOMPLETE_PRESERVED', error=type(error).__name__+': '+str(error))

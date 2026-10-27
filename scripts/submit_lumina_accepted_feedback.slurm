@@ -14,6 +14,15 @@ lumina_stage=${1:?새 봉인 GPU root 필요}
 lumina_preparation=${2:?완성 새 경계 기록 필요}
 lumina_preparation_sha=${3:?완성 새 경계 SHA 필요}
 cd "$lumina_stage"
-exec bash code/scripts/run_lumina_resident_field.sh "$PWD" 43200 --feedback \
+lumina_field_status=0
+bash code/scripts/run_lumina_resident_field.sh "$PWD" 43200 --feedback \
     --cache /gpfs/kjhan/cmfgen_runs/lumina_phase_prepare_20261026-8fMV0m/run/cache \
-    --accepted-input "$lumina_preparation" --accepted-input-sha256 "$lumina_preparation_sha" --max-sweeps 2
+    --accepted-input "$lumina_preparation" --accepted-input-sha256 "$lumina_preparation_sha" --max-sweeps 2 || lumina_field_status=$?
+if [[ $# == 5 ]]; then
+    lumina_control_config=$4
+    lumina_control_sha=$5
+    # 마지막 완성장이 없으면 제출하지 않는다. 확인 실패에도 재시도하지 않는다.
+    python3 "$(dirname "$lumina_control_config")/lumina_bundle_dispatch.py" \
+        "$lumina_control_config" "$lumina_control_sha" response
+fi
+exit "$lumina_field_status"
