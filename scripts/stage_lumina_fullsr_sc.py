@@ -9,14 +9,16 @@ import re
 import shutil
 
 
-def stage(project, root, include_comparison=False, chain_gpu=False, resident=False):
+def stage(project, root, include_comparison=False, chain_gpu=False, resident=False, observer=False):
     project, root = Path(project).resolve(), Path(root).resolve()
     if root.exists(): raise FileExistsError('새 계산 root만 허용')
+    if observer: resident = True
     if resident: chain_gpu = True
     pending = [project/'scripts/lumina_fullsr_sc_actual.py', project/'scripts/lumina_fullsr_sc.py']
     if resident:
         pending += [project/'scripts/lumina_resident_actual.py', project/'scripts/lumina_phase_cache.py',
                     project/'scripts/lumina_resident_run.py', project/'scripts/lumina_resident_feedback.py']
+    if observer: pending.append(project/'scripts/run_lumina_resident_observer.py')
     if chain_gpu: pending += [project/'scripts/run_lumina_fullsr_chain_gpu.py']
     if include_comparison: pending.append(project/'scripts/compare_lumina_fullsr_sc.py')
     paths = set()
@@ -68,4 +70,5 @@ if __name__ == '__main__':
     p.add_argument('--include-comparison', action='store_true')
     p.add_argument('--chain-gpu', action='store_true')
     p.add_argument('--resident', action='store_true')
+    p.add_argument('--observer', action='store_true')
     a = p.parse_args(); stage(**vars(a))
