@@ -277,3 +277,30 @@ python3 scripts/analyze_lumina_negative_nodal_sources.py \
 
 새 RT·SE·BF 적분이나 계수 수정은0이다. GPU 수송437451은 제출 후
 사용자 GPU 자원 한도로 대기 중이었으며 실제 시작과 결과는 별도로 확인한다.
+
+### FL124→125의 허용 성분 합산 추가 검증 (2026-10-28)
+
+이전 importer 대조 뒤, 원자료 `f=2.975`가 묶음 안의 허용 E1 성분을
+통계적으로 합산한 값인지 별도 계산했다. NIST E1 규칙은 엄밀한
+`ΔM=0,±1`, parity 변화이며, configuration interaction이 무시될 때
+단일 전자의 `Δl=±1`을 포함한다
+([NIST Atomic Spectroscopy Compendium](https://www.nist.gov/pml/atomic-spectroscopy-compendium-basic-ideas-notation-data-and-formulas/atomic-spectroscopy)).
+따라서 개별 M 하나를 고정해 전체 묶음 전이를 통째로 허용/금지하는 것은
+이 비편광 scalar 모델의 oscillator strength와 같은 검사가 아니다.
+
+문서화한 고-n 배정에서 lower `11z`는 `l=7..10`, upper `12w`는 `l=0..11`이며
+통계중량은144/288이다. `Z_eff=2`, 원행 에너지 간격579.409773cm⁻¹과
+hydrogenic radial integral을 사용해 각 lower `l`에서 upper `l'=l±1` 성분만
+계산하고, lower `2(2l+1)`로 가중 평균했다. 이 합성 입력의 정확한 실행은
+`python3 scripts/audit_sii_hydrogenic_superlevel_f.py`다. H 1s→2p sanity 값은
+0.416196717980이며, Si II 묶음값은 `f=2.974565825179`, 원자료는`2.975`로
+상대차`−0.01459411%`다. 스크립트 SHA256은
+`11993259857fb7e65ad897ddcb589d24fa82b3bc6432c2085c4181c490e07378`이다.
+
+따라서 FL124→125에 대해서는 Δm/허용 성분 누락으로 Lumina만 전이를
+추가했다는 가설보다, 원자료의 묶음 `f`가 allowed hydrogenic 성분 합산과
+일치한다는 증거가 있다. 이것은 hydrogenic radial 모형 아래 한 쌍에 대한
+강한 일관성 검사이지, 원자료 작성 이력·다전자 상관·모든 Si II/III 전이의
+정확성을 증명하지 않는다. 해당 선의 음수 소광·인구 역전은 남아 있으며,
+그 영향은 분포 차이 전체의 원인으로 판정되지 않았다. 선을 삭제하거나
+임의 Δm filter를 추가하지 않았다.
