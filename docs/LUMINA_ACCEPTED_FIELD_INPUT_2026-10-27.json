@@ -1,0 +1,99 @@
+{
+  "status": "PARTIAL_NEW_SELF_FIELD_BUNDLE_INPUT_REPRODUCED",
+  "objective": "수용된 새 T/ne/전 SL 물질로 새 자체장·실제 flux를 만들고 전90점 물질·두 열장부·Si/S를 함께 비교한다. 이번 입력 전달 성공만으로 묶음을 종료하지 않는다.",
+  "accepted_job": 1224249,
+  "accepted_result_sha256": "f44c713c7d3ce03c3471b64cbed26ef09a8b5529410e7f14abb3773c1c8d11fa",
+  "accepted_response_sha256": "d0933f1884f3aaca940f1874cf4fbf02c9394bb3f09601a9211ba2757b042146",
+  "accepted_evaluation": 3,
+  "export": {
+    "run_id": "lumina_accepted_input_20261027-79u5Sp",
+    "directory": "$LUMINA_RUNS_ROOT/lumina_accepted_input_20261027-79u5Sp/material",
+    "manifest": "accepted-material.json",
+    "manifest_sha256": "61e3090a8550bffb6e6f030a84be811407634299eefba93036d1fad30d492c1b",
+    "source": "scripts/prepare_lumina_accepted_material.py",
+    "source_sha256": "8788b4aeabf9b91e2e55a5125ff3b5afaa67142ad163400f4d0e300074dbb3bd",
+    "points": 90,
+    "full_levels": 24542,
+    "SL_and_terminal_columns": 1798,
+    "coordinate_rule": "원래 바깥→안쪽 점값 유지. 평균화·보간·재빈닝 없음.",
+    "geometry_density_epoch_unchanged": true,
+    "abundances_and_element_number_profiles_byte_unchanged": true,
+    "checks": {
+      "charge_relative_max": 4.4210225716433396e-11,
+      "nuclei_relative_max": 1.2769267784254102e-15,
+      "stationary_SE_max": 1.02957838872912e-16,
+      "occupation_relative_max": 0.0,
+      "restored_full_relative_max": 8.118984714780054e-16
+    },
+    "output_sha256": {
+      "native_material_nodes.bin": "942cec390a51807f0269e0dd8afecda8c0548bfef0fbf5bef22bc954bc98b735",
+      "occupation.bin": "8c39cf1050e6866912afed2e2da4eb5ce457cbc66082c58791d1119c28431f55",
+      "atomic/abundances.csv": "8fd048b2f544b423229396aed0f0d8fd975f457a25a46db54e640976fe065044",
+      "atomic/element_number_densities.csv": "68bd9b012aeff673eb949267ddb808c00567388222a2be9f8eb3401c1e987905",
+      "atomic/electron_temperatures.csv": "719351fabc500b1fe5e3013b477b589c4c3f82d0d1a4106343f6f29966cfdac7"
+    }
+  },
+  "actual_C_full_population": {
+    "invocations": 1,
+    "producer_run_id": "lumina_direct_slprofile_20261026-UUiwsU",
+    "producer_evidence_sha256": "ef3dd221db8d974dcd887656108cde1735ec520251f8787bfedd7859ea243412",
+    "executable": "model_projection",
+    "executable_sha256": "9ef2150f9261a67e153b012a92c146888dd417efd61272d16e811ae888d584d7",
+    "occupation_parameters_sha256": "2c94a50952deddc88a9f42e050b1403b261bb129b863d5f36a97a35689e68196",
+    "command": "$PROJECTION $NEW_MATERIAL/atomic 90 $NEW_MATERIAL/native_material_nodes.bin $NEW_MATERIAL/C-imported-full.bin $NEW_MATERIAL/occupation.bin $OCCUPATION_PARAMETERS",
+    "environment": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "LUMINA_ARTIS_PARITY": "0",
+      "LUMINA_NLTE_BF_COLLISION": "1",
+      "LUMINA_TOPION_LEVELS_FILE": "$PROJECT/data/atomic/topion_levels.csv",
+      "LUMINA_IONIZATION_REFERENCE_FILE": "$PROJECT/data/atomic/ionization_reference.csv"
+    },
+    "topion_levels_sha256": "748be72649cbff909a2b48b5bbffae7cc54e2a94436cfd29aa71fa481170d010",
+    "ionization_reference_sha256": "660141ef55e5b9028f6a8f374a28a149bcf81e67f1f888fc0e157397aea4fa9a",
+    "output": "C-imported-full.bin",
+    "output_sha256": "2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6",
+    "output_bytes": 17670256,
+    "values": 2208780,
+    "independent_consumer": "cmfgen_model_continuum.consume_c_full_population",
+    "max_relative_difference": 0.0,
+    "max_absolute_difference": 0.0,
+    "producer_process_confirmed_absent_after_export": true,
+    "limitation": "생산 단회의 stdout/종료코드는 운전자 세션 핸들 누락으로 보존하지 못했다. 생성 파일의 완전한 header/길이/유한성/전 FL 값과 입력·실행파일 hash를 별도 읽기에서 확인했다. 생산자 전체 시험 성공 판정으로 확대하지 않고 재실행도 하지 않았다.",
+    "python_reconstruction_was_not_labeled_actual_C_output": true
+  },
+  "direct_tests": {
+    "location": "grammar-debug CPU1·최대4GiB·각 명령180초 이내·GPU0",
+    "tests_passed": 31,
+    "pytest_wall_s": 0.52,
+    "command": "PYTHONPATH=scripts python3 -m pytest -q -p no:cacheprovider tests/test_prepare_lumina_accepted_material.py tests/test_sl_energy_contract.py tests/test_lumina_material_restart.py tests/test_prepare_lumina_material_seed.py",
+    "inputs_and_outputs_after_hash_check": "UNCHANGED"
+  },
+  "preserved_preparation_failure": {
+    "run_id": "lumina_accepted_input_20261027-ZU3ATW",
+    "cause": "새 전달부가 MODEL_SPEC만으로 occupation 메타데이터를 얻으려다 z_screen이 누락됐다. 원 OSC 헤더를 기존 parser로 읽도록 수정했다.",
+    "accepted_manifest_produced": false,
+    "new_physics_calculations": 0,
+    "partial_output_preserved": true
+  },
+  "Astra_plan_advice": {
+    "agent": "01a178b2-657c-7ba1-ab5a-637a898d5198",
+    "role": "계획 자문; 코드 작성·추가 계산 승인 아님",
+    "advice": "Python FL은 재현 대조용으로 두고 LMATFL01은 실제 C import/export 뒤 계수에 연결한다. 수용 후보·occupation·원90점 주소를 별도 accepted manifest로 보존하며 기존 GPU hardlock 해소 전 transport_ready로 표시하지 않는다.",
+    "scope": "계획 방향만 확인. 실행 결과의 독립 재계산·외부 종료감사로 표시하지 않음"
+  },
+  "remaining_in_same_objective_bundle": [
+    "새 수용 물질과 실제 C full 출력을 같은 전 주파수 BF/BB/FF/ES 계수 생산에 연결한다. old70 계수의 T/ne header만 교체하거나 이름을70으로 가장하지 않는다.",
+    "원래 반경·epoch·속도에만 의존하는 기하는 재사용할 수 있지만 inner Planck와 diffusion gradient는 새 T·새 계수와 같은 지정 inner luminosity에서 다시 만든다.",
+    "GPU resident 실행기의 BASE/old70 source_identity 고정을 새 상태의 명시 신원 입력과 연결한다. 기존70 실행/복원 경로와 기존 출력은 보존한다.",
+    "새 J/H/K와 실제 경계 flux를 만든 뒤 같은90점의 새 물질 응답·physical/native 열장부·Si/S를 함께 대조한다. 단일 F sweep이나 작은 signed 열적분을 자체장 수렴/에너지 폐합으로 표시하지 않는다."
+  ],
+  "authority": "이번은 코드 직접시험과 저장 수용 상태의 입력/C 가져오기 재현이다. 새 전적분·SE·GPU 수송·native 시간 연장 권한은 포함하지 않는다. 후속 실제 물리 실행의 구체적 자원·시간·횟수 한도는 별도 확정한다.",
+  "new_BF_BB_integrals": 0,
+  "new_SE_solves": 0,
+  "new_transport": 0,
+  "new_native": 0,
+  "transport_ready": false,
+  "final_goal": "NOT_MET"
+}
