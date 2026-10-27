@@ -14,6 +14,29 @@ from lumina_native_heat_sources import vector,cooling_vector,artificial_heat,ins
 from run_lumina_fixed_state_balance import adiabatic
 
 
+def ion_number_flows(roster, group, index, population, fraction, rates):
+    """이미 소비한 BF율로 Si/S 각 이온의 광이온화·재결합 수를 합한다."""
+    targets = ((14, 2), (14, 3), (16, 2), (16, 3))
+    ns = population.shape[1]
+    flows = np.zeros((len(targets), 4, ns), dtype=np.longdouble)
+    for k, (z, stage) in enumerate(targets):
+        selected = np.flatnonzero((roster['Z'] == z) & (roster['stage'] == stage))
+        for start in range(0, len(selected), 1024):
+            ids = selected[start:start+1024]
+            lo, up = roster['lower'][ids], roster['target'][ids]
+            upper = [group[t] if t >= 0 else index[int(zz), int(q), -1]
+                     for t, zz, q in zip(up, roster['Z'][ids], roster['stage'][ids])]
+            lower_pop = np.asarray(population[group[lo]]*fraction[lo], dtype=np.longdouble)
+            upper_pop = np.asarray(population[upper], dtype=np.longdouble)
+            values = np.asarray(rates[ids], dtype=np.longdouble)
+            probability = roster['probability'][ids, None]
+            flows[k, 0] += np.sum(probability*lower_pop*values[:, :, 0], axis=0)
+            flows[k, 1] += np.sum(probability*upper_pop*values[:, :, 1], axis=0)
+            flows[k, 2] += np.sum(probability*upper_pop*values[:, :, 2], axis=0)
+        flows[k, 3] = flows[k, 0]-flows[k, 1]-flows[k, 2]
+    return np.asarray(targets, dtype='i4'), flows
+
+
 class ResponseBalance:
     def __init__(self,run,rows,models,columns,reference,radius,epoch,adiabatic_library,
                  roster,lines,jbar,ff,ff_coefficients,seed_population):
@@ -82,9 +105,12 @@ class ResponseBalance:
         for policy,external in (('stored',common+self.stored),('instantaneous_scenario',common+self.instant)):
             ledgers['physical_'+policy]=balance(bf,bb,ff['all_positive_ions'],ad['physical'],external,np.zeros(ns))
             ledgers['native_'+policy]=balance(bf,native,ff['native_upper_ions'],ad['native'],external,art)
+        ion_labels, ion_flows = ion_number_flows(self.roster, group, self.index, pop, f, rates)
         arrays=dict(bf=bf,bb=bb,native_bb=native,physical_adiabatic=ad['physical'],native_adiabatic=ad['native'],
                     physical_internal_energy=physical,native_internal_energy=raw,artificial=art,
-                    stored_decay=self.stored,instantaneous_scenario=self.instant)
+                    stored_decay=self.stored,instantaneous_scenario=self.instant,
+                    bf_ion_Z_stage=ion_labels, bf_ion_number_flows=ion_flows,
+                    bf_ion_number_flow_channels=np.array(['photo', 'spontaneous', 'stimulated', 'net']))
         for k,v in ff.items():arrays['ff_'+k]=v
         summary={}
         for name,values in ledgers.items():
