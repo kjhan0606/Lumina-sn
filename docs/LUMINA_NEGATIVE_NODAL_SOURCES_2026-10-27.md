@@ -304,3 +304,50 @@ hydrogenic radial integral을 사용해 각 lower `l`에서 upper `l'=l±1` 성�
 정확성을 증명하지 않는다. 해당 선의 음수 소광·인구 역전은 남아 있으며,
 그 영향은 분포 차이 전체의 원인으로 판정되지 않았다. 선을 삭제하거나
 임의 Δm filter를 추가하지 않았다.
+
+### 활성 전이 선택 경로 정정 및 Si/S 네 이온 재현 (2026-10-28)
+
+앞선 importer 기록은 `GENOSC_V6`를 native의 활성 선택기로 인용했으나 이는
+현재 실행 경로를 잘못 지칭했다. 실제 `new_main/cmfgen_sub.f` caller는
+`GENOSC_V9`를 호출하고, 실패상태 포획 build의 `libsubs.a`에도
+`genosc_v9.o`가 링크되어 있다. 그러므로 이전 V6 소스 대조만으로 실제 native
+실행의 선택 규칙을 주장하지 않는다. 다만 그 전이 원행의 `f`를 두 parser가
+같이 읽는다는 값 대조는 별도 사실로 유지한다.
+
+실제 native caller와 같은 `MODEL`, `MODEL_SPEC`, `atomic_links.txt`를 사용해
+F1 material response의 line selector를 재현했다. 생산 코드
+`scripts/cmfgen_model_sources.py` SHA256은
+`b19645aadd904d500a876cf29b89c77d264a362e79c066392187b973be700ca7`이며 F1
+실행 commit에서도 같은 바이트다. 그 `gf_selection`은 GENOSC_V9의 `SET_ZERO`
+기준(각 upper level의 최소 강전이 수, `g_lower*f` cutoff, lower-level cutoff)을
+적용하고, 이어 native IR line roster 범위를 적용한다. F1 모델과 포획 모델은
+해당 이온의 oscillator 경로, MODEL_SPEC, 관련 선택값이 같다.
+
+선택 로직 신원: CMFGEN source commit `dd1660af039e10f8f8c61d892c4e226e1cd6438c`,
+`newsubs/genosc_v9.f` SHA256
+`8467687f0040fd9bc518addbfb26d3d2cfb382d62269650266fec916749cf0dc`, native
+caller SHA256 `092f8526661b1f9a5eaeb7a875f07f55623f427ad07c383f2659f2fb67143374`.
+포획 build caller SHA256은 `cf0228409dbe2f6589459bff05c997d5fbd81209a4f0e954200f7161892e5755`,
+연결 `libsubs.a` SHA256은 `f719c7393dcb49fca6dd603c43db8616533fc9b757c980ebe7588eb82184048a`이며,
+그 archive의 symbol 목록에 `genosc_v9.o`가 있다. F1 선택기 코드 SHA256은
+`b19645aadd904d500a876cf29b89c77d264a362e79c066392187b973be700ca7`이다.
+
+입력 신원(F1 `MODEL`/`MODEL_SPEC`/`atomic_links.txt`/`RVTJ`):
+`e8ec18353586` / `3e6f53861f16` / `7fb2468b880d` / `908c3a5a6a7b`;
+포획 입력의 같은 순서 신원은 `8c77e65a9303` / `3e6f53861f16` /
+`49961a053b9c` / `c96901099b2e`이다. 두 입력의 네 이온 oscillator 경로와
+MODEL_SPEC 활성 개수 및 선 선택 제어가 같고, 동일 selector 재생산 결과도 같다.
+
+| 이온 | 활성 full-level 전이 | GF cutoff 후 | IR roster 후 |
+|---|---:|---:|---:|
+| Si II | 1840 | 1467 | 1419 |
+| Si III | 1639 | 1444 | 1419 |
+| S II | 8506 | 5983 | 5911 |
+| S III | 4534 | 3707 | 3686 |
+
+이 결과는 Lumina 물질응답이 이 네 이온에서 native 약선 cutoff를 통째로
+누락했다는 가설을 배제하는 쪽의 증거다. 표는 생산 selector를 같은 원자료와
+제어에 적용해 독립 재생산한 개수이지, CMFGEN runtime의 별도 line counter를
+비교한 값은 아니다. 또한 raw grouped oscillator data의 정확성, 다른 원자
+과정, 실제 수송·분포·스펙트럼 동질성을 증명하지 않는다. 선택 규칙 또는 원자료를
+임의로 수정하지 않았고, 추가 수송이나 물질응답도 실행하지 않았다.
