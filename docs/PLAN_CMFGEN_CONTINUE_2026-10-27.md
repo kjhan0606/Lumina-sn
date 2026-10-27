@@ -197,6 +197,19 @@ J로 치환된다. 반면 실패에 인쇄된 `MAX_ER`는 치환 뒤 `GAM_RSQJNU
 확인하지만, 내부 반복 번호나 두 오류 메시지 각각과 행을 일대일 대응하지
 않으며 원자자료/물리식 오류나 전체 수렴을 증명하지도 않는다.
 
+두 오류 메시지의 호출 경로를 추가로 읽기 전용 추적했다. 실패 run의 OUTGEN
+SHA256은 `d53006f2b79c4dabf7d9b379dc2cf9decd582aa7285c986f2fed265d92d91b36`이며,
+한 번의 `Calling MOM_JREL_V9` 표기 뒤 같은 주파수의 한도 오류 두 건이 이어진다.
+동일 실행 소스의 `COMP_J_BLANK`에서는 moment 호출이 `DO WHILE(INACCURATE)`의
+F 반복 안에 있고, `J_IT_COUNTER`가 각 반복 뒤 증가한다. 호출 안내문은
+`FIRST_FREQ .AND. J_IT_COUNTER .EQ. 0`일 때만 출력되는 반면 `MOM_JREL_V9`는
+각 호출에서 자체 `ICOUNT=100` 도달 시 오류 한 건을 출력한다. 따라서 한 번의
+`COMP_J_BLANK` 안에서 F 반복이 재진입해 같은 주파수 오류 두 건이 생기는
+경로와 로그가 부합하며, 두 건만으로 별도 전송 sweep 두 번이라고 볼 수 없다.
+다만 OUTGEN에는 `J_IT_COUNTER`가 없고 `CMFGEN_SUB`에는 `COMP_J_BLANK` 호출부가
+세 곳이므로 두 오류가 정확히 같은 호출부의 연속 F 반복에서 왔는지는 확정할
+수 없다. 추가 계측이나 재실행은 하지 않았다.
+
 현재 분석은 원 소스와 저장 로그의 대응이며 새 native 실행 또는 독립적인
 방정식/Jv 동등성 입증은 아니다.
 
