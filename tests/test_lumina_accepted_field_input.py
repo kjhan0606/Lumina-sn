@@ -191,5 +191,6 @@ def test_gpu_staging_includes_new_optional_input_dependency(tmp_path):
     stage(ROOT, root, resident=True)
     record = json.loads((root/'stage.json').read_text())
     for name in ('scripts/lumina_accepted_field_input.py', 'scripts/lumina_resident_run.py',
+                 'scripts/lumina_resident_feedback.py',
                  'scripts/lumina_outer_c_backend.py'):
         assert record['files'][name] == A.sha(ROOT/name) == A.sha(root/'code'/name)

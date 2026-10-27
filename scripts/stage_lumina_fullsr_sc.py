@@ -16,7 +16,7 @@ def stage(project, root, include_comparison=False, chain_gpu=False, resident=Fal
     pending = [project/'scripts/lumina_fullsr_sc_actual.py', project/'scripts/lumina_fullsr_sc.py']
     if resident:
         pending += [project/'scripts/lumina_resident_actual.py', project/'scripts/lumina_phase_cache.py',
-                    project/'scripts/lumina_resident_run.py']
+                    project/'scripts/lumina_resident_run.py', project/'scripts/lumina_resident_feedback.py']
     if chain_gpu: pending += [project/'scripts/run_lumina_fullsr_chain_gpu.py']
     if include_comparison: pending.append(project/'scripts/compare_lumina_fullsr_sc.py')
     paths = set()

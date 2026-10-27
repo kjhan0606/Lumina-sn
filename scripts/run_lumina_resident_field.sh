@@ -14,7 +14,13 @@ cd "$lumina_resident_root"
 # 검증한 바이너리를 실행 전에 이 새 root에 고정한다. 여기서 다시 빌드/재시도하지 않는다.
 test -f chain_cuda.so
 test -f geometry.so
-test ! -e resident-field.json
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 CUDA_MODULE_LOADING=EAGER
+if [[ "${1:-}" == --feedback ]]; then
+    shift
+    test ! -e feedback
+    exec timeout -k 5 "$((lumina_resident_parent-30))" python3 code/scripts/lumina_resident_feedback.py \
+        --staged-root "$PWD" --out "$PWD/feedback" --seconds "$((lumina_resident_parent-180))" "$@"
+fi
+test ! -e resident-field.json
 timeout -k 5 "$((lumina_resident_parent-30))" python3 code/scripts/lumina_resident_run.py "$PWD" \
     --seconds "$((lumina_resident_parent-180))" "$@"
