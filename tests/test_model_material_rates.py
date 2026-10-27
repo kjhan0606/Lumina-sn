@@ -116,6 +116,33 @@ def test_bad_late_c_input_preserves_both_complete_output_arrays(library):
     np.testing.assert_array_equal(bound,-123.);np.testing.assert_array_equal(total,-123.)
 
 
+def test_shared_bound_total_terms_preserve_signed_heat_with_shifted_evaluation(library):
+    p,state=example(library);route=p.routes[0];edge=route.threshold_Hz
+    nu=edge*np.array([1.-1.e-5,1.+1.e-5]);evaluation=np.full(2,edge*(1.+1.e-6))
+    width=np.full(2,np.diff(nu)[0]/2);j=np.tile([3.e-5,1.e-5],(3,1))
+    provider=ModelMaterialRates([route],p.rows,p.models,library,nu,width,j,
+        radiation_generation=7,evaluation=evaluation,dissolution_enabled=False)
+    trial=provider.prepare(state,material_generation=1)
+    bound,total=provider.integrate(trial,material_generation=1,radiation_generation=7)
+    np.testing.assert_array_equal(bound,total)
+    assert np.all(bound[:,:,3]<0) # 실제 nu와 문턱 차이의 부호를 보존한다.
+    for node in range(3):
+        point=ModelPointBoundRates(provider.routes,provider.rows,provider.models,trial.state,node,library)
+        expected=ReferencePointRates(point).contract(0,nu,width,j[node],evaluation,dissolution_enabled=False)
+        np.testing.assert_allclose(bound[0,node],expected[0],rtol=5.e-12,atol=0)
+
+
+def test_late_computed_overflow_does_not_publish_either_output(library):
+    dll=C.CDLL(str(library));fn=dll.bf_rate_material_block_contract
+    fn.argtypes=[C.POINTER(Block),C.POINTER(Rates),C.POINTER(Rates)];fn.restype=C.c_int
+    arrays=[np.array(x,dtype='f8') for x in ([1.e15,1.01e15],[1.e15,1.01e15],[1.e300,1.e300],
+        [1.e-5,1.e-5,1.e-5,1.e300],[1.e-18,1.e-18],[1.e15],[1.e-8,1.e-8],[1.e-14,1.e-14])]
+    block=Block(2,1,2,*[a.ctypes.data_as(DP) for a in arrays],0,BP(),DP(),DP(),DP(),DP(),DP())
+    bound=np.full((1,2,6),-123.);total=bound.copy()
+    assert fn(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates)))!=0
+    np.testing.assert_array_equal(bound,-123.);np.testing.assert_array_equal(total,-123.)
+
+
 def test_pseudo_only_and_fixed_T_cache_match_direct_after_ne_and_population_change(library):
     provider,state=example(library);old=provider.prepare(state,material_generation=1)
     bound,total=provider.integrate(old,material_generation=1,radiation_generation=7)

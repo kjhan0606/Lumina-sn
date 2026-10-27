@@ -159,6 +159,17 @@ static int material_block_contract(const BfMaterialRateBlock *v,
                 if(!isfinite(normalization) || normalization<0.){failed=1;break;}
             }
             const long double j=v->J_nu[p*nf+k],energy=BF_H_CGS*((long double)v->frequency_Hz[k]-edge);
+            if(!pseudo_only && sigma[0]==sigma[1]){
+                /* 같은 항만 공유한다. 두 장부의 주파수별 덧셈 순서는 유지한다. */
+                long double inverse=sigma[0]*normalization*thermal[p*nf+k];
+                long double terms[3]={weight[k]*sigma[0]*j,weight[k]*inverse*photon[k],weight[k]*inverse*j};
+                for(int term=0;term<3;term++){
+                    long double heat=terms[term]*energy;
+                    sums[0][term]+=terms[term];sums[1][term]+=terms[term];
+                    sums[0][term+3]+=heat;sums[1][term+3]+=heat;
+                }
+                continue;
+            }
             for(int mode=pseudo_only?1:0;mode<2;mode++){
                 long double inverse=sigma[mode]*normalization*thermal[p*nf+k];
                 long double terms[3]={weight[k]*sigma[mode]*j,weight[k]*inverse*photon[k],weight[k]*inverse*j};
