@@ -23,7 +23,9 @@ VADAT_CHANGES = dict(USE_FIXED_J='F', MAX_LAM='10.0D0', COMP_BA='T', N_FIX_BA='0
                      STORE_BA='F', STORE_BA_INV='F', WR_PRT_INV='F')
 
 
-def configure(vadat, in_its):
+def configure(vadat, in_its, max_iterations=4):
+    if type(max_iterations) is not int or not 1 <= max_iterations <= 32:
+        raise ValueError('추가 native 반복은1~32회 범위')
     expected = dict(FIX_T='T', FIX_T_AUTO='F', FIX_NE='F', DO_DDT='F', DO_NG='F',
                     TRT_NON_TE='F', INC_GRID='F', SCL_LN='T', INS_DEP='T',
                     GAMRAY_TRANS='LOCAL', MAX_LIN='3.0D0', SCALE_OPT='LOCAL',
@@ -36,7 +38,7 @@ def configure(vadat, in_its):
             raise ValueError('자동 전환 제어 불일치: ' + key)
     for key, value in VADAT_CHANGES.items():
         vadat = set_control(vadat, key, value)
-    in_its = ('4 [NUM_ITS] ! 자체장 fixed-T 응답의 추가 반복 상한\n'
+    in_its = (f'{max_iterations} [NUM_ITS] ! 자체장 fixed-T 응답의 추가 반복 상한\n'
               'F [DO_LAM_IT] ! 첫 full BA 요청; native fallback은 별도로 유지\n'
               'F [DO_LAM_AUTO] ! 명시 LAMBDA 모드의 자동 해제만 금지\n'
               'F [DO_T_AUTO] ! 온도 자동 해제 금지\n')
@@ -52,11 +54,12 @@ def ba_policy_violation(text):
     return None
 
 
-def state_summary(run, input_state, first=70):
+def state_summary(run, input_state, first=70, max_iterations=4):
     nd, nt = read_dimensions(run)
     reader = ScrtempReader(run / 'SCRTEMP', nd, nt)
     last_pointer = int((run / 'POINT1').read_text().splitlines()[1].split()[0])
-    if not first <= last_pointer <= first + 4:
+    if (type(max_iterations) is not int or not 1 <= max_iterations <= 32 or
+            not first <= last_pointer <= first + max_iterations):
         raise ValueError('완료 record가 실행 범위를 벗어남')
     variables = read_variables(run, nt - 2)
     indices = {}

@@ -6,6 +6,7 @@ import tempfile
 from unittest.mock import patch
 import numpy as np
 import run_cmfgen_instantaneous_fixedt as R
+import continue_cmfgen_instantaneous_fixedt as C
 from configure_cmfgen_stageA import set_control
 from run_cmfgen_instantaneous_fixedt import ba_policy_violation, configure
 from run_cmfgen_lambda_probe import control
@@ -68,6 +69,29 @@ class FixedTTests(unittest.TestCase):
             self.assertEqual(len(result['iterations']), 1)
             self.assertFalse(result['final_RVTJ']['complete'])
 
+    def test_continuation_summary_accepts_new_complete_records_from_iteration74(self):
+        initial = np.array([[1., 1.], [2., 2.], [4., 4.], [100., 100.]])
+        updated = initial.copy(); updated[0] *= 1.1
+        reader = SimpleNamespace(state=lambda iteration: initial if iteration == 74 else updated)
+        variables = [SimpleNamespace(species='Si', ion='Sk2'), SimpleNamespace(species='S', ion='S2')]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root/'POINT1').write_text('header\n75 75 1 -1000 F\n')
+            with patch.object(R,'read_dimensions',return_value=(2,4)), \
+                 patch.object(R,'ScrtempReader',return_value=reader), \
+                 patch.object(R,'read_variables',return_value=variables), \
+                 patch.object(R,'validate_rvtj',return_value={'complete':True}):
+                result=R.state_summary(root,initial,first=74,max_iterations=16)
+            self.assertEqual(result['last_completed_record'],75)
+            self.assertEqual(len(result['iterations']),1)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder); (root/'POINT1').write_text('header\n91 91 1 -1000 F\n')
+            with patch.object(R,'read_dimensions',return_value=(2,4)), \
+                 patch.object(R,'ScrtempReader',return_value=reader), \
+                 patch.object(R,'read_variables',return_value=variables):
+                with self.assertRaises(ValueError):
+                    R.state_summary(root,initial,first=74,max_iterations=16)
+
     def test_actual_BA_violation_is_not_successful_stabilization(self):
         self.assertIsNone(ba_policy_violation('Current great iteration count is 71\nBA matrix computed\n'))
         self.assertEqual(ba_policy_violation('read BAMATPNT T\nCurrent great iteration count is 71'),
@@ -83,6 +107,23 @@ class FixedTTests(unittest.TestCase):
         self.assertEqual(control(i, 'NUM_ITS'), '4')
         self.assertEqual(control(i, 'DO_LAM_IT'), 'F')
         self.assertEqual(control(i, 'DO_T_AUTO'), 'F')
+
+    def test_iteration_extension_is_explicit_bounded_and_keeps_fixed_temperature(self):
+        v, i = configure(*fixture(), max_iterations=16)
+        self.assertEqual(control(i, 'NUM_ITS'), '16')
+        self.assertEqual(control(v, 'FIX_T'), 'T')
+        self.assertEqual(control(i, 'DO_T_AUTO'), 'F')
+        for value in (True, 0, 33, 1.5):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                configure(*fixture(), max_iterations=value)
+
+    def test_continuation_rejects_mixed_final_pointer_generations(self):
+        with patch.object(C,'point_records',return_value={'POINT1':90,'POINT2':89}):
+            with self.assertRaises(ValueError):
+                C.validate_final_generation(Path('/unused'),90)
+        with patch.object(C,'point_records',return_value={'POINT1':90,'POINT2':90}):
+            self.assertEqual(C.validate_final_generation(Path('/unused'),90),
+                             {'POINT1':90,'POINT2':90})
 
     def test_changed_physics_or_automatic_release_rejected(self):
         v, i = fixture()
