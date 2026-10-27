@@ -51,8 +51,9 @@ def test_completed_second_submits_once(tmp_path, monkeypatch):
         if Path(path) == config_path else prep_hash if Path(path) == prep else real_sha(path)))
     def submit(command, **kwargs):
         assert command[-2] == '127.0.0.1' and str(feedback) in command[-1]
+        assert 'a'*40 in command[-1]
         return type('Result', (), {'returncode': 0, 'stdout': '1234\n', 'stderr': ''})()
     monkeypatch.setattr(D.subprocess, 'run', submit)
-    result = D.dispatch(parent, control, '127.0.0.1')
+    result = D.dispatch(parent, control, '127.0.0.1', 'a'*40)
     assert result['state'] == 'SUBMITTED_ONCE' and result['job_id'] == 1234
     assert (parent/'response').is_dir()

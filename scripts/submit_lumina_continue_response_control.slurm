@@ -17,4 +17,4 @@ mkdir "$parent/response-control-code"
 git -C "$repo" archive "$commit" scripts/lumina_continue_response_dispatch.py | tar -x -C "$parent/response-control-code"
 python3 "$parent/response-control-code/scripts/lumina_continue_response_dispatch.py" \
   --parent "$parent" --control /gpfs/kjhan/cmfgen_runs/lumina_bundle_dispatch_1224468_20261027 \
-  --address 10.0.190.200
+  --address 10.0.190.200 --response-commit 965029583c76d06e13b26a7289ca163eee2874f2
