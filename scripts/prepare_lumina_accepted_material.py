@@ -65,19 +65,37 @@ def prepare(result, result_sha, seed, run, out):
     if B.sha(result) != result_sha:
         raise ValueError('봉인 수용 보고서 신원 불일치')
     report = json.loads(result.read_text())
-    if report['state'] != 'COMPLETE_DEPTH_COUPLED_MATERIAL_STEP' or report['charge_solved'] is not True:
-        raise ValueError('수용된 깊이 결합 물질 단계가 아님')
-    accepted = [r for r in report['history'] if r.get('accepted') is True]
-    if not accepted or not 1 <= accepted[-1]['evaluation'] <= len(report['evaluations']):
-        raise ValueError('수용 evaluation 주소 없음')
-    index = accepted[-1]['evaluation']; directory = result.parent/('evaluation-'+str(index))
-    if Path(report['accepted_source_directory']).resolve() != directory:
-        raise ValueError('수용 evaluation 주소 불일치')
-    entry = report['evaluations'][index-1]['output_sha256']
-    response = result.parent/'accepted-response.npz'
-    if entry['response.npz'] != report['accepted_output_sha256']:
-        raise ValueError('수용 후보와 실제 evaluation의 신원 불일치')
-    identities = {str(result): result_sha, str(response): report['accepted_output_sha256'],
+    if report['state'] == 'COMPLETE_DEPTH_COUPLED_MATERIAL_STEP' and report['charge_solved'] is True:
+        accepted = [r for r in report['history'] if r.get('accepted') is True]
+        if not accepted or not 1 <= accepted[-1]['evaluation'] <= len(report['evaluations']):
+            raise ValueError('수용 evaluation 주소 없음')
+        index = accepted[-1]['evaluation']; directory = result.parent/('evaluation-'+str(index))
+        if Path(report['accepted_source_directory']).resolve() != directory:
+            raise ValueError('수용 evaluation 주소 불일치')
+        entry = report['evaluations'][index-1]['output_sha256']
+        response = result.parent/'accepted-response.npz'; response_sha = report['accepted_output_sha256']
+        if entry['response.npz'] != response_sha:
+            raise ValueError('수용 후보와 실제 evaluation의 신원 불일치')
+        source_kind = 'DEPTH_COUPLED_ACCEPTED_STEP'
+    elif (report['state'] == 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE' and
+          report['charge_converged'] is True and report['fixed_accepted_temperature'] is True):
+        # 첫 평가가 이미 전하 수렴했을 수 있다. 그 외에는 실제 수용된 마지막
+        # secant 단계만 전달한다. 이것은 새 장·물질 공동수렴이나 RE 해가 아니다.
+        selected = report['selected_response']; directory = Path(selected['root']).resolve()
+        matches = [i for i, item in enumerate(report['evaluations'], 1) if item == selected]
+        if len(matches) != 1: raise ValueError('새 장 응답의 선택 평가 누락/중복')
+        index = matches[0]
+        if directory != result.parent/('evaluation-'+str(index)):
+            raise ValueError('새 장 응답의 선택 평가 주소 불일치')
+        accepted = [item['evaluation'] for item in report['charge_history'] if item.get('accepted') is True]
+        if (index == 1 and accepted) or (index > 1 and (not accepted or accepted[-1] != index-1)):
+            raise ValueError('새 장 응답의 마지막 전하 수용 단계 불일치')
+        response = directory/'response.npz'; response_sha = selected['response_sha256']
+        entry = {'response.npz': response_sha, 'balance.npz': selected['balance_sha256']}
+        source_kind = 'FINITE_NEW_FIELD_FIXED_T_CHARGE_RESPONSE'
+    else:
+        raise ValueError('전하 수렴이 확인된 지원 물질 후보가 아님')
+    identities = {str(result): result_sha, str(response): response_sha,
                   **{str(directory/name): entry[name] for name in ('response.npz', 'balance.npz')}}
     # 전체 큰 장/계수를 다시 읽지 않는다. 이번 전달에서 실제 소비하는 봉인 입력만 확인한다.
     nodes = seed/'native_material_nodes.bin'; levels = seed/'atomic/levels.csv'
@@ -151,7 +169,7 @@ def prepare(result, result_sha, seed, run, out):
     names = ['native_material_nodes.bin', 'occupation.bin', 'atomic/abundances.csv',
              'atomic/element_number_densities.csv', 'atomic/electron_temperatures.csv']
     record = dict(schema='lumina-accepted-nodal-material-v1', status='EXPORTED_NOT_TRANSPORT_READY',
-        accepted_result_sha256=result_sha, accepted_response_sha256=report['accepted_output_sha256'],
+        accepted_result_sha256=result_sha, accepted_response_sha256=response_sha, source_kind=source_kind,
         accepted_evaluation=index, points=len(physical), full_levels=nl, columns=len(columns),
         source_script_sha256=B.sha(Path(__file__)), input_sha256=identities,
         coordinate_role='original outer-to-inner point samples; no averaging, interpolation or remap',

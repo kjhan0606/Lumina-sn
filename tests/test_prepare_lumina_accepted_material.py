@@ -128,3 +128,54 @@ def test_dissolution_uses_original_osc_metadata_not_model_spec_alone(tmp_path, m
     assert exported['checks']['occupation_relative_max'] == 0
     assert str(osc) in exported['input_sha256']
     assert models[14, 2]['ionization_eV'] == 20.
+
+
+def new_field_report(result, *, selected_index=1):
+    old = json.loads(result.read_text()); root = result.parent
+    entries = []
+    for index in range(1, selected_index+1):
+        directory = root/('evaluation-'+str(index))
+        if index > 1:
+            directory.mkdir()
+            for name in ('response.npz', 'balance.npz'):
+                (directory/name).write_bytes((root/'evaluation-1'/name).read_bytes())
+        entries.append(dict(root=str(directory), response_sha256=E.B.sha(directory/'response.npz'),
+                            balance_sha256=E.B.sha(directory/'balance.npz')))
+    report = dict(state='COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',
+        charge_converged=True, fixed_accepted_temperature=True, points=old['points'],
+        selected_response=entries[-1], evaluations=entries,
+        charge_history=[dict(evaluation=i, accepted=True) for i in range(1, selected_index)],
+        input_sha256=old['input_sha256'])
+    result.write_text(json.dumps(report))
+    return report
+
+
+@pytest.mark.parametrize('index', [1, 2])
+def test_new_field_converged_selected_response_roundtrips(tmp_path, monkeypatch, index):
+    result, seed, run, models, physical, candidate = fixture(tmp_path, monkeypatch)
+    new_field_report(result, selected_index=index)
+    output = tmp_path/'new-export'; exported = E.prepare(result, E.B.sha(result), seed, run, output)
+    _, actual, population, _, _ = E.read_nodes(output/'native_material_nodes.bin')
+    np.testing.assert_array_equal(actual[:, [0, 3]], physical[:, [0, 3]])
+    np.testing.assert_array_equal(population.T, candidate['population'])
+    assert exported['source_kind'] == 'FINITE_NEW_FIELD_FIXED_T_CHARGE_RESPONSE'
+    assert exported['accepted_evaluation'] == index
+    assert exported['accepted_response_sha256'] == E.B.sha(result.parent/('evaluation-'+str(index))/'response.npz')
+    assert exported['final_goal'] == 'NOT_MET' and exported['new_transport'] == 0
+
+
+@pytest.mark.parametrize('fault', ['not_converged', 'bad_fixed_T', 'incorrect_selection',
+    'wrong_history', 'changed_response', 'changed_balance', 'incomplete'])
+def test_new_field_rejects_unconverged_or_mismatched_candidate(tmp_path, monkeypatch, fault):
+    result, seed, run, *_ = fixture(tmp_path, monkeypatch)
+    report = new_field_report(result, selected_index=2)
+    if fault == 'not_converged': report['charge_converged'] = False
+    if fault == 'bad_fixed_T': report['fixed_accepted_temperature'] = False
+    if fault == 'incorrect_selection': report['selected_response']['root'] = str(tmp_path/'evaluation-1')
+    if fault == 'wrong_history': report['charge_history'][0]['accepted'] = False
+    if fault == 'incomplete': report['state'] = 'INCOMPLETE_PRESERVED'
+    if fault in ('changed_response', 'changed_balance'):
+        (tmp_path/'evaluation-2'/('response.npz' if fault == 'changed_response' else 'balance.npz')).write_bytes(b'changed')
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError): E.prepare(result, E.B.sha(result), seed, run, tmp_path/'export')
+    assert not (tmp_path/'export/accepted-material.json').exists()
