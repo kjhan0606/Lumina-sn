@@ -7,7 +7,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from analyze_lumina_inverted_line_photoionization import (
-    collision_pair_flow, parse_args, radiative_line_flow, superlevel_line_network, weighted_photoionization)
+    collision_pair_flow, compare_same_n_branch, parse_args, radiative_line_flow,
+    superlevel_line_network, weighted_photoionization)
 
 
 def test_siII_not_siIII_and_probability_applied_once():
@@ -30,7 +31,8 @@ def test_siII_not_siIII_and_probability_applied_once():
 
 def test_cli_names_match_actual_analysis_arguments():
     args = vars(parse_args(['--root', '/tmp/input', '--levels', '/tmp/levels.csv']))
-    assert set(args) == {'root', 'levels_path', 'BB_root', 'original_full', 'collision_run', 'collision_reference'}
+    assert set(args) == {'root', 'levels_path', 'BB_root', 'original_full', 'collision_run',
+                         'collision_reference', 'compare_native_precision'}
     assert args['levels_path'] == Path('/tmp/levels.csv')
 
 
@@ -63,3 +65,11 @@ def test_collision_pair_uses_occupation_ratio_and_detailed_balance():
     assert result['dissolution_forward_cm3_s'] > 0
     assert collision_pair_flow(lower, upper, T, ne, 5., gl, gu, gap, wl, wu, False)['dissolution_forward_cm3_s'] == 0
     with pytest.raises(ValueError): collision_pair_flow(lower, upper, T, ne, 5., gl, gu, gap, .8, .9, True)
+
+
+def test_same_n_branch_comparison_reports_existing_native_name_heuristic():
+    result = compare_same_n_branch('3s2_11z_2Z', '3s2_12w_2W', .0718376562, 10839.130442291676, 828187.7614620373)
+    assert result['lower_key'] == result['upper_key'] == ('3', '3') and result['same_n']
+    assert result['selected_gbar'] == .7
+    assert result['alternate_branch_omega'] == pytest.approx(727638.4089, rel=1.e-9)
+    with pytest.raises(ValueError): compare_same_n_branch('a', 'b', 0., 10000., 1.)

@@ -14,7 +14,9 @@ import numpy as np
 from analyze_cmfgen_material_inventory import sha
 from analyze_cmfgen_signed_sources import read_full
 import cmfgen_model_continuum as B
-from lumina_model_collision_source import ModelCollisionSource
+from lumina_model_collision_source import ModelCollisionSource, ex_e1x
+import build_cmfgen_fullpair_omega as legacy
+from build_cmfgen_fullpair_omega import same_n_key
 
 
 def weighted_photoionization(rows, columns, populations, fractions, roster, photo_rates,
@@ -93,6 +95,22 @@ def collision_pair_flow(lower, upper, temperature, electron_density, omega, g_lo
                 dissolution_forward_cm3_s=float(lost))
 
 
+def compare_same_n_branch(lower_name, upper_name, gap_eV, temperature, omega):
+    """선택된 SAME_N 분기와 가상의 다른 분기를 비교한다. 생산 물리는 바꾸지 않는다."""
+    if not np.isfinite([gap_eV, temperature, omega]).all() or gap_eV <= 0 or temperature <= 0 or omega <= 0:
+        raise ValueError('SAME_N 비교 온도/에너지/충돌강도 오류')
+    lower_key, upper_key = same_n_key(lower_name), same_n_key(upper_name)
+    same = lower_key is not None and lower_key == upper_key
+    x = gap_eV/(8.617333262145e-5*temperature)
+    g2 = .276*float(ex_e1x(np.array([x]))[0])
+    current = max(.7 if same else .2, g2); alternative = max(.2 if same else .7, g2)
+    return dict(lower_name=lower_name, upper_name=upper_name, lower_key=lower_key, upper_key=upper_key,
+        same_n=same, gap_eV=float(gap_eV), x=float(x), g2=g2, selected_gbar=current,
+        alternate_branch_gbar=alternative, alternate_to_selected_ratio=alternative/current,
+        alternate_branch_omega=float(omega*alternative/current),
+        scope='한 쌍의 가상 SAME_N 분기만 변경한 대수 비교; 전체 SE/물리 타당성 아님')
+
+
 def superlevel_line_network(rows, full, lines, jbar, status, groups, target_line, node):
     """각 SL 경계를 넘는 실제 방사선의 유입/유출. 같은 SL 내부선은 제외한다."""
     output = []
@@ -128,7 +146,8 @@ def superlevel_line_network(rows, full, lines, jbar, status, groups, target_line
     return output
 
 
-def analyze(root, levels_path, BB_root=None, original_full=None, collision_run=None, collision_reference=None):
+def analyze(root, levels_path, BB_root=None, original_full=None, collision_run=None, collision_reference=None,
+            compare_native_precision=False):
     root, levels_path = Path(root).resolve(), Path(levels_path).resolve()
     report_path = root/'result.json'; report = json.loads(report_path.read_text())
     if report['state'] != 'COMPLETE_FROZEN_MATERIAL_BF_90': raise ValueError('완료 원70 BF만 사용')
@@ -249,11 +268,38 @@ def analyze(root, levels_path, BB_root=None, original_full=None, collision_run=N
             ion.verify_identity()
             if set(found) != set(wanted): raise ValueError('선택한 Si II 충돌쌍 누락')
             result['collisional_pairs'] = [found[label] for label in wanted]
+            lo, up = (row_number[124], row_number[125])
+            result['same_n_branch_comparison'] = compare_same_n_branch(
+                rows[lo]['configuration'], rows[up]['configuration'],
+                float(rows[up]['energy_eV'])-float(rows[lo]['energy_eV']),
+                temperature, found[124, 125]['omega'])
+            if compare_native_precision:
+                ids = source.groups[14, 2]
+                csv_values = legacy.ion_strengths(14, 1, 'Si II', None, ids, rows, source.models,
+                                                  source.links, temperature, native_precision=False)
+                edge_values = legacy.ion_strengths(14, 1, 'Si II', None, ids, rows, source.models,
+                                                   source.links, temperature, native_precision=True)
+                if not all(np.array_equal(csv_values[i], edge_values[i]) for i in (0, 1)):
+                    raise ValueError('CSV/FEDGE 충돌쌍 순서 불일치')
+                comparison = []
+                for a, b in wanted:
+                    loc = np.flatnonzero((csv_values[0] == a-1) & (csv_values[1] == b-1))
+                    if len(loc) != 1: raise ValueError('CSV/FEDGE 대상 충돌쌍 누락')
+                    current, edge = (float(value[2][loc[0]]) for value in (csv_values, edge_values))
+                    if abs(current-found[a, b]['omega']) > 5.e-12*current:
+                        raise ValueError('동적 생산기와 기존 CSV 생산기 불일치')
+                    comparison.append(dict(FL_1based=[a, b], csv_omega=current, native_edge_omega=edge,
+                                           relative_difference=edge/current-1.))
+                result['native_edge_precision_comparison'] = dict(pairs=comparison,
+                    csv_branches=csv_values[3]['branches'], native_branches=edge_values[3]['branches'],
+                    interpretation='원 OSC FEDGE 연산의 별도 Python 예측; native 전체 실행 아님')
             result['collision_scope'] = '원70 고정 물질에서 선택한 네 쌍만; 전체 충돌망/이온화 민감도 아님'
             result['collision_temperature_K'] = temperature; result['collision_ne_cm3'] = ne
             identities.update(ion.identity); identities[str(collision_reference)] = sha(collision_reference)
     elif collision_run is not None or collision_reference is not None:
         raise ValueError('충돌 비교에는 같은 원70 BB 자료와 C 인구가 필요')
+    if compare_native_precision and 'native_edge_precision_comparison' not in result:
+        raise ValueError('원자료 정밀도 비교에는 같은 원70 충돌 자료가 필요')
     result.update(baseline='원70 물질·원70 복사장, 고정온도 미수렴; 새 자체장 아님',
         rate_scope='직접 광이온화 n_lower × 경로확률 × 총 BF photo율; 간접 BB 연쇄 미포함',
         input_sha256=identities,
@@ -266,6 +312,7 @@ def parse_args(argv=None):
     p.add_argument('--root', type=Path, required=True); p.add_argument('--levels', dest='levels_path', type=Path, required=True)
     p.add_argument('--BB-root', type=Path); p.add_argument('--original-full', type=Path)
     p.add_argument('--collision-run', type=Path); p.add_argument('--collision-reference', type=Path)
+    p.add_argument('--compare-native-precision', action='store_true')
     return p.parse_args(argv)
 
 

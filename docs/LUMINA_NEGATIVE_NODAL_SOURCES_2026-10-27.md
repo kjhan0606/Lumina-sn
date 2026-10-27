@@ -126,6 +126,46 @@ Regemorter 근사**로 충돌강도 Ω를 계산한다. 기존 C 충돌 조립�
 강한 oscillator strength에서 근사의 타당성을 따져볼 후보이며, 임의로
 자르거나 값을 바꾸지 않았다. 원70 자체도 미수렴 상태다.
 
+### 큰 Ω와 준위 이름 분기의 실제 원인
+
+FL124/125의 원 OSC 이름은 각각 `3s2_11z_2Z`, `3s2_12w_2W`다. 원본
+CMFGEN `SAME_N`을 별도 임시 위치에서 컴파일해 두 이름을 직접 넣었을 때
+결과는 **참**이었다. 현재 Python 구현도 두 이름을 같은 `('3', '3')` 키로
+해석한다. 원본 `POSN_SAME`은 소문자 `d`–`s` 뒤의 숫자를 찾으므로,
+이 이름의 바깥쪽 `z`/`w`에서는 멈추지 않고 공통 `3s`를 잡는다.
+원본 소스에도 이름 해석이 근사 충돌강도 분기를 잘못 선택할 수 있다는
+주의가 있다. **따라서 현재 구현과 CMFGEN의 이름 분기 불일치는 아니다.**
+
+이름의 `11z`와 `12w`가 실제 서로 다른 바깥 주양자수를 표시하는지,
+`z`/`w`가 원자자료에서 묶음 준위를 어떻게 정의하는지는 별도로 확인해야
+한다. 그렇다면 공통 내부 `3s` 때문에 같은 n 분기가 선택됐을 가능성이
+있으나, 이름 문자열만으로 실제 원자 양자수나 선택규칙을 확정하지 않는다.
+
+이 쌍의 에너지 차0.0718377eV, `f=2.975`, 하위 통계중량144,
+선택된 `gbar=0.7`, 주파수0.0173703×10¹⁵Hz를 기존 근사식에 넣으면
+Ω=828187.76이 나온다. 작아진 주파수가 분모에 들어가므로 큰 값이
+소수점 하나를 잘못 놓은 결과라는 근거는 없다. 가상으로 **이 한 쌍만**
+다른 n 분기로 두면 `gbar=0.615014`, Ω≈727638.41로 12.14% 감소하고,
+물질을 고정한 같은 충돌 순 하향은372.39→327.18 cm⁻³ s⁻¹로 바뀐다.
+이는 전체 충돌망·준위 인구·새 복사장을 다시 푼 결과가 아니다.
+물리적으로 어느 분기가 맞는지와 최종 분포 영향은 미확인이다.
+
+원 OSC의 FEDGE 차감과 기존 CSV 에너지 차를 각각 넣은 별도 Python 계산에서
+네 핵심 충돌쌍의 상대차는 최대9.72e-10이며 125준위의 TABULATED/VR/
+OMEGA_SET 분기 수도406/1160/6184로 같았다. 큰 Ω는 **이 네 쌍에서는**
+CSV 반올림 때문에 생긴 것이 아니다. 이 비교는 native 전체 충돌 해법을
+실행한 것이 아니다. 현재는 CMFGEN과 같은 분기를 보존하고 solver나
+원자자료를 변경하지 않았다.
+
+직접 실행한 원본 `SAME_N` 소스 SHA256은
+`89fb4ad094d478e6f37f62606d185760b144bb9d388e7e892733a6d4eb236d6c`,
+원본 `OMEGA_GEN_V3`는
+`c9ecf51f4a27ab3fa11784ac4bfc1cbadef3b6f1ba63882fc3cd2b1d3d580ee5`,
+기존 Fortran 호출 시험기는
+`1c36bfbeb25eac05c28a477a4e58399af9e314c9c26a8541a4693ac582ef8208`이다.
+Fortran은 실제 이름 두 쌍을 받아 `1, 1`을 반환했다. 새 방사장·SE나
+수송은 실행하지 않았다.
+
 최초 탐색에서 내부 stage3을 Si II로 잘못 선택해 Si III를 집계했으나,
 원자주소 대조에서 발견해 해당 수치는 폐기했다. 최종 계산은 lower의
 `ion_number=1`과 roster `stage=2`를 모두 검증한다. 명령 인수 이름 오류도
@@ -141,7 +181,8 @@ python3 scripts/analyze_lumina_inverted_line_photoionization.py \
   --BB-root "$RUNS/lumina_linear_BB90_20261027-gfIdax/run" \
   --original-full "$RUNS/lumina_signed_source_trace_20261020-YbcirG/full_population90.bin" \
   --collision-run "$RUNS/toy06_19p48d_field_feedback_429038/material" \
-  --collision-reference "$RUNS/lumina_full_model_response_20261027-vzt2uX/run/result.json"
+  --collision-reference "$RUNS/lumina_full_model_response_20261027-vzt2uX/run/result.json" \
+  --compare-native-precision
 ```
 
 BF 보고서 SHA256은 `482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6`,
