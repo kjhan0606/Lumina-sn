@@ -11,6 +11,7 @@ import ctypes as ct
 import json
 from pathlib import Path
 import re
+import shutil
 import struct
 
 import numpy as np
@@ -303,28 +304,44 @@ def write_binary(path,nu,state,components):
             stream.write(np.asarray(value,dtype='<f8').tobytes())
 
 
-def paired_memory_inventory(cells,frequencies,routes,block_bins=1024,continuum_frequencies=None):
-    """두 상태 BF 보존 + 한 상태 후처리의 알려진 동시 할당을 센다.
+def source_memory_inventory(cells,frequencies,routes,block_bins=1024,continuum_frequencies=None):
+    """한/두 상태 BF 보존 + 한 상태 후처리의 알려진 동시 할당을 센다.
 
     후처리는 순차이며 dissolution/FF의 배열·식 임시값/직렬화를 최대12개
     상태×주파수 배열로 잡는다. 캐시2개와 조립/선택2개를 따로 합한다.
     원자자료/line catalogue/인구/BLAS/runtime에는4GiB를 남긴다.
     실제 전체 격자 peak RSS를 측정했다는 뜻은 아니다.
     """
-    if len(cells)!=2 or min(cells)<1 or frequencies<2 or routes<1:
+    if not 1<=len(cells)<=2 or min(cells)<1 or frequencies<2 or routes<1:
         raise ValueError('공유 생산 메모리 차원 손상')
-    parts=dict(both_states_BF=4*sum(cells)*frequencies*8,
+    parts=dict(states_BF=4*sum(cells)*frequencies*8,
         one_state_postprocessing=12*max(cells)*frequencies*8,
         sigma_cache_and_assembly=4*routes*block_bins*8,
         atomic_catalogue_populations_runtime=4*1024**3)
     if continuum_frequencies is not None:
         if not 1<=continuum_frequencies<=frequencies:
             raise ValueError('CONT_FREQ 메모리 차원 손상')
-        parts['both_states_BF']=4*sum(cells)*continuum_frequencies*8
+        parts['states_BF']=4*sum(cells)*continuum_frequencies*8
         # 선택 열·BF/FF 보정 출력·exp/Planck 임시값을 포함한 보수적 상한.
         parts['one_state_postprocessing']=32*max(cells)*frequencies*8
     return dict(parts=parts,known_allocation_bound_bytes=sum(parts.values()),
         whole_process_peak_RSS_verified=False,sequential_state_postprocessing=True)
+
+
+def paired_memory_inventory(cells,frequencies,routes,block_bins=1024,continuum_frequencies=None):
+    """기존 두 상태 공개 형식과 수치를 보존한다."""
+    if len(cells)!=2:raise ValueError('두 상태 계수 생산 재고 필요')
+    result=source_memory_inventory(cells,frequencies,routes,block_bins,continuum_frequencies)
+    result['parts']['both_states_BF']=result['parts'].pop('states_BF')
+    return result
+
+
+def source_output_reserve(cells,frequencies):
+    """binary7평면+NPZ9평면·최대2ν벡터, catalogue/헤더 여유를 센다."""
+    if cells<1 or frequencies<2:raise ValueError('계수 출력 차원 오류')
+    # NPZ에는 공통7평면 외에 ff_native_chi/eta도 저장한다. 명시 CONT_FREQ의
+    # 추가ν 벡터도 포함하며 catalogue와 zip/header에는 별도1GiB를 남긴다.
+    return 16+8*(3*frequencies+2*cells+16*cells*frequencies)+1024**3
 
 
 def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None,
@@ -363,11 +380,13 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         if B.dissolution_flag(run/'MODEL'):
             state=B.read_material(mat,rows,models,B.material_occupation(rows,models,state))
         full_comparisons.append(B.consume_c_full_population(full,state));states.append(state)
-    memory=(paired_memory_inventory([len(s['temperature']) for s in states],len(nu),len(routes),
-            continuum_frequencies=len(continuum_nu) if evaluation is not None else None)
-            if peer is not None else None)
-    if memory is not None and memory['known_allocation_bound_bytes']>32*1024**3:
-        raise ValueError('공유 계수 생산의 알려진 할당이 봉인32GiB 초과')
+    inventory=paired_memory_inventory if peer is not None else source_memory_inventory
+    memory=inventory([len(s['temperature']) for s in states],len(nu),len(routes),
+                     continuum_frequencies=len(continuum_nu) if evaluation is not None else None)
+    if memory['known_allocation_bound_bytes']>32*1024**3:
+        raise ValueError('계수 생산의 알려진 할당이 봉인32GiB 초과')
+    if peer is None and shutil.disk_usage(out).free<source_output_reserve(len(states[0]['temperature']),len(nu)):
+        raise OSError('새 단일 상태 계수의 두 원출력과 catalogue 보존 공간 부족')
     cache_metrics={}
     bfs=([B.continuum_grid(routes,rows,states[0],continuum_nu)] if peer is None else
          B.continuum_grids_shared(routes,rows,states,continuum_nu,cache_metrics=cache_metrics))
@@ -376,14 +395,14 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         summaries.append(_finish_sources(run,nu,folder,states[i],bfs[i],rows,models,routes,
             policy,smoothing,route_counts,full_comparisons[i],inactive,profile,before,
             kernel_library,dict(cache=cache_metrics,memory=memory) if peer is not None else None,
-            continuum_nu,continuum_index,continuum_frequency_grid))
+            continuum_nu,continuum_index,continuum_frequency_grid,memory))
         bfs[i]=None  # 다음 상태의 FF/선 생산 전에 앞 상태의 큰 BF 배열을 해제한다.
     return summaries[0] if peer is None else dict(states=summaries,shared_sigma=cache_metrics,memory=memory)
 
 
 def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,route_counts,
                     full_comparison,inactive,profile,before,kernel_library,cache_metrics,
-                    continuum_nu=None,continuum_index=None,continuum_frequency_grid=None):
+                    continuum_nu=None,continuum_index=None,continuum_frequency_grid=None,allocation_inventory=None):
     if continuum_nu is None:continuum_nu=nu
     dissolved=B.add_dissolved_continuum(bf,routes,rows,models,state,continuum_nu) if B.dissolution_flag(run/'MODEL') else None
     kernels=SourceKernels(kernel_library)
@@ -436,6 +455,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
             'signed raw line chi; native zero replacement/SRCE_CHK not applied'],
         process_selection=policy,input_sha256=before,osc_sha256=osc_identities,
         shared_continuum_sigma=cache_metrics,
+        allocation_inventory=allocation_inventory,
         output_sha256={n:B.sha(out/n) for n in ('sources.bin','sources.npz','line_catalog.npz')},
         physical_RT_executions=0,native_executions=0,SE_RE_solved=False,final_goal='NOT_JUDGED')
     with (out/'sources.json').open('x') as stream:

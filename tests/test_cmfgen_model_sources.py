@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -42,6 +43,48 @@ def test_full_pair_known_memory_includes_both_states_and_postprocessing():
     assert not result['whole_process_peak_RSS_verified']
     assert result['sequential_state_postprocessing']
     assert result['parts']['both_states_BF']==4*179*1115020*8
+
+
+def test_single_full_state_inventory_includes_BF_temporaries_and_runtime():
+    result=S.source_memory_inventory([90],1115020,24667)
+    assert result['parts']['states_BF']==4*90*1115020*8
+    assert result['parts']['one_state_postprocessing']==12*90*1115020*8
+    assert result['known_allocation_bound_bytes']==sum(result['parts'].values())
+    assert result['known_allocation_bound_bytes']<32*1024**3
+    assert not result['whole_process_peak_RSS_verified']
+    assert S.source_memory_inventory([512],2000000,24667)['known_allocation_bound_bytes']>32*1024**3
+
+
+def test_source_output_reserve_counts_both_raw_outputs_and_catalogue():
+    assert S.source_output_reserve(90,1115020)==16+8*(3*1115020+180+16*90*1115020)+1024**3
+    # 잘못된 두7평면 예약+여유보다 실제 두 추가평면이 큰 전 격자 사례다.
+    assert 2*90*1115020*8>1024**3
+    with pytest.raises(ValueError):S.source_output_reserve(0,2)
+    with pytest.raises(ValueError):S.paired_memory_inventory([90],1115020,24667)
+
+
+@pytest.mark.parametrize('failure', ['memory', 'disk'])
+def test_single_state_resource_failure_precedes_any_actual_integration(tmp_path, monkeypatch, failure):
+    for name in ('MODEL', 'MODEL_SPEC', 'LEVEL_SL_STEQ_LINKS', 'atomic_links.txt',
+                 'TWO_PHOT_DATA', 'material', 'levels.csv', 'phot.so', 'kernel.so', 'full.bin'):
+        (tmp_path/name).write_text('synthetic metadata only')
+    monkeypatch.setattr(B.atomic, 'load_cmfgen_links', lambda *args: {})
+    monkeypatch.setattr(B.atomic, 'HYD_BF_DATA_FILES', ())
+    monkeypatch.setattr(B, 'load_model', lambda *args: ([{}], {}, [None], {}, {}, {}))
+    monkeypatch.setattr(S, 'inactive_processes', lambda *args: {})
+    monkeypatch.setattr(S, 'fixed_profile', lambda *args: {})
+    ns, nf = (512, 2000000) if failure == 'memory' else (2, 2)
+    monkeypatch.setattr(B, 'read_material', lambda *args: dict(temperature=np.ones(ns)))
+    monkeypatch.setattr(B, 'dissolution_flag', lambda *args: False)
+    monkeypatch.setattr(B, 'consume_c_full_population', lambda *args: {})
+    monkeypatch.setattr(S.shutil, 'disk_usage', lambda *args: SimpleNamespace(free=0))
+    def forbidden(*args, **kwargs):
+        pytest.fail('자원 거부 전에 물리 적분을 시작함')
+    monkeypatch.setattr(B, 'continuum_grid', forbidden)
+    error, message = (ValueError, '32GiB') if failure == 'memory' else (OSError, '보존 공간')
+    with pytest.raises(error, match=message):
+        S.prepare(tmp_path, tmp_path/'material', tmp_path, tmp_path/'phot.so',
+            tmp_path/'kernel.so', tmp_path/'full.bin', np.geomspace(1.e12, 1.e18, nf), tmp_path/'out')
 
 
 def test_explicit_continuum_mapping_preserves_requested_order_and_duplicates():
