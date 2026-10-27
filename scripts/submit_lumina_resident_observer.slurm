@@ -11,7 +11,7 @@
 #SBATCH --no-requeue
 set -eo pipefail
 # 시스템 프로필은 미정의 셸 변수를 읽는다. 모듈 초기화 뒤 nounset을 켠다.
-source /etc/profile
+source /etc/profile || exit $?
 module purge
 module load gnu13 cuda/13.0.2
 set -u

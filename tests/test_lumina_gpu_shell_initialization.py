@@ -42,6 +42,12 @@ def test_old_initialization_order_reproduces_unbound_variable_failure(tmp_path,n
 
 
 @pytest.mark.parametrize('name',SCRIPTS)
+def test_profile_intermediate_false_does_not_abort_successful_initialization(tmp_path,name):
+    result=execute(tmp_path,name,'false\nmodule() { return 0; }\n','printf INITIALIZED\n')
+    assert result.returncode==0 and result.stdout=='INITIALIZED'
+
+
+@pytest.mark.parametrize('name',SCRIPTS)
 def test_profile_failure_still_stops_before_calculation(tmp_path,name):
     result=execute(tmp_path,name,'return 7\n','printf SHOULD_NOT_START\n')
     assert result.returncode==7 and 'SHOULD_NOT_START' not in result.stdout
