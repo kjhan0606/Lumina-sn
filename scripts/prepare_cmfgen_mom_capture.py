@@ -550,7 +550,7 @@ def command(args, cwd):
         subprocess.run([str(a) for a in args],cwd=cwd,stdout=log,stderr=log,check=True,timeout=120)
 
 
-def rebuild_unmodified_sources(parent,native,out):
+def rebuild_unmodified_sources(parent,native,out,*,explicit_objects=()):
     """수정할 네 translation unit의 원본도 부모와 byte 동일하게 재빌드한다."""
     base=out/"baseline"
     base.mkdir()
@@ -567,7 +567,8 @@ def rebuild_unmodified_sources(parent,native,out):
     shutil.copy2(parent/"libsubs.a",base/"libsubs.a")
     command(["ar","r","libsubs.a","mom_jrel_v9.o","mod_ray_mom_store.o","comp_j_blank.o"],base)
     libs=["-L.","-L"+str(native/"lib"),"-lsubs","-lpgplt","-lmod",native/"lib/libmy_lapack.a",native/"lib/libmy_blas.a"]
-    command(["gfortran","-fopenmp","-m64",native/"new_main/cmfgen.o","cmfgen_sub.o",*libs,"-o","cmfgen_unmodified.exe"],base)
+    command(["gfortran","-fopenmp","-m64",native/"new_main/cmfgen.o","cmfgen_sub.o",
+             *explicit_objects,*libs,"-o","cmfgen_unmodified.exe"],base)
     if sha(base/"cmfgen_unmodified.exe")!=sha(parent/"cmfgen_parent_rebuilt.exe"):
         raise ValueError("포획 대상 source를 재빌드한 baseline이 실제 부모와 다름")
     return base/"cmfgen_unmodified.exe"
@@ -576,11 +577,16 @@ def rebuild_unmodified_sources(parent,native,out):
 def prepare(parent, native, out, first_repair=False, *, target_frequency=None, target_outer=None):
     target = capture_target(first_repair, target_frequency=target_frequency, target_outer=target_outer)
     identity = json.loads((parent/"parent-build-identity.json").read_text())
+    explicit_objects = [Path(p).resolve() for p in identity.get("explicit_objects", [])]
+    if (len(set(explicit_objects)) != len(explicit_objects) or
+            any(p.suffix != '.o' for p in explicit_objects)):
+        raise ValueError("부모 명시 object 목록 중복/형식 오류")
     inputs = [parent/"libsubs.a",parent/"cmfgen_parent_rebuilt.exe",native/"new_main/cmfgen.o",
               native/"new_main/cmfgen_sub.o",native/"plane/mom_jrel_v9.f",native/"plane/mod_ray_mom_store.f",
               native/"new_main/mod_subs/comp_j_blank.f",native/"tools/set_kind_module.f",
               native/"new_main/cmfgen_sub.f",native/"new_main/GET_J_CHI.INC",
-              native/"lib/libmod.a",native/"lib/libpgplt.a",native/"lib/libmy_lapack.a",native/"lib/libmy_blas.a"]
+              native/"lib/libmod.a",native/"lib/libpgplt.a",native/"lib/libmy_lapack.a",native/"lib/libmy_blas.a",
+              *explicit_objects]
     for path in inputs:
         expected=identity["evidence_sha256"].get(str(path))
         if expected is None and path in (native/"new_main/cmfgen_sub.f",native/"new_main/GET_J_CHI.INC"):
@@ -610,7 +616,7 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
     if out.exists():
         raise ValueError("기존 build 보존")
     out.mkdir()
-    unmodified=rebuild_unmodified_sources(parent,native,out)
+    unmodified=rebuild_unmodified_sources(parent,native,out,explicit_objects=explicit_objects)
     for name,text in sources.items():
         (out/name).write_text(text)
     shutil.copy2(native/"new_main/GET_J_CHI.INC",out/"GET_J_CHI.INC")
@@ -622,13 +628,15 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
     command(["ar","r","libsubs.a","mom_jrel_v9.o","mod_ray_mom_store.o","comp_j_blank.o"],out)
     libs = ["-L.","-L"+str(native/"lib"),"-lsubs","-lpgplt","-lmod",native/"lib/libmy_lapack.a",native/"lib/libmy_blas.a"]
     common = ["mod_jrel_v9.o","lumina_mom_diag.o"]
-    command(["gfortran","-fopenmp","-m64",native/"new_main/cmfgen.o","cmfgen_sub.o",*common,*libs,"-o","cmfgen_capture.exe"],out)
+    command(["gfortran","-fopenmp","-m64",native/"new_main/cmfgen.o","cmfgen_sub.o",
+             *explicit_objects,*common,*libs,"-o","cmfgen_capture.exe"],out)
     command(["gfortran","-fopenmp","-m64","replay_mom.o",*common,*libs,"-o","replay_mom.exe"],out)
     output_files = [out/name for name in sources]+[out/"cmfgen_capture.exe",out/"replay_mom.exe",out/"libsubs.a",out/"state_inventory.json"]
     record = dict(scope="부모 동일 산술의 선택 MOM 호출 상태 포획; 실제 실패 포획/물리 수렴은 별도",
                   parent=str(parent),native=str(native),generator_sha256=sha(Path(__file__)),
                   parent_manifest_sha256=sha(parent/"parent-build-identity.json"),
                   rebuilt_unmodified_sha256=sha(unmodified),
+                  explicit_objects=[str(p) for p in explicit_objects],
                   input_sha256={str(p):sha(p) for p in inputs},output_sha256={str(p):sha(p) for p in output_files},
                   JREL_fields=len(jfields),RAY_fields=len(rfields),first_repair=first_repair,
                   capture_target=target,final_goal="NOT_JUDGED")

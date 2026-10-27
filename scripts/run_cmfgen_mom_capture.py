@@ -5,11 +5,94 @@ import json
 import os
 from pathlib import Path
 import resource
+import re
 import struct
 import subprocess
 import time
 
 from run_cmfgen_lambda_probe import sha, stage, stop_child, scan_logs, control
+
+
+FAILURE_TARGET = dict(frequency_native=6.10732968, outer_iteration=78,
+                      frequency_absolute_tolerance=5.e-9)
+FAILURE_SECONDS = 13680
+
+
+def failure_profile(args,environment=None):
+    """승인된 추가 단회만 허용한다. 일반 continuation 시간 범위는 바꾸지 않는다."""
+    fields=[getattr(args,n,None) for n in ('capture_build','capture_build_sha256',
+            'capture_failure_inputs','capture_failure_inputs_sha256')]
+    if not any(v is not None for v in fields):return False
+    if not all(v is not None for v in fields):raise ValueError('포획 입력/해시 네 인수 모두 필요')
+    env=os.environ if environment is None else environment
+    if (type(args.memory_gib) is not int or args.memory_gib!=128 or
+        type(args.seconds) is not int or args.seconds!=FAILURE_SECONDS or
+        type(args.max_iterations) is not int or args.max_iterations!=16 or
+        env.get('OMP_NUM_THREADS')!='16' or env.get('SLURM_CPUS_PER_TASK')!='16' or
+        env.get('SLURM_MEM_PER_NODE')!='131072' or not env.get('SLURM_JOB_ID')):
+        raise ValueError('포획은 CPU16/OMP16/128GiB·13680초·기존 NUM_ITS16 전용')
+    return True
+
+
+def failure_build(path,expected_sha,parent_sha,reference_sha):
+    path=Path(path).resolve();report=path/'capture-build.json'
+    if not re.fullmatch('[0-9a-f]{64}',expected_sha or '') or sha(report)!=expected_sha:
+        raise ValueError('포획 build 보고서 신원 불일치')
+    data=json.loads(report.read_text());parent=Path(data['parent'])/'parent-build-identity.json'
+    if (data.get('capture_target')!=FAILURE_TARGET or data.get('first_repair') is not False or
+        data.get('rebuilt_unmodified_sha256')!=parent_sha or sha(parent)!=data['parent_manifest_sha256']):
+        raise ValueError('포획 주파수/반복/교정 부모 불일치')
+    provenance=json.loads(parent.read_text())
+    if (provenance.get('reference_build_sha256')!=reference_sha or
+        provenance.get('reference_executable_sha256')!=parent_sha):
+        raise ValueError('포획 부모의 원 교정 build 계보 불일치')
+    for group in ('input_sha256','output_sha256'):
+        if not data.get(group) or any(sha(Path(p))!=h for p,h in data[group].items()):
+            raise ValueError('포획 build 입력/출력 변경')
+    executable=path/'cmfgen_capture.exe';inventory=path/'state_inventory.json'
+    if any(str(p) not in data['output_sha256'] for p in (executable,inventory)):
+        raise ValueError('포획 실행파일/상태 목록 누락')
+    return dict(directory=str(path),report_sha256=expected_sha,
+        executable=str(executable),executable_sha256=data['output_sha256'][str(executable)],
+        inventory=str(inventory),target=FAILURE_TARGET,parent_executable_sha256=parent_sha)
+
+
+def failure_inputs(path,expected_sha,args,identity,parent_sha):
+    path=Path(path).resolve()
+    if not re.fullmatch('[0-9a-f]{64}',expected_sha or '') or sha(path)!=expected_sha:
+        raise ValueError('기존 실패 입력 보고서 신원 불일치')
+    data=json.loads(path.read_text())
+    if (data.get('first_iteration')!=74 or data.get('maximum_additional_iterations')!=16 or
+        data.get('source_70_identity')!=identity or data.get('executable_sha256')!=parent_sha or
+        data.get('build_report_sha256')!=args.build_report_sha256 or
+        data.get('parent_cmfg_result_sha256')!=sha(args.seed_run.resolve()/'result.json') or
+        data.get('source_iteration_reference_sha256')!=sha(args.ion_reference.resolve())):
+        raise ValueError('기존74→78 실패의 입력/실행 계보 불일치')
+    return data
+
+
+def failure_evidence(root,context,returncode):
+    """완전 snapshot/trace를 확인한다. 물리 수렴이나 전체모델 성공은 아니다."""
+    from analyze_cmfgen_mom_capture import capture,trace,summary
+    root=Path(root);snapshot=root/'MOM_CAPTURE.bin';history=root/'MOM_TRACE.bin'
+    if returncode!=93 or not snapshot.is_file() or not history.is_file():
+        raise ValueError('예상 STOP93 또는 실패 포획물이 없음')
+    if snapshot.stat().st_size>224*1024**2 or history.stat().st_size>32*1024**2:
+        raise ValueError('포획 snapshot/trace 크기 상한 초과')
+    header=capture_header(snapshot,expected_outer=78)
+    saved=capture(snapshot,json.loads(Path(context['inventory']).read_text()))
+    calls=trace(history)
+    if (not calls or tuple(saved['phase'])!=tuple(calls[-1]['phase']) or
+        abs(saved['args']['FREQ']-FAILURE_TARGET['frequency_native'])>5.e-9 or
+        calls[-1]['frequency']!=saved['args']['FREQ']):
+        raise ValueError('포획과 trace의 주파수/호출 phase 불일치')
+    rows=summary(calls[-1],saved['args']['INNER_BND_METH'])
+    if (len(rows)!=100 or rows[-1]['iteration']!=100 or
+        not isinstance(rows[-1]['MAX_ER'],(int,float)) or rows[-1]['MAX_ER']<1.e-8):
+        raise ValueError('100회 실패 trace가 완전하지 않음')
+    return dict(phase=header,frequency_native=saved['args']['FREQ'],
+        last_iteration=rows[-1],sha256={p.name:sha(p) for p in (snapshot,history)},
+        status='CAPTURED_NOT_PHYSICAL_CONVERGENCE')
 
 
 def capture_header(path,allow_initial=False,*,expected_outer=60):

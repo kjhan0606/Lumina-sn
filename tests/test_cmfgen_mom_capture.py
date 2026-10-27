@@ -12,7 +12,8 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"scripts"))
 from prepare_cmfgen_mom_capture import (ARGUMENTS, FLAGS, diagnostic_module, fields_of,
-                                       instrument_module, instrument_mom, instrument_first_mom,once,capture_target)
+                                       instrument_module, instrument_mom, instrument_first_mom,once,capture_target,
+                                       rebuild_unmodified_sources,prepare)
 from run_cmfgen_mom_capture import capture_header,verify_build
 from analyze_cmfgen_mom_capture import capture,first_event,residual,summary,trace
 from analyze_cmfgen_owner_matrices import multiprecision_stationary
@@ -307,6 +308,62 @@ def test_header_requires_explicit_new_outer_and_legacy_launcher_rejects_it(tmp_p
         capture_target=capture_target(target_frequency=6.10732968, target_outer=78))))
     with pytest.raises(ValueError, match='60회 전용'):
         verify_build(tmp_path)
+
+
+@pytest.mark.parametrize('with_explicit', [False, True])
+def test_unmodified_parent_link_keeps_explicit_physics_objects(tmp_path, monkeypatch, with_explicit):
+    parent=tmp_path/'parent';native=tmp_path/'native';out=tmp_path/'out'
+    parent.mkdir();out.mkdir()
+    for name in ('plane/mod_ray_mom_store.f','plane/mom_jrel_v9.f',
+                 'new_main/mod_subs/comp_j_blank.f','new_main/cmfgen_sub.f','new_main/GET_J_CHI.INC'):
+        path=native/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('source')
+    (parent/'libsubs.a').write_bytes(b'archive')
+    (parent/'cmfgen_parent_rebuilt.exe').write_bytes(b'parent binary')
+    objects=[tmp_path/'decay.o',tmp_path/'lazy.o'] if with_explicit else []
+    for path in objects:path.write_bytes(b'explicit object')
+    commands=[]
+    def fake_command(args,cwd):
+        commands.append(args)
+        if '-o' in args:
+            (cwd/args[args.index('-o')+1]).write_bytes(b'parent binary')
+    monkeypatch.setattr('prepare_cmfgen_mom_capture.command',fake_command)
+    rebuild_unmodified_sources(parent,native,out,explicit_objects=objects)
+    link=commands[-1];start=link.index('cmfgen_sub.o')+1
+    assert link[start:start+len(objects)]==objects
+    assert link[start+len(objects)]=='-L.'
+    assert (parent/'libsubs.a').read_bytes()==b'archive'
+
+
+@pytest.mark.parametrize('objects', [['same.o','same.o'], ['not-an-object.a']])
+def test_capture_build_rejects_ambiguous_explicit_object_manifest_before_build(tmp_path,objects):
+    parent=tmp_path/'parent';parent.mkdir()
+    (parent/'parent-build-identity.json').write_text(json.dumps(dict(explicit_objects=objects)))
+    out=tmp_path/'out'
+    with pytest.raises(ValueError,match='명시 object'):
+        prepare(parent,tmp_path/'native',out)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize('bad', ['missing_hash', 'changed_object'])
+def test_explicit_physics_object_identity_is_checked_before_compilation(tmp_path,bad):
+    parent=tmp_path/'parent';native=tmp_path/'native';parent.mkdir()
+    names=('new_main/cmfgen.o','new_main/cmfgen_sub.o','plane/mom_jrel_v9.f',
+           'plane/mod_ray_mom_store.f','new_main/mod_subs/comp_j_blank.f',
+           'tools/set_kind_module.f','new_main/cmfgen_sub.f','new_main/GET_J_CHI.INC',
+           'lib/libmod.a','lib/libpgplt.a','lib/libmy_lapack.a','lib/libmy_blas.a')
+    inputs=[parent/'libsubs.a',parent/'cmfgen_parent_rebuilt.exe']+[native/n for n in names]
+    physical=tmp_path/'physical.o';inputs.append(physical)
+    for path in inputs:
+        path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'sealed input')
+    hashes={str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
+    if bad=='missing_hash':hashes.pop(str(physical))
+    else:physical.write_bytes(b'changed physics object')
+    (parent/'parent-build-identity.json').write_text(json.dumps(dict(
+        explicit_objects=[str(physical)],evidence_sha256=hashes)))
+    out=tmp_path/'out'
+    with pytest.raises(ValueError,match='신원 변경'):
+        prepare(parent,native,out)
+    assert not out.exists()
 
 
 def test_first_event_native_io_previous_frequency_and_initial_placeholders(tmp_path):
