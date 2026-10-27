@@ -182,6 +182,19 @@
     },
     "additional_physics_runs_by_this_analysis": 0
   },
+  "SL_energy_contract_followup": {
+    "evidence": "docs/LUMINA_SL_ENERGY_CONTRACT_2026-10-27.json",
+    "scope": "저장 수용 물질과 BB 자료만 전90점 대조. 원자/광자 에너지식·SCL·SE/RE 해법은 변경하지 않음",
+    "finding": "SL 수렴이 full-level 에너지 가중합의 소멸을 보장하지 않는다. 실제 SCL의 fallback은 전체 선 에너지를 단일 준위 potential의 단순 영점 변환으로 나타낼 수 없게 한다",
+    "actual_CoIV_cycle_effective_defect_eV": 0.22886243188784455,
+    "actual_CoIV_cycle_physical_defect_eV": 3.231166639590932e-17,
+    "cycle_is_weak_and_not_a_dominant_error_proof": true,
+    "physical_atomic_proxy_max_abs": 0.005356299760628985,
+    "ideal_SL_BB_replaced_proxy_max_abs": 2.9188598696249643e-5,
+    "actual_native_BB_replaced_proxy_max_abs": 0.00015264138721741164,
+    "proxy_is_not_RE_or_native_EHB": true,
+    "interpretation": "가중은 SL 에너지 차이를 상당 부분 보정하나 실제 photon 장부와 동일한 식은 아니다. 이 결과만으로 SCL을 끄거나 충돌열을 photon RE에 더하지 않는다. 새 J/flux에서의 물질 응답과 원 v2 전체 수용이 남는다"
+  },
   "new_physics_runs": 0,
   "final_goal": "NOT_MET"
 }
