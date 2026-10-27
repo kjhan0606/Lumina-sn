@@ -12,7 +12,9 @@ import time
 from run_cmfgen_lambda_probe import sha, stage, stop_child, scan_logs, control
 
 
-def capture_header(path,allow_initial=False):
+def capture_header(path,allow_initial=False,*,expected_outer=60):
+    if type(expected_outer) is not int or not 1<=expected_outer<=2147483647:
+        raise ValueError("명시한 포획 외부 반복 오류")
     if not path.is_file() or not 56 <= path.stat().st_size <= 256*1024*1024:
         raise ValueError("포획 상태 누락/크기 초과")
     with path.open("rb") as stream:
@@ -20,7 +22,7 @@ def capture_header(path,allow_initial=False):
     if raw[:16].rstrip()!=b"LUMINAMOMCAPV1" or struct.unpack_from("=4i",raw,16)!=(8,64,32,32):
         raise ValueError("포획 kind/형식 불일치")
     outer,index,jit,first,new,nd=struct.unpack_from("=6i",raw,32)
-    if outer!=60 or index<1 or jit<0 or first not in ((0,1) if allow_initial else (0,)) or new not in (0,1) or nd!=90:
+    if outer!=expected_outer or index<1 or jit<0 or first not in ((0,1) if allow_initial else (0,)) or new not in (0,1) or nd!=90:
         raise ValueError("포획 호출 phase 불일치")
     return dict(outer_iteration=outer,frequency_index=index,J_IT_COUNTER=jit,
                 FIRST_FREQ=bool(first),NEW_FREQ=bool(new),ND_SM=nd)
@@ -28,6 +30,8 @@ def capture_header(path,allow_initial=False):
 
 def verify_build(build):
     record=json.loads((build/"capture-build.json").read_text())
+    if record.get("capture_target") is not None:
+        raise ValueError("60회 전용 실행기에 새 포획 선택을 전달할 수 없음; 정확한 재시작/자원 범위가 필요")
     if record["rebuilt_unmodified_sha256"]!="f2b9afcc064037a413bf206047a6b7c813882dc40f894436e5de704a32b232f1":
         raise ValueError("원래 산술의 부모 빌드 미확인")
     for name,expected in record["output_sha256"].items():

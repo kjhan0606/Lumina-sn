@@ -7,6 +7,7 @@
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import shutil
@@ -168,7 +169,21 @@ def arg_type():
     return "\n".join(lines+["END TYPE"])
 
 
-def diagnostic_module(first_repair=False):
+def capture_target(first_repair=False, *, target_frequency=None, target_outer=None):
+    """새 선택은 주파수/반복을 함께 지정한다. 과거 기본 선택은 그대로다."""
+    if target_frequency is None and target_outer is None:
+        return None
+    if (first_repair or target_frequency is None or target_outer is None or
+        isinstance(target_frequency, bool) or not isinstance(target_frequency, (int, float)) or
+        not math.isfinite(target_frequency) or target_frequency <= 0 or
+        type(target_outer) is not int or not 1 <= target_outer <= 2147483647):
+        raise ValueError("선택 포획은 양의 주파수/외부 반복을 함께 지정; 최초 대체 모드와 혼용 금지")
+    return dict(frequency_native=float(target_frequency), outer_iteration=target_outer,
+                frequency_absolute_tolerance=5.e-9)
+
+
+def diagnostic_module(first_repair=False, *, target_frequency=None, target_outer=None):
+    target = capture_target(first_repair, target_frequency=target_frequency, target_outer=target_outer)
     names = ",".join(name for name,_,_ in ARGUMENTS)
     copy = [f"SUBROUTINE LUMINA_TAKE_ARGS(S,{names})", "TYPE(LUMINA_ARG_STATE),INTENT(OUT)::S",
             "INTEGER ND_SM"]
@@ -294,6 +309,12 @@ LOGICAL,SAVE :: LUM_LAST_VALID=.FALSE.,LUM_PREV_VALID=.FALSE.
 CONTAINS
 LOGICAL FUNCTION LUMINA_SELECTED""")
         source=once(source,"END MODULE\n",first_event_procedure()+"\nEND MODULE\n")
+    if target is not None:
+        source = once(source, "ABS(FREQ-6.40196372_LDP)<5.0E-9_LDP",
+            "(LUMINA_OUTER=="+str(target['outer_iteration'])+
+            " .AND. ABS(FREQ-"+format(target['frequency_native'], '.17e')+"_LDP)<5.0E-9_LDP)")
+        source = once(source, "IF(MODE=='CAPTURE')THEN",
+            "IF(MODE=='CAPTURE' .AND. LUMINA_OUTER>="+str(target['outer_iteration'])+")THEN")
     return source.replace("__ARG_TYPE__",arg_type()).replace("__ARGS_COPY__","\n".join(copy)).replace("__ARGS_IO__","\n".join(io))
 
 
@@ -552,7 +573,8 @@ def rebuild_unmodified_sources(parent,native,out):
     return base/"cmfgen_unmodified.exe"
 
 
-def prepare(parent, native, out, first_repair=False):
+def prepare(parent, native, out, first_repair=False, *, target_frequency=None, target_outer=None):
+    target = capture_target(first_repair, target_frequency=target_frequency, target_outer=target_outer)
     identity = json.loads((parent/"parent-build-identity.json").read_text())
     inputs = [parent/"libsubs.a",parent/"cmfgen_parent_rebuilt.exe",native/"new_main/cmfgen.o",
               native/"new_main/cmfgen_sub.o",native/"plane/mom_jrel_v9.f",native/"plane/mod_ray_mom_store.f",
@@ -581,7 +603,9 @@ def prepare(parent, native, out, first_repair=False):
     caller = once(caller,"\t       CALL MOM_JREL_V9", "\t       CALL LUMINA_MOM_SET_PHASE(FREQ_INDX,J_IT_COUNTER,FIRST_FREQ,NEW_FREQ)\n\t       CALL MOM_JREL_V9")
     mom_builder=instrument_first_mom if first_repair else instrument_mom
     sources = {"mod_jrel_v9.f":jrel,"mod_ray_mom_store.f":ray,
-               "lumina_mom_diag.f90":diagnostic_module(first_repair),"mom_jrel_v9.f":mom_builder(mom[split.end():]),
+               "lumina_mom_diag.f90":diagnostic_module(first_repair,
+                   target_frequency=target_frequency, target_outer=target_outer),
+               "mom_jrel_v9.f":mom_builder(mom[split.end():]),
                "comp_j_blank.f":caller,"cmfgen_sub.f":sub,"replay_mom.f90":replay_source()}
     if out.exists():
         raise ValueError("기존 build 보존")
@@ -606,7 +630,8 @@ def prepare(parent, native, out, first_repair=False):
                   parent_manifest_sha256=sha(parent/"parent-build-identity.json"),
                   rebuilt_unmodified_sha256=sha(unmodified),
                   input_sha256={str(p):sha(p) for p in inputs},output_sha256={str(p):sha(p) for p in output_files},
-                  JREL_fields=len(jfields),RAY_fields=len(rfields),first_repair=first_repair,final_goal="NOT_JUDGED")
+                  JREL_fields=len(jfields),RAY_fields=len(rfields),first_repair=first_repair,
+                  capture_target=target,final_goal="NOT_JUDGED")
     (out/"capture-build.json").write_text(json.dumps(record,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:v for k,v in record.items() if not k.endswith("sha256")},ensure_ascii=False))
 
@@ -616,5 +641,10 @@ if __name__ == "__main__":
     for name in ("parent","native","out"):
         parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--first-repair",action="store_true")
+    parser.add_argument("--target-frequency",type=float,
+                        help="포획할 native 주파수; --target-outer와 함께 지정")
+    parser.add_argument("--target-outer",type=int,
+                        help="포획할 외부 반복; 그 전의 정상 물질 갱신은 막지 않음")
     a=parser.parse_args()
-    prepare(a.parent.resolve(),a.native.resolve(),a.out.resolve(),a.first_repair)
+    prepare(a.parent.resolve(),a.native.resolve(),a.out.resolve(),a.first_repair,
+            target_frequency=a.target_frequency,target_outer=a.target_outer)

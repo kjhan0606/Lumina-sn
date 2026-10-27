@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import hashlib
 import os
 import re
 import struct
@@ -11,8 +12,8 @@ import numpy as np
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"scripts"))
 from prepare_cmfgen_mom_capture import (ARGUMENTS, FLAGS, diagnostic_module, fields_of,
-                                       instrument_module, instrument_mom, instrument_first_mom,once)
-from run_cmfgen_mom_capture import capture_header
+                                       instrument_module, instrument_mom, instrument_first_mom,once,capture_target)
+from run_cmfgen_mom_capture import capture_header,verify_build
 from analyze_cmfgen_mom_capture import capture,first_event,residual,summary,trace
 from analyze_cmfgen_owner_matrices import multiprecision_stationary
 from solve_cmfgen_mom_kernel import (linmon,linmon_matrix,first_repair_equation,tri_matrix,
@@ -121,7 +122,7 @@ def test_hooks_keep_native_solver_calls_and_failure_accuracy_limit():
     assert result.index("'RAW0'") < result.index("RECORDED_ERROR=.FALSE.")
 
 
-def compile_io_test(tmp_path,first_repair=False):
+def compile_io_test(tmp_path,first_repair=False,**selection):
     files=[]
     inventories=[]
     for filename,module,prefix in (("mom_jrel_v9.f","MOD_JREL_V9","LUMINA_JREL"),
@@ -134,14 +135,20 @@ def compile_io_test(tmp_path,first_repair=False):
         inventories.append(fields)
         files.append(path)
     diag=tmp_path/"diag.f90"
-    diag.write_text(diagnostic_module(first_repair))
+    diag.write_text(diagnostic_module(first_repair,**selection))
     files.append(diag)
     code=["program io_test", "use mod_jrel_v9", "use mod_ray_mom_store", "use lumina_mom_diag", "implicit none",
           "type(lumina_arg_state) a,b", "type(lumina_jrel_state) js,j2", "type(lumina_ray_state) rs,r2",
-          "character(len=4096) input_path"]
+          "character(len=4096) input_path,selection_arg", "integer selected_outer",
+          "real(ldp) selected_frequency"]
     if first_repair:code += ["integer event_i","real(ldp) event_tri(4,5),event_raw(5),event_h(5),event_slope(5)"]
     code += ["call get_command_argument(1,input_path)",
-          "if(input_path=='--before-pop')then", "call lumina_mom_stop_before_pop()", "stop", "end if",
+          "if(input_path=='--selected' .or. input_path=='--before-pop')then",
+          "call get_command_argument(2,selection_arg)", "if(len_trim(selection_arg)>0)then",
+          "read(selection_arg,*)selected_outer", "call lumina_mom_set_iteration(selected_outer)", "end if",
+          "if(input_path=='--selected')then", "call get_command_argument(3,selection_arg)",
+          "read(selection_arg,*)selected_frequency", "write(*,*)merge(1,0,lumina_selected(selected_frequency))",
+          "else", "call lumina_mom_stop_before_pop()", "end if", "stop", "end if",
           "if(input_path/=' ' .and. input_path/='--event')then", "call lumina_snapshot_io(trim(input_path),a,js,rs,.true.)", "stop", "end if"]
     for fields in inventories:
         for i,f in enumerate(fields):
@@ -232,6 +239,74 @@ def test_actual_capture_header_rejects_wrong_phase_kind_and_size(tmp_path):
     p.write_bytes(good[:-1])
     with pytest.raises(ValueError):
         capture_header(p)
+
+
+def test_default_generated_diagnostics_remain_byte_identical():
+    expected = {
+        False: '4bd4ce8342df4931db56fd9a24ba6b1760ebd5011c229049c9e6230210efc97d',
+        True: '6d78375b4c42028007609af9da48319499ffd31d122f37a895397660ec679a81',
+    }
+    for first, digest in expected.items():
+        assert hashlib.sha256(diagnostic_module(first).encode()).hexdigest() == digest
+
+
+@pytest.mark.parametrize('options', [
+    dict(target_frequency=6.1), dict(target_outer=78),
+    dict(target_frequency=float('nan'), target_outer=78),
+    dict(target_frequency=float('inf'), target_outer=78),
+    dict(target_frequency=0., target_outer=78),
+    dict(target_frequency=-1., target_outer=78),
+    dict(target_frequency=True, target_outer=78),
+    dict(target_frequency='6.1', target_outer=78),
+    dict(target_frequency=6.1, target_outer=True),
+    dict(target_frequency=6.1, target_outer=0),
+    dict(target_frequency=6.1, target_outer=78.5),
+    dict(target_frequency=6.1, target_outer=2147483648),
+    dict(first_repair=True, target_frequency=6.1, target_outer=78),
+])
+def test_new_capture_selection_rejects_partial_or_invalid_scope(options):
+    with pytest.raises(ValueError, match='선택 포획'):
+        diagnostic_module(**options)
+
+
+def test_retargeted_native_selector_and_stop_phase_compiled(tmp_path):
+    exe = compile_io_test(tmp_path, target_frequency=6.10732968, target_outer=78)
+    env = dict(os.environ, LUMINA_MOM_CAPTURE_MODE='CAPTURE')
+    for outer, frequency, selected in (
+        (78, 6.10732968, 1), (78, 6.107329684, 1), (78, 6.10732969, 0),
+        (77, 6.10732968, 0), (79, 6.10732968, 0), (78, 6.40196372, 0),
+    ):
+        result = subprocess.run([str(exe), '--selected', str(outer), str(frequency)],
+                                cwd=tmp_path, env=env, capture_output=True, text=True)
+        assert result.returncode == 0 and int(result.stdout.strip()) == selected, result.stderr
+    # 75~77은 진행할 수 있어야 하며78에서 포획이 없으면 인구 갱신 전 중단한다.
+    for outer, code in ((75, 0), (77, 0), (78, 94), (79, 94)):
+        result = subprocess.run([str(exe), '--before-pop', str(outer)],
+                                cwd=tmp_path, env=env, capture_output=True)
+        assert result.returncode == code
+    env['LUMINA_MOM_CAPTURE_MODE'] = 'REPLAY'
+    result = subprocess.run([str(exe), '--selected', '78', '6.10732968'],
+                            cwd=tmp_path, env=env, capture_output=True)
+    assert result.returncode == 0 and int(result.stdout.strip()) == 1
+    env.pop('LUMINA_MOM_CAPTURE_MODE')
+    result = subprocess.run([str(exe), '--selected', '78', '6.10732968'],
+                            cwd=tmp_path, env=env, capture_output=True)
+    assert result.returncode == 0 and int(result.stdout.strip()) == 0
+
+
+def test_header_requires_explicit_new_outer_and_legacy_launcher_rejects_it(tmp_path):
+    p = tmp_path/'capture.bin'
+    p.write_bytes(b'LUMINAMOMCAPV1  '+struct.pack('=4i6i', 8, 64, 32, 32, 78, 1234, 2, 0, 1, 90))
+    with pytest.raises(ValueError):
+        capture_header(p)
+    assert capture_header(p, expected_outer=78)['outer_iteration'] == 78
+    for bad in (77, True, 0, 2147483648):
+        with pytest.raises(ValueError):
+            capture_header(p, expected_outer=bad)
+    (tmp_path/'capture-build.json').write_text(json.dumps(dict(
+        capture_target=capture_target(target_frequency=6.10732968, target_outer=78))))
+    with pytest.raises(ValueError, match='60회 전용'):
+        verify_build(tmp_path)
 
 
 def test_first_event_native_io_previous_frequency_and_initial_placeholders(tmp_path):
