@@ -3,6 +3,7 @@
 
 GPU1/CPU1/host16GiB의 같은 Slurm 할당·총시간 안에서 최대2회만 호출한다.
 유한2회 응답과 F(J1)-J1 간격을 산란/물질 수렴으로 표시하지 않는다.
+기본은0장이며, 명시하면 같은 물질의 검증된 완성 J에서 새 반복을 시작한다.
 """
 import argparse
 import json
@@ -16,7 +17,7 @@ import time
 import numpy as np
 
 from lumina_accepted_field_input import open_prepared
-from lumina_fullsr_sc_actual import completed_transport, publish, verify_stage
+from lumina_fullsr_sc_actual import InputField, completed_transport, publish, verify_stage
 from lumina_native_columns import sha
 
 
@@ -43,9 +44,11 @@ def field_gap(previous, current, shape):
         a._mmap.close()
 
 
-def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, seconds, max_sweeps=2):
+def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, seconds, max_sweeps=2,
+        input_j=None, input_j_sha256=None):
     if (type(seconds) is not int or not 240 <= seconds <= 43200 or
-            type(max_sweeps) is not int or not 1 <= max_sweeps <= 2):
+            type(max_sweeps) is not int or not 1 <= max_sweeps <= 2 or
+            (input_j is None) != (input_j_sha256 is None)):
         raise ValueError('명시한 총시간240~43200초·최대2회 F 필요; 실행 승인은 별도')
     if (not os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_CPUS_PER_TASK') != '1' or
             os.environ.get('SLURM_MEM_PER_NODE') != '16384'):
@@ -57,8 +60,14 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
     start = time.monotonic(); deadline = start+seconds
     stage_sha = verify_stage(staged_root)
     p, source, _, _ = open_prepared(accepted_input, accepted_input_sha256)
+    initial = None
     with source:
         shape = (source.ns, source.nf); identity = source.identity
+        if input_j is not None:
+            input_j = Path(input_j).resolve()
+            previous_field = InputField(source, input_j, input_j_sha256)
+            previous_field.close()
+            initial = dict(J=dict(path=str(input_j), sha256=input_j_sha256))
     links = {n: staged_root/n for n in ('code', 'stage.json', 'chain_cuda.so', 'geometry.so')}
     if any(not path.exists() for path in links.values()):
         raise FileNotFoundError('봉인된 실제 실행 코드/바이너리 필요')
@@ -67,6 +76,7 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
     record = dict(schema='lumina-resident-fixed-material-feedback-v1', status='STARTED',
         source_identity=identity, staged_source_sha256=stage_sha, kernel_sha256=kernel_sha,
         accepted_preparation_sha256=accepted_input_sha256, sweeps=[], last_complete=None,
+        initial_complete_J=None if initial is None else initial['J'],
         limits=dict(total_seconds=seconds, maximum_F_invocations=max_sweeps, GPUs=1, CPUs=1,
                     host_memory_GiB=16, automatic_retries=0),
         material_updates=0, new_BF_BB_integrals=0, observer_calls=0,
@@ -85,7 +95,7 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
             child = out/('F-'+str(index)); child.mkdir()
             for name, target in links.items():
                 (child/name).symlink_to(target, target_is_directory=target.is_dir())
-            prior = record['last_complete']
+            prior = record['last_complete'] if record['last_complete'] is not None else initial
             child_seconds = math.floor(remaining-60.)
             command = [sys.executable, str(child/'code/scripts/lumina_resident_run.py'), str(child),
                 '--cache', str(cache), '--accepted-input', str(accepted_input),
@@ -141,6 +151,8 @@ if __name__ == '__main__':
     parser.add_argument('--accepted-input-sha256', required=True)
     parser.add_argument('--seconds', type=int, required=True)
     parser.add_argument('--max-sweeps', type=int, choices=(1, 2), default=2)
+    parser.add_argument('--input-j', type=Path)
+    parser.add_argument('--input-j-sha256')
     result = run(**vars(parser.parse_args()))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     raise SystemExit(0 if result['status'] == 'FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE' else 1)
