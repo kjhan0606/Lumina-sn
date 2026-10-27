@@ -37,6 +37,19 @@ def ion_number_flows(roster, group, index, population, fraction, rates):
     return np.asarray(targets, dtype='i4'), flows
 
 
+def ion_number_densities(labels, columns, population):
+    """Roman 단계가 아닌 전하 주소로 이온당 율의 분모를 명시한다.
+
+    photo 흐름을 이 수밀도로 나눈 값이 이온당 평균 Gamma다. 수밀도0의
+    나눗셈 규약이나 새 물리 gate를 만들지 않고 실제 분모만 출력한다.
+    """
+    charges = np.asarray(labels, dtype='i4').copy()
+    charges[:, 1] -= 1
+    densities = np.asarray([population[(columns[:, 0] == z) & (columns[:, 1] == charge)].sum(axis=0)
+                            for z, charge in charges])
+    return charges, densities
+
+
 class ResponseBalance:
     def __init__(self,run,rows,models,columns,reference,radius,epoch,adiabatic_library,
                  roster,lines,jbar,ff,ff_coefficients,seed_population):
@@ -106,10 +119,12 @@ class ResponseBalance:
             ledgers['physical_'+policy]=balance(bf,bb,ff['all_positive_ions'],ad['physical'],external,np.zeros(ns))
             ledgers['native_'+policy]=balance(bf,native,ff['native_upper_ions'],ad['native'],external,art)
         ion_labels, ion_flows = ion_number_flows(self.roster, group, self.index, pop, f, rates)
+        ion_charges, ion_densities = ion_number_densities(ion_labels, self.columns, pop)
         arrays=dict(bf=bf,bb=bb,native_bb=native,physical_adiabatic=ad['physical'],native_adiabatic=ad['native'],
                     physical_internal_energy=physical,native_internal_energy=raw,artificial=art,
                     stored_decay=self.stored,instantaneous_scenario=self.instant,
                     bf_ion_Z_stage=ion_labels, bf_ion_number_flows=ion_flows,
+                    bf_ion_Z_charge=ion_charges, bf_ion_number_density=ion_densities,
                     bf_ion_number_flow_channels=np.array(['photo', 'spontaneous', 'stimulated', 'net']))
         for k,v in ff.items():arrays['ff_'+k]=v
         summary={}
