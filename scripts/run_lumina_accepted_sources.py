@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 import numpy as np
@@ -15,7 +16,24 @@ import lumina_accepted_field_input as A
 RUNS = Path('/gpfs/kjhan/cmfgen_runs')
 
 
-def run(out, source_commit):
+def material_inputs(manifest=None, manifest_sha256=None, full_population=None, full_population_sha256=None):
+    """기존 후보 기본값 또는 명시한 새 후보와 실제 C full 인구를 반환한다."""
+    supplied = (manifest, manifest_sha256, full_population, full_population_sha256)
+    if any(value is not None for value in supplied) and not all(value is not None for value in supplied):
+        raise ValueError('새 물질 manifest·C full 인구와 각 SHA를 함께 지정해야 함')
+    if not any(value is not None for value in supplied):
+        root = RUNS/'lumina_accepted_input_20261027-79u5Sp/material'
+        return (root/'accepted-material.json',
+                '61e3090a8550bffb6e6f030a84be811407634299eefba93036d1fad30d492c1b',
+                root/'C-imported-full.bin',
+                '2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6')
+    if not all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in (manifest_sha256, full_population_sha256)):
+        raise ValueError('새 물질/실제 C 인구의 SHA 형식 오류')
+    return Path(manifest).resolve(), manifest_sha256, Path(full_population).resolve(), full_population_sha256
+
+
+def run(out, source_commit, accepted_material=None, accepted_material_sha256=None,
+        C_full_population=None, C_full_population_sha256=None):
     if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
             os.environ.get('SLURM_MEM_PER_NODE') != '32768' or
             os.environ.get('OMP_NUM_THREADS') != '16'):
@@ -23,10 +41,12 @@ def run(out, source_commit):
     out = Path(out).resolve()
     if out.exists(): raise FileExistsError('기존 계수 보존')
     start = time.monotonic()
-    material = RUNS/'lumina_accepted_input_20261027-79u5Sp/material'
+    manifest_path, manifest_sha, full_path, full_sha = material_inputs(
+        accepted_material, accepted_material_sha256, C_full_population, C_full_population_sha256)
+    material = manifest_path.parent
     paths = dict(
-        accepted_material=material/'accepted-material.json',
-        full_population=material/'C-imported-full.bin',
+        accepted_material=manifest_path,
+        full_population=full_path,
         grid=RUNS/'lumina_full_sr_verified_20261020-yb8k9y/grid/frequency.npy',
         geometry_preparation=RUNS/'lumina_outer_reuse_20261021-uTVbnT/boundary/preparation.json',
         cpu_library=RUNS/'lumina_extended_4h_20261022-rJGMVR/driver.so',
@@ -34,8 +54,8 @@ def run(out, source_commit):
         original_seed=RUNS/'lumina_native70_seed_20261020-DphYnQ/seed/material-seed.json',
         model=RUNS/'toy06_19p48d_field_feedback_429038/material/MODEL')
     expected = dict(
-        accepted_material='61e3090a8550bffb6e6f030a84be811407634299eefba93036d1fad30d492c1b',
-        full_population='2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6',
+        accepted_material=manifest_sha,
+        full_population=full_sha,
         grid='c03b9fb565a215fd11ec70ab2574c70af7f09eab74669214638177c2bbfc0a6d',
         geometry_preparation='1fad50444de5db7a583befd8d59ae7970c5ebf63c3cd423273c341ddb21582f2',
         cpu_library='6f82306bff6170037a40f09303f33e1cb00d930ddbdeb0cbe38d7b8b61855be4',
@@ -43,6 +63,8 @@ def run(out, source_commit):
     if any(B.sha(paths[k]) != h for k, h in expected.items()):
         raise ValueError('수용 물질/격자/기하/바이너리 변경')
     manifest = json.loads(paths['accepted_material'].read_text())
+    if manifest['schema'] != 'lumina-accepted-nodal-material-v1':
+        raise ValueError('수용 물질의 실제 manifest 필요')
     for name, digest in manifest['output_sha256'].items():
         if B.sha(material/name) != digest: raise ValueError('새 물질 출력 변경: '+name)
     for key in ('original_seed', 'model'):
@@ -79,4 +101,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--source-commit', required=True)
+    parser.add_argument('--accepted-material', type=Path)
+    parser.add_argument('--accepted-material-sha256')
+    parser.add_argument('--C-full-population', type=Path)
+    parser.add_argument('--C-full-population-sha256')
     run(**vars(parser.parse_args()))

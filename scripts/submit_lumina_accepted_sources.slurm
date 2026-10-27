@@ -18,6 +18,7 @@ module load gnu13/13.2.0
 repository=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}
+shift 2
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
 test -d "$parent"
 test ! -e "$parent/source"
@@ -28,4 +29,4 @@ export OMP_NUM_THREADS=16 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_T
 export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$parent/source/scripts"
 cd "$parent/source"
 timeout -k 30 6900s python3 scripts/run_lumina_accepted_sources.py \
-    --out "$parent/run" --source-commit "$source_commit"
+    --out "$parent/run" --source-commit "$source_commit" "$@"
