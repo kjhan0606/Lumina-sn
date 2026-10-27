@@ -1,0 +1,90 @@
+{
+  "state": "COMPLETE_SAME_NATIVE_NODE_IONIZATION_COMPARISON",
+  "candidate_status": "ACCEPTED_PRIVATE_FIXED_J_STEP_NOT_CONVERGED",
+  "candidate_accepted": true,
+  "full_fixed_field_or_spectrum_converged": false,
+  "runtime_comparison_run": "lumina_projected_SiS90_20261027-nzGeNY",
+  "runtime_result_sha256": "e2d4b59ad6098522a3814a9609823f74c624a68336c31fdd9ea1814c2a0c86bc",
+  "published_csv": "docs/LUMINA_SI_S_PROJECTED_TNE_2026-10-27.csv",
+  "published_csv_sha256": "936874ed107a60b0bca1729e6875980e3bb43f407419f9d94edefcebcbc106ef",
+  "published_line_endings": "LF; runtime CSV는CRLF이며 숫자/헤더/90개 행 내용은 동일",
+  "operator_material_reproduction": {
+    "location": "grammar-debug CPU1/60초 이내 읽기 전용",
+    "charge_relative_longdouble": 4.4210225716433396e-11,
+    "charge_C_difference_over_ne": 7.048622163938873e-16,
+    "nuclei_relative_longdouble": 1.848564704087785e-16,
+    "same_T_actual_evaluations": 3,
+    "all_actual_response_balance_hashes_verified": true,
+    "source_after_checks_all_pass": 88,
+    "replayed_fixed_scale_merit": 3.6235704475762013e-6,
+    "baseline_fixed_scale_merit": 3.986272124511319e-6,
+    "merit_reduction_fraction": 0.0909876861403639
+  },
+  "scope_warning": "고정 J에서 한 온도 후보를 전하 폐합 후 수용한 결과다. 수렴 released-T 기준해·전체 활성 합집합·새 수송·최종 스펙트럼 일치는 미입증",
+  "baseline": "CMFGEN 물질70 고정T 비수렴 입력; certified released-T 앵커 아님",
+  "source_run": "lumina_charge_projected_1224060_20261027_argsfix",
+  "points": 90,
+  "summary": {
+    "Si_II": {
+      "known_fraction_active_points": 30,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 1.435247583533091e-06,
+      "worst_absolute_node_zero_based": 52,
+      "active_log_abs_median_dex": 0.004966338576957163,
+      "active_log_abs_p95_dex": 0.057454702530983004,
+      "active_log_abs_max_dex": 0.0678217280766491,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "Si_III": {
+      "known_fraction_active_points": 90,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.023517898188071817,
+      "worst_absolute_node_zero_based": 33,
+      "active_log_abs_median_dex": 0.0012502679803078724,
+      "active_log_abs_p95_dex": 0.05014354103844867,
+      "active_log_abs_max_dex": 0.05171998915123499,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "S_II": {
+      "known_fraction_active_points": 40,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.00041913422210512405,
+      "worst_absolute_node_zero_based": 52,
+      "active_log_abs_median_dex": 0.009514891873563025,
+      "active_log_abs_p95_dex": 0.07079520779818367,
+      "active_log_abs_max_dex": 0.07414797846312826,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    },
+    "S_III": {
+      "known_fraction_active_points": 90,
+      "active_support_mismatch_count": 0,
+      "max_abs_fraction": 0.01614335671852224,
+      "worst_absolute_node_zero_based": 32,
+      "active_log_abs_median_dex": 0.0016385434930192844,
+      "active_log_abs_p95_dex": 0.0403627603283239,
+      "active_log_abs_max_dex": 0.04456595936751828,
+      "active_log_above_0p1_dex_count": 0,
+      "active_log_above_0p1_dex_nodes_zero_based": []
+    }
+  },
+  "input_sha256": {
+    "result": "f44c713c7d3ce03c3471b64cbed26ef09a8b5529410e7f14abb3773c1c8d11fa",
+    "accepted": "d0933f1884f3aaca940f1874cf4fbf02c9394bb3f09601a9211ba2757b042146",
+    "candidate_response": "d0933f1884f3aaca940f1874cf4fbf02c9394bb3f09601a9211ba2757b042146",
+    "snapshot": "35b41808ee1e0527216db6d880987da313185a6ed58dbf3fe66ff5625480cc9f",
+    "nodes": "50e7b2c6f810b1c4fcfb4a59812ea88d07d17e985c878adcbe3974a821f99a3a"
+  },
+  "csv_sha256": "e2aa52093a0e8b4c7d5d26fb6439ad1ccf00e9e102fdf435280a00278fa99b20",
+  "node_mapping": "동일 원래90점; shell 평균/중심 보간 없음",
+  "weighting": "동일 가중 점별 통계; 최종 v2 질량가중 상태 판정 아님",
+  "active_scope": "fraction>1e-8인 합집합 부분집합. 율/열/불투명도 활성 항목의 완전한 합집합 판정 아님",
+  "zero_floor_applied": false,
+  "new_rates": 0,
+  "new_transport": 0,
+  "final_equivalence": "NOT_JUDGED",
+  "final_goal": "NOT_MET",
+  "source_script_sha256": "72925414034598ac80f1791ca25d6a880407dc6aef335a0f7b9b5e0beb0245ad"
+}

@@ -189,7 +189,7 @@
     "automatic_extra_evaluation": false
   },
   "proposed_charge_projected_candidate": {
-    "status": "APPROVED_SINGLE_EXECUTION_RUNNING",
+    "status": "COMPLETE_ACCEPTED_PROJECTED_STEP_NOT_CONVERGED",
     "objective": "같은 고정장에서 전하를 다시 닫은 실제 온도 후보가 깊이 결합 열잔차를 개선하는지 판별. 최종 스펙트럼 목표의 대체 아님",
     "inputs": "1223954 수용 전하 해·1224060 봉인 방향·기존 J70/물질70 원자료 및 네 열장부 보존",
     "temperature_candidates_max": 1,
@@ -237,9 +237,25 @@
     "execution": {
       "job": 1224249,
       "run": "lumina_charge_projected_1224060_20261027_argsfix",
-      "state": "RUNNING",
-      "observed_elapsed_seconds": 147,
-      "phase": "PROJECTED_T_BOUND_BEGIN",
+      "state": "COMPLETED",
+      "exitcode": "0:0",
+      "observed_elapsed_seconds": 1971,
+      "phase": "charge_projected_line accepted",
+      "report_state": "COMPLETE_DEPTH_COUPLED_MATERIAL_STEP",
+      "report_sha256": "f44c713c7d3ce03c3471b64cbed26ef09a8b5529410e7f14abb3773c1c8d11fa",
+      "accepted_response_sha256": "d0933f1884f3aaca940f1874cf4fbf02c9394bb3f09601a9211ba2757b042146",
+      "accepted_balance_sha256": "a6e2314eedd1634fbe3c208c13822f08edb4feee7dc4e2d9f052d53d1d144fd7",
+      "MaxRSS_KiB": 4778848,
+      "fresh_temperature_full_BF_integrations_used": 1,
+      "fresh_temperature_full_BF_seconds": 1598.9604195260035,
+      "same_T_material_evaluations_used": 3,
+      "charge_relative_history": [5.025081558185279e-5, 1.8869896873645065e-6, 4.421023945177311e-11],
+      "SE_residual_final": 1.02957838872912e-16,
+      "baseline_fixed_scale_merit": 3.986272124511319e-6,
+      "final_fixed_scale_merit": 3.6235704475762013e-6,
+      "reproduced_merit_reduction_fraction": 0.0909876861403639,
+      "numerical_fixed_field_converged": false,
+      "full_profiles_and_reproduction": "docs/LUMINA_SI_S_PROJECTED_TNE_2026-10-27.json",
       "input_preflight_passed": true,
       "direct_tests_passed_in_sealed_source": 28,
       "inputs_sha256": "824708070977b10bcc740d1f4b57e860aa40f197b608d02631ec16a96ffd3cbc",
@@ -251,9 +267,9 @@
       "temperature_candidates_max": 1,
       "native_128GiB_submitted": false,
       "new_transport": 0,
-      "result_and_acceptance": "미확인: 실제 전하 폐합·전체 깊이 열잔차·90점 Si/S 판독이 필요"
+      "result_and_acceptance": "전하 폐합과 같은 정책의 전체 깊이 잔차 감소를 재현해 한 고정장 후보를 수용. 새 T/ne 수용은 전체 SE/RE·수송/스펙트럼 수렴이 아니다"
     }
   },
-  "next": "승인된 전하 재평형1224249의 실제 전하 폐합·열잔차·90점 Si/S를 판독한다. 이후 사용자가 별도로 native128GiB도 승인했으며 그 단회 실행은 LUMINA_NATIVE_REFERENCE_BUILD_2026-10-27.json에서 관리한다. native E/Jv·안정 reference·새 자기일관 수송·스펙트럼은 계속 미입증.",
+  "next": "수용된1224249는 한 고정장 개선이며 전체 수렴이 아니다. 물리 광자 잔차의 큰 국소 상쇄와 native/physical 장부 차이를 평가해 후속 묶음을 정한다. native128 단회의 시간 한도와 실제 완료/부분 결과는 별도 기준 빌드JSON에서 관리한다. 새 온도/수송/시간 확대를 기존 승인으로 가정하지 않는다.",
   "final_goal": "NOT_MET"
 }

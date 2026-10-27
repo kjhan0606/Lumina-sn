@@ -148,6 +148,40 @@
     "temperature_equilibrium_solved": false,
     "additional_physics_runs_by_this_analysis": 0
   },
+  "accepted_projected_step_spatial_diagnostics": {
+    "accepted_job": 1224249,
+    "input_sha256": {
+      "baseline_balance": "965d8df5ed8bbcdaca66e03d51ae72483598862282e687aa8d34904d0e3702c4",
+      "projected_balance": "a6e2314eedd1634fbe3c208c13822f08edb4feee7dc4e2d9f052d53d1d144fd7",
+      "native_nodes": "50e7b2c6f810b1c4fcfb4a59812ea88d07d17e985c878adcbe3974a821f99a3a"
+    },
+    "processing": "grammar-debug CPU1/60초 이내 읽기 전용. 위와 같은90점 보조 사다리꼴이며 native quadrature/표면 flux/최종 에너지 폐합이 아님",
+    "deposition_Lsun_both": 2957971957.5538535,
+    "baseline_then_projected_Lsun": {
+      "native_instantaneous_signed_net": [2106174483.7126656, 1918271288.9247823],
+      "native_instantaneous_L1_net": [2898056934.152313, 2640931030.6997023],
+      "physical_instantaneous_signed_net": [838692935.2150285, -23143647.684381064],
+      "physical_instantaneous_L1_net": [3515890645.6946425, 3465217951.711623],
+      "BB_native_minus_physical_signed": [1267477463.5077271, 1941410851.4992356],
+      "BB_native_minus_physical_L1": [2023011106.174161, 2898886329.441867]
+    },
+    "projected_local_max_abs_erg_cm3_s": {
+      "native_instantaneous": 0.004314745053328622,
+      "native_worst_node": 89,
+      "physical_instantaneous": 0.00436078748822949,
+      "physical_worst_node": 84
+    },
+    "interpretation": "native 고정행 잔차 감소는 재현됐지만 physical signed 적분의 작은 값은 깊이별 양·음 상쇄다. physical L1은 거의 남고 BB 장부 차이는 커졌다. 한 걸음 개선을 광자 RE·표면 에너지 폐합·최종 동등성으로 승격하지 않음",
+    "astra_evaluation": {
+      "agent": "01a178b2-657c-7ba1-ab5a-637a898d5198",
+      "scope": "의미 있는 수용 후보 이후 읽기 전용 계획/물리 평가. 결과/배열 hash 대조, 보조적분 독립 재계산은 하지 않음",
+      "conclusion": "공간적 상쇄와 native/physical 에너지식 차이 위험이 남는다. SCL은 단순 전처리나 임의 가열항으로 단정하지 않음. SL 합산 SE0이 full-level SE0을 보장하지 않음",
+      "next_order": ["기존 자료로 BB 장부 차이와 SL 에너지 가중 SE의 제한된 계약 확인", "그 뒤 수용 물질의 같은 chi/eta·경계·침적열로 새 결정론 J/실제 flux와90점 응답", "고정 J70의 장기 독립 반복 대신 그 수송 결합 안에서 열/전하 갱신"],
+      "do_not": "광자 RE에 충돌열 재가산·유리한 장부로 목적함수 교체·미수렴 원70 거리로 후보 선택·버퍼 가능 로그만으로 runtime hotspot 확정 금지",
+      "authority": "기존 소스/저장자료의 읽기 전용 계약 확인까지. 새 RT·추가 T/BF·시간/메모리 확대는 별도 승인 필요. native는 현재 한도에서 끝내고 부분 결과 보존"
+    },
+    "additional_physics_runs_by_this_analysis": 0
+  },
   "new_physics_runs": 0,
   "final_goal": "NOT_MET"
 }
