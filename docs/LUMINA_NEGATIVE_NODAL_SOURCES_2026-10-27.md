@@ -58,6 +58,28 @@ FL124의 두 경로는54.0528 cm⁻³ s⁻¹(**0.0122%**), FL125의 두 경로�
 민감도를 배제하거나 정량화한 것은 아니다. 따라서 직접 BF가 작다는 이유로
 역전이 무해하다고 단정하지 않는다.
 
+### 같은 기존 장에서 역전선의 준위 간 전이
+
+같은 원70 인구와 선형 주파수 표현의 원70 `Jbar`를 사용해 문제 선의
+Einstein 전이율을 계산했다. BF와 BB 자료가 같은 원 복사장 해시를 사용하는지,
+두 FL의 C 복원 인구가 BF 물질 snapshot과 일치하는지도 확인했다.
+FL124→125 선은 `f=2.975`, `A_ul=3.33097e5 s⁻¹`이다.
+
+| 노드54 전이 | 전이수 (cm⁻³ s⁻¹) |
+|---|---:|
+| 하위→상위 흡수 | 10,484.36 |
+| 상위→하위 유도방출 | 13,047.56 |
+| 상위→하위 자발방출 | 2,436.37 |
+| 순 상위→하위 | 4,999.57 |
+
+순 하향 전이수는 두 준위의 직접 BF 광이온화 합656.99 cm⁻³ s⁻¹의
+약7.61배다. 두 값은 단위가 같은 국소 흐름이지만 **BB는 이온 단계를
+직접 바꾸지 않으므로**, 이 비율이 이온화 분포 변화율을 뜻하지 않는다.
+원70에서는 90점 모두 순 하향이지만 일부 점의 절대 인구와 전이수는 극히
+작다. 전체 준위망의 상쇄·충돌·다른 방사 전이를 포함한 민감도와 새 J의
+영향은 아직 모른다. 그러므로 직접 BF의 작은 기여만으로 이 선을 무시할 수
+없지만, 이 선이 Si II/III 불일치를 지배한다고도 아직 말할 수 없다.
+
 최초 탐색에서 내부 stage3을 Si II로 잘못 선택해 Si III를 집계했으나,
 원자주소 대조에서 발견해 해당 수치는 폐기했다. 최종 계산은 lower의
 `ion_number=1`과 roster `stage=2`를 모두 검증한다. 명령 인수 이름 오류도
@@ -69,13 +91,19 @@ FL124의 두 경로는54.0528 cm⁻³ s⁻¹(**0.0122%**), FL125의 두 경로�
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 PYTHONPATH=scripts \
 python3 scripts/analyze_lumina_inverted_line_photoionization.py \
   --root "$RUNS/lumina_material_bf90_20261027-B64JUq/run" \
-  --levels "$RUNS/lumina_accepted_input_20261027-79u5Sp/material/atomic/levels.csv"
+  --levels "$RUNS/lumina_accepted_input_20261027-79u5Sp/material/atomic/levels.csv" \
+  --BB-root "$RUNS/lumina_linear_BB90_20261027-gfIdax/run" \
+  --original-full "$RUNS/lumina_signed_source_trace_20261020-YbcirG/full_population90.bin"
 ```
 
 BF 보고서 SHA256은 `482b18c4d884984787c108575e096cd7ac18665aa5e85fda63a66f83f8d286c6`,
 물질 snapshot은 `35b41808ee1e0527216db6d880987da313185a6ed58dbf3fe66ff5625480cc9f`,
 경로 목록은 `967e09c692143e0dafb9ee0f19a5ab71f09278b3fafaeba861d1e2188a9eb886`,
 총 BF율은 `921409cfea2d7dee95921ddaf9ac850a23008960e0f2ea1b6d83680c67b59484`다.
+BB 보고서는 `b95b16e3401068bc8239116a87c872f392e970ec5780b7ce04d32cf51d1e9ec9`,
+선 평균 복사장은 `f935c174b3a9e59229713fb52402be5f72d51fdc7aaecb4a8ef7d906a3c4a38a`,
+두 BF/BB 자료의 원 복사장 해시는
+`d9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563`이다.
 
 ## 증거와 재현
 

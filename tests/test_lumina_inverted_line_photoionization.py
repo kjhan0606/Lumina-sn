@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from analyze_lumina_inverted_line_photoionization import parse_args, weighted_photoionization
+from analyze_lumina_inverted_line_photoionization import parse_args, radiative_line_flow, weighted_photoionization
 
 
 def test_siII_not_siIII_and_probability_applied_once():
@@ -29,4 +29,11 @@ def test_siII_not_siIII_and_probability_applied_once():
 
 def test_cli_names_match_actual_analysis_arguments():
     args = vars(parse_args(['--root', '/tmp/input', '--levels', '/tmp/levels.csv']))
-    assert set(args) == {'root', 'levels_path'} and args['levels_path'] == Path('/tmp/levels.csv')
+    assert set(args) == {'root', 'levels_path', 'BB_root', 'original_full'} and args['levels_path'] == Path('/tmp/levels.csv')
+
+
+def test_inverted_line_retains_stimulated_and_spontaneous_downward_flow():
+    result = radiative_line_flow([2., 2.], [6., 6.], [1.e-7, 0.], 1.e13, 100., .5)
+    assert result['stimulated'][0] > result['absorption'][0]
+    assert np.all(result['net_up'] < 0) and result['net_up'][1] == -600.
+    with pytest.raises(ValueError): radiative_line_flow([2.], [6.], [-1.], 1.e13, 100., .5)
