@@ -92,6 +92,22 @@ def test_thermal_resume_requires_pin_pair_and_seed(manual_resources,path,digest,
             resume_result='seed' if seed else None,resume_result_sha='seed-sha' if seed else None))
 
 
+@pytest.mark.parametrize('policy',[None,'unknown'])
+def test_temperature_correction_requires_explicit_valid_equation_before_output(manual_resources,policy):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError,match='열방정식 정책'):
+        N.run(SimpleNamespace(seconds=13800,temperature_evaluations=5,thermal_policy=policy))
+
+
+@pytest.mark.parametrize('prefix',[0,5,True])
+def test_invalid_thermal_probe_prefix_is_rejected_before_output(manual_resources,prefix):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError,match='초기 열섭동'):
+        N.run(SimpleNamespace(seconds=13800,temperature_evaluations=5,thermal_policy='physical_stored',
+            resume_result='seed',resume_result_sha='sha',resume_thermal_result='report',
+            resume_thermal_result_sha='sha',thermal_replay_prefix=prefix))
+
+
 def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_accepted(tmp_path):
     data=dict(temperature=np.array([9000.,10000.]),ne=np.array([20.,30.]))
     metadata=dict(root='evaluation-1',response_sha256='response',balance_sha256='balance')

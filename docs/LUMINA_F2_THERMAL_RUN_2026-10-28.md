@@ -1,5 +1,15 @@
 # F2 고정장 T/ne 물질 보정 — 승인 단회
 
+## 최신 물리 계약 정정
+
+이 실행의 고정 소스531e0e7f는 `physical_stored` 분기다. 기존 최종
+CMFGEN 동일모델 비교 계약은 `native_instantaneous_scenario`였고 두
+방정식은 같지 않다. 현재 실행·입력·이전 기록을 바꾸지 않으며 결과를
+native 순간열 해로 재명명하지 않는다. 조건을 만족하는 네 초기 물질
+섭동은 후속 명시 정책의 미분 자료로 재사용할 수 있지만 기존 방향과
+수용 판정은 승계하지 않는다. 배경·Astra 물리 자문·후속 코드 및 남은
+FF 수송 선택은 `LUMINA_MATCHED_THERMAL_POLICY_2026-10-28.md`를 따른다.
+
 ## 목적과 판단 범위
 
 최종 목표는 Si II/III·S 분포, 물리량과 observer 스펙트럼의 CMFGEN

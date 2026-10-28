@@ -78,3 +78,57 @@ def test_wrong_or_corrupted_replay_is_never_used(preserved,fault):
             R.load(root/'result.json','0'*64,**args)
         return
     with pytest.raises(ValueError):load(preserved)
+
+
+def native_ledgers(preserved):
+    root,report,args=preserved
+    for entry in [report['thermal_initial_response'],*report['thermal_evaluation_order']]:
+        path=Path(entry['root'])/'balance.npz'
+        with np.load(path) as f:heat={k:f[k] for k in f.files}
+        heat.update(native_adiabatic=np.zeros(2),native_internal_energy=np.ones(2),
+            native_instantaneous_scenario_net=heat['physical_stored_net']+.005,
+            native_instantaneous_scenario_gross=heat['physical_stored_gross']+.005,
+            stored_decay=np.zeros(2),instantaneous_scenario=np.full(2,.005))
+        np.savez(path,**heat);entry['balance_sha256']=R.B.sha(path)
+    args['policy']='native_instantaneous_scenario'
+
+
+def test_changed_energy_policy_cannot_replay_old_direction_candidates(preserved):
+    native_ledgers(preserved)
+    with pytest.raises(ValueError,match='열방정식 정책 불일치'):load(preserved)
+
+
+def test_explicit_initial_probe_prefix_can_reuse_material_data_not_old_direction(preserved):
+    native_ledgers(preserved);preserved[2]['prefix']=2
+    result=load(preserved)
+    assert len(result['replay'])==2
+    p=result['provenance']
+    assert p['previous_energy_policy']=='physical_stored' and p['energy_policy']=='native_instantaneous_scenario'
+    assert p['initial_probe_prefix']==2 and not p['previous_direction_or_acceptance_reused']
+
+
+@pytest.mark.parametrize('prefix',[0,5,True,3])
+def test_probe_prefix_is_initial_bounded_and_complete(preserved,prefix):
+    native_ledgers(preserved);preserved[2]['prefix']=prefix
+    with pytest.raises(ValueError):load(preserved)
+
+
+def test_changed_deposition_profile_is_not_a_policy_only_reuse(preserved):
+    native_ledgers(preserved);_,report,args=preserved;args['prefix']=2
+    entry=report['thermal_evaluation_order'][0];path=Path(entry['root'])/'balance.npz'
+    with np.load(path) as f:heat={k:f[k] for k in f.files}
+    heat['instantaneous_scenario']*=1.1;np.savez(path,**heat);entry['balance_sha256']=R.B.sha(path)
+    with pytest.raises(ValueError,match='침적열 프로필'):load(preserved)
+
+
+def test_equal_total_nuclei_does_not_hide_changed_local_element_inventories(preserved):
+    _,report,args=preserved
+    args['state']['columns'][1,0]=28
+    for entry in [report['thermal_initial_response'],*report['thermal_evaluation_order']]:
+        path=Path(entry['root'])/'response.npz'
+        with np.load(path) as f:data={k:f[k] for k in f.files}
+        data['columns']=args['state']['columns'].copy()
+        if entry is report['thermal_evaluation_order'][0]:
+            data['population'][0]+=.1;data['population'][1]-=.1
+        np.savez(path,**data);entry['response_sha256']=R.B.sha(path)
+    with pytest.raises(ValueError,match='깊이별 원소/핵종'):load(preserved)

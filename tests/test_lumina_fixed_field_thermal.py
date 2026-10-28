@@ -134,6 +134,26 @@ def test_accepted_changed_state_builds_new_derivatives_not_old_newton_matrix():
     assert not np.array_equal(fresh[0][0]['temperature'],saved[0][0]['temperature'])
 
 
+def test_other_energy_policy_reuses_four_SE_probes_but_builds_its_own_direction():
+    def both(t,ne):
+        value=case(t,ne)
+        value[1].update(native_adiabatic=np.zeros(2),native_internal_energy=np.ones(2),
+            native_instantaneous_scenario_net=value[1]['physical_stored_net']+.005,
+            native_instantaneous_scenario_gross=np.full(2,2.005))
+        return value
+    first=both([2.04,3.06],[5.,7.]);saved=[]
+    def original(t,ne):saved.append(both(t,ne));return saved[-1]
+    old=T.solve(original,first,adiabatic,policy='physical_stored',max_evaluations=5)
+    fresh=[]
+    def additional(t,ne):fresh.append(both(t,ne));return fresh[-1]
+    new=T.solve(additional,first,adiabatic,policy='native_instantaneous_scenario',
+        max_evaluations=1,replay=saved[:4])
+    assert new['fresh_evaluations_used']==1 and new['replayed_evaluations']==4
+    assert new['fixed_field_numerical_converged']
+    assert not np.array_equal(old['selected'][0]['temperature'],new['selected'][0]['temperature'])
+    np.testing.assert_allclose(new['selected'][0]['temperature'],np.array([2.,3.])*np.exp(-.005),rtol=1e-10)
+
+
 @pytest.mark.parametrize('fault',['order','temperature','ne'])
 def test_mismatched_replay_never_falls_back_to_expensive_evaluation(fault):
     first=case([2.04,3.06],[5.,7.]);saved=[]

@@ -142,7 +142,7 @@ def execution_resources(seconds):
 
 def preserve_thermal_direction(out, index, value, matrix, residual, delta,
                                charge_scale, thermal_scale, *, field,
-                               source_identity, probes):
+                               source_identity, probes, policy='physical_stored'):
     """비싼 섭동을 다시 계산하지 않도록 방향 후보 실행 전에 선형계를 보존한다.
 
     저장은 수용/수렴 판정이나 새 후보 실행 권한이 아니다. 후보와 그 열장부는
@@ -157,7 +157,7 @@ def preserve_thermal_direction(out, index, value, matrix, residual, delta,
     record = dict(state='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE',
         field=field, source_identity=source_identity, base_response=metadata,
         probes=probes, rows=['charge', 'RE'], columns=['logT', 'logne'],
-        energy_policy='physical_stored', centered_log_step=1.e-4,
+        energy_policy=policy, centered_log_step=1.e-4,
         numerical_tolerance=1.e-10, max_log_step=.1,
         root=str(root), linearization_sha256=B.sha(path),
         new_material_evaluations=0, new_transport=0, joint_convergence=False)
@@ -179,13 +179,21 @@ def run(args):
         raise ValueError('완료 계수 재개는 보고서/해시 쌍과 명시한 온도 보정 필요')
     if bool(replay_path) != bool(replay_sha) or (replay_path and (not resume or not temperature_evaluations)):
         raise ValueError('열평가 재개는 보고서/해시 쌍과 완료 기준 계수 및 명시한 신규 평가 한도 필요')
+    thermal_policy = getattr(args, 'thermal_policy', None)
+    if (temperature_evaluations and thermal_policy is None) or (
+            thermal_policy is not None and thermal_policy not in thermal_replay.ENERGY_POLICIES):
+        raise ValueError('명시한 지원 열방정식 정책 필요')
+    replay_prefix = getattr(args, 'thermal_replay_prefix', None)
+    if replay_prefix is not None and (not replay_path or type(replay_prefix) is not int or not 1 <= replay_prefix <= 4):
+        raise ValueError('초기 열섭동 재사용은 봉인 재개 보고서와1~4개 명시가 필요')
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
     out.mkdir(); started = time.monotonic(); deadline = started+args.seconds
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
-        temperature_evaluations_max=temperature_evaluations, new_transport=0, new_native=0, evaluations=[],
+        temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
+        new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
         difference_interpretation='joint change of J, frequency grid and continuum evaluation; not isolated field effect')
@@ -344,7 +352,8 @@ def run(args):
                     replay_source = thermal_replay.load(replay_path, replay_sha,
                         field=last, source_identity=source.identity,
                         implementation=result['thermal_implementation_sha256'], state=state,
-                        library=args.library, line_library=args.line_library, inputs=inputs)
+                        library=args.library, line_library=args.line_library, inputs=inputs,
+                        policy=thermal_policy, prefix=replay_prefix)
                     result['thermal_replay'] = replay_source['provenance']
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
                         candidates[id(data)] = metadata; evaluation_energy[id(data)] = energy
@@ -381,11 +390,11 @@ def run(args):
                         records.append(preserve_thermal_direction(out, len(records)+1,
                             value, matrix, residual, delta, charge_scale, thermal_scale,
                             field=last, source_identity=source.identity,
-                            probes=result['thermal_evaluation_order'][-4:].copy()))
+                            probes=result['thermal_evaluation_order'][-4:].copy(), policy=thermal_policy))
                         save()
                     block = thermal_block.solve(evaluate_temperature,
                         (final, evaluation_energy[id(final)], candidates[id(final)]), full_ad,
-                        policy='physical_stored', max_evaluations=temperature_evaluations,
+                        policy=thermal_policy, max_evaluations=temperature_evaluations,
                         on_evaluation=thermal_decision, on_direction=thermal_direction,
                         replay=() if replay_source is None else replay_source['replay'], on_replay=replayed)
                     final = block.pop('selected')[0]
@@ -443,6 +452,10 @@ if __name__ == '__main__':
     parser.add_argument('--resume-thermal-result', type=Path,
         help='종료된 같은 장 열평가를 정확한 호출 순서로 재생. 추가 실행 승인을 대신하지 않음')
     parser.add_argument('--resume-thermal-result-sha')
+    parser.add_argument('--thermal-policy', choices=thermal_replay.ENERGY_POLICIES,
+        help='온도 보정 때 반드시 명시하는 열정책. 기존 matched-native 계약은 native_instantaneous_scenario')
+    parser.add_argument('--thermal-replay-prefix', type=int,
+        help='정책 변경 시 기존 방향 후보가 아닌 초기1~4개 물질 섭동만 재사용. 새 정책의 잔차/척도/방향을 재구성')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',

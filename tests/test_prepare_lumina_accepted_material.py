@@ -281,3 +281,20 @@ def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_p
     result.write_text(json.dumps(report))
     with pytest.raises(ValueError):E.prepare(result,E.B.sha(result),seed,run,tmp_path/'export')
     assert not (tmp_path/'export/accepted-material.json').exists()
+
+
+def test_thermal_export_checks_declared_native_equation_not_a_more_favorable_ledger(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result);policy='native_instantaneous_scenario';report['thermal_energy_policy']=policy
+    for entry in report['evaluations']:
+        path=Path(entry['root'])/'balance.npz'
+        with np.load(path) as f:heat={k:f[k] for k in f.files}
+        selected=entry==report['selected_response']
+        heat[policy+'_net']=np.full(3,.02 if selected else .4)
+        heat[policy+'_gross']=np.full(3,2.)
+        if selected:heat['physical_stored_net']=np.full(3,.8)
+        np.savez(path,**heat);entry['balance_sha256']=E.B.sha(path)
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'native-export')
+    assert exported['thermal_energy_policy']==policy and not exported['joint_convergence_certified']
+    assert exported['checks']['thermal_selected_scaled_max']<exported['checks']['thermal_initial_scaled_max']

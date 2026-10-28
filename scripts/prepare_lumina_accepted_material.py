@@ -15,6 +15,7 @@ import numpy as np
 import cmfgen_model_continuum as B
 from prepare_lumina_material_cells import read_nodes
 from prepare_lumina_material_seed import atomic_asset
+from lumina_thermal_replay import ENERGY_POLICIES
 
 
 def relative_error(actual, expected):
@@ -86,10 +87,12 @@ def thermal_selection(report):
 def thermal_checks(report, candidate, directory):
     """기존 열장부와 초기 고정 척도로 실제 열 감소/수렴 표기를 확인한다."""
     first = Path(report['thermal_initial_response']['root'])
+    policy = report.get('thermal_energy_policy', 'physical_stored')
+    if policy not in ENERGY_POLICIES: raise ValueError('온도 후보의 열방정식 정책 오류')
     ns = len(candidate['ne'])
     with np.load(first/'balance.npz', allow_pickle=False) as initial, np.load(directory/'balance.npz', allow_pickle=False) as final:
-        old = initial['physical_stored_net']; gross = initial['physical_stored_gross']
-        new = final['physical_stored_net']
+        old = initial[policy+'_net']; gross = initial[policy+'_gross']
+        new = final[policy+'_net']
         if (any(a.shape != (ns,) or not np.isfinite(a).all() for a in (old, gross, new)) or
                 np.any(gross < 0)):
             raise ValueError('온도 응답의 실제 열장부 형상/값 오류')
@@ -248,7 +251,8 @@ def prepare(result, result_sha, seed, run, out):
         new_BF_BB_integrals=0, new_SE_solves=0, new_transport=0, final_goal='NOT_MET')
     if thermal:
         record.update(accepted_evaluation_role='thermal callback order; 0 is initial response',
-                      joint_convergence_certified=False, thermal_energy_policy='physical_stored')
+                      joint_convergence_certified=False,
+                      thermal_energy_policy=report.get('thermal_energy_policy', 'physical_stored'))
     with (out/'accepted-material.json').open('x') as f:
         json.dump(record, f, ensure_ascii=False, indent=2, allow_nan=False); f.write('\n')
     return record
