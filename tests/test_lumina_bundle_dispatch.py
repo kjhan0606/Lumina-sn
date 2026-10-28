@@ -1,6 +1,7 @@
 """클러스터 간 제출 제어 시험. 실제 ssh/sbatch 호출은 없다."""
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -72,3 +73,70 @@ def test_incomplete_coefficients_never_submit_GPU(setup):
     data['state'] = 'INCOMPLETE'; result.write_text(json.dumps(data))
     with pytest.raises(ValueError): D.dispatch(config, D.sha(config), 'field')
     assert not calls
+
+
+def test_one_sweep_and_previous_material_trial_reach_the_submission_argv(setup):
+    config,c,calls=setup
+    c['limits']=dict(maximum_F=1)
+    c['initial_field']=dict(J=dict(path='/old material/J.npy',sha256='a'*64),
+        preparation=dict(path='/old material/preparation.json',sha256='b'*64))
+    config.write_text(json.dumps(c))
+    D.dispatch(config,D.sha(config),'field')
+    command=shlex.split(calls[0][-1])
+    assert command[command.index('--max-sweeps')+1]=='1'
+    assert command[command.index('--input-j')+1]=='/old material/J.npy'
+    assert command[command.index('--input-j-sha256')+1]=='a'*64
+    assert command[command.index('--initial-preparation')+1]=='/old material/preparation.json'
+    assert command[command.index('--initial-preparation-sha256')+1]=='b'*64
+    assert '--resume-checkpoint' not in command
+
+
+@pytest.mark.parametrize('fault',[0,3,True,'missing_J','bad_sha'])
+def test_invalid_sweep_or_partial_warm_start_cannot_submit(setup,fault):
+    config,c,calls=setup
+    if fault in ('missing_J','bad_sha'):
+        c['initial_field']=dict(preparation=dict(path='P',sha256='b'*64))
+        if fault=='bad_sha':c['initial_field']['J']=dict(path='J',sha256='invalid')
+    else:c['limits']=dict(maximum_F=fault)
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'field')
+    assert not calls and not (config.parent/'field-submission.json').exists()
+
+
+def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeypatch):
+    import prepare_lumina_bundle_dispatch as P
+    gpu=tmp_path/'gpu';gpu.mkdir()
+    (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*40)))
+    def git_show(*args,**kwargs):return SimpleNamespace(stdout=b'# sealed control\n')
+    monkeypatch.setattr(P.subprocess,'run',git_show)
+    prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'new-coeff/result.json',
+        tmp_path/'response','c'*40,max_sweeps=1,input_j=tmp_path/'old/J.npy',input_j_sha256='a'*64,
+        initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64)
+    config=json.loads(Path(prepared['config']).read_text())
+    assert config['coefficient_commit']=='c'*40 and config['response_commit']=='b'*40
+    assert config['limits']['maximum_F']==1 and config['limits']['GPU_hours']==12
+    assert config['initial_field']['J']['path']==str(tmp_path/'old/J.npy')
+    assert prepared['jobs_submitted']==0
+
+
+@pytest.mark.parametrize('control',[False,True])
+def test_real_batch_wrapper_forwards_bounded_feedback_options_and_response(tmp_path,control):
+    gpu=tmp_path/'gpu';(gpu/'code/scripts').mkdir(parents=True)
+    runner=gpu/'code/scripts/run_lumina_resident_field.sh'
+    runner.write_text("""#!/bin/bash
+python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").write_text(json.dumps(sys.argv[1:]))' "$@"
+""")
+    args=[str(gpu),'new P.json','prep-sha'];options=['--max-sweeps','2']
+    if control:
+        folder=tmp_path/'control';folder.mkdir();config=folder/'config.json'
+        (folder/'lumina_bundle_dispatch.py').write_text(
+            'import json,sys\nfrom pathlib import Path\nPath(__file__).with_name("response-args.json").write_text(json.dumps(sys.argv[1:]))\n')
+        options=['--max-sweeps','1','--input-j','old J.npy','--input-j-sha256','j-sha',
+                 '--initial-preparation','old P.json','--initial-preparation-sha256','old-sha']
+        args += [str(config),'config-sha',*options]
+    script=Path(__file__).resolve().parents[1]/'scripts/submit_lumina_accepted_feedback.slurm'
+    subprocess.run(['bash',str(script),*args],check=True,capture_output=True,text=True)
+    forwarded=json.loads((gpu/'field-args.json').read_text())
+    assert forwarded[forwarded.index('--max-sweeps'):]==options
+    if control:
+        assert json.loads((folder/'response-args.json').read_text())==[str(config),'config-sha','response']

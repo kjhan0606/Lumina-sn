@@ -37,8 +37,22 @@ def dispatch(config, digest, step):
     if marker.exists(): raise FileExistsError('제출 시도 이력 있음; 중복 제출/자동 재시도 금지')
     common = ['sbatch', '--parsable', '--no-requeue']
     if step == 'field':
+        maximum_F = c.get('limits', {}).get('maximum_F', 2)
+        if type(maximum_F) is not int or not 1 <= maximum_F <= 2:
+            raise ValueError('묶음 F 횟수는1~2회만 허용')
+        options = ['--max-sweeps', str(maximum_F)]
+        initial = c.get('initial_field')
+        if initial is not None:
+            for key, flag in (('J', '--input-j'), ('preparation', '--initial-preparation')):
+                entry = initial.get(key, {})
+                if (not isinstance(entry.get('path'), str) or not entry['path'] or
+                        not isinstance(entry.get('sha256'), str) or
+                        not re.fullmatch(r'[0-9a-f]{64}', entry['sha256'])):
+                    raise ValueError('이전 물질 초기장/준비 기록의 명시 신원 필요')
+                options += [flag, entry['path'], flag+'-sha256', entry['sha256']]
         command = common+['--output='+str(gpu/'slurm-%j.out'), '--error='+str(gpu/'slurm-%j.err'),
-            str(control/'submit_lumina_accepted_feedback.slurm'), str(gpu), str(prep), p['sha256'], str(config), digest]
+            str(control/'submit_lumina_accepted_feedback.slurm'), str(gpu), str(prep), p['sha256'], str(config), digest,
+            *options]
         host = 'syntax'
     else:
         feedback = gpu/'feedback/feedback.json'; f = json.loads(feedback.read_text())
