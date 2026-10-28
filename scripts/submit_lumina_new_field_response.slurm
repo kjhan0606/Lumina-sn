@@ -13,8 +13,13 @@
 set -euo pipefail
 umask 027
 ulimit -c 0
-module purge
-module load gnu13/13.2.0
+if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]; then
+    module purge
+    module load gnu13/13.2.0
+elif [[ "${LUMINA_RESPONSE_EXECUTOR}" != manual-lageunha ]]; then
+    echo '알 수 없는 물질응답 실행 방식' >&2
+    exit 2
+fi
 repository=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}

@@ -12,6 +12,52 @@ from test_lumina_resident_feedback import scenario
 import lumina_resident_feedback as F
 
 
+@pytest.fixture
+def manual_resources(monkeypatch):
+    monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')
+    monkeypatch.setenv('OMP_NUM_THREADS', '16')
+    monkeypatch.delenv('SLURM_JOB_ID', raising=False)
+    monkeypatch.delenv('SLURM_CPUS_PER_TASK', raising=False)
+    monkeypatch.delenv('SLURM_MEM_PER_NODE', raising=False)
+    monkeypatch.setattr(N.socket, 'gethostname', lambda: 'LagEunha')
+    monkeypatch.setattr(N.os, 'sched_getaffinity', lambda _: set(range(16, 32)))
+    monkeypatch.setattr(N.resource, 'getrlimit', lambda _: (32*1024**3, N.resource.RLIM_INFINITY))
+
+
+def test_manual_resources_use_real_limits_not_fake_slurm(manual_resources):
+    result = N.execution_resources(13800)
+    assert result['executor'] == 'manual-lageunha'
+    assert result['cpu_affinity'] == list(range(16, 32))
+    assert result['address_space_limit_bytes'] == 32*1024**3
+    assert 'job_id' not in result
+
+
+@pytest.mark.parametrize('fault', ['host', 'slurm_job', 'affinity', 'unlimited', 'too_large', 'threads', 'time', 'mode'])
+def test_manual_resource_mismatch_is_rejected(manual_resources, monkeypatch, fault):
+    seconds = 13800
+    if fault == 'host': monkeypatch.setattr(N.socket, 'gethostname', lambda: 'syntax')
+    elif fault == 'slurm_job': monkeypatch.setenv('SLURM_JOB_ID', '123')
+    elif fault == 'affinity': monkeypatch.setattr(N.os, 'sched_getaffinity', lambda _: set(range(17)))
+    elif fault in ('unlimited', 'too_large'):
+        limit = N.resource.RLIM_INFINITY if fault == 'unlimited' else 33*1024**3
+        monkeypatch.setattr(N.resource, 'getrlimit', lambda _: (limit, limit))
+    elif fault == 'threads': monkeypatch.setenv('OMP_NUM_THREADS', '32')
+    elif fault == 'time': seconds = 14400
+    else: monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'other')
+    with pytest.raises(ValueError): N.execution_resources(seconds)
+
+
+def test_existing_slurm_resources_remain_supported(monkeypatch):
+    monkeypatch.delenv('LUMINA_RESPONSE_EXECUTOR', raising=False)
+    monkeypatch.setenv('OMP_NUM_THREADS', '16')
+    monkeypatch.setenv('SLURM_CPUS_PER_TASK', '16')
+    monkeypatch.setenv('SLURM_MEM_PER_NODE', '32768')
+    monkeypatch.setenv('SLURM_JOB_ID', '123')
+    assert N.execution_resources(13800)['job_id'] == '123'
+    monkeypatch.setenv('SLURM_MEM_PER_NODE', '65536')
+    with pytest.raises(ValueError): N.execution_resources(13800)
+
+
 def test_trapezoid_preserves_original_nonuniform_grid():
     nu = np.array([1., 2., 4., 9.]); saved = nu.copy()
     w = N.trapezoid_weights(nu)

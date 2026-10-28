@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import resource
 import shutil
+import socket
 import struct
 import time
 
@@ -108,16 +109,39 @@ def memory_inventory(ns, nf, nr, nl, nfull):
                 whole_process_peak_RSS_verified=False)
 
 
-def run(args):
-    if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or os.environ.get('SLURM_MEM_PER_NODE') != '32768'
-            or os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= args.seconds <= 13800):
+def execution_resources(seconds):
+    """Slurm 할당 또는 실제 수동 제한을 확인한다. 가짜 Slurm 변수는 쓰지 않는다."""
+    mode = os.environ.get('LUMINA_RESPONSE_EXECUTOR', 'slurm')
+    if os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= seconds <= 13800:
         raise ValueError('CPU16/32GiB/OpenMP16·명시한 단회 시간 필요')
+    record = dict(executor=mode, hostname=socket.gethostname(), pid=os.getpid(),
+                  CPUs=16, memory_limit_bytes=32*1024**3, seconds=seconds)
+    if mode == 'slurm':
+        if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
+                os.environ.get('SLURM_MEM_PER_NODE') != '32768'):
+            raise ValueError('CPU16/32GiB Slurm 할당 필요')
+        record['job_id'] = os.environ.get('SLURM_JOB_ID')
+    elif mode == 'manual-lageunha':
+        soft, _ = resource.getrlimit(resource.RLIMIT_AS)
+        affinity = sorted(os.sched_getaffinity(0))
+        if (socket.gethostname().split('.')[0].lower() != 'lageunha' or
+                os.environ.get('SLURM_JOB_ID') or len(affinity) != 16 or
+                soft <= 0 or soft > 32*1024**3):
+            raise ValueError('lageunha 수동 CPU affinity16/주소공간32GiB 제한 필요')
+        record.update(cpu_affinity=affinity, address_space_limit_bytes=soft)
+    else:
+        raise ValueError('알 수 없는 물질응답 실행 방식')
+    return record
+
+
+def run(args):
+    execution = execution_resources(args.seconds)
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
     out.mkdir(); started = time.monotonic(); deadline = started+args.seconds
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
-        fixed_accepted_temperature=True, new_transport=0, new_native=0, evaluations=[],
+        execution=execution, fixed_accepted_temperature=True, new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
         difference_interpretation='joint change of J, frequency grid and continuum evaluation; not isolated field effect')
