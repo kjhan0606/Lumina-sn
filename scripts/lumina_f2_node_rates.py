@@ -80,5 +80,6 @@ def reconstruct(node):
     bound,total = cache.integrate(trial,material_generation=2,radiation_generation=1)
     return dict(state=state,trial=trial,roster=roster,bound=bound,total=total,
                 rows=rows,runroot=runroot,library=library,material=material,
+                provider=provider,
                 reused=cache.last_reused_routes,direct=cache.last_direct_routes,
                 field_sha256=result['field']['J']['sha256'],response_sha256=result['selected_response']['response_sha256'])
