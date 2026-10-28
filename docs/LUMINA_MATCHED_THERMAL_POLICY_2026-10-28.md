@@ -35,6 +35,30 @@ Grammar-debug CPU1·4GiB·180초 한도의
 `lumina_stopped_prefix_tests_20261028-Eb6Vzp`에서190개가6.13초에 통과했다.
 이는 실행 제어의 직접시험이지 실제 native 후보의 성공 증거가 아니다.
 
+### 22:41 실제 native 경로 전환
+
+`lumina_F2_native_20261028-mKJjBs`를22:41:10 KST에 시작했다. 봉인 소스는
+`83e07ba81188ae913b73b7ad91c5520744560afb`, 실제 물질 PID는85277이다.
+원 writer가 사라진 것을 확인한 뒤 실행해 CPU 계산을 중복하지 않았다.
+원 보고서 SHA는
+`23f88516c1bd783f596754894bc417d5f0512e64d9b2f848954cd316dde8b1d7`이다.
+새 보고서는 실제로 `native_instantaneous_scenario`, 신규 평가 한도1,
+초기 재생 prefix4, source_process_missing=true를 기록했다. 이전 원본의
+STARTED 상태를 완료로 바꾸지 않았다.
+
+현재 generation11은 새로운 native 방향 후보의 전체 BF 적분 중이다.
+실제 저장된 새 Jacobian·원 잔차·방향·전하/열 척도와 앞서 독립적으로
+재구성한 native 방향의 차이는 모두 정확히0이며, 제한 후 T/ne도 같다.
+확인은 grammar-debug CPU1·4GiB·60초 한도에서0.0463초, 새 SE/수송0회다.
+결과와 재현 코드는 새 root의 `direction-check.json`, `verify_direction.py`다.
+이 확인은 단순 정책 문자열 변경이 아니라 실제 방향 조립과 후보 호출이
+native 경로로 전환됐다는 증거이지 새 후보의 수용·수렴 증거가 아니다.
+
+두 실제 바이너리 SHA는 이전과 같고 기존 물리 구현9개 및 BF 생산자는
+바이트 단위로 그대로다. 시간 상한은10월29일02:41 KST까지이며 자동
+재시도나 추가 후보는 없다. 후속 실제 전하/열잔차와 전90점 Si/S 분포,
+공동수렴·released-T 기준해·observer 비교는 아직 남아 있다.
+
 ## 확인한 문제
 
 운전자가 새 자체장 온도 보정을 연결한531e0e7f는 `physical_stored`를
