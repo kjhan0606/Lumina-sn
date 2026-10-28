@@ -84,9 +84,23 @@ def run(library,out):
                     delta_chi=float(np.sum((c1-c0)[mask],dtype=np.longdouble)),
                     delta_eta=float(np.sum((e1-e0)[mask],dtype=np.longdouble)),
                     abs_line_delta_chi=float(np.sum(abs(c1-c0)[mask],dtype=np.longdouble))))
+            def describe(i):
+                lo,up=int(lower[i]),int(upper[i])
+                ion=(zs==zs[lo])&(stages==stages[lo]);ion_old=float(oldp[ion,node].sum());ion_new=float(newp[ion,node].sum())
+                if min(ion_old,ion_new)<=0:raise ValueError('이온 총인구 없음')
+                return dict(Z=int(zs[lo]),stage=int(stages[lo]),wavelength_A=float(B.C*1e8/center[i]),
+                    lower=rows[lo]['configuration'],upper=rows[up]['configuration'],oscillator_strength=float(f[i]),
+                    lower_population_old=float(oldp[lo,node]),lower_population_new=float(newp[lo,node]),
+                    upper_population_old=float(oldp[up,node]),upper_population_new=float(newp[up,node]),
+                    ion_population_old=ion_old,ion_population_new=ion_new,
+                    lower_fraction_old=float(oldp[lo,node]/ion_old),lower_fraction_new=float(newp[lo,node]/ion_new),
+                    band_profile_mass=float(mass[i]),delta_chi=float(c1[i]-c0[i]),delta_eta=float(e1[i]-e0[i]))
+            top_lines_chi=[describe(int(i)) for i in np.argsort(abs(c1-c0))[-10:][::-1]]
+            top_lines_eta=[describe(int(i)) for i in np.argsort(abs(e1-e0))[-10:][::-1]]
             results.append(dict(node=node,wavelength_A=[wlo,whi],selected_lines=len(selected),line_integrals=integrals,
                 groups=groups,top_chi=sorted(groups,key=lambda q:abs(q['delta_chi']),reverse=True)[:8],
-                top_eta=sorted(groups,key=lambda q:abs(q['delta_eta']),reverse=True)[:8]))
+                top_eta=sorted(groups,key=lambda q:abs(q['delta_eta']),reverse=True)[:8],
+                top_lines_chi=top_lines_chi,top_lines_eta=top_lines_eta))
     nu._mmap.close();out.mkdir();data=dict(state='COMPLETE_EXACT_DISCRETE_LINE_ION_DECOMPOSITION',results=results,
         old_population_sha256=base['input_sha256'][str(old_pop)],accepted_population_sha256=meta['input_sha256'][str(new_pop)],
         source_hash_verification='INHERITED_SEALS_NOT_REHASHED',library_sha256=B.sha(library),new_transport=0,new_SE=0,final_goal='NOT_MET')
