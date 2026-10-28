@@ -144,6 +144,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
                     source_report_state=report['state'], source_process_missing=stopped,
                     source_completion_certified=False,
                     previous_energy_policy=previous_policy, energy_policy=policy,
-                    initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=False,
+                    initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=bool(project_charge),
+                    previous_acceptance_reused=False,
                     saved_evaluations=len(replay),
                     new_material_evaluations=0, new_transport=0))

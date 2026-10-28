@@ -95,6 +95,8 @@ def test_projection_reuses_verified_direction_and_actual_rejected_trial(preserve
     assert result['projection']['alpha']==1.
     np.testing.assert_array_equal(result['projection']['basis']['direction'],np.zeros(4))
     assert str(matrix) in preserved[2]['inputs']
+    assert result['provenance']['previous_direction_or_acceptance_reused'] is True
+    assert result['provenance']['previous_acceptance_reused'] is False
 
 
 @pytest.mark.parametrize('fault',['accepted','prefix','matrix','field','policy'])
