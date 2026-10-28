@@ -66,6 +66,35 @@ def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(p
     with pytest.raises(ValueError, match='장/물질'): load(preserved)
 
 
+def test_stopped_writer_can_reuse_only_explicit_completed_prefix_without_claiming_completion(preserved, monkeypatch):
+    _, report, args = preserved
+    report.update(state='STARTED', execution=dict(hostname=R.socket.gethostname(), pid=12345))
+    args['prefix'] = 2
+    def missing(pid, signal):
+        assert (pid, signal) == (12345, 0)
+        raise ProcessLookupError
+    monkeypatch.setattr(R.os, 'kill', missing)
+    result = load(preserved)
+    assert len(result['replay']) == 2
+    assert result['provenance']['source_process_missing']
+    assert result['provenance']['source_report_state'] == 'STARTED'
+    assert not result['provenance']['source_completion_certified']
+
+
+@pytest.mark.parametrize('fault', ['live', 'foreign', 'permission', 'no-prefix'])
+def test_unproven_stopped_writer_cannot_bypass_replay_source_lifecycle(preserved, monkeypatch, fault):
+    _, report, args = preserved
+    report.update(state='STARTED', execution=dict(hostname=R.socket.gethostname(), pid=12345))
+    args['prefix'] = 2
+    if fault == 'foreign': report['execution']['hostname'] = 'another-host'
+    if fault == 'no-prefix': args.pop('prefix')
+    def observe(pid, signal):
+        if fault == 'permission': raise PermissionError
+        if fault != 'live': raise ProcessLookupError
+    monkeypatch.setattr(R.os, 'kill', observe)
+    with pytest.raises(ValueError, match='종료된 물질'): load(preserved)
+
+
 @pytest.mark.parametrize('fault',['live','field','material','implementation','library','input',
     'response','heat','nonthermal','empty','columns','nuclei','pin'])
 def test_wrong_or_corrupted_replay_is_never_used(preserved,fault):

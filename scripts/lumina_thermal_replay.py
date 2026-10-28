@@ -1,6 +1,8 @@
 """봉인된 동일 고정장의 완료 물질 평가를 읽는다. 새 평가/실행은 하지 않는다."""
 import json
+import os
 from pathlib import Path
+import socket
 
 import numpy as np
 
@@ -9,6 +11,22 @@ from lumina_coupled_material import packet
 
 ENERGY_POLICIES = ('physical_stored', 'physical_instantaneous_scenario',
                    'native_stored', 'native_instantaneous_scenario')
+
+
+def stopped_prefix(report, prefix):
+    """이전 writer가 종료된 동일 호스트의 완료 섭동만 읽는다. 완료를 꾸미지 않는다."""
+    execution = report.get('execution', {})
+    pid = execution.get('pid')
+    if (prefix is None or execution.get('hostname') != socket.gethostname() or
+            type(pid) is not int or pid <= 0):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
 
 
 def load(path, digest, *, field, source_identity, implementation, state,
@@ -23,7 +41,8 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if (policy not in ENERGY_POLICIES or previous_policy not in ENERGY_POLICIES or
             (previous_policy != policy and prefix is None)):
         raise ValueError('보존 열평가의 열방정식 정책 불일치; 다른 정책의 방향 후보를 재생하지 않음')
-    if report.get('state') not in ('INCOMPLETE_PRESERVED',
+    stopped = report.get('state') == 'STARTED' and stopped_prefix(report, prefix)
+    if not stopped and report.get('state') not in ('INCOMPLETE_PRESERVED',
             'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE'):
         raise ValueError('종료된 물질 실행의 보존 평가만 재개 가능')
     if (report.get('field') != field or report.get('source_identity') != source_identity or
@@ -87,6 +106,8 @@ def load(path, digest, *, field, source_identity, implementation, state,
     return dict(first=first, replay=replay, charge_history=report.get('charge_history', []),
                 bound_temperature_tables=report.get('temperature_bound_cache', {}).get('completed_bound_tables', []),
                 provenance=dict(result=str(path), result_sha256=digest,
+                    source_report_state=report['state'], source_process_missing=stopped,
+                    source_completion_certified=False,
                     previous_energy_policy=previous_policy, energy_policy=policy,
                     initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=False,
                     saved_evaluations=len(replay),
