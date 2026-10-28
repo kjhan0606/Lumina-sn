@@ -8,7 +8,8 @@ from lumina_coupled_material import packet, solve_coupled
 
 
 def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
-          numerical_tolerance=1.e-10, max_log_step=.1, on_evaluation=None):
+          numerical_tolerance=1.e-10, max_log_step=.1, on_evaluation=None,
+          on_direction=None):
     """evaluate(T,ne)는 같은 J에서 (전체 SE 결과, 전체 열장부, 기록)을 반환한다."""
     if type(max_evaluations) is not int or not 5 <= max_evaluations <= 12:
         raise ValueError('고정장 온도 보정은 실제평가 5~12회 한도를 명시해야 함')
@@ -30,9 +31,13 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
         if on_evaluation is not None:
             on_evaluation(values[id(value)], entry)
 
+    def direction(value, matrix, residual, delta, charge_scale, thermal_scale):
+        if on_direction is not None:
+            on_direction(values[id(value)], matrix, residual, delta, charge_scale, thermal_scale)
+
     outer = solve_coupled(actual, initial, adiabatic,
         max_evaluations=max_evaluations, numerical_tolerance=numerical_tolerance,
-        max_log_step=max_log_step, on_evaluation=decision)
+        max_log_step=max_log_step, on_evaluation=decision, on_direction=direction)
     selected = values[id(outer['packet'])]
     result = selected[0]
     charge = float(np.max(abs(result['charge_residual']/result['ne'])))

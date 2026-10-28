@@ -13,6 +13,11 @@
 set -euo pipefail
 umask 027
 ulimit -c 0
+response_seconds=${LUMINA_RESPONSE_SECONDS:-13800}
+[[ "$response_seconds" =~ ^[0-9]+$ ]]
+max_seconds=13800
+if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = manual-lageunha ]]; then max_seconds=42600; fi
+(( response_seconds >= 600 && response_seconds <= max_seconds ))
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]; then
     module purge
     module load gnu13/13.2.0
@@ -57,6 +62,6 @@ done
 gcc -shared -fopenmp -Wl,--gc-sections -Wl,-z,defs -o "$parent/build/bridge.so" "${objects[@]}" -lm
 gcc -O2 -std=c11 -Wall -Wextra -Werror -shared -fPIC src/model_line_linear_jbar.c -lm -o "$parent/build/lines.so"
 sha256sum "$parent/build/bridge.so" "$parent/build/lines.so" > "$parent/build/binary.sha256"
-timeout -k 30 14000s python3 scripts/lumina_new_field_response.py --seconds 13800 \
+timeout -k 30 "$((response_seconds+200))s" python3 scripts/lumina_new_field_response.py --seconds "$response_seconds" \
     --library "$parent/build/bridge.so" --line-library "$parent/build/lines.so" \
     --source-commit "$source_commit" --out "$parent/run" "$@"

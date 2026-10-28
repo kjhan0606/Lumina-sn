@@ -116,7 +116,8 @@ def memory_inventory(ns, nf, nr, nl, nfull):
 def execution_resources(seconds):
     """Slurm 할당 또는 실제 수동 제한을 확인한다. 가짜 Slurm 변수는 쓰지 않는다."""
     mode = os.environ.get('LUMINA_RESPONSE_EXECUTOR', 'slurm')
-    if os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= seconds <= 13800:
+    max_seconds = 42600 if mode == 'manual-lageunha' else 13800
+    if os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= seconds <= max_seconds:
         raise ValueError('CPU16/32GiB/OpenMP16·명시한 단회 시간 필요')
     record = dict(executor=mode, hostname=socket.gethostname(), pid=os.getpid(),
                   CPUs=16, memory_limit_bytes=32*1024**3, seconds=seconds)
@@ -135,6 +136,31 @@ def execution_resources(seconds):
         record.update(cpu_affinity=affinity, address_space_limit_bytes=soft)
     else:
         raise ValueError('알 수 없는 물질응답 실행 방식')
+    return record
+
+
+def preserve_thermal_direction(out, index, value, matrix, residual, delta,
+                               charge_scale, thermal_scale, *, field,
+                               source_identity, probes):
+    """비싼 섭동을 다시 계산하지 않도록 방향 후보 실행 전에 선형계를 보존한다.
+
+    저장은 수용/수렴 판정이나 새 후보 실행 권한이 아니다. 후보와 그 열장부는
+    기존 실제 물질 callback으로 별도 평가해야 한다.
+    """
+    root = Path(out)/('thermal-direction-'+str(index)); root.mkdir()
+    data, energy, metadata = value
+    path = root/'linearization.npz'
+    np.savez(path, temperature=data['temperature'], ne=data['ne'],
+        jacobian=matrix, scaled_residual=residual, log_direction=delta,
+        charge_scale=charge_scale, thermal_scale=thermal_scale)
+    record = dict(state='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE',
+        field=field, source_identity=source_identity, base_response=metadata,
+        probes=probes, rows=['charge', 'RE'], columns=['logT', 'logne'],
+        energy_policy='physical_stored', centered_log_step=1.e-4,
+        numerical_tolerance=1.e-10, max_log_step=.1,
+        root=str(root), linearization_sha256=B.sha(path),
+        new_material_evaluations=0, new_transport=0, joint_convergence=False)
+    publish(root/'result.json', record)
     return record
 
 
@@ -209,8 +235,14 @@ def run(args):
                 for name in completed_seed.COEFFICIENTS:
                     check(); shutil.copyfile(seed['paths'][name], out/name)
             if temperature_evaluations:
-                for name in ('lumina_fixed_field_thermal.py', 'lumina_coupled_material.py',
-                             'lumina_completed_field_seed.py'):
+                thermal_code = ('lumina_coupled_material.py', 'lumina_model_response.py',
+                    'lumina_model_response_balance.py', 'lumina_model_collision_source.py',
+                    'lumina_model_material_bridge.py', 'lumina_model_energy.py',
+                    'lumina_model_balance.py', 'lumina_native_heat_sources.py',
+                    'run_lumina_fixed_state_balance.py')
+                result['thermal_implementation_sha256'] = {
+                    name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
+                for name in (*thermal_code, 'lumina_fixed_field_thermal.py', 'lumina_completed_field_seed.py'):
                     path = Path(__file__).with_name(name)
                     inputs[str(path)] = B.sha(path)
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
@@ -280,6 +312,7 @@ def run(args):
                 np.savez(root/'response.npz', **data)
                 energy, summary = balance.evaluate(data, current_trial, rates)
                 np.savez(root/'balance.npz', **energy)
+                for ion in response.ions.values(): inputs.update(ion.identity)
                 nuclei = np.max(abs(data['population'].sum(axis=0)/state['superlevel'].sum(axis=0)-1))
                 if nuclei > 1.e-10: raise ValueError('새 물질 핵수 보존 실패')
                 entry = dict(**metrics, **summary, nuclei_relative=float(nuclei), root=str(root),
@@ -287,6 +320,9 @@ def run(args):
                 if not np.array_equal(data['temperature'], state['temperature']):
                     result['full_BF_integrations'] += 1
                     entry['full_BF_reintegration'] = True
+                if result.get('phase') == 'FIXED_NEW_FIELD_T_NE_CORRECTION':
+                    entry['fixed_field_thermal_callback'] = True
+                    result.setdefault('thermal_evaluation_order', []).append(entry)
                 publish(root/'result.json', entry); result['evaluations'].append(entry)
                 candidates[id(data)] = entry; evaluation_roots[id(data)] = root; save()
                 evaluation_energy[id(data)] = energy
@@ -306,6 +342,8 @@ def run(args):
                                max_evaluations=7, on_evaluation=decision)
                 final = first if solved['payload'] is None else solved['payload']
                 if temperature_evaluations:
+                    result['thermal_initial_response'] = candidates[id(final)]
+                    result['charge_history'] = solved['history']
                     result['phase'] = 'FIXED_NEW_FIELD_T_NE_CORRECTION'; save()
                     def evaluate_temperature(t, ne):
                         data = response.evaluate(t, ne, save=record)[0]
@@ -315,10 +353,17 @@ def run(args):
                     def thermal_decision(value, entry):
                         entry['charge_relative'] = float(np.max(abs(value[0]['charge_residual']/value[0]['ne'])))
                         publish(evaluation_roots[id(value[0])]/'thermal-decision.json', entry)
+                    def thermal_direction(value, matrix, residual, delta, charge_scale, thermal_scale):
+                        records = result.setdefault('thermal_directions', [])
+                        records.append(preserve_thermal_direction(out, len(records)+1,
+                            value, matrix, residual, delta, charge_scale, thermal_scale,
+                            field=last, source_identity=source.identity,
+                            probes=result['thermal_evaluation_order'][-4:].copy()))
+                        save()
                     block = thermal_block.solve(evaluate_temperature,
                         (final, evaluation_energy[id(final)], candidates[id(final)]), full_ad,
                         policy='physical_stored', max_evaluations=temperature_evaluations,
-                        on_evaluation=thermal_decision)
+                        on_evaluation=thermal_decision, on_direction=thermal_direction)
                     final = block.pop('selected')[0]
                     result['temperature_block'] = block
                     result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])

@@ -50,6 +50,39 @@ def test_rejected_thermal_step_preserves_exact_initial_payload():
     assert len(calls)==5
 
 
+def test_direction_is_available_before_expensive_candidate_and_can_reproduce_it():
+    first=case([2.04,3.06],[5.,7.]);calls=[];directions=[]
+    def evaluate(t,ne):
+        calls.append((t.copy(),ne.copy()))
+        if len(calls)==5:
+            assert directions, '방향 후보 평가 전에 원 선형계가 보존돼야 함'
+        return case(t,ne,len(calls))
+    def save(value,matrix,residual,delta,charge_scale,thermal_scale):
+        assert len(calls)==4 and value is first
+        np.testing.assert_allclose(matrix@delta,-residual,rtol=1e-12,atol=1e-16)
+        directions.append((value,delta.copy()))
+    result=T.solve(evaluate,first,adiabatic,policy='physical_stored',max_evaluations=5,
+                   on_direction=save)
+    value,delta=directions[0]
+    alpha=min(1.,.1/np.max(abs(delta)))
+    candidate=np.exp(np.r_[np.log(value[0]['temperature']),np.log(value[0]['ne'])]+alpha*delta)
+    np.testing.assert_array_equal(candidate,np.r_[calls[4][0],calls[4][1]])
+    assert result['accepted_iterations']==1 and len(directions)==1
+
+
+def test_failure_after_direction_preserves_callback_output_without_returning_false_success():
+    directions=[];calls=[]
+    def evaluate(t,ne):
+        calls.append(1)
+        if len(calls)==5:raise TimeoutError('후보 평가 중 외부 시간 종료')
+        return case(t,ne)
+    with pytest.raises(TimeoutError):
+        T.solve(evaluate,case([2.04,3.06],[5.,7.]),adiabatic,
+            policy='physical_stored',max_evaluations=5,
+            on_direction=lambda *args:directions.append(args))
+    assert len(directions)==1 and len(calls)==5
+
+
 def test_temperature_callback_must_consume_requested_state():
     first=case([2.04,3.06],[5.,7.])
     with pytest.raises(ValueError,match='T/ne'):

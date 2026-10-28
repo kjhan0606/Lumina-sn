@@ -14,6 +14,10 @@ cpus=$(python3 -c 'import os; c=sorted(os.sched_getaffinity(0)); assert len(c)>=
 ulimit -c 0
 ulimit -Sv 33554432
 export LUMINA_RESPONSE_EXECUTOR=manual-lageunha CUDA_VISIBLE_DEVICES=''
-# 빌드 포함4시간, 내부13800초와 기존 출력 보존 규칙을 유지한다.
-exec taskset -c "$cpus" timeout -k 30 14400s \
+# 기본4시간은 유지한다. 명시한 추가 승인 실행만 빌드 포함12시간을 선택한다.
+response_seconds=${LUMINA_RESPONSE_SECONDS:-13800}
+[[ "$response_seconds" =~ ^[0-9]+$ ]]
+(( response_seconds >= 600 && response_seconds <= 42600 ))
+export LUMINA_RESPONSE_SECONDS="$response_seconds"
+exec taskset -c "$cpus" timeout -k 30 "$((response_seconds+570))s" \
     bash "$repository/scripts/submit_lumina_new_field_response.slurm" "$@"

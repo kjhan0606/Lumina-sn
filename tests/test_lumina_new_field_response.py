@@ -42,7 +42,7 @@ def test_manual_resource_mismatch_is_rejected(manual_resources, monkeypatch, fau
         limit = N.resource.RLIM_INFINITY if fault == 'unlimited' else 33*1024**3
         monkeypatch.setattr(N.resource, 'getrlimit', lambda _: (limit, limit))
     elif fault == 'threads': monkeypatch.setenv('OMP_NUM_THREADS', '32')
-    elif fault == 'time': seconds = 14400
+    elif fault == 'time': seconds = 42601
     else: monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'other')
     with pytest.raises(ValueError): N.execution_resources(seconds)
 
@@ -54,8 +54,15 @@ def test_existing_slurm_resources_remain_supported(monkeypatch):
     monkeypatch.setenv('SLURM_MEM_PER_NODE', '32768')
     monkeypatch.setenv('SLURM_JOB_ID', '123')
     assert N.execution_resources(13800)['job_id'] == '123'
+    with pytest.raises(ValueError): N.execution_resources(42600)
     monkeypatch.setenv('SLURM_MEM_PER_NODE', '65536')
     with pytest.raises(ValueError): N.execution_resources(13800)
+
+
+def test_approved_manual_duration_keeps_cpu_memory_and_host_limits(manual_resources):
+    result=N.execution_resources(42600)
+    assert result['seconds']==42600 and result['CPUs']==16
+    assert result['memory_limit_bytes']==32*1024**3
 
 
 @pytest.mark.parametrize('limit', [4, 13, True])
@@ -73,6 +80,29 @@ def test_resume_requires_pin_pair_and_explicit_temperature_mode(manual_resources
     with pytest.raises(ValueError, match='완료 계수 재개'):
         N.run(SimpleNamespace(seconds=13800, temperature_evaluations=limit,
                               resume_result=path, resume_result_sha=digest))
+
+
+def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_accepted(tmp_path):
+    data=dict(temperature=np.array([9000.,10000.]),ne=np.array([20.,30.]))
+    metadata=dict(root='evaluation-1',response_sha256='response',balance_sha256='balance')
+    matrix=np.diag([1.,2.,3.,4.]);residual=np.array([.01,-.01,.02,-.02])
+    delta=np.linalg.solve(matrix,-residual);charge_scale=data['ne'];thermal_scale=np.array([1.,2.])
+    record=N.preserve_thermal_direction(tmp_path,1,(data,{},metadata),matrix,residual,delta,
+        charge_scale,thermal_scale,field={'J':'F2'},source_identity={'material':'accepted'},
+        probes=[{'root':'evaluation-'+str(i)} for i in range(2,6)])
+    root=tmp_path/'thermal-direction-1';path=root/'linearization.npz'
+    assert record['linearization_sha256']==N.B.sha(path)
+    assert json.loads((root/'result.json').read_text())==record
+    with np.load(path) as saved:
+        for key,value in dict(temperature=data['temperature'],ne=data['ne'],jacobian=matrix,
+            scaled_residual=residual,log_direction=delta,charge_scale=charge_scale,
+            thermal_scale=thermal_scale).items():np.testing.assert_array_equal(saved[key],value)
+    assert record['base_response']==metadata and len(record['probes'])==4
+    assert record['state']=='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE'
+    assert not record['joint_convergence'] and record['new_material_evaluations']==0
+    with pytest.raises(FileExistsError):
+        N.preserve_thermal_direction(tmp_path,1,(data,{},metadata),matrix,residual,delta,
+            charge_scale,thermal_scale,field={},source_identity={},probes=[])
 
 
 def test_trapezoid_preserves_original_nonuniform_grid():
