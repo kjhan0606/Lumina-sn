@@ -112,7 +112,7 @@ def memory_inventory(ns, nf, nr, nl, nfull, *, temperature_cache=False):
         rate_arrays=12*nr*ns*6*8, line_arrays=3*nl*ns*8,
         material_arrays=40*nfull*ns*8, runtime_collision_and_SE_reserve=8*1024**3)
     if temperature_cache:
-        parts['temperature_bound_cache_and_workspace'] = extra_memory_reserve(nr, ns)
+        parts['temperature_bound_cache_and_workspace'] = extra_memory_reserve(nr, ns, nfull)
     return dict(parts=parts, known_allocation_and_reserve_bytes=sum(parts.values()),
                 whole_process_peak_RSS_verified=False)
 
@@ -365,6 +365,7 @@ def run(args):
                         library=args.library, line_library=args.line_library, inputs=inputs,
                         policy=thermal_policy, prefix=replay_prefix)
                     result['thermal_replay'] = replay_source['provenance']
+                    cached_response.register(replay_source['bound_temperature_tables'], inputs=inputs)
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
                         candidates[id(data)] = metadata; evaluation_energy[id(data)] = energy
                         replay_ids.add(id(data))

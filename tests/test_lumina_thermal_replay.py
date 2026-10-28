@@ -55,6 +55,17 @@ def test_completed_values_are_loaded_without_changing_source_files(preserved):
         assert R.B.sha(Path(path))==digest and args['inputs'][path]==digest
 
 
+def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(preserved):
+    root, report, args = preserved
+    receipt = dict(path=str(root/'temperature-bound-cache/table.json'), sha256='table-sha')
+    report['temperature_bound_cache'] = dict(completed_bound_tables=[receipt])
+    result = load(preserved)
+    assert result['bound_temperature_tables'] == [receipt]
+    assert result['provenance']['new_material_evaluations'] == 0
+    args['source_identity'] = {'material':'wrong'}
+    with pytest.raises(ValueError, match='장/물질'): load(preserved)
+
+
 @pytest.mark.parametrize('fault',['live','field','material','implementation','library','input',
     'response','heat','nonthermal','empty','columns','nuclei','pin'])
 def test_wrong_or_corrupted_replay_is_never_used(preserved,fault):

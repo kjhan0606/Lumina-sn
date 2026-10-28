@@ -4,22 +4,24 @@
 기존 생산자가 갱신한다. 실제 SE·열 평가나 평가 횟수를 생략하지 않는다.
 """
 from collections import OrderedDict
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 
-from lumina_model_material_rates import FixedTemperatureBoundRates
+from lumina_model_material_rates import FixedTemperatureBoundRates, owned
 from lumina_native_columns import sha
 
 CAPACITY = 4
 
 
-def extra_memory_reserve(routes, points):
+def extra_memory_reserve(routes, points, full_levels):
     # 기준 캐시 외3개와 교체 중 새 캐시1개: bound6+Milne1, T/ne와 fallback.
     # 퇴출 전 생성 시 역률4개 선택·절댓값과 비교 임시값도 별도 예약한다.
-    return CAPACITY*(7*routes*points*8+2*points*8+routes)+10*routes*points*8
+    # 읽기 복원 시 원 bound/pref와 참조 trial도 일시적으로 함께 존재한다.
+    return CAPACITY*(7*routes*points*8+2*points*8+routes)+(20*routes+3*full_levels)*points*8
 
 
 class TemperatureResponseCache:
@@ -35,6 +37,10 @@ class TemperatureResponseCache:
         self.evaluations = self.hits = self.new_tables = 0
         self.published_tables = []
         self.publication_errors = []
+        self.external = {}
+        self.restored_tables = []
+        self.inputs = None
+        self.layout = None
         self.active = False
 
     @staticmethod
@@ -49,6 +55,75 @@ class TemperatureResponseCache:
             oldest = next(k for k in self.entries if k != self.seed_key)
             del self.entries[oldest]
 
+    def _layout(self, *, fresh=False):
+        # 함수 주소는 프로세스마다 다르다. 함수/원자료 신원은 상위 재개가 검증한다.
+        if self.layout is None or fresh:
+            p = self.provider; h = hashlib.sha256()
+            h.update(repr((p.rows, p.models, p.dissolved)).encode())
+            for r in p.routes:
+                h.update(repr((r.Z, r.stage, r.lower, r.target, r.target_superlevel, r.phot_grid,
+                    r.probability, r.target_g, r.target_energy_eV, r.threshold_Hz,
+                    r.dissolution_primary, [(start, kind) for _, _, start, kind in r.models])).encode())
+                for _, nodes, _, _ in r.models:
+                    h.update(np.asarray(nodes, dtype='f8').tobytes())
+            for a in (p.edge, p.z, p.primary, p.sigma_edge): h.update(a.tobytes())
+            self.layout = h.hexdigest()
+        return self.layout
+
+    def register(self, receipts, *, inputs):
+        """상위 열재개가 장·원 입력·물리 구현을 검증한 뒤 호출한다. 적분은 안 한다."""
+        self.inputs = inputs
+        for receipt in receipts:
+            path = Path(receipt['path'])
+            if sha(path) != receipt['sha256']:
+                raise ValueError('보존 온도 적분 기록 변경')
+            record = json.loads(path.read_text())
+            if (record.get('state') != 'COMPLETE_BOUND_TABLE_NOT_MATERIAL_ACCEPTANCE' or
+                    record.get('field_signature') != self.provider.field_signature or
+                    record.get('route_layout_sha256') != self._layout() or
+                    record.get('routes') != len(self.provider.routes) or
+                    record.get('points') != self.provider.n_points or
+                    record.get('rate_implementation_sha256') != sha(Path(__file__).with_name('lumina_model_material_rates.py'))):
+                raise ValueError('보존 온도 적분의 장/원자 경로/물리 생산자 불일치')
+            self.external[record['temperature_sha256']] = (record, receipt)
+            inputs[str(path)] = receipt['sha256']
+
+    def _restore(self, temperature, key):
+        digest = hashlib.sha256(np.asarray(temperature, dtype='f8').tobytes()).hexdigest()
+        if digest not in self.external: return
+        record, receipt = self.external[digest]
+        if sha(Path(receipt['path'])) != receipt['sha256']:
+            raise ValueError('보존 온도 적분 등록 후 기록 변경')
+        if (record['field_signature'] != self.provider.field_signature or
+                record['route_layout_sha256'] != self._layout(fresh=True)):
+            raise ValueError('보존 온도 적분 소비 전 장/원자 경로 변경')
+        path = Path(record['bound']['path'])
+        if sha(path) != record['bound']['sha256']:
+            raise ValueError('보존 온도 bound 적분 본문 변경')
+        with np.load(path, allow_pickle=False) as values:
+            if set(values.files) != {'bound', 'temperature', 'reference_ne', 'milne_prefactor'}:
+                raise ValueError('보존 온도 bound 배열 목록 불일치')
+            arrays = {k:values[k] for k in values.files}
+            if any(value.dtype != np.dtype('f8') for value in arrays.values()):
+                raise ValueError('보존 온도 bound 배열 dtype 불일치')
+            t, ne, pref = (arrays[k] for k in ('temperature', 'reference_ne', 'milne_prefactor'))
+            if not np.array_equal(t, temperature):
+                raise ValueError('보존 온도 적분의 실제 T 불일치')
+            trial = self.provider.prepare({**self.response.seed, 'temperature':t, 'ne':ne},
+                                           material_generation=self.response.generation)
+            if (pref.shape != trial.milne_prefactor.shape or not np.isfinite(pref).all() or
+                    np.any(pref < 0)):
+                raise ValueError('보존 온도 Milne prefactor 형상/값 불일치')
+            # 실제 적분 당시 pref를 복원한다. 정보 손실 경로는 기존 캐시가 직접 계산한다.
+            restored = replace(trial, milne_prefactor=owned(pref))
+            cache = FixedTemperatureBoundRates(self.provider, restored, arrays['bound'])
+            if not np.allclose(pref[~cache.fallback], trial.milne_prefactor[~cache.fallback],
+                               rtol=8*np.finfo('f8').eps, atol=0):
+                raise ValueError('보존 온도 Milne prefactor 재구성 불일치')
+        self.inputs[str(path)] = record['bound']['sha256']
+        self._remember(key, dict(cache=cache, reference_ne=ne, saved=receipt, index=None))
+        self.restored_tables.append(receipt)
+
     def _publish(self, entry):
         if self.out is None or entry['saved'] is not None:
             return entry['saved']
@@ -59,6 +134,7 @@ class TemperatureResponseCache:
                      reference_ne=entry['reference_ne'], milne_prefactor=cache.pref)
         manifest = dict(state='COMPLETE_BOUND_TABLE_NOT_MATERIAL_ACCEPTANCE',
             field_signature=cache.field_signature, routes=len(self.provider.routes),
+            route_layout_sha256=self._layout(),
             points=self.provider.n_points, temperature_sha256=hashlib.sha256(cache.temperature.tobytes()).hexdigest(),
             bound=dict(path=str(path.resolve()), sha256=sha(path)),
             implementation_sha256=sha(Path(__file__)),
@@ -79,13 +155,16 @@ class TemperatureResponseCache:
         return dict(evaluations=self.evaluations, cache_hits=self.hits,
             new_temperature_tables=self.new_tables, retained_temperatures=len(self.entries),
             capacity=CAPACITY, resident_array_bytes=sum(map(size, self.entries.values())),
-            completed_bound_tables=self.published_tables.copy(),
+            completed_bound_tables=self.published_tables+self.restored_tables,
+            restored_temperature_tables=len(self.restored_tables),
             bound_publication_errors=self.publication_errors.copy())
 
     def evaluate(self, temperature, ne, *, save=None):
         if self.active or self.response.provider is not self.provider:
             raise ValueError('온도 적분 캐시는 같은 순차 물질 생산자에서만 사용한다')
         key = self._key(temperature)
+        if key not in self.entries:
+            self._restore(temperature, key)
         self.active = True
         hit = key in self.entries
         entry = self.entries.get(key)

@@ -85,6 +85,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
                 raise ValueError('다른 열정책 재사용의 고정 국소 침적열 프로필 불일치')
     inputs.update(consumed)
     return dict(first=first, replay=replay, charge_history=report.get('charge_history', []),
+                bound_temperature_tables=report.get('temperature_bound_cache', {}).get('completed_bound_tables', []),
                 provenance=dict(result=str(path), result_sha256=digest,
                     previous_energy_policy=previous_policy, energy_policy=policy,
                     initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=False,

@@ -17,7 +17,7 @@ import lumina_temperature_response_cache as module
 class RateResponse:
     """ModelResponse와 같은 적분/저장 호출만 사용한다. 개체수 해는 만들지 않는다."""
     def __init__(self, provider, state):
-        self.provider = provider; self.state = state; self.generation = 1; self.fail = False
+        self.provider = provider; self.state = self.seed = state; self.generation = 1; self.fail = False
         trial = provider.prepare(state, material_generation=1)
         bound, _ = provider.integrate(trial, material_generation=1, radiation_generation=7)
         self.bound_cache = FixedTemperatureBoundRates(provider, trial, bound)
@@ -206,4 +206,77 @@ def test_memory_reserve_covers_retained_arrays_and_construction_workspace(scenar
     cache = TemperatureResponseCache(response)
     initial = cache.report()['resident_array_bytes']
     for factor in (1.01, 1.02, 1.03): cache.evaluate(state['temperature']*factor, state['ne'])
-    assert cache.report()['resident_array_bytes']-initial < extra_memory_reserve(4, 3)
+    assert cache.report()['resident_array_bytes']-initial < extra_memory_reserve(4, 3, 4)
+
+
+def saved_then_reopened(library, tmp_path):
+    provider, state = example(library)
+    first = TemperatureResponseCache(RateResponse(provider, state), out=tmp_path/'old-cache')
+    temperature = state['temperature']*1.02
+    saved = first.evaluate(temperature, state['ne'])[1]['temperature_bound_cache']['saved_bound_table']
+    new_provider, new_state = example(library)
+    owner = RateResponse(new_provider, new_state)
+    receiver = TemperatureResponseCache(owner, out=tmp_path/'new-cache')
+    inputs = {}
+    receiver.register([saved], inputs=inputs)
+    return receiver, new_state, temperature, saved, inputs
+
+
+def test_saved_table_is_reconstructed_in_a_new_provider_and_reused_without_full_integral(library, tmp_path):
+    cache, state, t, receipt, inputs = saved_then_reopened(library, tmp_path)
+    assert cache.report()['restored_temperature_tables'] == 0
+    p = cache.provider; original = p.integrate; calls = []
+    def spy(trial, **kwargs):
+        calls.append(kwargs.get('route_indices') is None)
+        return original(trial, **kwargs)
+    p.integrate = spy
+    actual = cache.evaluate(t, state['ne']*1.001)
+    direct_check(cache.response, actual, original)
+    assert not any(calls)
+    assert actual[1]['temperature_bound_cache']['hit']
+    assert cache.report()['new_temperature_tables'] == 0
+    assert cache.report()['restored_temperature_tables'] == 1
+    assert receipt in cache.report()['completed_bound_tables']
+    record = json.loads(Path(receipt['path']).read_text())
+    assert inputs[record['bound']['path']] == record['bound']['sha256']
+    assert not list((tmp_path/'new-cache').iterdir())
+
+
+def test_unrequested_saved_body_is_not_read_but_requested_corruption_is_rejected(library, tmp_path):
+    cache, state, t, receipt, inputs = saved_then_reopened(library, tmp_path)
+    record = json.loads(Path(receipt['path']).read_text())
+    Path(record['bound']['path']).write_bytes(b'corrupt')
+    cache.evaluate(t*1.01, state['ne'])
+    assert cache.report()['restored_temperature_tables'] == 0
+    assert record['bound']['path'] not in inputs
+    with pytest.raises(ValueError, match='본문 변경'): cache.evaluate(t, state['ne'])
+    assert not cache.active
+
+
+@pytest.mark.parametrize('fault', ['route', 'field'])
+def test_changes_after_registration_cannot_bypass_restore_identity(library, tmp_path, fault):
+    cache, state, t, _, _ = saved_then_reopened(library, tmp_path)
+    if fault == 'route': cache.provider.routes[0].probability *= .9
+    else: cache.provider.field_signature = 'changed'
+    with pytest.raises(ValueError, match='장/원자 경로 변경'): cache.evaluate(t, state['ne'])
+    assert not cache.active and cache.report()['restored_temperature_tables'] == 0
+
+
+def test_reference_ne_and_milne_prefactor_must_reconstruct_together(library, tmp_path):
+    cache, state, t, receipt, _ = saved_then_reopened(library, tmp_path)
+    path = Path(receipt['path']); record = json.loads(path.read_text())
+    body = Path(record['bound']['path'])
+    with np.load(body, allow_pickle=False) as values:
+        arrays = {k:values[k] for k in values.files}
+    arrays['reference_ne'] *= 1.01
+    np.savez(body, **arrays); record['bound']['sha256'] = sha(body)
+    path.write_text(json.dumps(record)); replacement = dict(path=str(path), sha256=sha(path))
+    cache.register([replacement], inputs={})
+    with pytest.raises(ValueError, match='prefactor 재구성'): cache.evaluate(t, state['ne'])
+    assert not cache.active
+
+
+def test_wrong_saved_header_is_not_a_valid_material_input(library, tmp_path):
+    cache, _, _, receipt, _ = saved_then_reopened(library, tmp_path)
+    bad = dict(receipt, sha256='0'*64)
+    with pytest.raises(ValueError, match='기록 변경'): cache.register([bad], inputs={})

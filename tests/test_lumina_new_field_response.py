@@ -71,7 +71,7 @@ def test_temperature_cache_memory_is_reserved_without_claiming_measured_full_RSS
     base = N.memory_inventory(*args)
     cached = N.memory_inventory(*args, temperature_cache=True)
     difference = cached['known_allocation_and_reserve_bytes']-base['known_allocation_and_reserve_bytes']
-    assert difference == extra_memory_reserve(24667, 90)
+    assert difference == extra_memory_reserve(24667, 90, 24542)
     assert cached['known_allocation_and_reserve_bytes'] < 32*1024**3
     assert cached['whole_process_peak_RSS_verified'] is False
 
