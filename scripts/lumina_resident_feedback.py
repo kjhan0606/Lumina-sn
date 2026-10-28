@@ -17,8 +17,9 @@ import time
 import numpy as np
 
 from lumina_accepted_field_input import open_prepared
-from lumina_fullsr_sc_actual import InputField, completed_transport, publish, verify_stage
+from lumina_fullsr_sc_actual import completed_transport, publish, verify_stage
 from lumina_native_columns import sha
+from lumina_material_trial_field import open_transport_trial, validate_initial_arguments
 
 
 def field_gap(previous, current, shape):
@@ -45,7 +46,8 @@ def field_gap(previous, current, shape):
 
 
 def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, seconds, max_sweeps=2,
-        input_j=None, input_j_sha256=None):
+        input_j=None, input_j_sha256=None, initial_preparation=None, initial_preparation_sha256=None):
+    validate_initial_arguments(input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
     if (type(seconds) is not int or not 240 <= seconds <= 43200 or
             type(max_sweeps) is not int or not 1 <= max_sweeps <= 2 or
             (input_j is None) != (input_j_sha256 is None)):
@@ -65,7 +67,9 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
         shape = (source.ns, source.nf); identity = source.identity
         if input_j is not None:
             input_j = Path(input_j).resolve()
-            previous_field = InputField(source, input_j, input_j_sha256)
+            previous_field = open_transport_trial(source, input_j, input_j_sha256,
+                initial_preparation=initial_preparation, initial_preparation_sha256=initial_preparation_sha256)
+            initial_role = previous_field.identity
             previous_field.close()
             initial = dict(J=dict(path=str(input_j), sha256=input_j_sha256))
     links = {n: staged_root/n for n in ('code', 'stage.json', 'chain_cuda.so', 'geometry.so')}
@@ -81,6 +85,8 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
                     host_memory_GiB=16, automatic_retries=0),
         material_updates=0, new_BF_BB_integrals=0, observer_calls=0,
         scattering_convergence_certified=False, final_goal='NOT_MET')
+    if initial is not None:
+        record['initial_field_role'] = initial_role
     def save():
         record['elapsed_seconds'] = time.monotonic()-start
         publish(output, record)
@@ -102,6 +108,9 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
                 '--accepted-input-sha256', accepted_input_sha256, '--seconds', str(child_seconds)]
             if prior is not None:
                 command += ['--input-j', prior['J']['path'], '--input-j-sha256', prior['J']['sha256']]
+            if index == 1 and initial_preparation is not None:
+                command += ['--initial-preparation', str(Path(initial_preparation).resolve()),
+                            '--initial-preparation-sha256', initial_preparation_sha256]
             entry = dict(directory=str(child), input_J='ZERO_OWN_START' if prior is None else prior['J'],
                 seconds_limit=child_seconds, command=command, state='RUNNING')
             record['sweeps'].append(entry); save(); child_start = time.monotonic()
@@ -153,6 +162,8 @@ if __name__ == '__main__':
     parser.add_argument('--max-sweeps', type=int, choices=(1, 2), default=2)
     parser.add_argument('--input-j', type=Path)
     parser.add_argument('--input-j-sha256')
+    parser.add_argument('--initial-preparation', type=Path)
+    parser.add_argument('--initial-preparation-sha256')
     result = run(**vars(parser.parse_args()))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     raise SystemExit(0 if result['status'] == 'FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE' else 1)

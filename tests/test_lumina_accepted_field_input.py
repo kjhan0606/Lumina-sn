@@ -19,7 +19,10 @@ from lumina_compiled_input import CompiledInput
 from lumina_local_micro import ZeroTrial
 from lumina_nodal_driver import CompiledDriverPlan
 from lumina_resident_run import open_field_inputs
+from lumina_material_trial_field import open_transport_trial
+from lumina_fullsr_sc_actual import InputField
 from test_lumina_compiled_input import packet
+from test_lumina_resident_run import resident_record
 
 
 @pytest.fixture(scope='module')
@@ -141,6 +144,46 @@ def test_new_state_actual_C_boundary_and_dense_input_are_connected(field_library
         assert np.any(boundary[0] != old_planck)
     assert source.closed
     assert report['actual_F_calls'] == report['new_SE_solves'] == report['new_BF_BB_integrals'] == 0
+
+
+def test_previous_J_uses_new_coefficients_in_actual_C(field_library, tmp_path):
+    old_root = tmp_path/'old'; old_root.mkdir()
+    old_config, old_paths, old_parts, *_ = fixture(old_root, field_library)
+    binary = old_paths['sources'].parent/'sources.bin'
+    with binary.open('r+b') as stream:
+        stream.seek(16+8*(8+2*24)+4*24*8*8)
+        stream.write((2*old_parts[4]).astype('<f8').tobytes())
+    source_report = json.loads(old_paths['sources'].read_text())
+    source_report['output_sha256']['sources.bin'] = A.sha(binary)
+    old_paths['sources'].write_text(json.dumps(source_report)); repin(old_config, 'sources', old_paths['sources'])
+    A.prepare(old_config, A.sha(old_config), old_root/'ready')
+    old_prep = old_root/'ready/preparation.json'
+    _, old_source, _, _ = A.open_prepared(old_prep, A.sha(old_prep))
+    with old_source:
+        old_identity = old_source.identity
+        old_chi = old_source.read([5], [3])[0].copy()
+    jpath = old_root/'J.npy'; np.save(jpath, np.full((24, 8), .125))
+    old_record = dict(resident_record(), source_identity=old_identity,
+                      J=dict(path=str(jpath), sha256=A.sha(jpath)))
+    (old_root/'resident-field.json').write_text(json.dumps(old_record))
+    config, _, _, _, _ = fixture(tmp_path, field_library)
+    A.prepare(config, A.sha(config), tmp_path/'ready'); prep = tmp_path/'ready/preparation.json'
+    with ExitStack() as stack:
+        _, source, geometry, boundary, _ = open_field_inputs(stack, prep, A.sha(prep))
+        with pytest.raises(ValueError, match='동일 물질'): InputField(source, jpath, A.sha(jpath))
+        field = open_transport_trial(source, jpath, A.sha(jpath),
+            initial_preparation=old_prep, initial_preparation_sha256=A.sha(old_prep))
+        stack.callback(field.close)
+        with CompiledInput(field_library, geometry, source, field,
+                slab_width=8, cache_rows=16, profiles=64) as provider:
+            provider.bind_view(); provider.prepare_dense(max_seconds=10.)
+            chi, es, eta = source.read([5], [3])
+            actual = provider.at([source.radius[5]], [3.])
+            np.testing.assert_allclose(actual[0], chi, rtol=1.e-12, atol=0)
+            np.testing.assert_allclose(actual[1], eta+es*.125, rtol=1.e-12, atol=0)
+            assert np.any(actual[0] != old_chi)
+            assert provider.identity['field']['accepted_field_for_target_material'] is False
+            assert boundary[0].shape == (8,)
 
 
 @pytest.mark.parametrize('bad', ['old_material', 'old_full', 'old_grid', 'old_model', 'bad_C_comparison'])

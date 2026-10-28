@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import lumina_resident_feedback as F
+import lumina_material_trial_field as T
 
 
 @pytest.fixture
@@ -93,6 +94,32 @@ def test_complete_same_material_seed_is_forwarded_to_first_new_sweep(scenario):
     assert calls[0][calls[0].index('--input-j')+1] == str(target)
     assert result['sweeps'][0]['J_gap']['max_norm_relative'] == .5
     assert not result['scattering_convergence_certified'] and result['final_goal'] == 'NOT_MET'
+
+
+def test_previous_material_seed_is_only_initial_trial_for_first_sweep(scenario, monkeypatch):
+    args, calls, behavior = scenario
+    behavior['source_identity']['epoch_seconds'] = 100.
+    old_identity = dict(material='previous', epoch_seconds=100.)
+    target, _, previous = seed_field(args, old_identity)
+    prep = args['out'].parent/'previous-preparation.json'; prep.write_text('{}')
+    class Source:
+        ns, nf = 3, 8
+        radius = np.array([3., 2., 1.]); frequency = np.arange(1., 9.)
+        identity = old_identity
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+    monkeypatch.setattr(T, 'open_prepared', lambda *a: ({}, Source(), None, None))
+    result = F.run(**args, input_j=target, input_j_sha256=F.sha(target),
+        initial_preparation=prep, initial_preparation_sha256=F.sha(prep))
+    assert len(calls) == 2 and result['last_complete']['sweep'] == 2
+    assert calls[0][calls[0].index('--initial-preparation')+1] == str(prep)
+    assert calls[0][calls[0].index('--initial-preparation-sha256')+1] == F.sha(prep)
+    assert '--initial-preparation' not in calls[1]  # 다음에는 이번 물질의 완료 J만 전달한다.
+    assert result['source_identity'] == behavior['source_identity']
+    assert result['initial_field_role']['origin_source_identity'] == old_identity
+    assert result['initial_field_role']['accepted_field_for_target_material'] is False
+    assert result['initial_complete_J'] == previous['J']
+    assert result['material_updates'] == 0 and result['final_goal'] == 'NOT_MET'
 
 
 @pytest.mark.parametrize('fault', ['hash', 'partial', 'source'])

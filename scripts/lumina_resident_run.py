@@ -22,6 +22,7 @@ from lumina_phase_geometry import PhaseGeometry
 from lumina_resident_field import ResidentField
 import lumina_local_micro as M
 from lumina_native_columns import sha
+from lumina_material_trial_field import open_transport_trial, validate_initial_arguments
 
 
 def open_field_inputs(stack, accepted_input=None, accepted_input_sha256=None):
@@ -68,7 +69,9 @@ def write_completed_moments(root, field):
 
 
 def run(root, *, cache, seconds=42600, input_j=None, input_j_sha256=None, resume_checkpoint=None,
-        accepted_input=None, accepted_input_sha256=None):
+        accepted_input=None, accepted_input_sha256=None,
+        initial_preparation=None, initial_preparation_sha256=None):
+    validate_initial_arguments(input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
     if (type(seconds) is not int or not 1 <= seconds <= 85800 or
             (input_j is None) != (input_j_sha256 is None) or
             (accepted_input is None) != (accepted_input_sha256 is None)):
@@ -99,6 +102,9 @@ def run(root, *, cache, seconds=42600, input_j=None, input_j_sha256=None, resume
                 geometry_cache_sha256=sha(Path(cache)/'geometry.json'),
                 input_J='ZERO_OWN_START' if input_j is None else dict(path=str(Path(input_j).resolve()), sha256=input_j_sha256),
                 subdivisions=4)
+            if initial_preparation is not None:
+                record['identity']['initial_J_preparation'] = dict(
+                    path=str(Path(initial_preparation).resolve()), sha256=initial_preparation_sha256)
             record['material_input_role'] = 'ORIGINAL70' if accepted_input is None else 'EXPLICIT_ACCEPTED_MATERIAL'
             query = subprocess.run(['nvidia-smi', '--query-gpu=uuid,name,memory.free', '--format=csv,noheader,nounits'],
                 check=True, capture_output=True, text=True, timeout=10)
@@ -108,8 +114,11 @@ def run(root, *, cache, seconds=42600, input_j=None, input_j_sha256=None, resume
             _, name, free = matches[0]; record.update(device_name=name.strip(), device_uuid=uuid)
             plan = CompiledDriverPlan(geometry, source, panels=1)
             record.update(source_identity=source.identity, original_layout=plan.layout())
-            field = M.ZeroTrial(source) if input_j is None else InputField(source, input_j, input_j_sha256)
+            field = M.ZeroTrial(source) if input_j is None else open_transport_trial(
+                source, input_j, input_j_sha256, initial_preparation=initial_preparation,
+                initial_preparation_sha256=initial_preparation_sha256)
             if isinstance(field, InputField): stack.callback(field.close)
+            record['input_field_role'] = field.identity
             factory = stack.enter_context(PhaseGeometry(root/'geometry.so', geometry, source))
             cached = stack.enter_context(CachedPhaseGeometry(cache, factory, plan))
             provider = stack.enter_context(CompiledInput(config['cpu_library'], geometry, source, field,
@@ -161,4 +170,5 @@ if __name__ == '__main__':
     parser.add_argument('--input-j', type=Path); parser.add_argument('--input-j-sha256')
     parser.add_argument('--resume-checkpoint', type=Path)
     parser.add_argument('--accepted-input', type=Path); parser.add_argument('--accepted-input-sha256')
+    parser.add_argument('--initial-preparation', type=Path); parser.add_argument('--initial-preparation-sha256')
     raise SystemExit(run(**vars(parser.parse_args())))

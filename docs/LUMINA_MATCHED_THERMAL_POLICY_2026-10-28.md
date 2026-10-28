@@ -171,3 +171,56 @@ grammar-debug CPU1·4GiB·150초, 봉인된 실제 native Gaunt 라이브러리�
 이는 합성 입력의 실제 커널·직렬화·C 경계와 기존 실물 캐시의 확인이다.
 새 실물 native 온도 후보·전주파수 계수·수송·observer를 생산한 증거가
 아니다. 살아 있는531e0e7f 실행과 입력은 바꾸지 않았으며 최종 목표는 NOT_MET다.
+
+## 자기일관 반복 연결 — 물질 갱신 전 J는 새 수송의 초기값으로만 사용
+
+이전 `InputField`는 같은 물질/계수로 완료된 J만 받는다. 물질응답이나
+observer 소비에는 맞는 조건이지만, 다음 물질의 수송 초기값으로 이전 J를
+넘기는 경로도 없었다. 따라서 물질을 갱신할 때마다0장에서 재시작해야 했다.
+이는 물리 수송식 결함이 아니라 반복 초기값 연결의 누락이다.
+
+`lumina_material_trial_field.open_transport_trial`과 상주 실행기·되먹임
+실행기를 연결했다. 기존 `--input-j`만 지정하는 동일 물질 경로는 그대로다.
+이전 물질의 장을 초기값으로 사용할 때만 `--initial-preparation`과 그 SHA를
+추가한다. 이전 준비 기록으로 원래 계수를 열어 엄격한 `InputField`로
+원 수송의 완료·신원을 확인하고, 새 물질과 반경·주파수·epoch가 정확히
+같은지 확인한다. 보간·물질값 대체나 CMFGEN 참조장 주입은 하지 않는다.
+
+이 장은 `OWN_COMPLETED_FIELD_INITIAL_TRIAL_FOR_NEW_MATERIAL`로 표시하고
+새 물질의 수렴장/수용장이 아니라고 기록한다. 새 계수·외부 대기·경계는
+새 수용 물질에서 준비하며 이전 광선 이력이나 checkpoint를 복원하지 않는다.
+첫 수송을 마치면 이후 반복은 새 물질의 완료 J를 엄격한 기존 경로로 받는다.
+물질응답과 observer의 기존 동일 계수 소비 조건도 약화하지 않았다.
+
+### 직접시험·재현 범위
+
+Grammar-debug CPU1·4GiB·150초 한도, 격리 root
+`lumina_material_trial_tests_20261028-SSdv5Q`의 합성 시험은
+**91 passed,1 skipped,1 deselected /16.76초**다. 새 초기값의 이전 계보,
+동일 격자, 원본 불변, 잘못된 완료/해시/음수 장 거부와 첫 수송에만 이전
+준비 인수가 전달됨을 확인했다. 실제 C 입력 시험에서는 이전/새 계수의
+χ를 다르게 만들고 새 χ와 `새 η + 새 ES × 이전 J`가 사용됨을 확인했다.
+실제 별도 GPU 수송이나 새 물질 SE·BF 계산은 수행하지 않았다.
+
+최초 합친 시험은 기존 외부 fixture 환경변수가 없어1개 실패했다.
+그 시험 `compiled_provider_same_material_saved_j_return`은 이번 범위에서
+명시 제외했고 통과로 합산하지 않았다. skip도 별도 native 실물 fixture가
+필요한 기존 시험이다. 격리 복제본에는 기존 회귀가 참조하는 미추적
+`test_lumina_nodal_driver.py`도 원 파일 그대로 복사해 `fixture.sha256`로
+식별했다. 사용자 원본을 수정하거나 이번 변경으로 편입하지 않았다.
+
+재현은 이 root의 `source`에서 OMP/BLAS1로 다음을 실행한다.
+
+```bash
+python3 -m pytest -q tests/test_lumina_material_trial_field.py \
+  tests/test_lumina_resident_feedback.py tests/test_lumina_resident_run.py \
+  tests/test_lumina_accepted_field_input.py tests/test_lumina_compiled_input.py \
+  tests/test_lumina_resident_observer.py \
+  -k 'not compiled_provider_same_material_saved_j_return'
+```
+
+실제 상주 staging의64개 파일에 새 모듈이 포함됨과 두 CLI 인수도 확인했다.
+격리본6개 변경 소스/시험의 SHA는 현재 작업 트리와 모두 같다.
+실행 중인531e0e7f 물질 계산·입력·5평가 상한은 바꾸지 않았다. 새 GPU
+수송을 제출하거나 자원·횟수를 늘린 것이 아니며, 실제 수용 물질로 이
+경로를 실행한 결과와 최종 스펙트럼/물리량 동등성은 아직 없다.
