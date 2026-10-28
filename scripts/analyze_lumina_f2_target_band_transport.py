@@ -60,9 +60,18 @@ def run(out):
                 target=B.C*1e8/wavelength;idx=int(np.argmin(abs(nu-target)))
                 chi,es,eta=source.read(np.arange(90),np.array([idx]))
                 delta=np.diff(-radius);tau=np.r_[0.,np.cumsum(.5*(chi[:-1,0]+chi[1:,0])*delta)]
+                scatter_tau=np.r_[0.,np.cumsum(.5*(es[:-1,0]+es[1:,0])*delta)]
+                j1=float(one[node,idx]);j2=float(two[node,idx]);opacity=float(chi[node,0])
+                if opacity==0. or j2<=0.:raise ValueError('국소 소스 비율 정의 불가')
+                source_f2=float((eta[node,0]+es[node,0]*j2)/opacity)
                 coefficients.append(dict(wavelength_requested_A=wavelength,wavelength_actual_A=float(B.C*1e8/nu[idx]),
                     node=node,chi=float(chi[node,0]),electron_scattering=float(es[node,0]),true_emissivity=float(eta[node,0]),
                     radial_signed_optical_depth_from_outer=float(tau[node]),
+                    radial_signed_optical_depth_to_inner=float(tau[-1]-tau[node]),
+                    radial_scattering_depth_from_outer=float(scatter_tau[node]),
+                    radial_scattering_depth_to_inner=float(scatter_tau[-1]-scatter_tau[node]),
+                    J_F1=j1,J_F2=j2,source_at_F2=source_f2,source_over_J_F2=source_f2/j2,
+                    scattering_fraction=float(es[node,0]/opacity),
                     meaning='signed radial extinction integral, not ray effective depth; selected accepted source not CMFGEN coefficient'))
     finally:
         ref._mmap.close();nu._mmap.close();one._mmap.close();two._mmap.close()
