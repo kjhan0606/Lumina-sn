@@ -13,6 +13,15 @@ ENERGY_POLICIES = ('physical_stored', 'physical_instantaneous_scenario',
                    'native_stored', 'native_instantaneous_scenario')
 
 
+def energy_policy(record, *, default=None):
+    """이전/현재 물질 보고서의 열정책 이름을 하나로 읽고 충돌을 숨기지 않는다."""
+    values = [record[key] for key in ('thermal_energy_policy', 'thermal_policy')
+              if record.get(key) is not None]
+    if any(value not in ENERGY_POLICIES for value in values) or len(set(values)) > 1:
+        raise ValueError('물질 보고서의 열방정식 정책 오류/충돌')
+    return values[0] if values else default
+
+
 def stopped_prefix(report, prefix):
     """이전 writer가 종료된 동일 호스트의 완료 섭동만 읽는다. 완료를 꾸미지 않는다."""
     execution = report.get('execution', {})
@@ -35,7 +44,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
     report = json.loads(path.read_text())
-    previous_policy = report.get('thermal_energy_policy', 'physical_stored')
+    previous_policy = energy_policy(report, default='physical_stored')
     if prefix is not None and (type(prefix) is not int or not 1 <= prefix <= 4):
         raise ValueError('다른 열정책 미분에는 초기 섭동1~4개만 명시적으로 재사용 가능')
     if (policy not in ENERGY_POLICIES or previous_policy not in ENERGY_POLICIES or

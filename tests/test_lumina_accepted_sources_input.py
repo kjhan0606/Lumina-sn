@@ -8,11 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import run_lumina_accepted_sources as S
 
 
-def test_default_retains_existing_sealed_candidate():
-    manifest, mh, full, fh = S.material_inputs()
-    assert manifest.name == 'accepted-material.json' and full.name == 'C-imported-full.bin'
-    assert mh == '61e3090a8550bffb6e6f030a84be811407634299eefba93036d1fad30d492c1b'
-    assert fh == '2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6'
+def test_missing_current_material_cannot_silently_select_the_old_candidate():
+    with pytest.raises(ValueError, match='과거 후보 기본값'):
+        S.material_inputs()
 
 
 def test_new_candidate_and_C_full_are_explicit_and_pinned(tmp_path):

@@ -1,5 +1,45 @@
 # 최종 CMFGEN 비교의 열방정식과 현재 재현 분기의 구분
 
+## 후속 연결 수정 — 실제 수용 물질의 정책 유실 확인
+
+현재 native 실행과 분리해 물질→계수→수송→다음 물질응답의 연결을
+확인했다. `lumina_charge_projected_1224060_20261027_argsfix/run/result.json`은
+실제로 `thermal_policy=native_instantaneous_scenario`를 기록하지만,
+`lumina_accepted_input_20261027-79u5Sp/material/accepted-material.json`에는
+열정책이 없었다. 기존 깊이결합 내보내기가 이 필드를 전달하지 않았고,
+이어진 `lumina_accepted_sources_20261027-b5eCNv/run/sources/sources.json`의
+실제 FF 선택은 ALL_POSITIVE_IONS였다. 이것은 누락 가능성이 아니라
+기존 산출물에서 확인한 실제 전달 단절이다. 전체 Si/S 오차의 기여율을
+이 증거만으로 단정하지 않는다.
+
+같은 누락은 고정 T 새 장 응답의 내보내기에도 있었다. 다음처럼 연결했다.
+
+- 이전 `thermal_policy`와 현재 `thermal_energy_policy`를 일관되게 읽고
+  서로 충돌하면 임의로 하나를 고르지 않는다.
+- 모든 지원 물질 내보내기는 알려진 열정책을 canonical 필드로 전달한다.
+- 새 장의 고정 T 응답과 T/ne 보정은 상위 수용 물질의 알려진 정책을
+  계승한다. 상위 정책이 없는 초기 온도 보정만 명시 선택이 필요하다.
+  알려진 상위 정책과 다른 CLI 선택으로 조용히 바꾸지 않는다.
+- 계수 실행에서 물질 입력4개를 생략하면10월27일 후보로 돌아가던
+  기본값을 제거했다. 현재 manifest·C full 인구와 각각의 SHA를 반드시
+  전달한다. 이전 계산 재현도 같은 원본4개를 명시하면 된다.
+
+실물 재내보내기는 grammar-debug CPU1·4GiB·180초 한도에서2.643초였다.
+새 root `lumina_policy_handoff_20261028-7XUD4G/real-material`의 물질·
+occupation·온도/원소총수 파일 해시는 이전 출력과 모두 정확히 같고,
+새 manifest는 native 순간열을 기록해 NATIVE_UPPER_IONS를 선택했다.
+원본은 수정하지 않았고 새 SE·율 적분·수송은0회다. 결과·재현 코드는
+같은 root의 `real-export-check.json`, `real_export.py`다. 원/새 manifest
+SHA는 각각61e3090a…와e453c558…이며 전체 값은 결과 JSON에 있다.
+
+최종 수정7개 파일의 격리 회귀는
+`lumina_policy_inheritance_20261028-6WIYEi`에서 **277 passed/11.28초**였다.
+grammar-debug CPU1·4GiB·180초, CLI 도움말도 확인했다. 실제 재내보내기에
+사용한 exporter와 정책 reader는 최종 코드와 바이트 단위로 같다.
+이는 다음 FF 계수 선택의 연결 증거이지 새 계수·장 생산 결과가 아니다.
+현재 실행은83e07ba8 snapshot 그대로이고 입력·평가 한도·물리 구현은
+바꾸지 않았다. 최종 물리 일치 판정은 계속NOT_MET다.
+
 ## 최신 실행 전환 — 운전자가 직접 수정 경로를 실행
 
 사용자의 「지금 운전자는 astra임. 스스로 결정하고 이 문제를 바로

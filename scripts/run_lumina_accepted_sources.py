@@ -17,16 +17,10 @@ RUNS = Path('/gpfs/kjhan/cmfgen_runs')
 
 
 def material_inputs(manifest=None, manifest_sha256=None, full_population=None, full_population_sha256=None):
-    """기존 후보 기본값 또는 명시한 새 후보와 실제 C full 인구를 반환한다."""
+    """현재 수용 후보와 실제 C full 인구를 명시적으로 전달한다."""
     supplied = (manifest, manifest_sha256, full_population, full_population_sha256)
-    if any(value is not None for value in supplied) and not all(value is not None for value in supplied):
-        raise ValueError('새 물질 manifest·C full 인구와 각 SHA를 함께 지정해야 함')
-    if not any(value is not None for value in supplied):
-        root = RUNS/'lumina_accepted_input_20261027-79u5Sp/material'
-        return (root/'accepted-material.json',
-                '61e3090a8550bffb6e6f030a84be811407634299eefba93036d1fad30d492c1b',
-                root/'C-imported-full.bin',
-                '2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6')
+    if not all(value is not None for value in supplied):
+        raise ValueError('명시한 수용 물질 manifest·C full 인구와 각 SHA가 필요; 과거 후보 기본값을 사용하지 않음')
     if not all(re.fullmatch(r'[0-9a-f]{64}', digest) for digest in (manifest_sha256, full_population_sha256)):
         raise ValueError('새 물질/실제 C 인구의 SHA 형식 오류')
     return Path(manifest).resolve(), manifest_sha256, Path(full_population).resolve(), full_population_sha256
@@ -107,9 +101,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--source-commit', required=True)
-    parser.add_argument('--accepted-material', type=Path)
-    parser.add_argument('--accepted-material-sha256')
-    parser.add_argument('--C-full-population', type=Path)
-    parser.add_argument('--C-full-population-sha256')
+    parser.add_argument('--accepted-material', type=Path, required=True)
+    parser.add_argument('--accepted-material-sha256', required=True)
+    parser.add_argument('--C-full-population', type=Path, required=True)
+    parser.add_argument('--C-full-population-sha256', required=True)
     parser.add_argument('--free-free-policy',choices=('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'))
     run(**vars(parser.parse_args()))

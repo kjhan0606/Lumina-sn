@@ -168,6 +168,19 @@ def preserve_thermal_direction(out, index, value, matrix, residual, delta,
     return record
 
 
+def continued_energy_policy(manifest, requested, *, required=False):
+    """고정 T의 새 장 응답도 상위 물질의 열정책을 잃지 않는다."""
+    inherited = thermal_replay.energy_policy(manifest)
+    if requested not in (None, *thermal_replay.ENERGY_POLICIES):
+        raise ValueError('새 장 응답의 열방정식 정책 오류')
+    if inherited is not None and requested is not None and inherited != requested:
+        raise ValueError('상위 수용 물질과 새 장 응답의 열정책 충돌')
+    selected = inherited if requested is None else requested
+    if required and selected is None:
+        raise ValueError('온도 보정의 열방정식 정책은 상위 물질 또는 명시 인수에 필요')
+    return selected
+
+
 def run(args):
     execution = execution_resources(args.seconds)
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
@@ -183,8 +196,7 @@ def run(args):
     if bool(replay_path) != bool(replay_sha) or (replay_path and (not resume or not temperature_evaluations)):
         raise ValueError('열평가 재개는 보고서/해시 쌍과 완료 기준 계수 및 명시한 신규 평가 한도 필요')
     thermal_policy = getattr(args, 'thermal_policy', None)
-    if (temperature_evaluations and thermal_policy is None) or (
-            thermal_policy is not None and thermal_policy not in thermal_replay.ENERGY_POLICIES):
+    if thermal_policy is not None and thermal_policy not in thermal_replay.ENERGY_POLICIES:
         raise ValueError('명시한 지원 열방정식 정책 필요')
     replay_prefix = getattr(args, 'thermal_replay_prefix', None)
     if replay_prefix is not None and (not replay_path or type(replay_prefix) is not int or not 1 <= replay_prefix <= 4):
@@ -213,6 +225,9 @@ def run(args):
             ns, nf = source.ns, source.nf
             if (ns, nf) != (90, 1115020): raise ValueError('원90점·전주파수 범위 변경')
             manifest = json.loads(Path(p['accepted_material']).read_text())
+            thermal_policy = continued_energy_policy(manifest, thermal_policy,
+                                                       required=bool(temperature_evaluations))
+            result['thermal_energy_policy'] = thermal_policy
             original_nodes = [Path(n) for n in manifest['input_sha256'] if n.endswith('/native_material_nodes.bin')]
             model_paths = [Path(n) for n in manifest['input_sha256'] if n.endswith('/MODEL')]
             if len(original_nodes) != 1 or len(model_paths) != 1: raise ValueError('원 물질/모형 주소 모호')
@@ -467,7 +482,7 @@ if __name__ == '__main__':
         help='종료된 같은 장 열평가를 정확한 호출 순서로 재생. 추가 실행 승인을 대신하지 않음')
     parser.add_argument('--resume-thermal-result-sha')
     parser.add_argument('--thermal-policy', choices=thermal_replay.ENERGY_POLICIES,
-        help='온도 보정 때 반드시 명시하는 열정책. 기존 matched-native 계약은 native_instantaneous_scenario')
+        help='상위 수용 물질의 열정책을 계승한다. 상위에 없으면 온도 보정 시 명시 필요; 알려진 상위 정책과 충돌 금지')
     parser.add_argument('--thermal-replay-prefix', type=int,
         help='정책 변경 시 기존 방향 후보가 아닌 초기1~4개 물질 섭동만 재사용. 새 정책의 잔차/척도/방향을 재구성')
     result = run(parser.parse_args())

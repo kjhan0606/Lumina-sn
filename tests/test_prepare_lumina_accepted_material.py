@@ -164,6 +164,39 @@ def test_new_field_converged_selected_response_roundtrips(tmp_path, monkeypatch,
     assert exported['final_goal'] == 'NOT_MET' and exported['new_transport'] == 0
 
 
+@pytest.mark.parametrize('branch', ['depth_coupled', 'fixed_T_new_field'])
+@pytest.mark.parametrize('policy', E.ENERGY_POLICIES)
+def test_equation_survives_material_export_and_selects_matching_transport_FF(tmp_path, monkeypatch, branch, policy):
+    from lumina_new_field_response import continued_energy_policy
+    from lumina_accepted_field_input import coefficient_free_free_policy
+    result, seed, run, _, _, candidate = fixture(tmp_path, monkeypatch)
+    if branch == 'depth_coupled':
+        report = json.loads(result.read_text())
+        report['thermal_policy'] = policy
+    else:
+        report = new_field_report(result)
+        report['thermal_energy_policy'] = continued_energy_policy(dict(thermal_energy_policy=policy), None)
+    result.write_text(json.dumps(report))
+    out = tmp_path/'export'
+    exported = E.prepare(result, E.B.sha(result), seed, run, out)
+    assert exported['thermal_energy_policy'] == policy
+    expected = 'NATIVE_UPPER_IONS' if policy.startswith('native_') else 'ALL_POSITIVE_IONS'
+    assert coefficient_free_free_policy(exported) == expected
+    _, physical, population, _, _ = E.read_nodes(out/'native_material_nodes.bin')
+    np.testing.assert_array_equal(physical[:, 1], candidate['temperature'])
+    np.testing.assert_array_equal(population.T, candidate['population'])
+
+
+def test_conflicting_equation_names_cannot_be_exported(tmp_path, monkeypatch):
+    result, seed, run, *_ = fixture(tmp_path, monkeypatch)
+    report = json.loads(result.read_text())
+    report.update(thermal_policy='native_instantaneous_scenario', thermal_energy_policy='physical_stored')
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError, match='열방정식 정책'):
+        E.prepare(result, E.B.sha(result), seed, run, tmp_path/'export')
+    assert not (tmp_path/'export').exists()
+
+
 @pytest.mark.parametrize('fault', ['not_converged', 'bad_fixed_T', 'incorrect_selection',
     'wrong_history', 'changed_response', 'changed_balance', 'incomplete'])
 def test_new_field_rejects_unconverged_or_mismatched_candidate(tmp_path, monkeypatch, fault):

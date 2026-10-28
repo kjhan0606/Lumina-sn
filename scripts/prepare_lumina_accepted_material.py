@@ -15,7 +15,7 @@ import numpy as np
 import cmfgen_model_continuum as B
 from prepare_lumina_material_cells import read_nodes
 from prepare_lumina_material_seed import atomic_asset
-from lumina_thermal_replay import ENERGY_POLICIES
+from lumina_thermal_replay import ENERGY_POLICIES, energy_policy
 
 
 def relative_error(actual, expected):
@@ -87,7 +87,7 @@ def thermal_selection(report):
 def thermal_checks(report, candidate, directory):
     """기존 열장부와 초기 고정 척도로 실제 열 감소/수렴 표기를 확인한다."""
     first = Path(report['thermal_initial_response']['root'])
-    policy = report.get('thermal_energy_policy', 'physical_stored')
+    policy = energy_policy(report, default='physical_stored')
     if policy not in ENERGY_POLICIES: raise ValueError('온도 후보의 열방정식 정책 오류')
     ns = len(candidate['ne'])
     with np.load(first/'balance.npz', allow_pickle=False) as initial, np.load(directory/'balance.npz', allow_pickle=False) as final:
@@ -120,6 +120,8 @@ def prepare(result, result_sha, seed, run, out):
     if B.sha(result) != result_sha:
         raise ValueError('봉인 수용 보고서 신원 불일치')
     report = json.loads(result.read_text())
+    policy = energy_policy(report, default='physical_stored' if report['state'] ==
+        'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' else None)
     if report['state'] == 'COMPLETE_DEPTH_COUPLED_MATERIAL_STEP' and report['charge_solved'] is True:
         accepted = [r for r in report['history'] if r.get('accepted') is True]
         if not accepted or not 1 <= accepted[-1]['evaluation'] <= len(report['evaluations']):
@@ -249,10 +251,11 @@ def prepare(result, result_sha, seed, run, out):
         next='actual C import/full export, new whole-grid coefficients, new diffusion boundary, new self field/flux and material response',
         output_sha256={name: B.sha(out/name) for name in names},
         new_BF_BB_integrals=0, new_SE_solves=0, new_transport=0, final_goal='NOT_MET')
+    if policy is not None:
+        record['thermal_energy_policy'] = policy
     if thermal:
         record.update(accepted_evaluation_role='thermal callback order; 0 is initial response',
-                      joint_convergence_certified=False,
-                      thermal_energy_policy=report.get('thermal_energy_policy', 'physical_stored'))
+                      joint_convergence_certified=False)
     with (out/'accepted-material.json').open('x') as f:
         json.dump(record, f, ensure_ascii=False, indent=2, allow_nan=False); f.write('\n')
     return record

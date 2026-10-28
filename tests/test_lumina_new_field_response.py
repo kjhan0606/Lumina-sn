@@ -103,11 +103,29 @@ def test_thermal_resume_requires_pin_pair_and_seed(manual_resources,path,digest,
             resume_result='seed' if seed else None,resume_result_sha='seed-sha' if seed else None))
 
 
-@pytest.mark.parametrize('policy',[None,'unknown'])
-def test_temperature_correction_requires_explicit_valid_equation_before_output(manual_resources,policy):
+def test_temperature_correction_rejects_invalid_explicit_equation_before_output(manual_resources):
     from types import SimpleNamespace
     with pytest.raises(ValueError,match='열방정식 정책'):
-        N.run(SimpleNamespace(seconds=13800,temperature_evaluations=5,thermal_policy=policy))
+        N.run(SimpleNamespace(seconds=13800,temperature_evaluations=5,thermal_policy='unknown'))
+
+
+@pytest.mark.parametrize('policy', N.thermal_replay.ENERGY_POLICIES)
+def test_fixed_temperature_continuation_inherits_the_accepted_material_equation(policy):
+    manifest = dict(thermal_energy_policy=policy)
+    assert N.continued_energy_policy(manifest, None) == policy
+    assert N.continued_energy_policy(manifest, None, required=True) == policy
+    assert N.continued_energy_policy(manifest, policy) == policy
+    assert N.continued_energy_policy({}, policy) == policy
+
+
+def test_continuation_does_not_silently_change_a_known_thermal_equation():
+    with pytest.raises(ValueError, match='상위 수용 물질'):
+        N.continued_energy_policy(dict(thermal_energy_policy='native_instantaneous_scenario'), 'physical_stored')
+    with pytest.raises(ValueError, match='정책'):
+        N.continued_energy_policy(dict(thermal_energy_policy='unknown'), None)
+    assert N.continued_energy_policy({}, None) is None
+    with pytest.raises(ValueError, match='상위 물질'):
+        N.continued_energy_policy({}, None, required=True)
 
 
 @pytest.mark.parametrize('prefix',[0,5,True])
