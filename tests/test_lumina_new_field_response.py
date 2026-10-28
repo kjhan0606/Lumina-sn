@@ -128,6 +128,16 @@ def test_continuation_does_not_silently_change_a_known_thermal_equation():
         N.continued_energy_policy({}, None, required=True)
 
 
+@pytest.mark.parametrize('resume,prefix,limit',[(False,None,5),(True,4,4),(True,None,5)])
+def test_projection_needs_whole_completed_source_and_bounded_ne_budget(manual_resources,resume,prefix,limit):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError,match='고정 T 전하'):
+        N.run(SimpleNamespace(seconds=1200,temperature_evaluations=limit,charge_projection=True,
+            resume_result='seed' if resume else None,resume_result_sha='seed-sha' if resume else None,
+            resume_thermal_result='report' if resume else None,resume_thermal_result_sha='sha' if resume else None,
+            thermal_replay_prefix=prefix,thermal_policy='native_instantaneous_scenario'))
+
+
 @pytest.mark.parametrize('prefix',[0,5,True])
 def test_invalid_thermal_probe_prefix_is_rejected_before_output(manual_resources,prefix):
     from types import SimpleNamespace

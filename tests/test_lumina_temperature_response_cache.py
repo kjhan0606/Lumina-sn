@@ -280,3 +280,21 @@ def test_wrong_saved_header_is_not_a_valid_material_input(library, tmp_path):
     cache, _, _, receipt, _ = saved_then_reopened(library, tmp_path)
     bad = dict(receipt, sha256='0'*64)
     with pytest.raises(ValueError, match='기록 변경'): cache.register([bad], inputs={})
+
+
+def test_charge_projection_requires_an_exact_completed_temperature_without_material_work(library,tmp_path):
+    cache,state,t,_,_=saved_then_reopened(library,tmp_path)
+    cache.require_completed(t)
+    assert cache.report()['restored_temperature_tables']==1
+    assert cache.report()['evaluations']==cache.report()['new_temperature_tables']==0
+    changed=t.copy();changed[0]=np.nextafter(changed[0],np.inf)
+    with pytest.raises(ValueError,match='새 전적분 금지'):cache.require_completed(changed)
+    assert cache.report()['evaluations']==0
+
+
+def test_projection_cannot_change_T_or_fall_back_to_a_whole_bound_integral(library,tmp_path):
+    cache,state,t,_,_=saved_then_reopened(library,tmp_path)
+    cache.require_completed(t)
+    with pytest.raises(ValueError,match='온도 변경 금지'):cache.evaluate(t*1.001,state['ne'])
+    with pytest.raises(ValueError,match='새 전적분 금지'):cache.evaluate(t,state['ne']*3.)
+    assert not cache.active and cache.report()['evaluations']==0

@@ -66,6 +66,50 @@ def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(p
     with pytest.raises(ValueError, match='장/물질'): load(preserved)
 
 
+def projection_source(preserved):
+    root,report,args=preserved
+    template=Path(report['thermal_evaluation_order'][-1]['root'])
+    for i in (4,5,6):
+        output=root/('evaluation-'+str(i));output.mkdir()
+        for name in ('response.npz','balance.npz'):(output/name).write_bytes((template/name).read_bytes())
+        report['thermal_evaluation_order'].append(dict(root=str(output),
+            response_sha256=R.B.sha(output/'response.npz'),balance_sha256=R.B.sha(output/'balance.npz'),
+            fixed_field_thermal_callback=True))
+    report['temperature_block']=dict(accepted_iterations=0,history=[
+        dict(phase=p,accepted=False,alpha=1.) for p in ('T+','T-','ne+','ne-','line_search')])
+    output=root/'thermal-direction-1';output.mkdir();matrix=output/'linearization.npz'
+    with np.load(Path(report['thermal_initial_response']['root'])/'response.npz') as first:
+        np.savez(matrix,temperature=first['temperature'],ne=first['ne'],jacobian=np.eye(4),
+            scaled_residual=np.zeros(4),log_direction=np.zeros(4),charge_scale=first['ne'],thermal_scale=np.ones(2))
+    direction=dict(root=str(output),linearization_sha256=R.B.sha(matrix),energy_policy='physical_stored',
+        field=report['field'].copy(),source_identity=report['source_identity'].copy(),
+        base_response=report['thermal_initial_response'])
+    (output/'result.json').write_text(json.dumps(direction));report['thermal_directions']=[direction]
+    args['project_charge']=True
+    return matrix
+
+
+def test_projection_reuses_verified_direction_and_actual_rejected_trial(preserved):
+    matrix=projection_source(preserved);result=load(preserved)
+    assert result['projection']['trial'] is result['replay'][-1]
+    assert result['projection']['alpha']==1.
+    np.testing.assert_array_equal(result['projection']['basis']['direction'],np.zeros(4))
+    assert str(matrix) in preserved[2]['inputs']
+
+
+@pytest.mark.parametrize('fault',['accepted','prefix','matrix','field','policy'])
+def test_projection_rejects_other_branch_or_changed_direction(preserved,fault):
+    matrix=projection_source(preserved);root,report,args=preserved
+    if fault=='accepted':report['temperature_block']['accepted_iterations']=1
+    elif fault=='prefix':args['prefix']=4
+    elif fault=='matrix':matrix.write_bytes(b'changed')
+    else:
+        direction=report['thermal_directions'][0]
+        direction['field' if fault=='field' else 'energy_policy']={} if fault=='field' else 'native_stored'
+        (Path(direction['root'])/'result.json').write_text(json.dumps(direction))
+    with pytest.raises(ValueError,match='전하 보정'):load(preserved)
+
+
 def test_stopped_writer_can_reuse_only_explicit_completed_prefix_without_claiming_completion(preserved, monkeypatch):
     _, report, args = preserved
     report.update(state='STARTED', execution=dict(hostname=R.socket.gethostname(), pid=12345))

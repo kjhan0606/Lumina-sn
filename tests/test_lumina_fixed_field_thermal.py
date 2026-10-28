@@ -38,6 +38,62 @@ def test_actual_new_field_callback_reaches_fixed_field_root_not_joint_convergenc
     assert result['new_transport']==0 and not result['joint_convergence']
 
 
+def projection_case():
+    from test_lumina_charge_projection import case as build
+    from lumina_charge_projection import proposal
+    base, ad, basis, evaluate = build()
+    def payload(t, ne, number=0):
+        p = evaluate(t, ne); net = p.local_heat-ad(t, ne, p.nuclei, p.internal_energy)
+        return (dict(temperature=t, ne=ne, population=p.nuclei[None,:], charge_residual=p.charge),
+            dict(physical_adiabatic=ad(t,ne,p.nuclei,p.internal_energy),
+                 physical_stored_net=net, physical_stored_gross=2*p.thermal_scale-abs(net),
+                 physical_internal_energy=p.internal_energy), dict(number=number))
+    first = payload(base.temperature, base.ne)
+    t, ne = proposal(base, ad, basis, 1.)
+    return first, payload(t, ne), ad, basis, payload
+
+
+def test_same_temperature_charge_projection_reuses_saved_trial_then_evaluates_only_ne():
+    first, saved, ad, basis, payload = projection_case(); fresh=[]; replayed=[]; decisions=[]
+    def evaluate(t, ne):
+        np.testing.assert_array_equal(t, saved[0]['temperature'])
+        value=payload(t,ne,len(fresh)+1); fresh.append(value); return value
+    result=T.project(evaluate,first,saved,ad,basis,1.,np.full(3,1.e8),np.full(3,4.e8),
+        policy='physical_stored',max_evaluations=4,on_replay=replayed.append,
+        on_evaluation=lambda value,record:decisions.append(record.copy()))
+    assert replayed==[saved] and 1<=len(fresh)<=4
+    assert result['replayed_evaluations']==1 and result['fresh_evaluations_used']==len(fresh)
+    assert result['evaluations_used']==len(result['history'])==len(fresh)+1
+    assert result['accepted_iterations']==1 and result['charge_relative']<=1.e-10
+    assert result['history'][-1]['phase']=='charge_projected_line'
+    assert result['history'][-1]['accepted'] is True
+    assert result['selected'] is fresh[-1] and not result['joint_convergence']
+    assert [e['evaluation'] for e in result['history']]==list(range(1,len(fresh)+2))
+
+
+@pytest.mark.parametrize('fault',['charge','heat'])
+def test_projection_cannot_accept_charge_failure_or_thermal_worsening(fault):
+    first,saved,ad,basis,payload=projection_case();fresh=[]
+    def evaluate(t,ne):
+        value=payload(t,ne);fresh.append(value)
+        if fault=='charge':value[0]['charge_residual']=saved[0]['charge_residual'].copy()
+        else:value[1]['physical_stored_net']+=.2
+        return value
+    result=T.project(evaluate,first,saved,ad,basis,1.,np.full(3,1.e8),np.full(3,4.e8),
+        policy='physical_stored',max_evaluations=1)
+    assert len(fresh)==1 and result['selected'] is first
+    assert result['accepted_iterations']==0 and not result['fixed_field_numerical_converged']
+
+
+def test_projection_rejects_wrong_saved_trial_before_any_fresh_evaluation():
+    first,saved,ad,basis,payload=projection_case()
+    saved[0]['temperature']=saved[0]['temperature']*1.001
+    def never(*args):raise AssertionError('다른 T 자료를 새 적분으로 대체하면 안 됨')
+    with pytest.raises(ValueError,match='제안 T/ne'):
+        T.project(never,first,saved,ad,basis,1.,np.full(3,1.e8),np.full(3,4.e8),
+            policy='physical_stored',max_evaluations=4)
+
+
 def test_rejected_thermal_step_preserves_exact_initial_payload():
     first=case([2.04,3.06],[5.,7.]);calls=[]
     def evaluate(t,ne):

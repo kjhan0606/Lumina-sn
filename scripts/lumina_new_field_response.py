@@ -201,6 +201,9 @@ def run(args):
     replay_prefix = getattr(args, 'thermal_replay_prefix', None)
     if replay_prefix is not None and (not replay_path or type(replay_prefix) is not int or not 1 <= replay_prefix <= 4):
         raise ValueError('초기 열섭동 재사용은 봉인 재개 보고서와1~4개 명시가 필요')
+    projecting = getattr(args, 'charge_projection', False)
+    if projecting and (not replay_path or replay_prefix is not None or not 1 <= temperature_evaluations <= 4):
+        raise ValueError('고정 T 전하 보정은 전체 완료 열평가 재개와 신규1~4회 한도 필요')
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
@@ -208,6 +211,7 @@ def run(args):
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
+        charge_projection=projecting, fresh_temperature_full_BF_integrations_max=0 if projecting else None,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
@@ -277,6 +281,7 @@ def run(args):
                 result['thermal_implementation_sha256'] = {
                     name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
                 for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
+                             'lumina_charge_projection.py',
                              'lumina_completed_field_seed.py', 'lumina_thermal_replay.py',
                              'lumina_temperature_response_cache.py'):
                     path = Path(__file__).with_name(name)
@@ -373,12 +378,16 @@ def run(args):
                 def evaluate(ne): return material_evaluate(state['temperature'], ne)[0]
                 result['phase'] = 'NEW_FIELD_COMMON_CHARGE'; save()
                 replay_source = None
+                lower = np.zeros(ns); upper = np.zeros(ns)
+                for z in response.species:
+                    select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
+                    lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
                 if replay_path:
                     replay_source = thermal_replay.load(replay_path, replay_sha,
                         field=last, source_identity=source.identity,
                         implementation=result['thermal_implementation_sha256'], state=state,
                         library=args.library, line_library=args.line_library, inputs=inputs,
-                        policy=thermal_policy, prefix=replay_prefix)
+                        policy=thermal_policy, prefix=replay_prefix, project_charge=projecting)
                     result['thermal_replay'] = replay_source['provenance']
                     cached_response.register(replay_source['bound_temperature_tables'], inputs=inputs)
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
@@ -388,10 +397,7 @@ def run(args):
                     solved = dict(history=replay_source['charge_history'])
                 else:
                     initial_ne = state['ne'] if seed is None else seed['ne']
-                    first = evaluate(initial_ne); lower = np.zeros(ns); upper = np.zeros(ns)
-                    for z in response.species:
-                        select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
-                        lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
+                    first = evaluate(initial_ne)
                     def decision(data, entry): publish(evaluation_roots[id(data)]/'decision.json', entry)
                     solved = solve(evaluate, initial_ne, first['charge_residual'], lower, upper,
                                    max_evaluations=7, on_evaluation=decision)
@@ -418,11 +424,20 @@ def run(args):
                             field=last, source_identity=source.identity,
                             probes=result['thermal_evaluation_order'][-4:].copy(), policy=thermal_policy))
                         save()
-                    block = thermal_block.solve(evaluate_temperature,
-                        (final, evaluation_energy[id(final)], candidates[id(final)]), full_ad,
-                        policy=thermal_policy, max_evaluations=temperature_evaluations,
-                        on_evaluation=thermal_decision, on_direction=thermal_direction,
-                        replay=() if replay_source is None else replay_source['replay'], on_replay=replayed)
+                    first_value = (final, evaluation_energy[id(final)], candidates[id(final)])
+                    if projecting:
+                        projection = replay_source['projection']
+                        result['thermal_projection_basis'] = projection['identity']
+                        cached_response.require_completed(projection['trial'][0]['temperature'])
+                        block = thermal_block.project(evaluate_temperature, first_value,
+                            projection['trial'], full_ad, projection['basis'], projection['alpha'], lower, upper,
+                            policy=thermal_policy, max_evaluations=temperature_evaluations,
+                            on_evaluation=thermal_decision, on_replay=replayed)
+                    else:
+                        block = thermal_block.solve(evaluate_temperature, first_value, full_ad,
+                            policy=thermal_policy, max_evaluations=temperature_evaluations,
+                            on_evaluation=thermal_decision, on_direction=thermal_direction,
+                            replay=() if replay_source is None else replay_source['replay'], on_replay=replayed)
                     final = block.pop('selected')[0]
                     result['temperature_block'] = block
                     result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])
@@ -485,6 +500,8 @@ if __name__ == '__main__':
         help='상위 수용 물질의 열정책을 계승한다. 상위에 없으면 온도 보정 시 명시 필요; 알려진 상위 정책과 충돌 금지')
     parser.add_argument('--thermal-replay-prefix', type=int,
         help='정책 변경 시 기존 방향 후보가 아닌 초기1~4개 물질 섭동만 재사용. 새 정책의 잔차/척도/방향을 재구성')
+    parser.add_argument('--charge-projection', action='store_true',
+        help='같은 정책의 완료 거부 후보 T를 고정하고 완료 적분을 재사용해 전하 보정. 신규 ne 평가1~4회')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',

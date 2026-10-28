@@ -39,7 +39,7 @@ def stopped_prefix(report, prefix):
 
 
 def load(path, digest, *, field, source_identity, implementation, state,
-         library, line_library, inputs, policy='physical_stored', prefix=None):
+         library, line_library, inputs, policy='physical_stored', prefix=None, project_charge=False):
     path = Path(path).resolve()
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
@@ -111,8 +111,34 @@ def load(path, digest, *, field, source_identity, implementation, state,
             if (reference.shape != first[0]['ne'].shape or not np.isfinite(reference).all() or
                     np.any(reference < 0) or any(not np.array_equal(value[1][name], reference) for value in replay)):
                 raise ValueError('다른 열정책 재사용의 고정 국소 침적열 프로필 불일치')
+    projection = None
+    if project_charge:
+        block = report.get('temperature_block', {}); history = block.get('history', [])
+        directions = report.get('thermal_directions', [])
+        if (prefix is not None or previous_policy != policy or len(replay) < 5 or
+                len(history) != len(replay) or block.get('accepted_iterations') != 0 or
+                history[-1].get('phase') != 'line_search' or history[-1].get('accepted') is not False or
+                len(directions) != 1):
+            raise ValueError('전하 보정은 같은 정책의 완료 거부 후보와 원 방향이 필요')
+        direction = directions[0]; root = Path(direction['root'])
+        record = root/'result.json'; matrix = root/'linearization.npz'
+        if (json.loads(record.read_text()) != direction or
+                B.sha(matrix) != direction['linearization_sha256'] or
+                direction['energy_policy'] != policy or direction['field'] != field or
+                direction['source_identity'] != source_identity or
+                direction['base_response'] != first[2]):
+            raise ValueError('전하 보정의 원 선형계/기준/정책 신원 불일치')
+        with np.load(matrix, allow_pickle=False) as values:
+            basis = {k: values[k] for k in values.files}
+        basis['direction'] = basis.pop('log_direction')
+        consumed.update({str(record): B.sha(record), str(matrix): direction['linearization_sha256']})
+        projection = dict(basis=basis, alpha=history[-1]['alpha'], trial=replay[-1],
+            identity=dict(direction_result=str(record), direction_sha256=B.sha(record),
+                          linearization_sha256=direction['linearization_sha256'],
+                          source_trial=replay[-1][2], original_alpha=history[-1]['alpha']))
     inputs.update(consumed)
     return dict(first=first, replay=replay, charge_history=report.get('charge_history', []),
+                projection=projection,
                 bound_temperature_tables=report.get('temperature_bound_cache', {}).get('completed_bound_tables', []),
                 provenance=dict(result=str(path), result_sha256=digest,
                     source_report_state=report['state'], source_process_missing=stopped,

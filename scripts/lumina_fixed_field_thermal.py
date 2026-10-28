@@ -4,7 +4,50 @@
 """
 import numpy as np
 
-from lumina_coupled_material import packet, solve_coupled
+from lumina_coupled_material import packet, solve_coupled, residual
+import lumina_charge_projection as charge_projection
+
+
+def project(evaluate, first, saved_trial, adiabatic, basis, alpha, lower, upper, *,
+            policy, max_evaluations, on_evaluation=None, on_replay=None):
+    """원 제안 T를 고정해 실제 전하를 닫는다. 완료 첫 후보는 재평가하지 않는다."""
+    if type(max_evaluations) is not int or not 1 <= max_evaluations <= 4:
+        raise ValueError('고정 T 신규 전하평가 한도1~4회 필요')
+    base = packet(*first[:2], policy); values = {id(base): first}; indices = {}
+    history = []; fresh = 0
+    def actual(t, ne):
+        nonlocal fresh
+        if not history:
+            candidate = saved_trial
+            if on_replay is not None: on_replay(candidate)
+        else:
+            if fresh >= max_evaluations:
+                raise RuntimeError('고정 T 신규 전하평가 한도 초과')
+            if not np.array_equal(t, saved_trial[0]['temperature']):
+                raise ValueError('전하 보정에서 온도 변경 금지')
+            candidate = evaluate(t, ne); fresh += 1
+        data, heat, _ = candidate
+        if not np.array_equal(data['temperature'], t) or not np.array_equal(data['ne'], ne):
+            raise ValueError('완료 전하 후보의 원 제안 T/ne 불일치')
+        value = packet(data, heat, policy)
+        values[id(value)] = candidate; indices[id(value)] = len(history)
+        history.append(dict(evaluation=len(history)+1,
+            phase='charge_projection_initial' if not history else 'charge_projection_ne',
+            scaled_max=float(abs(residual(value, adiabatic, basis['charge_scale'], basis['thermal_scale'])).max())))
+        return value
+    def decision(value, entry):
+        record = history[indices[id(value)]]
+        record.update({k: v for k, v in entry.items() if k != 'evaluation'})
+        if on_evaluation is not None: on_evaluation(values[id(value)], record)
+    outer = charge_projection.trial(actual, base, adiabatic, basis, alpha, lower, upper,
+        max_evaluations=max_evaluations+1, on_evaluation=decision)
+    selected = values[id(outer['packet'])]
+    return dict(selected=selected, history=history, accepted_iterations=outer['iterations'],
+        fixed_field_numerical_converged=outer['numerical_converged'],
+        charge_relative=float(abs(selected[0]['charge_residual']/selected[0]['ne']).max()),
+        evaluations_used=len(history), fresh_evaluations_used=fresh, replayed_evaluations=1,
+        charge_projection=True, charge_projection_history=outer['charge_history'],
+        new_transport=0, joint_convergence=False)
 
 
 def solve(evaluate, first, adiabatic, *, policy, max_evaluations,

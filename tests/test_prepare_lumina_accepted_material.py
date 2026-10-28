@@ -262,6 +262,20 @@ def test_thermal_selected_candidate_roundtrips_without_claiming_joint_convergenc
     assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
 
 
+def test_charge_projected_step_exports_only_its_actual_final_selected_response(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,target=thermal_report(result)
+    report['temperature_block']['charge_projection']=True
+    report['temperature_block']['history'][-1]['phase']='charge_projected_line'
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'projected-export')
+    assert exported['accepted_evaluation']==5 and not exported['joint_convergence_certified']
+    report['temperature_block']['charge_projection']=False
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match='실제 수용 반복'):
+        E.prepare(result,E.B.sha(result),seed,run,tmp_path/'wrong-export')
+
+
 def test_thermal_selected_replayed_candidate_need_not_be_a_new_evaluation(tmp_path,monkeypatch):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
     report,_=thermal_report(result)

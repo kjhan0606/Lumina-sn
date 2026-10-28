@@ -68,8 +68,9 @@ def thermal_selection(report):
             any(entry.get('fixed_field_thermal_callback') is not True for entry in order)):
         raise ValueError('온도 응답의 호출 순서/완료 평가 불일치')
     accepted = [e for e in history if e.get('accepted') is True]
+    accepted_phase = 'charge_projected_line' if block.get('charge_projection') else 'line_search'
     if (block['accepted_iterations'] != len(accepted) or
-            any(e['phase'] != 'line_search' for e in accepted)):
+            any(e['phase'] != accepted_phase for e in accepted)):
         raise ValueError('온도 응답의 실제 수용 반복 불일치')
     if accepted:
         index = accepted[-1]['evaluation']; expected = order[index-1]

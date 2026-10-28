@@ -41,6 +41,7 @@ class TemperatureResponseCache:
         self.restored_tables = []
         self.inputs = None
         self.layout = None
+        self.required_temperature = None
         self.active = False
 
     @staticmethod
@@ -159,10 +160,21 @@ class TemperatureResponseCache:
             restored_temperature_tables=len(self.restored_tables),
             bound_publication_errors=self.publication_errors.copy())
 
+    def require_completed(self, temperature):
+        """같은 T 전하 보정에서 캐시 누락을 새 전적분으로 바꾸지 않는다."""
+        key = self._key(temperature)
+        if key not in self.entries:
+            self._restore(temperature, key)
+        if key not in self.entries:
+            raise ValueError('고정 T 전하 보정의 완료 bound 자료 없음; 새 전적분 금지')
+        self.required_temperature = key
+
     def evaluate(self, temperature, ne, *, save=None):
         if self.active or self.response.provider is not self.provider:
             raise ValueError('온도 적분 캐시는 같은 순차 물질 생산자에서만 사용한다')
         key = self._key(temperature)
+        if self.required_temperature is not None and key != self.required_temperature:
+            raise ValueError('고정 T 전하 보정의 온도 변경 금지')
         if key not in self.entries:
             self._restore(temperature, key)
         self.active = True
@@ -176,6 +188,9 @@ class TemperatureResponseCache:
         captured = []
 
         def integrate(trial, **kwargs):
+            ids = kwargs.get('route_indices')
+            if self.required_temperature is not None and (ids is None or len(ids) == len(self.provider.routes)):
+                raise ValueError('고정 T 전하 보정에서 새 전적분 금지')
             result = original(trial, **kwargs)
             if kwargs.get('route_indices') is None:
                 if self._key(trial.state['temperature']) != key:
