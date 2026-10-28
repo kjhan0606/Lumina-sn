@@ -2,6 +2,7 @@
 """완료 증거에 따라 다음 클러스터 작업을 딱 한 번 제출한다. 대기 루프는 없다."""
 import argparse
 import hashlib
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -16,12 +17,38 @@ def sha(path):
     return h.hexdigest()
 
 
+def submission_ssh(config, host):
+    """계산 노드 DNS가 없는 경우에도 원 alias의 인증/호스트키를 보존한다.
+
+    주소는 운전자가 해당 계산 노드에서 검증한 IP만 구성에 명시한다.
+    ssh 설정/known_hosts를 수정하거나 호스트키 검사를 우회하지 않는다.
+    """
+    addresses=config.get('submission_host_addresses', {})
+    if (not isinstance(addresses,dict) or set(addresses)-{'grammar','syntax'} or
+            any(not isinstance(value,str) for value in addresses.values())):
+        raise ValueError('제출 호스트의 명시 IP 구성 오류')
+    parsed={}
+    for name,value in addresses.items():
+        try:address=ipaddress.ip_address(value)
+        except ValueError as error:raise ValueError('제출 주소는 DNS 이름이 아닌 IP여야 함') from error
+        if getattr(address,'scope_id',None) is not None or address.is_unspecified or address.is_multicast:
+            raise ValueError('제출 주소의 범위 오류')
+        parsed[name]=str(address)
+    command=['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10']
+    if host in parsed:
+        command+=['-o','HostName='+parsed[host],'-o','HostKeyAlias='+host,
+                  '-o','StrictHostKeyChecking=yes','-o','UpdateHostKeys=no']
+    return command+[host]
+
+
 def dispatch(config, digest, step):
     config = Path(config).resolve()
     if sha(config) != digest: raise ValueError('묶음 제출 구성 변경')
     c = json.loads(config.read_text()); control = config.parent
     if c['schema'] != 'lumina-accepted-bundle-dispatch-v1' or step not in ('field', 'response'):
         raise ValueError('묶음 제출 범위 오류')
+    host = 'syntax' if step=='field' else 'grammar'
+    ssh = submission_ssh(c,host)
     for name, expected in c['control_sha256'].items():
         if sha(control/name) != expected: raise ValueError('봉인 제출 코드 변경')
     result_path = Path(c['coefficient_result']); coefficient = json.loads(result_path.read_text())
@@ -53,7 +80,6 @@ def dispatch(config, digest, step):
         command = common+['--output='+str(gpu/'slurm-%j.out'), '--error='+str(gpu/'slurm-%j.err'),
             str(control/'submit_lumina_accepted_feedback.slurm'), str(gpu), str(prep), p['sha256'], str(config), digest,
             *options]
-        host = 'syntax'
     else:
         feedback = gpu/'feedback/feedback.json'; f = json.loads(feedback.read_text())
         last = f.get('last_complete')
@@ -67,13 +93,12 @@ def dispatch(config, digest, step):
             str(control/'submit_lumina_new_field_response.slurm'), str(parent), c['response_commit'],
             '--preparation', str(prep), '--preparation-sha', p['sha256'],
             '--feedback', str(feedback), '--feedback-sha', sha(feedback)]
-        host = 'grammar'
+    ssh_command=ssh+[shlex.join(command)]
     record = dict(state='SUBMISSION_ATTEMPT_STARTED', step=step, host=host, command=command,
-                  automatic_retries=0, config_sha256=digest)
+                  ssh_command=ssh_command,automatic_retries=0, config_sha256=digest)
     with marker.open('x') as stream: json.dump(record, stream, indent=2)
     try:
-        completed = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host,
-            shlex.join(command)], capture_output=True, text=True, timeout=45)
+        completed = subprocess.run(ssh_command, capture_output=True, text=True, timeout=45)
         record.update(returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
         if completed.returncode or not re.fullmatch(r'\d+(;[\w.-]+)?\s*', completed.stdout):
             raise RuntimeError('제출 응답 확인 실패; 자동 재시도하지 않음')

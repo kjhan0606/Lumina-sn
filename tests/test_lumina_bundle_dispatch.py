@@ -67,6 +67,41 @@ def test_response_requires_completed_new_field(setup, complete):
         assert not calls and not Path(c['response_parent']).exists()
 
 
+def test_response_uses_verified_IP_but_retains_alias_authentication_and_strict_host_key(setup):
+    config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
+    coefficient=json.loads(Path(c['coefficient_result']).read_text())
+    (gpu/'feedback/feedback.json').write_text(json.dumps(dict(last_complete=dict(sweep=1),
+        accepted_preparation_sha256=coefficient['preparation']['sha256'],
+        sweeps=[dict(state='COMPLETE_F_NOT_CONVERGENCE')])))
+    c['submission_host_addresses']={'grammar':'192.0.2.20'}
+    config.write_text(json.dumps(c))
+    result=D.dispatch(config,D.sha(config),'response')
+    ssh=calls[0]
+    assert ssh[-2]=='grammar' and 'HostName=192.0.2.20' in ssh and 'HostKeyAlias=grammar' in ssh
+    assert 'StrictHostKeyChecking=yes' in ssh and 'UpdateHostKeys=no' in ssh
+    assert result['ssh_command']==ssh and result['job_id']==12345
+    assert result['automatic_retries']==0
+    with pytest.raises(FileExistsError):D.dispatch(config,D.sha(config),'response')
+    assert len(calls)==1
+
+
+@pytest.mark.parametrize('addresses',[
+    [],{'other':'192.0.2.20'},{'grammar':True},{'grammar':'grammar'},
+    {'grammar':'192.0.2.20 -oStrictHostKeyChecking=no'},
+    {'grammar':'0.0.0.0'},{'grammar':'224.0.0.1'},{'grammar':'fe80::1%en0'}])
+def test_bad_route_cannot_submit_or_create_result_roots(setup,addresses):
+    config,c,calls=setup;c['submission_host_addresses']=addresses
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'response')
+    assert not calls and not Path(c['response_parent']).exists()
+    assert not (config.parent/'response-submission.json').exists()
+
+
+def test_IP_route_does_not_change_other_submission_host():
+    command=D.submission_ssh({'submission_host_addresses':{'grammar':'192.0.2.20'}},'syntax')
+    assert command==['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10','syntax']
+
+
 def test_incomplete_coefficients_never_submit_GPU(setup):
     config, c, calls = setup
     result = Path(c['coefficient_result']); data = json.loads(result.read_text())
