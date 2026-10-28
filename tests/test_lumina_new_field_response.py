@@ -58,6 +58,14 @@ def test_existing_slurm_resources_remain_supported(monkeypatch):
     with pytest.raises(ValueError): N.execution_resources(13800)
 
 
+@pytest.mark.parametrize('limit', [4, 13, True])
+def test_temperature_mode_rejects_bad_budget_before_creating_output(manual_resources, limit):
+    from types import SimpleNamespace
+    # out 등 실행 인수가 없어도 온도 예산 검증에서 먼저 종료돼야 한다.
+    with pytest.raises(ValueError, match='온도 보정'):
+        N.run(SimpleNamespace(seconds=13800, temperature_evaluations=limit))
+
+
 def test_trapezoid_preserves_original_nonuniform_grid():
     nu = np.array([1., 2., 4., 9.]); saved = nu.copy()
     w = N.trapezoid_weights(nu)

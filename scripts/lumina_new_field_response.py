@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """완성된 새 자체 J의 전원소 물질응답과 같은 반경 CMFGEN70 비교.
 
-수용 T는 고정하고 ne/SE만 갱신한다. 유한 F와 전하 수렴을 RE/스펙트럼
-동등성으로 표시하지 않는다. old J70 율이나 CONT_FREQ를 재사용하지 않는다.
+기본은 수용 T 고정 ne/SE 응답이며 명시적으로 선택하면 기존 감쇠 T/ne
+보정을 연결한다. 유한 F와 내부 물질 수렴을 공동 RE/스펙트럼 동등성으로
+표시하지 않는다. old J70 율이나 CONT_FREQ를 재사용하지 않는다.
 """
 import argparse
 from contextlib import contextmanager
@@ -32,6 +33,8 @@ from lumina_model_response import ModelResponse
 from lumina_model_response_balance import ResponseBalance
 from run_lumina_common_material import absent_partial_auto_inputs
 from run_lumina_full_material_response import PARAMETERS
+import lumina_fixed_field_thermal as thermal_block
+from run_lumina_fixed_state_balance import adiabatic
 
 
 @contextmanager
@@ -136,12 +139,16 @@ def execution_resources(seconds):
 
 def run(args):
     execution = execution_resources(args.seconds)
+    temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
+    if type(temperature_evaluations) is not int or (temperature_evaluations != 0 and not 5 <= temperature_evaluations <= 12):
+        raise ValueError('온도 보정은 비활성0 또는 명시한 실제평가5~12회만 허용')
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
     out.mkdir(); started = time.monotonic(); deadline = started+args.seconds
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
-        execution=execution, fixed_accepted_temperature=True, new_transport=0, new_native=0, evaluations=[],
+        execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
+        temperature_evaluations_max=temperature_evaluations, new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
         difference_interpretation='joint change of J, frequency grid and continuum evaluation; not isolated field effect')
@@ -166,6 +173,10 @@ def run(args):
             kernel = Path('/gpfs/kjhan/cmfgen_runs/lumina_full_source_tests_20261020-0sY1jL/kernels/model_sources.so')
             inputs = {str(Path(v).resolve()): B.sha(v) for v in (args.preparation, args.feedback,
                 args.library, args.line_library, PARAMETERS, phot, kernel)}
+            if temperature_evaluations:
+                for name in ('lumina_fixed_field_thermal.py', 'lumina_coupled_material.py'):
+                    path = Path(__file__).with_name(name)
+                    inputs[str(path)] = B.sha(path)
             for path, digest in manifest['input_sha256'].items():
                 if B.sha(Path(path)) != digest: raise ValueError('수용 물질의 원 입력 변경')
                 inputs[path] = digest
@@ -225,7 +236,7 @@ def run(args):
             occupation = out/'occupation.bin'
             with occupation.open('xb') as stream:
                 stream.write(struct.pack('<8sII', b'LMATOCC1', len(rows), ns)); stream.write(trial.state['occupation'].astype('<f8').tobytes())
-            candidates = {}; evaluation_roots = {}
+            candidates = {}; evaluation_roots = {}; evaluation_energy = {}
             def record(data, metrics, current_trial, rates):
                 root = out/('evaluation-'+str(len(result['evaluations'])+1)); root.mkdir()
                 np.savez(root/'response.npz', **data)
@@ -235,8 +246,12 @@ def run(args):
                 if nuclei > 1.e-10: raise ValueError('새 물질 핵수 보존 실패')
                 entry = dict(**metrics, **summary, nuclei_relative=float(nuclei), root=str(root),
                     response_sha256=B.sha(root/'response.npz'), balance_sha256=B.sha(root/'balance.npz'))
+                if not np.array_equal(data['temperature'], state['temperature']):
+                    result['full_BF_integrations'] += 1
+                    entry['full_BF_reintegration'] = True
                 publish(root/'result.json', entry); result['evaluations'].append(entry)
                 candidates[id(data)] = entry; evaluation_roots[id(data)] = root; save()
+                evaluation_energy[id(data)] = energy
             with MaterialBridge(args.library, atomic, material, occupation, PARAMETERS) as bridge:
                 response = ModelResponse(provider, bridge, ModelCollisionSource(runroot, rows), lines, jbar,
                     status, trial, bound, roster, deadline=deadline)
@@ -251,8 +266,26 @@ def run(args):
                 solved = solve(evaluate, state['ne'], first['charge_residual'], lower, upper,
                                max_evaluations=7, on_evaluation=decision)
                 final = first if solved['payload'] is None else solved['payload']
+                if temperature_evaluations:
+                    result['phase'] = 'FIXED_NEW_FIELD_T_NE_CORRECTION'; save()
+                    def evaluate_temperature(t, ne):
+                        data = response.evaluate(t, ne, save=record)[0]
+                        return data, evaluation_energy[id(data)], candidates[id(data)]
+                    def full_ad(t, ne, ni, u):
+                        return adiabatic(args.library, source.radius, state['epoch_seconds'], t, ne, ni, u)['signed_total']
+                    def thermal_decision(value, entry):
+                        entry['charge_relative'] = float(np.max(abs(value[0]['charge_residual']/value[0]['ne'])))
+                        publish(evaluation_roots[id(value[0])]/'thermal-decision.json', entry)
+                    block = thermal_block.solve(evaluate_temperature,
+                        (final, evaluation_energy[id(final)], candidates[id(final)]), full_ad,
+                        policy='physical_stored', max_evaluations=temperature_evaluations,
+                        on_evaluation=thermal_decision)
+                    final = block.pop('selected')[0]
+                    result['temperature_block'] = block
+                    result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])
+                    result['field_moments_scope'] = 'input accepted material; not recomputed for the temperature candidate'
                 for ion in response.ions.values(): inputs.update(ion.identity)
-                result.update(charge_converged=solved['converged'], charge_history=solved['history'],
+                result.update(charge_converged=bool(np.max(abs(final['charge_residual']/final['ne'])) <= 1.e-10), charge_history=solved['history'],
                     selected_response=candidates[id(final)])
             summary, table = comparison(state['columns'], reference['superlevel'], state['superlevel'], final['population'], source.radius)
             with (out/'Si-S-comparison.csv').open('x') as stream:
@@ -279,7 +312,8 @@ def run(args):
             result['output_sha256'] = {name: B.sha(out/name) for name in
                 ('Si-S-comparison.csv', 'physical-profiles.npz', 'bound-rates.npy',
                  'route-roster.npz', 'jbar.npy', 'line-status.npy', 'FF-coefficients.npz')}
-            result['state'] = 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE'
+            result['state'] = ('COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' if temperature_evaluations else
+                               'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE')
     except Exception as error:
         result.update(state='INCOMPLETE_PRESERVED', error=type(error).__name__+': '+str(error))
     finally: save()
@@ -293,6 +327,9 @@ if __name__ == '__main__':
     for name in ('preparation-sha', 'feedback-sha', 'source-commit'):
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--seconds', type=int, default=6600)
+    parser.add_argument('--temperature-evaluations', type=int, default=0,
+        help='명시적 고정장 T/ne 보정 실제평가5~12회. 실행 자원/횟수 승인을 대신하지 않음')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    raise SystemExit(0 if result['state'] == 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE' else 1)
+    raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',
+        'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE') else 1)
