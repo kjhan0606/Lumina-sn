@@ -270,6 +270,43 @@ int nlte_model_material_bridge_element_push(NLTEModelMaterialElement *e,uint64_t
     return 0;
 }
 
+#ifdef LUMINA_OPERATOR_PROBE
+int nlte_model_material_bridge_element_probe(NLTEModelMaterialElement *e,uint64_t id,
+    double *values,size_t count)
+{
+    if(!e || e->finished || !values || e->owner->failed || id!=e->trial_id ||
+       e->owner->n_columns>SIZE_MAX/11 || count!=11*e->owner->n_columns)return -1;
+    NLTEModelMaterialBridge *b=e->owner;size_t nc=b->n_columns,n=e->element.n_variables;
+    NLTEModelCollisionBBBlock col={0};NLTEModelCombinedGenerator combined={0};
+    double *work=calloc(count,sizeof(double));int failed=1;
+    if(!work || nlte_model_collision_bb_stream_finish(e->stream,id,&col) ||
+       nlte_model_element_generator_combine(&combined,&e->element,&e->bf,&e->bb,&col))goto done;
+    const double *blocks[5]={e->bf.radiative,e->bf.collisional,e->bb.radiative,
+                             col.collisional,col.dissolution};
+    for(size_t c=0;c<nc;c++)if(b->columns[3*c]==e->element.Z){
+        int row=b->column_super[c]>=0 ? e->element.super_to_row[b->column_super[c]] :
+            e->element.terminal_to_row[b->column_ion[c]];
+        if(row<0 || (size_t)row>=n)goto done;
+        work[c]=combined.fixed_residual[row];
+        for(int k=0;k<5;k++){
+            long double incoming=0.,outgoing=0.;
+            if(blocks[k])for(size_t j=0;j<n;j++)if((int)j!=row){
+                incoming+=(long double)blocks[k][j*n+(size_t)row]*e->element.initial_population[j];
+                outgoing+=(long double)blocks[k][(size_t)row*n+j]*e->element.initial_population[row];
+            }
+            if(!isfinite((double)incoming) || !isfinite((double)outgoing) || incoming<0. || outgoing<0.)goto done;
+            work[(1+2*k)*nc+c]=(double)incoming;work[(2+2*k)*nc+c]=(double)outgoing;
+        }
+    }
+    memcpy(values,work,count*sizeof(double));
+    b->finished[element_slot(b,e->element.Z,e->element.shell)]=2;e->finished=1;failed=0;
+done:
+    if(failed)b->failed=1;
+    free(work);nlte_model_combined_generator_free(&combined);nlte_model_collision_bb_block_free(&col);
+    return failed ? -1 : 0;
+}
+#endif
+
 int nlte_model_material_bridge_element_finish(NLTEModelMaterialElement *e,uint64_t id,
     double *output,size_t count,double ledger[7])
 {

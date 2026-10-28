@@ -51,6 +51,13 @@ LUMINA_MATERIAL_API int nlte_model_material_bridge_finish_points(
     NLTEModelMaterialElement *const *elements,uint64_t trial_id,size_t n_points,
     double *result_population,size_t population_count,double *ledger);
 LUMINA_MATERIAL_API void nlte_model_material_bridge_element_free(NLTEModelMaterialElement *element);
+#ifdef LUMINA_OPERATOR_PROBE
+/* 비교 전용: 원 입력 인구의 [raw, 각 BF복사/BF충돌/BB복사/충돌 및
+ * 용해충돌의 유입·유출]을 원 column 순서의 11개 배열로 돌려준다.
+ * 정상해·인구 게시를 수행하지 않는다. 용해는 충돌 전체에 포함된다. */
+LUMINA_MATERIAL_API int nlte_model_material_bridge_element_probe(
+    NLTEModelMaterialElement *element,uint64_t trial_id,double *values,size_t count);
+#endif
 /* 전원소·전점 후보가 완성됐을 때만 charge 잔차와 실제 내부에너지를 만든다.
  * energy는 [ns,3]: nuclei density, energy density, energy/nucleus다.
  * 기존 BF/BB 입력을 소비하는 phase는 닫으며 공개 물질은 바꾸지 않는다. */
