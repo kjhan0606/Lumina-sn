@@ -36,6 +36,7 @@ from run_lumina_full_material_response import PARAMETERS
 import lumina_fixed_field_thermal as thermal_block
 from run_lumina_fixed_state_balance import adiabatic
 import lumina_completed_field_seed as completed_seed
+import lumina_thermal_replay as thermal_replay
 
 
 @contextmanager
@@ -167,12 +168,17 @@ def preserve_thermal_direction(out, index, value, matrix, residual, delta,
 def run(args):
     execution = execution_resources(args.seconds)
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
-    if type(temperature_evaluations) is not int or (temperature_evaluations != 0 and not 5 <= temperature_evaluations <= 12):
-        raise ValueError('온도 보정은 비활성0 또는 명시한 실제평가5~12회만 허용')
+    replay_path = getattr(args, 'resume_thermal_result', None)
+    replay_sha = getattr(args, 'resume_thermal_result_sha', None)
+    minimum = 1 if replay_path else 5
+    if type(temperature_evaluations) is not int or (temperature_evaluations != 0 and not minimum <= temperature_evaluations <= 12):
+        raise ValueError('온도 보정은 비활성0, 신규5~12회 또는 보존평가 재개1~12회 필요')
     resume = getattr(args, 'resume_result', None)
     resume_sha = getattr(args, 'resume_result_sha', None)
     if bool(resume) != bool(resume_sha) or (resume and not temperature_evaluations):
         raise ValueError('완료 계수 재개는 보고서/해시 쌍과 명시한 온도 보정 필요')
+    if bool(replay_path) != bool(replay_sha) or (replay_path and (not resume or not temperature_evaluations)):
+        raise ValueError('열평가 재개는 보고서/해시 쌍과 완료 기준 계수 및 명시한 신규 평가 한도 필요')
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
@@ -242,7 +248,8 @@ def run(args):
                     'run_lumina_fixed_state_balance.py')
                 result['thermal_implementation_sha256'] = {
                     name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
-                for name in (*thermal_code, 'lumina_fixed_field_thermal.py', 'lumina_completed_field_seed.py'):
+                for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
+                             'lumina_completed_field_seed.py', 'lumina_thermal_replay.py'):
                     path = Path(__file__).with_name(name)
                     inputs[str(path)] = B.sha(path)
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
@@ -306,7 +313,7 @@ def run(args):
             occupation = out/'occupation.bin'
             with occupation.open('xb') as stream:
                 stream.write(struct.pack('<8sII', b'LMATOCC1', len(rows), ns)); stream.write(trial.state['occupation'].astype('<f8').tobytes())
-            candidates = {}; evaluation_roots = {}; evaluation_energy = {}
+            candidates = {}; evaluation_roots = {}; evaluation_energy = {}; replay_ids = set()
             def record(data, metrics, current_trial, rates):
                 root = out/('evaluation-'+str(len(result['evaluations'])+1)); root.mkdir()
                 np.savez(root/'response.npz', **data)
@@ -332,15 +339,28 @@ def run(args):
                 del bound
                 def evaluate(ne): return response.evaluate(state['temperature'], ne, save=record)[0]
                 result['phase'] = 'NEW_FIELD_COMMON_CHARGE'; save()
-                initial_ne = state['ne'] if seed is None else seed['ne']
-                first = evaluate(initial_ne); lower = np.zeros(ns); upper = np.zeros(ns)
-                for z in response.species:
-                    select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
-                    lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
-                def decision(data, entry): publish(evaluation_roots[id(data)]/'decision.json', entry)
-                solved = solve(evaluate, initial_ne, first['charge_residual'], lower, upper,
-                               max_evaluations=7, on_evaluation=decision)
-                final = first if solved['payload'] is None else solved['payload']
+                replay_source = None
+                if replay_path:
+                    replay_source = thermal_replay.load(replay_path, replay_sha,
+                        field=last, source_identity=source.identity,
+                        implementation=result['thermal_implementation_sha256'], state=state,
+                        library=args.library, line_library=args.line_library, inputs=inputs)
+                    result['thermal_replay'] = replay_source['provenance']
+                    for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
+                        candidates[id(data)] = metadata; evaluation_energy[id(data)] = energy
+                        replay_ids.add(id(data))
+                    final = replay_source['first'][0]
+                    solved = dict(history=replay_source['charge_history'])
+                else:
+                    initial_ne = state['ne'] if seed is None else seed['ne']
+                    first = evaluate(initial_ne); lower = np.zeros(ns); upper = np.zeros(ns)
+                    for z in response.species:
+                        select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
+                        lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
+                    def decision(data, entry): publish(evaluation_roots[id(data)]/'decision.json', entry)
+                    solved = solve(evaluate, initial_ne, first['charge_residual'], lower, upper,
+                                   max_evaluations=7, on_evaluation=decision)
+                    final = first if solved['payload'] is None else solved['payload']
                 if temperature_evaluations:
                     result['thermal_initial_response'] = candidates[id(final)]
                     result['charge_history'] = solved['history']
@@ -352,7 +372,10 @@ def run(args):
                         return adiabatic(args.library, source.radius, state['epoch_seconds'], t, ne, ni, u)['signed_total']
                     def thermal_decision(value, entry):
                         entry['charge_relative'] = float(np.max(abs(value[0]['charge_residual']/value[0]['ne'])))
-                        publish(evaluation_roots[id(value[0])]/'thermal-decision.json', entry)
+                        if id(value[0]) not in replay_ids:
+                            publish(evaluation_roots[id(value[0])]/'thermal-decision.json', entry)
+                    def replayed(value):
+                        result.setdefault('thermal_evaluation_order', []).append(value[2]); save()
                     def thermal_direction(value, matrix, residual, delta, charge_scale, thermal_scale):
                         records = result.setdefault('thermal_directions', [])
                         records.append(preserve_thermal_direction(out, len(records)+1,
@@ -363,7 +386,8 @@ def run(args):
                     block = thermal_block.solve(evaluate_temperature,
                         (final, evaluation_energy[id(final)], candidates[id(final)]), full_ad,
                         policy='physical_stored', max_evaluations=temperature_evaluations,
-                        on_evaluation=thermal_decision, on_direction=thermal_direction)
+                        on_evaluation=thermal_decision, on_direction=thermal_direction,
+                        replay=() if replay_source is None else replay_source['replay'], on_replay=replayed)
                     final = block.pop('selected')[0]
                     result['temperature_block'] = block
                     result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])
@@ -412,10 +436,13 @@ if __name__ == '__main__':
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--seconds', type=int, default=6600)
     parser.add_argument('--temperature-evaluations', type=int, default=0,
-        help='명시적 고정장 T/ne 보정 실제평가5~12회. 실행 자원/횟수 승인을 대신하지 않음')
+        help='신규 실제평가 한도: 새 보정5~12, 보존평가 재개1~12. 실행 승인을 대신하지 않음')
     parser.add_argument('--resume-result', type=Path,
         help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
     parser.add_argument('--resume-result-sha')
+    parser.add_argument('--resume-thermal-result', type=Path,
+        help='종료된 같은 장 열평가를 정확한 호출 순서로 재생. 추가 실행 승인을 대신하지 않음')
+    parser.add_argument('--resume-thermal-result-sha')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',

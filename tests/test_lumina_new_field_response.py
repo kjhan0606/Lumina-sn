@@ -82,6 +82,16 @@ def test_resume_requires_pin_pair_and_explicit_temperature_mode(manual_resources
                               resume_result=path, resume_result_sha=digest))
 
 
+@pytest.mark.parametrize('path,digest,seed', [('result.json',None,True),
+    (None,'sha',True),('result.json','sha',False)])
+def test_thermal_resume_requires_pin_pair_and_seed(manual_resources,path,digest,seed):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError,match='열평가 재개'):
+        N.run(SimpleNamespace(seconds=13800,temperature_evaluations=5,
+            resume_thermal_result=path,resume_thermal_result_sha=digest,
+            resume_result='seed' if seed else None,resume_result_sha='seed-sha' if seed else None))
+
+
 def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_accepted(tmp_path):
     data=dict(temperature=np.array([9000.,10000.]),ne=np.array([20.,30.]))
     metadata=dict(root='evaluation-1',response_sha256='response',balance_sha256='balance')

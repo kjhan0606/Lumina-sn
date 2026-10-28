@@ -83,6 +83,69 @@ def test_failure_after_direction_preserves_callback_output_without_returning_fal
     assert len(directions)==1 and len(calls)==5
 
 
+def test_resume_reuses_rejected_trial_and_probes_then_evaluates_only_halved_candidate():
+    first=case([2.04,3.06],[5.,7.]);saved=[]
+    def original(t,ne):
+        value=case(t,ne,len(saved)+1)
+        if len(saved)==4:value[1]['physical_stored_net'][:]=100.
+        saved.append(value);return value
+    stopped=T.solve(original,first,adiabatic,policy='physical_stored',max_evaluations=5)
+    assert stopped['selected'] is first and len(saved)==5
+    snapshots=[v[0]['temperature'].copy() for v in saved];fresh=[];replayed=[]
+    def additional(t,ne):
+        fresh.append(case(t,ne,6));return fresh[-1]
+    continued=T.solve(additional,first,adiabatic,policy='physical_stored',max_evaluations=1,
+        replay=saved,on_replay=lambda v:replayed.append(v))
+    assert len(fresh)==1 and len(replayed)==5
+    assert continued['fresh_evaluations_used']==1 and continued['replayed_evaluations']==5
+    assert continued['selected'] is fresh[0] and continued['accepted_iterations']==1
+    assert continued['history'][-1]['alpha']==.5
+    for value,snapshot in zip(saved,snapshots):np.testing.assert_array_equal(value[0]['temperature'],snapshot)
+
+
+def test_replay_of_partial_derivatives_does_not_repeat_actual_evaluations():
+    first=case([2.04,3.06],[5.,7.]);saved=[]
+    def stopped(t,ne):
+        if len(saved)==2:raise TimeoutError('네 섭동 중 두 개 완료 후 종료')
+        saved.append(case(t,ne,len(saved)+1));return saved[-1]
+    with pytest.raises(TimeoutError):
+        T.solve(stopped,first,adiabatic,policy='physical_stored',max_evaluations=5)
+    fresh=[]
+    def additional(t,ne):fresh.append(case(t,ne));return fresh[-1]
+    result=T.solve(additional,first,adiabatic,policy='physical_stored',max_evaluations=3,replay=saved)
+    assert len(fresh)==3 and result['replayed_evaluations']==2
+    assert result['fixed_field_numerical_converged']
+
+
+def test_accepted_changed_state_builds_new_derivatives_not_old_newton_matrix():
+    def nonlinear(t,ne):
+        value=case(t,ne)
+        value[1]['physical_stored_net']=np.asarray(t)/np.array([2.,3.])-1.
+        return value
+    first=nonlinear([2.04,3.06],[5.,7.]);saved=[]
+    def original(t,ne):saved.append(nonlinear(t,ne));return saved[-1]
+    stopped=T.solve(original,first,adiabatic,policy='physical_stored',max_evaluations=5)
+    assert stopped['accepted_iterations']==1 and not stopped['fixed_field_numerical_converged']
+    fresh=[]
+    def additional(t,ne):fresh.append(nonlinear(t,ne));return fresh[-1]
+    continued=T.solve(additional,first,adiabatic,policy='physical_stored',max_evaluations=5,replay=saved)
+    assert len(fresh)==5 and continued['accepted_iterations']==2
+    np.testing.assert_allclose(fresh[0][0]['temperature'],stopped['selected'][0]['temperature']*np.exp(1.e-4),rtol=1e-15)
+    assert not np.array_equal(fresh[0][0]['temperature'],saved[0][0]['temperature'])
+
+
+@pytest.mark.parametrize('fault',['order','temperature','ne'])
+def test_mismatched_replay_never_falls_back_to_expensive_evaluation(fault):
+    first=case([2.04,3.06],[5.,7.]);saved=[]
+    def original(t,ne):saved.append(case(t,ne));return saved[-1]
+    T.solve(original,first,adiabatic,policy='physical_stored',max_evaluations=5)
+    if fault=='order':saved[0],saved[1]=saved[1],saved[0]
+    else:saved[0][0][fault]*=1.000001
+    def never(*args):raise AssertionError('재생 불일치를 새 적분으로 숨기면 안 됨')
+    with pytest.raises(ValueError,match='호출 순서/T/ne'):
+        T.solve(never,first,adiabatic,policy='physical_stored',max_evaluations=1,replay=saved)
+
+
 def test_temperature_callback_must_consume_requested_state():
     first=case([2.04,3.06],[5.,7.])
     with pytest.raises(ValueError,match='T/ne'):
