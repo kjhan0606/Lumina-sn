@@ -1,4 +1,6 @@
 """같은 장·수용 물질의 완료 계수만 읽는다. 열장부/정상해는 재평가한다."""
+import ast
+import hashlib
 import json
 from pathlib import Path
 
@@ -15,6 +17,29 @@ PRODUCERS = ('cmfgen_model_continuum.py', 'cmfgen_model_sources.py',
              'cmfgen_phot_smoothing.py', 'lumina_model_material_rates.py',
              'lumina_model_point_rates.py', 'lumina_model_linear_lines.py',
              'lumina_model_freefree.py')
+
+
+def cache_source_signature(path):
+    """새 계수 게시 함수만 제외하고 캐시의 수치 helper·전역 바인딩을 고정한다.
+
+    BF/BB/FF 응답 캐시는 S.prepare/_finish_sources의 계수 게시를 사용하지
+    않는다. 해당 게시 기능의 추가로 선 명부·프로파일·Gaunt 코드를 검증하지
+    않고 넘어가거나 동일 J의 완성 율을 무조건 재생산하지 않는다.
+    """
+    if path.name!='cmfgen_model_sources.py': return B.sha(path)
+    tree=ast.parse(path.read_text())
+    main=ast.dump(ast.parse("__name__ == '__main__'",mode='eval').body)
+    body=[]
+    for index,node in enumerate(tree.body):
+        if isinstance(node,ast.FunctionDef) and node.name in ('prepare','_finish_sources','source_output_reserve'):
+            defaults=[*node.args.defaults,*[v for v in node.args.kw_defaults if v is not None]]
+            if node.decorator_list or any(not isinstance(v,ast.Constant) for v in defaults):
+                raise ValueError('계수 게시 함수의 정의 시 실행/전역 부작용 가능성')
+            continue
+        if isinstance(node,ast.If) and ast.dump(node.test)==main:continue
+        if index==0 and isinstance(node,ast.Expr) and isinstance(node.value,ast.Constant) and isinstance(node.value.value,str):continue
+        body.append(node)
+    return hashlib.sha256(ast.dump(ast.Module(body=body,type_ignores=[])).encode()).hexdigest()
 
 
 def load(path, digest, *, field, source_identity, state, inputs, library,
@@ -44,14 +69,18 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
         expected = old_inputs[str(root.parent/'build'/name)]
         if B.sha(current) != expected:
             raise ValueError('완료 계수의 생산 바이너리 불일치')
+    source_verification={}
     for name in PRODUCERS:
         current = Path(__file__).with_name(name)
         original = root.parent/'source'/'scripts'/name
         expected = B.sha(original)
-        if B.sha(current) != expected:
+        current_sha=B.sha(current)
+        if cache_source_signature(current) != cache_source_signature(original):
             raise ValueError('완료 계수의 생산 소스 불일치: '+name)
         consumed[str(original)] = expected
-        consumed[str(current)] = expected
+        consumed[str(current)] = current_sha
+        source_verification[name]=dict(original_sha256=expected,current_sha256=current_sha,
+            cache_scope_sha256=cache_source_signature(current))
     paths = {name: root/name for name in (*COEFFICIENTS, 'physical-profiles.npz')}
     for name, file in paths.items():
         expected = report['output_sha256'][name]
@@ -106,6 +135,7 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
     inputs.update(consumed)
     return dict(report=report, paths=paths, ne=ne,
                 provenance=dict(result_sha256=digest, result=str(path),
+                    producer_verification=source_verification,
                     original_full_BF_seconds=report['full_BF_seconds'],
                     reused_coefficients=list(COEFFICIENTS),
                     saved_heat_reused=False, saved_ne_role='initial guess; current SE/heat re-evaluated'))

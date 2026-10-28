@@ -1,5 +1,6 @@
 """같은 FL의 실제 FF·국소 선 χ/η 및 원본 MODEL 선택 직접시험."""
 import ctypes as ct
+import json
 import math
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import cmfgen_model_sources as S
 import cmfgen_model_continuum as B
+from lumina_model_freefree import ModelFreeFree
 
 
 def test_native_ir_roster_uses_actual_outer_velocity_and_strict_boundary(tmp_path):
@@ -287,3 +289,56 @@ def test_model_line_source_rejects_incomplete_transition_list(tmp_path,monkeypat
     rows=[dict(atomic_number='20',ion_number='1',level_number=str(l)) for l in (0,1)]
     with pytest.raises(ValueError,match='선언/판독'):
         S.load_lines(tmp_path,rows,{(20,2):dict(n_full=2)})
+
+
+def test_native_FF_output_reserve_also_keeps_all_positive_alternatives():
+    assert S.source_output_reserve(90,1115020,'NATIVE_UPPER_IONS')-S.source_output_reserve(90,1115020)==2*90*1115020*8
+    with pytest.raises(ValueError):S.source_output_reserve(2,3,'unknown')
+
+
+def test_invalid_FF_publication_policy_fails_before_any_output_or_integration(tmp_path):
+    with pytest.raises(ValueError,match='FF 계수 정책'):
+        S.prepare(None,None,None,None,None,None,np.array([1.,2.]),tmp_path/'out',free_free_policy='unknown')
+    assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('mode',['ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'])
+def test_actual_FF_selection_is_in_binary_NPZ_and_total_not_just_report(tmp_path,monkeypatch,kernels,mode):
+    run=tmp_path/'model';run.mkdir();out=tmp_path/'out';out.mkdir()
+    (run/'MODEL').write_text('F [DO_DIS]\nF [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (run/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
+    nu=np.array([1e13,1e14,1e15]);material=state();material['full']=np.array([[1e7,2e7],[1e6,2e6]])
+    models={(20,2):{},(20,3):{}};lines=line()
+    monkeypatch.setattr(S,'load_lines',lambda *args,**kwargs:(lines,{},{}))
+    bf=dict(chi_net=np.zeros((2,3)),eta_spont=np.zeros((2,3)))
+    expected=S.free_free(nu,material,models,kernels)
+    S._finish_sources(run,nu,out,material,bf,[{},{}],models,[None],{}, {},{},
+        {},{},dict(width_fraction=1e-4,support_fraction=6e-4),{},kernels.path,None,
+        free_free_policy=mode)
+    chi=expected['native_chi'] if mode=='NATIVE_UPPER_IONS' else expected['chi']
+    eta=expected['native_eta'] if mode=='NATIVE_UPPER_IONS' else expected['eta']
+    with np.load(out/'sources.npz') as data:
+        np.testing.assert_array_equal(data['ff_chi'],chi);np.testing.assert_array_equal(data['ff_eta'],eta)
+        if mode=='NATIVE_UPPER_IONS':
+            np.testing.assert_array_equal(data['ff_all_positive_chi'],expected['chi'])
+            np.testing.assert_array_equal(data['ff_all_positive_eta'],expected['eta'])
+        else:assert 'ff_all_positive_chi' not in data.files
+        total=data['bf_chi']+data['ff_chi']+data['bb_chi']+data['es_chi']
+    with (out/'sources.bin').open('rb') as stream:
+        stream.seek(16+8*(len(nu)+2*len(material['temperature'])))
+        planes=np.frombuffer(stream.read(),dtype='<f8').reshape(7,2,3)
+    np.testing.assert_array_equal(planes[2],chi);np.testing.assert_array_equal(planes[3],eta)
+    np.testing.assert_allclose(planes[0]+planes[2]+planes[4]+planes[6],total,rtol=2e-15)
+    width=np.zeros_like(nu);width[:-1]+=.5*np.diff(nu);width[1:]+=.5*np.diff(nu)
+    J=np.full((2,len(nu)),1.e-6)
+    owner=ModelFreeFree(nu,width,J,kernels,models,material['columns'],radiation_generation=1)
+    coefficients=owner.prepare(material['temperature'],radiation_generation=1)
+    key='native_upper_ions' if mode=='NATIVE_UPPER_IONS' else 'all_positive_ions'
+    heat=owner.contract(coefficients,material,radiation_generation=1,material_generation=1)['terms'][key]
+    np.testing.assert_allclose(heat['heating'],4*np.pi*np.sum(planes[2]*J*width,axis=1),rtol=5e-14)
+    np.testing.assert_allclose(heat['cooling'],4*np.pi*np.sum(planes[3]*width,axis=1),rtol=5e-14)
+    report=json.loads((out/'sources.json').read_text())
+    assert report['free_free']['policy']==mode
+    assert report['chi_total_min_max']==[float(total.min()),float(total.max())]
+    for name,digest in report['output_sha256'].items():assert S.B.sha(out/name)==digest
+    assert not report['SE_RE_solved'] and report['physical_RT_executions']==0

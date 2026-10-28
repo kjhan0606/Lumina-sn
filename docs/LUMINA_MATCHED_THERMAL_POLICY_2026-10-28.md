@@ -91,11 +91,10 @@ physical_stored 분기로 보존하며 소급해 native 해로 재명명하지 �
 
 ## 아직 남은 연결과 실제 실행 범위
 
-열정책을 명시하는 것만으로 전체 M/E/S-동등이 된 것은 아니다. 특히
-`cmfgen_model_sources.py`의 현재 전주파수 계수는 FF를 ALL_POSITIVE_IONS로
-게시한다. native 열행의 FF 선택과 동일한 수송 모델을 만들려면 후속 계수
-생산에도 native FF 선택을 연결해야 한다. 이 선택, 수렴한 released-T
-기준해, 같은 물질/장의 전역 잔차와 observer 비교가 여전히 남는다.
+열정책을 명시하는 것만으로 전체 M/E/S-동등이 된 것은 아니다. 이 확인
+당시 전주파수 계수는 FF를 ALL_POSITIVE_IONS로만 게시했다. 아래 후속
+구현에서 native FF 선택을 계수·경계까지 연결했지만, 수렴한 released-T
+기준해, 같은 물질/장의 전역 잔차와 observer 비교는 여전히 남는다.
 
 새 열정책으로 실제 후보를 계산하거나 native/수송을 추가 실행하지 않았다.
 현재 CPU16·32GiB·최대12시간·5평가 단회의 source snapshot과 입력은 그대로다.
@@ -114,3 +113,61 @@ Grammar-debug CPU1·4GiB·150초의 격리 소스
 
 이는 실물 native 정책의 수렴 또는 CMFGEN 동등성 증거가 아니다. 실제
 다른 정책의 후보 재사용/평가, 새 FF 계수 생산과 새 수송은 수행하지 않았다.
+
+## 후속 구현 — 열행과 수송 FF 선택 연결
+
+`cmfgen_model_sources.prepare`와 CLI에 명시적 FF 선택을 연결했다.
+Gaunt·전하 제곱·인구의 계산은 기존 `free_free`를 그대로 사용한다.
+`NATIVE_UPPER_IONS`이면 이미 생산하던 native χ/η를 실제7평면 바이너리,
+NPZ의 활성 FF, 총 χ/η와 경계에 사용한다. 물리 all-ion 대안도 NPZ에
+보존한다. 기본 ALL_POSITIVE_IONS의 계산과 출력은 유지한다.
+
+| 수용 물질의 열정책 | 실제 수송 FF |
+|---|---|
+| native_stored / native_instantaneous_scenario | NATIVE_UPPER_IONS |
+| physical_stored / physical_instantaneous_scenario | ALL_POSITIVE_IONS |
+
+`run_lumina_accepted_sources`는 수용 manifest의 정책을 따라 선택한다.
+사용자가 반대 FF를 지정하면 다른 모델을 조용히 섞지 않는다.
+`lumina_accepted_field_input`의 계수→경계 준비도 실제 계수 보고서의
+선택이 선언한 열정책과 같은지 확인하고 그 정책을 보존한다.
+정책이 없던 이전 manifest와 준비 기록의 재현 경로·신원은 유지한다.
+
+native 선택은 기존 FF 네 배열 중 게시 대상을 바꾸는 것이므로 계산
+메모리의 기존 알려진 할당은 그대로다. NPZ에 all-ion 대안2평면을 더
+보존하므로 출력 공간 예약은 binary7+NPZ11평면으로 센다. 전체 실제
+격자의 peak RSS나 새 생산 실행 시간을 측정했다는 주장은 하지 않는다.
+
+### 캐시의 관련 수치 코드와 게시 코드 구분
+
+기존 완료 BF/BB/FF 응답은 계수 게시 함수 자체를 사용하지 않는다.
+새 게시 선택 때문에 같은 J의 완료 적분을 다시 하는 대신, S 모듈의
+관련 수치 코드·전역 바인딩 전체 AST가 동일한지 확인한다.
+제외하는 부분은 `prepare`, `_finish_sources`, `source_output_reserve`,
+실행 전용 main과 모듈 설명문뿐이다. 게시 함수의 decorator나 실행되는
+기본 인수도 허용하지 않아 import 시 helper를 바꿀 수 없게 한다.
+다른 원자/율 생산자와 바이너리·입력·캐시 배열은 기존대로 해시를 확인한다.
+원/새 파일 해시와 공통 수치 범위 해시를 함께 기록한다.
+
+실제 F2 고정온도 캐시의90점·24667경로·790493선 소비를
+grammar-debug CPU1·4GiB·180초로 읽기 전용 확인했다.3.79초였으며
+새 적분·SE·수송은0회다. 보존 root는
+`lumina_matched_FF_verified_20261028-3XxYub`이고 증거는
+`actual-seed-verification.json`, SHA256은
+`00f8bae36d44db01a472564ee7cf6ab8937b15bcbeb7910cd58a63fb75dbfff3`다.
+S의 원/새 파일은 서로 달랐지만 공통 캐시 수치 범위 SHA256은
+`4cb9a8d7d291779b8a984ca691f084922ed0393e91f53a829c60044f5a3b1387`로 같았다.
+
+### 직접시험과 실제 실행 범위
+
+격리 root `lumina_matched_FF_boundary_20261028-hAWcb3`에서
+grammar-debug CPU1·4GiB·150초, 봉인된 실제 native Gaunt 라이브러리로
+**253 passed / 9.90초**를 얻었다. 선택한 FF가 보고서 이름뿐 아니라
+바이너리·NPZ·총계수에 들어가고, 그 χJ/η 적분이 실제 열장부 생산자의
+가열·냉각과 일치함을 확인했다. 정책 혼합은 경계 준비에서도 거부했다.
+기존 선 명부·프로파일·Gaunt 또는 전역 바인딩 변경은 캐시를 계속
+무효화하며, 게시 선택만의 추가는 관련 응답을 무효화하지 않았다.
+
+이는 합성 입력의 실제 커널·직렬화·C 경계와 기존 실물 캐시의 확인이다.
+새 실물 native 온도 후보·전주파수 계수·수송·observer를 생산한 증거가
+아니다. 살아 있는531e0e7f 실행과 입력은 바꾸지 않았으며 최종 목표는 NOT_MET다.

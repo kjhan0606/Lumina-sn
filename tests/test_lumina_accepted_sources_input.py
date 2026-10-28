@@ -27,3 +27,20 @@ def test_new_candidate_and_C_full_are_explicit_and_pinned(tmp_path):
 ])
 def test_partial_or_invalid_new_identity_rejected(values):
     with pytest.raises(ValueError): S.material_inputs(*values)
+
+
+@pytest.mark.parametrize('thermal,expected',[
+    (None,'ALL_POSITIVE_IONS'),('physical_stored','ALL_POSITIVE_IONS'),
+    ('physical_instantaneous_scenario','ALL_POSITIVE_IONS'),
+    ('native_stored','NATIVE_UPPER_IONS'),('native_instantaneous_scenario','NATIVE_UPPER_IONS')])
+def test_FF_source_selection_follows_declared_material_energy_policy(thermal,expected):
+    manifest={} if thermal is None else dict(thermal_energy_policy=thermal)
+    assert S.coefficient_free_free_policy(manifest)==expected
+    assert S.coefficient_free_free_policy(manifest,expected)==expected
+
+
+@pytest.mark.parametrize('thermal,requested',[
+    ('native_instantaneous_scenario','ALL_POSITIVE_IONS'),
+    ('physical_stored','NATIVE_UPPER_IONS'),('unknown',None),(None,'unknown')])
+def test_mixed_heat_and_transport_FF_models_are_rejected(thermal,requested):
+    with pytest.raises(ValueError):S.coefficient_free_free_policy(dict(thermal_energy_policy=thermal),requested)

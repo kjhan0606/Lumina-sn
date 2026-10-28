@@ -24,6 +24,20 @@ def pinned(config, key, identities):
     return path
 
 
+def coefficient_free_free_policy(manifest, requested=None):
+    """선택한 열행과 수송의 FF 원소/전하 포함 범위를 일치시킨다."""
+    thermal=manifest.get('thermal_energy_policy')
+    if thermal in ('native_stored','native_instantaneous_scenario'):
+        expected='NATIVE_UPPER_IONS'
+    elif thermal in (None,'physical_stored','physical_instantaneous_scenario'):
+        expected='ALL_POSITIVE_IONS'
+    else: raise ValueError('수용 물질의 열정책 오류')
+    if requested not in (None,'ALL_POSITIVE_IONS','NATIVE_UPPER_IONS') or (
+            thermal is not None and requested is not None and requested!=expected):
+        raise ValueError('열행과 수송 계수의 FF 정책 불일치')
+    return requested or expected
+
+
 def prepare(config_path, config_sha, out):
     config_path, out = Path(config_path).resolve(), Path(out).resolve()
     if out.exists():
@@ -43,6 +57,9 @@ def prepare(config_path, config_sha, out):
     previous = json.loads(paths['geometry_preparation'].read_text())
     if m['schema'] != 'lumina-accepted-nodal-material-v1':
         raise ValueError('별도 수용 물질 manifest 필요; 원70으로 가장하지 않음')
+    source_ff=sources.get('free_free',{}).get('policy')
+    if m.get('thermal_energy_policy') is not None and source_ff!=coefficient_free_free_policy(m):
+        raise ValueError('새 물질 열행과 실제 완성 계수의 FF 선택 불일치')
     material = paths['accepted_material'].parent/'native_material_nodes.bin'
     identities[str(material)] = m['output_sha256']['native_material_nodes.bin']
     if (sha(material) != identities[str(material)] or
@@ -96,6 +113,7 @@ def prepare(config_path, config_sha, out):
         full_population=str(paths['full_population']), material=str(material), grid=str(paths['grid']),
         cpu_library=str(paths['cpu_library']), boundary_library=str(paths['boundary_library']),
         native_nodes=len(physical), frequencies=len(nu), epoch_seconds=epoch,
+        thermal_energy_policy=m.get('thermal_energy_policy'),source_free_free_policy=source_ff,
         accepted_response_sha256=m['accepted_response_sha256'], input_sha256=identities,
         source_binary=str(binary), source_binary_sha256=identities[str(binary)],
         boundary=boundary, geometry_reused_but_old_boundary_not_reused=True,

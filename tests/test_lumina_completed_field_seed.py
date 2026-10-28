@@ -71,6 +71,38 @@ def test_completed_coefficients_are_read_only_and_ne_is_only_a_starting_guess(ar
         assert str(root/name) in args['inputs']
 
 
+def test_unrelated_coefficient_publication_changes_do_not_invalidate_response_helpers(archive):
+    root,_,_=archive
+    previous=root.parent/'source/scripts/cmfgen_model_sources.py'
+    original=previous.read_text()
+    previous.write_text(original.replace("free_free_policy='ALL_POSITIVE_IONS'","free_free_policy='NATIVE_UPPER_IONS'"))
+    current=Path(C.__file__).with_name('cmfgen_model_sources.py')
+    assert C.B.sha(previous)!=C.B.sha(current)
+    assert C.cache_source_signature(previous)==C.cache_source_signature(current)
+    seed=load(archive)
+    proof=seed['provenance']['producer_verification']['cmfgen_model_sources.py']
+    assert proof['original_sha256']!=proof['current_sha256']
+
+
+@pytest.mark.parametrize('change',[
+    lambda s:s.replace('def number(model,key,default=None):','def number(model,key,default=1.):'),
+    lambda s:s+'\nB.C=1.\n',
+    lambda s:s.replace('import cmfgen_model_continuum as B','import cmfgen_model_continuum as CHANGED')])
+def test_numeric_helpers_or_global_bindings_still_invalidate_cached_response(archive,change):
+    root,_,_=archive;previous=root.parent/'source/scripts/cmfgen_model_sources.py'
+    previous.write_text(change(previous.read_text()))
+    with pytest.raises(ValueError,match='생산 소스 불일치'):load(archive)
+
+
+@pytest.mark.parametrize('change',[
+    lambda s:s.replace('def prepare(','@print\ndef prepare('),
+    lambda s:s.replace("free_free_policy='ALL_POSITIVE_IONS'","free_free_policy=print('side effect')")])
+def test_publication_definition_cannot_change_cache_helpers_at_import(archive,change):
+    root,_,_=archive;previous=root.parent/'source/scripts/cmfgen_model_sources.py'
+    previous.write_text(change(previous.read_text()))
+    with pytest.raises(ValueError,match='정의 시'):load(archive)
+
+
 @pytest.mark.parametrize('fault', ['incomplete', 'not_fixed', 'not_charge', 'multiple_BF',
     'field', 'material', 'input', 'library', 'line_library', 'producer', 'temperature', 'ne', 'columns'])
 def test_mixed_context_is_rejected(archive, fault):

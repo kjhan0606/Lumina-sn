@@ -88,6 +88,31 @@ def repin(config, key, path):
     config.write_text(json.dumps(data))
 
 
+@pytest.mark.parametrize('policy,ff',[('native_instantaneous_scenario','NATIVE_UPPER_IONS'),
+    ('physical_instantaneous_scenario','ALL_POSITIVE_IONS')])
+def test_declared_heat_policy_and_actual_coefficient_policy_reach_boundary(field_library,tmp_path,policy,ff):
+    config,paths,*_=fixture(tmp_path,field_library)
+    m=json.loads(paths['accepted_material'].read_text());m['thermal_energy_policy']=policy
+    paths['accepted_material'].write_text(json.dumps(m));repin(config,'accepted_material',paths['accepted_material'])
+    s=json.loads(paths['sources'].read_text());s['free_free']=dict(policy=ff)
+    paths['sources'].write_text(json.dumps(s));repin(config,'sources',paths['sources'])
+    result=A.prepare(config,A.sha(config),tmp_path/'ready')
+    assert result['thermal_energy_policy']==policy and result['source_free_free_policy']==ff
+    assert result['actual_F_calls']==0
+
+
+@pytest.mark.parametrize('ff',[None,'ALL_POSITIVE_IONS'])
+def test_native_material_cannot_use_undeclared_or_all_ion_coefficients(field_library,tmp_path,ff):
+    config,paths,*_=fixture(tmp_path,field_library)
+    m=json.loads(paths['accepted_material'].read_text());m['thermal_energy_policy']='native_instantaneous_scenario'
+    paths['accepted_material'].write_text(json.dumps(m));repin(config,'accepted_material',paths['accepted_material'])
+    if ff is not None:
+        s=json.loads(paths['sources'].read_text());s['free_free']=dict(policy=ff)
+        paths['sources'].write_text(json.dumps(s));repin(config,'sources',paths['sources'])
+    with pytest.raises(ValueError,match='FF 선택 불일치'):A.prepare(config,A.sha(config),tmp_path/'ready')
+    assert not (tmp_path/'ready').exists()
+
+
 def test_new_state_actual_C_boundary_and_dense_input_are_connected(field_library, tmp_path):
     config, paths, parts, te, ne = fixture(tmp_path, field_library); out = tmp_path/'ready'
     report = A.prepare(config, A.sha(config), out); path = out/'preparation.json'

@@ -32,8 +32,11 @@ def material_inputs(manifest=None, manifest_sha256=None, full_population=None, f
     return Path(manifest).resolve(), manifest_sha256, Path(full_population).resolve(), full_population_sha256
 
 
+coefficient_free_free_policy=A.coefficient_free_free_policy
+
+
 def run(out, source_commit, accepted_material=None, accepted_material_sha256=None,
-        C_full_population=None, C_full_population_sha256=None):
+        C_full_population=None, C_full_population_sha256=None, free_free_policy=None):
     if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
             os.environ.get('SLURM_MEM_PER_NODE') != '32768' or
             os.environ.get('OMP_NUM_THREADS') != '16'):
@@ -65,6 +68,7 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
     manifest = json.loads(paths['accepted_material'].read_text())
     if manifest['schema'] != 'lumina-accepted-nodal-material-v1':
         raise ValueError('수용 물질의 실제 manifest 필요')
+    free_free_policy=coefficient_free_free_policy(manifest,free_free_policy)
     for name, digest in manifest['output_sha256'].items():
         if B.sha(material/name) != digest: raise ValueError('새 물질 출력 변경: '+name)
     for key in ('original_seed', 'model'):
@@ -76,12 +80,13 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
     inputs = {str(p): B.sha(p) for p in (*paths.values(), phot, kernel)}
     (out/'inputs.json').write_text(json.dumps(dict(source_commit=source_commit,
         input_sha256=inputs, resources='CPU16/32GiB/2h/GPU0/retry0',
+        thermal_energy_policy=manifest.get('thermal_energy_policy'),free_free_policy=free_free_policy,
         continuum_evaluation='direct at every original frequency; no CONT_FREQ substitution',
         physical_RT_executions=0, new_SE_solves=0), indent=2)+'\n')
     print(json.dumps(dict(phase='NEW_ACCEPTED_COEFFICIENTS_BEGIN', source_commit=source_commit)), flush=True)
     S.prepare(paths['model'].parent, material/'native_material_nodes.bin', material/'atomic',
         phot, kernel, paths['full_population'], np.load(paths['grid'], allow_pickle=False),
-        out/'sources', frequency_grid=paths['grid'])
+        out/'sources', frequency_grid=paths['grid'],free_free_policy=free_free_policy)
     if any(B.sha(Path(p)) != h for p, h in inputs.items()): raise ValueError('실행 중 입력 변경')
     paths['sources'] = out/'sources/sources.json'
     config = out/'field-config.json'
@@ -90,6 +95,7 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
     A.prepare(config, B.sha(config), out/'boundary')
     result = dict(state='COMPLETE_NEW_ACCEPTED_COEFFICIENTS_AND_BOUNDARY',
         source_commit=source_commit, wall_seconds=time.monotonic()-start,
+        thermal_energy_policy=manifest.get('thermal_energy_policy'),free_free_policy=free_free_policy,
         input_sha256=inputs, preparation=dict(path=str(out/'boundary/preparation.json'),
         sha256=B.sha(out/'boundary/preparation.json')), new_transport=0, new_SE_solves=0,
         final_goal='NOT_MET')
@@ -105,4 +111,5 @@ if __name__ == '__main__':
     parser.add_argument('--accepted-material-sha256')
     parser.add_argument('--C-full-population', type=Path)
     parser.add_argument('--C-full-population-sha256')
+    parser.add_argument('--free-free-policy',choices=('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'))
     run(**vars(parser.parse_args()))

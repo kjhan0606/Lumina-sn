@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """동일 물질의 BF·FF·선 자발방출·전자산란을 요청 주파수에서 생산한다.
 
-실제 수송이나 SE/RE 실행은 아니다. FF는 모든 양이온을 합하며 원본
-COMP_OPAC의 PHOT target 선택과의 차이를 별도 보존한다. 선은 실제 MODEL의
+실제 수송이나 SE/RE 실행은 아니다. FF 기본은 모든 양이온이며 명시적으로
+native upper 선택도 지원한다. 두 계수의 차이는 보존한다. 선은 실제 MODEL의
 GENOSC 선택과 FIX_DOP profile을 사용하고 η에 탈출확률을 곱하지 않는다.
 """
 from __future__ import annotations
@@ -336,17 +336,21 @@ def paired_memory_inventory(cells,frequencies,routes,block_bins=1024,continuum_f
     return result
 
 
-def source_output_reserve(cells,frequencies):
+def source_output_reserve(cells,frequencies,free_free_policy='ALL_POSITIVE_IONS'):
     """binary7평면+NPZ9평면·최대2ν벡터, catalogue/헤더 여유를 센다."""
-    if cells<1 or frequencies<2:raise ValueError('계수 출력 차원 오류')
+    if cells<1 or frequencies<2 or free_free_policy not in ('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'):
+        raise ValueError('계수 출력 차원/FF 정책 오류')
     # NPZ에는 공통7평면 외에 ff_native_chi/eta도 저장한다. 명시 CONT_FREQ의
     # 추가ν 벡터도 포함하며 catalogue와 zip/header에는 별도1GiB를 남긴다.
-    return 16+8*(3*frequencies+2*cells+16*cells*frequencies)+1024**3
+    planes=18 if free_free_policy=='NATIVE_UPPER_IONS' else 16
+    return 16+8*(3*frequencies+2*cells+planes*cells*frequencies)+1024**3
 
 
 def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,frequency_grid=None,
-            peer=None,continuum_frequency_grid=None):
+            peer=None,continuum_frequency_grid=None,free_free_policy='ALL_POSITIVE_IONS'):
     """peer=(물질, C full 인구, 출력)일 때 σ만 공유하고 각 상태는 따로 쓴다."""
+    if free_free_policy not in ('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'):
+        raise ValueError('명시한 지원 FF 계수 정책 필요')
     nu=np.asarray(nu,dtype='f8')
     evaluation=(np.load(continuum_frequency_grid,allow_pickle=False)
                 if continuum_frequency_grid is not None else None)
@@ -385,7 +389,7 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
                      continuum_frequencies=len(continuum_nu) if evaluation is not None else None)
     if memory['known_allocation_bound_bytes']>32*1024**3:
         raise ValueError('계수 생산의 알려진 할당이 봉인32GiB 초과')
-    if peer is None and shutil.disk_usage(out).free<source_output_reserve(len(states[0]['temperature']),len(nu)):
+    if peer is None and shutil.disk_usage(out).free<source_output_reserve(len(states[0]['temperature']),len(nu),free_free_policy):
         raise OSError('새 단일 상태 계수의 두 원출력과 catalogue 보존 공간 부족')
     cache_metrics={}
     bfs=([B.continuum_grid(routes,rows,states[0],continuum_nu)] if peer is None else
@@ -395,14 +399,17 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         summaries.append(_finish_sources(run,nu,folder,states[i],bfs[i],rows,models,routes,
             policy,smoothing,route_counts,full_comparisons[i],inactive,profile,before,
             kernel_library,dict(cache=cache_metrics,memory=memory) if peer is not None else None,
-            continuum_nu,continuum_index,continuum_frequency_grid,memory))
+            continuum_nu,continuum_index,continuum_frequency_grid,memory,free_free_policy))
         bfs[i]=None  # 다음 상태의 FF/선 생산 전에 앞 상태의 큰 BF 배열을 해제한다.
     return summaries[0] if peer is None else dict(states=summaries,shared_sigma=cache_metrics,memory=memory)
 
 
 def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,route_counts,
                     full_comparison,inactive,profile,before,kernel_library,cache_metrics,
-                    continuum_nu=None,continuum_index=None,continuum_frequency_grid=None,allocation_inventory=None):
+                    continuum_nu=None,continuum_index=None,continuum_frequency_grid=None,allocation_inventory=None,
+                    free_free_policy='ALL_POSITIVE_IONS'):
+    if free_free_policy not in ('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'):
+        raise ValueError('지원하지 않는 FF 게시 정책')
     if continuum_nu is None:continuum_nu=nu
     dissolved=B.add_dissolved_continuum(bf,routes,rows,models,state,continuum_nu) if B.dissolution_flag(run/'MODEL') else None
     kernels=SourceKernels(kernel_library)
@@ -418,12 +425,16 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
     lines,line_counts,osc_identities=load_lines(run,rows,models,line_domain=line_domain)
     bb_chi,bb_eta=kernels.lines(nu,state['full'],lines,profile)
     es=np.broadcast_to(state['ne'][:,None]*6.6524587321e-25,bb_chi.shape)
-    components=dict(bf_chi=bf['chi_net'],bf_eta=bf['eta_spont'],ff_chi=ff['chi'],
-        ff_eta=ff['eta'],bb_chi=bb_chi,bb_eta=bb_eta,es_chi=es)
+    native_ff=free_free_policy=='NATIVE_UPPER_IONS'
+    components=dict(bf_chi=bf['chi_net'],bf_eta=bf['eta_spont'],
+        ff_chi=ff['native_chi'] if native_ff else ff['chi'],
+        ff_eta=ff['native_eta'] if native_ff else ff['eta'],bb_chi=bb_chi,bb_eta=bb_eta,es_chi=es)
     if any(B.sha(Path(p))!=v for p,v in before.items()):raise ValueError('물리 계수 생산 중 입력 변경')
     np.savez(out/'line_catalog.npz',**lines)
     evaluation_payload=({'continuum_nu_Hz':continuum_nu[continuum_index]}
                         if continuum_index is not None else {})
+    if native_ff:
+        evaluation_payload.update(ff_all_positive_chi=ff['chi'],ff_all_positive_eta=ff['eta'])
     np.savez(out/'sources.npz',nu_Hz=nu,**evaluation_payload,**components,
         ff_native_chi=ff['native_chi'],ff_native_eta=ff['native_eta'])
     write_binary(out/'sources.bin',nu,state,components)
@@ -441,7 +452,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
             mapping_inferred=False,continuum_sampling_is_physical_truth=False),
         C_full_population_comparison=full_comparison,phot_preprocessing=smoothing,
         profile=profile,line_domain=line_domain,dissolved_continuum=dissolved,inactive_processes=inactive,
-        free_free=dict(policy='ALL_POSITIVE_IONS',coefficient_cgs=3.69e8,
+        free_free=dict(policy=free_free_policy,coefficient_cgs=3.69e8,
             native_selection='existing lower PHOT ions -> upper populations only',
             charges=ff['charges'],native_charges=ff['native_charges'],
             gaunt='original GFF_VEC including its explicit finite-table domain treatment',
@@ -451,7 +462,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
         eta_total_min_max=[float(total_eta.min()),float(total_eta.max())],
         total_negative_samples=int(np.count_nonzero(total_chi<0)),
         native_differences=['CODATA constants vs native historical constants',
-            'all-positive-ion FF vs lower-PHOT-target-only FF',
+            *([] if native_ff else ['all-positive-ion FF vs lower-PHOT-target-only FF']),
             'signed raw line chi; native zero replacement/SRCE_CHK not applied'],
         process_selection=policy,input_sha256=before,osc_sha256=osc_identities,
         shared_continuum_sigma=cache_metrics,
@@ -473,6 +484,7 @@ if __name__=='__main__':
     grid.add_argument('--frequency-grid',type=Path,help='Hz 단위 오름차순 .npy 전체 격자')
     parser.add_argument('--continuum-frequency-grid',type=Path,
         help='요청 주파수마다 명시한 CONT_FREQ(Hz) .npy; 기본은 직접 평가')
+    parser.add_argument('--free-free-policy',choices=('ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'),default='ALL_POSITIVE_IONS')
     for name in ('peer-material','peer-C-full-population','peer-out'):
         parser.add_argument('--'+name,type=Path)
     args=parser.parse_args()
@@ -487,4 +499,5 @@ if __name__=='__main__':
         args.phot_library.resolve(),args.kernel_library.resolve(),args.C_full_population.resolve(),
         nu,args.out.resolve(),args.frequency_grid.resolve() if args.frequency_grid else None,
         tuple(p.resolve() for p in peer) if peer[0] is not None else None,
-        args.continuum_frequency_grid.resolve() if args.continuum_frequency_grid else None),ensure_ascii=False))
+        args.continuum_frequency_grid.resolve() if args.continuum_frequency_grid else None,
+        args.free_free_policy),ensure_ascii=False))
