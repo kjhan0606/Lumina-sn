@@ -65,6 +65,17 @@ def test_approved_manual_duration_keeps_cpu_memory_and_host_limits(manual_resour
     assert result['memory_limit_bytes']==32*1024**3
 
 
+def test_temperature_cache_memory_is_reserved_without_claiming_measured_full_RSS():
+    from lumina_temperature_response_cache import extra_memory_reserve
+    args = (90, 1115020, 24667, 790493, 24542)
+    base = N.memory_inventory(*args)
+    cached = N.memory_inventory(*args, temperature_cache=True)
+    difference = cached['known_allocation_and_reserve_bytes']-base['known_allocation_and_reserve_bytes']
+    assert difference == extra_memory_reserve(24667, 90)
+    assert cached['known_allocation_and_reserve_bytes'] < 32*1024**3
+    assert cached['whole_process_peak_RSS_verified'] is False
+
+
 @pytest.mark.parametrize('limit', [4, 13, True])
 def test_temperature_mode_rejects_bad_budget_before_creating_output(manual_resources, limit):
     from types import SimpleNamespace

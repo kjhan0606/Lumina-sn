@@ -37,6 +37,7 @@ import lumina_fixed_field_thermal as thermal_block
 from run_lumina_fixed_state_balance import adiabatic
 import lumina_completed_field_seed as completed_seed
 import lumina_thermal_replay as thermal_replay
+from lumina_temperature_response_cache import TemperatureResponseCache, extra_memory_reserve
 
 
 @contextmanager
@@ -105,11 +106,13 @@ def comparison(columns, reference, accepted, candidate, radius):
     return summary, rows
 
 
-def memory_inventory(ns, nf, nr, nl, nfull):
+def memory_inventory(ns, nf, nr, nl, nfull, *, temperature_cache=False):
     # 복사본과 해시의 bytes 임시값, BF longdouble 누적 및 재인수 배열을 포함한다.
     parts = dict(field_copies_and_hash_temporaries=6*ns*nf*8, frequency_vectors=16*nf*8,
         rate_arrays=12*nr*ns*6*8, line_arrays=3*nl*ns*8,
         material_arrays=40*nfull*ns*8, runtime_collision_and_SE_reserve=8*1024**3)
+    if temperature_cache:
+        parts['temperature_bound_cache_and_workspace'] = extra_memory_reserve(nr, ns)
     return dict(parts=parts, known_allocation_and_reserve_bytes=sum(parts.values()),
                 whole_process_peak_RSS_verified=False)
 
@@ -204,6 +207,7 @@ def run(args):
     def check():
         if time.monotonic() >= deadline: raise TimeoutError('새 J 물질응답 시간 한도')
     save()
+    cached_response = None
     try:
         with open_field(args.preparation, args.preparation_sha, args.feedback, args.feedback_sha) as (p, source, field, last):
             ns, nf = source.ns, source.nf
@@ -236,7 +240,8 @@ def run(args):
             inputs.update(line_inputs)
             if (len(models), len(rows), len(routes), len(lines['lower'])) != (27, 24542, 24667, 790493):
                 raise ValueError('전모형 율 roster 누락')
-            result['memory_inventory'] = memory_inventory(ns, nf, len(routes), len(lines['lower']), len(rows))
+            result['memory_inventory'] = memory_inventory(ns, nf, len(routes), len(lines['lower']), len(rows),
+                                                        temperature_cache=bool(temperature_evaluations))
             if result['memory_inventory']['known_allocation_and_reserve_bytes'] > 32*1024**3:
                 raise MemoryError('새 장 소비의 알려진 할당/예비분32GiB 초과')
             seed = None
@@ -257,7 +262,8 @@ def run(args):
                 result['thermal_implementation_sha256'] = {
                     name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
                 for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
-                             'lumina_completed_field_seed.py', 'lumina_thermal_replay.py'):
+                             'lumina_completed_field_seed.py', 'lumina_thermal_replay.py',
+                             'lumina_temperature_response_cache.py'):
                     path = Path(__file__).with_name(name)
                     inputs[str(path)] = B.sha(path)
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
@@ -332,7 +338,7 @@ def run(args):
                 if nuclei > 1.e-10: raise ValueError('새 물질 핵수 보존 실패')
                 entry = dict(**metrics, **summary, nuclei_relative=float(nuclei), root=str(root),
                     response_sha256=B.sha(root/'response.npz'), balance_sha256=B.sha(root/'balance.npz'))
-                if not np.array_equal(data['temperature'], state['temperature']):
+                if metrics.get('full_BF_reintegration', not np.array_equal(data['temperature'], state['temperature'])):
                     result['full_BF_integrations'] += 1
                     entry['full_BF_reintegration'] = True
                 if result.get('phase') == 'FIXED_NEW_FIELD_T_NE_CORRECTION':
@@ -345,7 +351,11 @@ def run(args):
                 response = ModelResponse(provider, bridge, ModelCollisionSource(runroot, rows), lines, jbar,
                     status, trial, bound, roster, deadline=deadline)
                 del bound
-                def evaluate(ne): return response.evaluate(state['temperature'], ne, save=record)[0]
+                cached_response = TemperatureResponseCache(response, out=out/'temperature-bound-cache') if temperature_evaluations else None
+                def material_evaluate(t, ne):
+                    owner = response if cached_response is None else cached_response
+                    return owner.evaluate(t, ne, save=record)
+                def evaluate(ne): return material_evaluate(state['temperature'], ne)[0]
                 result['phase'] = 'NEW_FIELD_COMMON_CHARGE'; save()
                 replay_source = None
                 if replay_path:
@@ -375,7 +385,7 @@ def run(args):
                     result['charge_history'] = solved['history']
                     result['phase'] = 'FIXED_NEW_FIELD_T_NE_CORRECTION'; save()
                     def evaluate_temperature(t, ne):
-                        data = response.evaluate(t, ne, save=record)[0]
+                        data = material_evaluate(t, ne)[0]
                         return data, evaluation_energy[id(data)], candidates[id(data)]
                     def full_ad(t, ne, ni, u):
                         return adiabatic(args.library, source.radius, state['epoch_seconds'], t, ne, ni, u)['signed_total']
@@ -433,7 +443,10 @@ def run(args):
                                'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE')
     except Exception as error:
         result.update(state='INCOMPLETE_PRESERVED', error=type(error).__name__+': '+str(error))
-    finally: save()
+    finally:
+        if cached_response is not None:
+            result['temperature_bound_cache'] = cached_response.report()
+        save()
     return result
 
 

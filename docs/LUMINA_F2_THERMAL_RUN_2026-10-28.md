@@ -221,6 +221,51 @@ PYTHONPATH로 지정하면 재구성할 수 있다. 보고서의 진행 상태�
 native 새 후보는 기존 비차단 승인 질문의 답을 기다리며 실행하지 않았다.
 현재 physical 후보의 결과를 native 해로 소급하지 않는다. 목표는 NOT_MET다.
 
+## 후속 구현 — 새 온도의 완료 적분을 잃지 않고 같은 T에서 재사용
+
+기존 ModelResponse는 시작 온도의 bound 적분만 캐시했다. 새 온도를
+한 번 평가해도 그 적분을 보관하지 않아, 같은 T에서 ne만 움직이는
+후속 반복까지 다시 전적분했다. 물리식 오류는 아니지만 고정장 T/ne
+후속 계산을 불필요하게 반복하는 경로였다.
+
+새 `lumina_temperature_response_cache.py`는 기존
+`FixedTemperatureBoundRates`를 온도 벡터가 정확히 같을 때만 사용한다.
+새 T는 여전히 전적분하고, 같은 T의 bound 역률만 새 Milne prefactor로
+재인수한다. occupation에 따른 pseudo 항·재사용 불가/underflow 경로는
+기존 생산자가 직접 계산한다. SE·열 평가와 평가 횟수도 생략하지 않는다.
+온도1 ULP 차이도 다른 T로 취급하며 보간이나 물리값 floor는 추가하지 않았다.
+
+기준 캐시는 유지하고 전체 보관 수를4개로 제한한다. 교체 중 잠시 존재하는
+새 배열과 생성 임시값도 메모리 예약에 포함했고 기존32GiB 정적 한도 안에
+있음을 확인했다. 실제 전90점 peak RSS를 측정했다는 주장은 하지 않는다.
+
+새 온도의 bound·기준 T/ne·Milne prefactor는 별도 NPZ와 해시 기록으로
+보존한다. 이후 SE가 실패해도 완료 적분을 지우지 않으며, 이 자료를 물질
+수용으로 표시하지 않는다. 선택적 캐시 저장의 I/O 실패는 보고하되 새
+물리 실행 게이트로 만들지 않는다. 다른 실행이 이 파일만 독립적으로
+소비하는 경로는 아직 연결하지 않았으며 상위 실행의 봉인 입력이 필요하다.
+
+기존 물리 구현9개와 BF 생산자 자체는 수정하지 않고 호출 연결과 메타데이터만
+바꿨다. 실제 새 BF 전적분과 동일 T 재사용도 구분해 집계한다. 이전 네
+물질 섭동·기존 물리 구현의 신원은 유지하며 현재531e0e7f 실행에는
+이 변경을 주입하지 않았다. 새 생산 실행·평가 확대는0회다.
+
+Grammar-debug CPU1·4GiB·180초 이내의 격리 root
+`lumina_temperature_cache_landed_20261028-oUbFfd`에서 **178 passed/5.87초**였다.
+실제 BF 커널의 소형 합성 입력에서 새 T와 여러 ne의6개 율/열 성분이
+직접 적분과5e-12 상대 허용폭 이내로 일치했다. 새 온도 첫 전적분1회 뒤
+후속 ne 응답의 bound 재사용, 이전 T 복귀, LRU 상한, 원자/장 변경 거부,
+실패 후 원 생산자 복원, 미완료 적분의 미게시 및 캐시 저장 실패 시 물질
+계산 계속을 확인했다. 기존 물질/재개/내보내기 회귀도 함께 실행했다.
+수정 소스와 시험4개 파일의 해시는 현재 작업 트리와 모두 같다.
+
+이는 실물90점 새 T에서의 재사용·온도/전하 폐합·새 수송·스펙트럼 동등성
+증거가 아니다. 재현은 위 root의 source에서 동일한 OMP/BLAS1 제한으로
+`test_lumina_temperature_response_cache.py`, `test_model_material_rates.py`,
+`test_lumina_new_field_response.py`, `test_lumina_fixed_field_thermal.py`,
+`test_lumina_thermal_replay.py`, `test_lumina_completed_field_seed.py`,
+`test_prepare_lumina_accepted_material.py`를 pytest로 실행한다.
+
 ## 실행과 분리한 후속 재개 구현
 
 작업 트리의 후속 변경은 `--resume-thermal-result`와 해당 보고서 해시를
