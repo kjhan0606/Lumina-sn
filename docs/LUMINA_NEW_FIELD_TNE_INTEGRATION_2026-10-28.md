@@ -86,6 +86,37 @@ Lageunha의 실제 소형 시험은 **53 passed / 6.23초**였다. CLI import와
 보장/포함하지 않는다. 추가 실행은 이 범위의 새 권한이 필요하고, 이번
 문서 갱신으로 계산을 시작하지 않았다.
 
+## 16:17 실제 F2 계수 재사용 검증 인수
+
+동일 목적의 검증이 `lumina_completed_seed_tests_20261028-xyj3Nh`에서 이미
+실행 중임을 PID3854307로 확인해 별도 실제 입력 시험을 중복 시작하지 않았다.
+그 실행의 `actual-seed-verification.json`을 인수했고, 프로세스 종료와 JSON·
+소스 해시 및 현재 작업 트리의 일치를 확인했다. 직접 재계산한 증거로
+재명명하지 않는다. 별도 `lumina_F2_seed_read_20261028-Dytg67`에는 소스만
+보존했으며 수치 시험을 실행하지 않았다.
+
+인수 결과는 `VERIFIED_SAME_F2_COEFFICIENT_SEED_NOT_NEW_RESPONSE`,
+90점·1115020주파수·30.8449초다. 원 입력74개와 초기 occupation 및
+BB/BF/FF 실제 서명 일치를 확인했고 새 BF 적분·SE·수송은 각각0회다.
+검증은 Lageunha CPU1·4GiB·180초 한도의 기존 자료 소비였다.
+
+| 보존 증거 | SHA256 |
+|---|---|
+| `actual-seed-verification.json` | `21feab872ceccb9a9f071317dbc3abf4e20cd2d695be110d687a8fd4e1b60180` |
+| `lumina_completed_field_seed.py` | `b75a87cb9dbf3fdb7291c6eb5bee35d6a73efa9d695dc5ddc948f5a4f97d90e8` |
+| `lumina_new_field_response.py` | `a71b680bbf3c763900a88f09f33e431c7b1b6ec9c4c8e2babd0daee22ec77554` |
+
+고정 F2 응답 보고서 SHA는
+`b6d411ff28971492280275d2201e9d84a65315c0ad2613f04444e7b270b5fbea`다.
+재사용 대상은 원래 T/ne에서 생성한 bound BF·선 명부/선율·FF이며,
+선택 응답의 ne는 시작 추정값으로만 사용한다. 새 후보의 SE·열장부는
+다시 계산한다. 온도 변경 BF와 이전 후보의 열을 그대로 쓰지 않는다.
+
+따라서 초기 BF7007.66초와 선/FF 재생산을 피하는 경로의 실제 입력 소비는
+확인됐지만, 새 T/ne 해·실제 전체 실행시간·최종 동질성이 검증된 것은 아니다.
+추가12시간 단회 실행 승인은 별도 대기 상태다. 위 소스 해시는 인수 시점의
+작업 트리와 같으며, 코드 커밋 여부와 소스 내용 검증을 구분한다.
+
 ## 연결 시험의 독립 재현 범위
 
 Lageunha CPU1 affinity·4GiB·150초 한도로 보존한 소스의 열보정 wrapper와
