@@ -52,10 +52,14 @@ def ion_number_densities(labels, columns, population):
 
 class ResponseBalance:
     def __init__(self,run,rows,models,columns,reference,radius,epoch,adiabatic_library,
-                 roster,lines,jbar,ff,ff_coefficients,seed_population):
+                 roster,lines,jbar,ff,ff_coefficients,seed_population,*,profile_mass=None):
         self.owner=ModelThermalEnergy.from_model(run,rows,models,columns,reference)
         self.run=run;self.radius=radius;self.epoch=epoch;self.library=adiabatic_library
         self.roster=roster;self.lines=lines;self.jbar=jbar;self.ff=ff
+        self.profile_mass=np.ones(len(jbar)) if profile_mass is None else np.array(profile_mass,dtype='f8',copy=True)
+        if (self.profile_mass.shape!=(len(jbar),) or not np.isfinite(self.profile_mass).all() or
+                np.any(self.profile_mass<=0)):raise ValueError('열장부 BB 프로파일 질량 결손')
+        self.profile_mass.flags.writeable=False
         self.coefficients=FreeFreeCoefficients(ff.signature,ff_coefficients['temperature'],
             ff_coefficients['heating'],ff_coefficients['cooling'])
         if str(ff_coefficients['signature'])!=ff.signature:raise ValueError('FF 실제 장/모형 신원 불일치')
@@ -93,7 +97,7 @@ class ResponseBalance:
             lower=np.asarray(pop[group[lo]]*f[lo],dtype=np.longdouble)
             upper=np.asarray(pop[group[up]]*f[up],dtype=np.longdouble);J=self.jbar[first:last]
             forward=lower*(bul/self.lines['g_ratio'][first:last])[:,None]*J*(B.H*nu)[:,None]
-            reverse=upper*(A[:,None]+bul[:,None]*J)*(B.H*nu)[:,None]
+            reverse=upper*((A*self.profile_mass[first:last])[:,None]+bul[:,None]*J)*(B.H*nu)[:,None]
             factor=self.owner.line_scaling(lo,up,nu,nuclei,enabled=self.scaling_enabled,
                 ratio_limit=self.scaling_limit,density_limit=self.density_limit)
             bb+=np.stack([forward.sum(axis=0),reverse.sum(axis=0)])

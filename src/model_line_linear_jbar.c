@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "model_gaussian_profile.h"
 
 /* model_gaussian_profile.h와 같은 분모. source의 기존 정규화를 바꾸지 않는다. */
 #define PROFILE_DENOM 1.77245385095516L
@@ -97,6 +98,66 @@ int lumina_model_linear_gaussian_jbar(size_t nf,size_t np,size_t nt,
             for(size_t p=0;p<np;p++)work[l*np+p]+=wl*j[k*np+p]+wr*j[(k+1)*np+p];
         }
         masses[l]=(double)integrated_mass;states[l]=2;
+        if(!isfinite(masses[l]) || masses[l]<=0.)failed=1;
+        for(size_t p=0;p<np;p++){
+            double value=(double)work[l*np+p];
+            if(!isfinite(value) || value<0.)failed=1;
+            if(value>0.)states[l]=1;
+        }
+    }
+    if(!failed){
+        for(size_t i=0;i<nt*np;i++)jbar[i]=(double)work[i];
+        memcpy(mass,masses,nt*sizeof(*mass));memcpy(status,states,nt);
+    }
+    free(work);free(masses);free(states);return failed?3:0;
+}
+
+/* 실제 Gaussian 점표본 χ/η와 같은 사다리꼴 내적.
+ * source의 선/주파수 지지와 Gaussian 평가를 공유한다. 질량을 나누거나
+ * 미해상/범위 밖 선을0으로 채우지 않는다. spontaneous에는 A*mass를 쓴다.
+ * J는 frequency-major, 출력은 line-major이며 실패 시 출력은 보존한다. */
+int lumina_model_sampled_gaussian_jbar(size_t nf,size_t np,size_t nt,
+    const double *nu,const double *j,const double *nu0,double width_fraction,double support_fraction,
+    double *jbar,double *mass,uint8_t *status)
+{
+    if(nf<2 || !np || !nt || !nu || !j || !nu0 || !jbar || !mass || !status ||
+       np>SIZE_MAX/nf || np>SIZE_MAX/nt || nt*np>SIZE_MAX/sizeof(long double) ||
+       nt>SIZE_MAX/sizeof(double) || !isfinite(width_fraction) || width_fraction<=0. ||
+       !isfinite(support_fraction) || support_fraction<=0. || support_fraction>=1.)return 1;
+    for(size_t k=0;k<nf;k++)if(!isfinite(nu[k]) || nu[k]<=0. || (k && nu[k]<=nu[k-1]))return 1;
+    for(size_t i=0;i<nf*np;i++)if(!isfinite(j[i]) || j[i]<0.)return 1;
+    for(size_t l=0;l<nt;l++)if(!isfinite(nu0[l]) || nu0[l]<=0. ||
+        !isfinite(nu0[l]*width_fraction) || nu0[l]*width_fraction<=0. ||
+        !isfinite(nu0[l]*(1+support_fraction)))return 1;
+    long double *work=calloc(nt*np,sizeof(*work));
+    double *masses=malloc(nt*sizeof(*masses));uint8_t *states=malloc(nt);
+    if(!work || !masses || !states){free(work);free(masses);free(states);return 2;}
+    int failed=0;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) reduction(|:failed)
+#endif
+    for(size_t l=0;l<nt;l++){
+        double low=nu0[l]*(1-support_fraction),high=nu0[l]*(1+support_fraction);
+        if(low<nu[0] || high>nu[nf-1]){
+            for(size_t p=0;p<np;p++)work[l*np+p]=NAN;
+            masses[l]=NAN;states[l]=3;continue;
+        }
+        size_t k=upper_index(nu,nf,low);
+        if(k && nu[k-1]==low)k--;
+        long double integrated_mass=0.;
+        for(;k<nf && nu[k]<=high;k++){
+            double dnu=0.;
+            if(k)dnu+=.5*(nu[k]-nu[k-1]);
+            if(k+1<nf)dnu+=.5*(nu[k+1]-nu[k]);
+            long double weight=(long double)model_gaussian_phi(nu[k],nu0[l],width_fraction)*dnu;
+            integrated_mass+=weight;
+            for(size_t p=0;p<np;p++)work[l*np+p]+=weight*j[k*np+p];
+        }
+        masses[l]=(double)integrated_mass;states[l]=2;
+        if(integrated_mass==0.){
+            for(size_t p=0;p<np;p++)work[l*np+p]=NAN;
+            states[l]=4;continue;
+        }
         if(!isfinite(masses[l]) || masses[l]<=0.)failed=1;
         for(size_t p=0;p<np;p++){
             double value=(double)work[l*np+p];

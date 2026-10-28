@@ -13,7 +13,9 @@ import cmfgen_model_continuum as B
 
 
 class LinearModelLines:
-    def __init__(self,lines,profile,library,frequency,J,*,radiation_generation):
+    def __init__(self,lines,profile,library,frequency,J,*,radiation_generation,source_sampled=False):
+        if type(source_sampled) is not bool:raise ValueError('BB 적분 표현 선택 오류')
+        self.source_sampled=source_sampled
         self.lines={name:np.array(value,copy=True,order='C') for name,value in lines.items()}
         if (type(radiation_generation) is not int or radiation_generation<=0 or
             set(self.lines)!=set(('lower','upper','nu0','f','A','g_ratio'))):
@@ -38,11 +40,14 @@ class LinearModelLines:
         width=self.profile['width_fraction'];support=self.profile['support_fraction']
         if not np.isfinite([width,support]).all() or width<=0 or not 0<support<1:
             raise ValueError('BB Gaussian 프로파일 오류')
-        self.library=C.CDLL(str(library));self.function=self.library.lumina_model_linear_gaussian_jbar
+        self.library=C.CDLL(str(library))
+        self.function=getattr(self.library,'lumina_model_sampled_gaussian_jbar' if source_sampled else
+                              'lumina_model_linear_gaussian_jbar')
         self.ptr=C.POINTER(C.c_double)
         self.function.argtypes=[C.c_size_t]*3+[self.ptr]*3+[C.c_double]*2+[self.ptr]*2+[C.POINTER(C.c_uint8)]
         self.function.restype=C.c_int
         digest=hashlib.sha256()
+        if source_sampled:digest.update(b'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1')
         for name,value in [('frequency',self.frequency),('J',self.J),*sorted(self.lines.items())]:
             value.flags.writeable=False
             digest.update(repr((name,value.shape,value.dtype.str)).encode());digest.update(value.tobytes())
@@ -73,4 +78,15 @@ class LinearModelLines:
         center=self.lines['nu0'][first:last];A=self.lines['A'][first:last]
         bul=A*B.C**2/(2*B.H*center**3)
         return dict(absorption=bul[:,None]/self.lines['g_ratio'][first:last,None]*values['jbar'],
-                    stimulated=bul[:,None]*values['jbar'],spontaneous=A.copy())
+                    stimulated=bul[:,None]*values['jbar'],
+                    spontaneous=A*values['profile_mass'] if self.source_sampled else A.copy())
+
+
+class SourceModelLines(LinearModelLines):
+    """실제 수송 χ/η와 같은 점표본 Gaussian·사다리꼴 적분을 소비한다.
+
+    원 native 저장 선 구간의 비활성 선택을 흉내내지 않으며, 질량 보정으로
+    Jbar를 나누지 않는다. 해상도 오차와 source/율 배선 일치는 별개다.
+    """
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,source_sampled=True,**kwargs)

@@ -137,6 +137,24 @@ def test_wrong_report_pin_is_rejected(archive):
         C.load(root/'result.json', '0'*64, **args)
 
 
+def test_sampled_BB_reuses_pinned_profile_mass_with_rates(archive):
+    root,report,_=archive
+    report['BB_contract']=C.SAMPLED_BB
+    np.save(root/'line-profile-mass.npy',np.array([.9,1.,1.1,.8]))
+    report['output_sha256']['line-profile-mass.npy']=C.B.sha(root/'line-profile-mass.npy')
+    seed=load(archive)
+    assert 'line-profile-mass.npy' in seed['provenance']['reused_coefficients']
+
+
+@pytest.mark.parametrize('mass', [np.ones(3), np.zeros(4), np.array([1.,1.,np.nan,1.])])
+def test_sampled_BB_rejects_incomplete_mass_even_with_current_hash(archive,mass):
+    root,report,_=archive
+    report['BB_contract']=C.SAMPLED_BB
+    np.save(root/'line-profile-mass.npy',mass)
+    report['output_sha256']['line-profile-mass.npy']=C.B.sha(root/'line-profile-mass.npy')
+    with pytest.raises(ValueError,match='프로파일 질량'):load(archive)
+
+
 @pytest.mark.parametrize('fault', ['negative_bound', 'bad_bound_shape', 'nan_jbar',
     'bad_status', 'bad_ff_temperature', 'negative_ff', 'bad_ff_shape', 'nan_charge', 'unclosed_charge',
     'response_hash', 'response_address'])

@@ -11,6 +11,16 @@ import cmfgen_model_continuum as B
 
 COEFFICIENTS = ('bound-rates.npy', 'route-roster.npz', 'jbar.npy',
                 'line-status.npy', 'FF-coefficients.npz')
+SAMPLED_BB = 'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1'
+
+
+def coefficient_names(report):
+    contract=report.get('BB_contract', 'LEGACY_LINEAR_J_EXACT_A')
+    if contract not in (SAMPLED_BB, 'LEGACY_LINEAR_J_EXACT_A'):
+        raise ValueError('알 수 없는 완료 BB 적분 계약')
+    return COEFFICIENTS+(('line-profile-mass.npy',) if contract==SAMPLED_BB else ())
+
+
 # 계수 생성·원자자료 해석이 달라졌다면 이전 수치 캐시를 사용하지 않는다.
 PRODUCERS = ('cmfgen_model_continuum.py', 'cmfgen_model_sources.py',
              'expand_atomic_data_cmfgen.py', 'cmfgen_parser.py',
@@ -81,7 +91,8 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
         consumed[str(current)] = current_sha
         source_verification[name]=dict(original_sha256=expected,current_sha256=current_sha,
             cache_scope_sha256=cache_source_signature(current))
-    paths = {name: root/name for name in (*COEFFICIENTS, 'physical-profiles.npz')}
+    names=coefficient_names(report)
+    paths = {name: root/name for name in (*names, 'physical-profiles.npz')}
     for name, file in paths.items():
         expected = report['output_sha256'][name]
         if B.sha(file) != expected:
@@ -126,6 +137,13 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
                 raise ValueError('완료 계수의 형상/값 오류: '+name)
         finally:
             values._mmap.close()
+    if 'line-profile-mass.npy' in paths:
+        values=np.load(paths['line-profile-mass.npy'],mmap_mode='r',allow_pickle=False)
+        try:
+            if (values.shape!=(lines,) or values.dtype!=np.dtype('f8') or
+                    not np.isfinite(values).all() or np.any(values<=0)):
+                raise ValueError('완료 BB 자발방출 프로파일 질량 결손')
+        finally:values._mmap.close()
     with np.load(paths['FF-coefficients.npz'], allow_pickle=False) as ff:
         shape = (len(np.unique(state['columns'][state['columns'][:, 1] > 0, 1])), ns)
         if (not np.array_equal(ff['temperature'], state['temperature']) or
@@ -137,5 +155,5 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
                 provenance=dict(result_sha256=digest, result=str(path),
                     producer_verification=source_verification,
                     original_full_BF_seconds=report['full_BF_seconds'],
-                    reused_coefficients=list(COEFFICIENTS),
+                    reused_coefficients=list(names),
                     saved_heat_reused=False, saved_ne_role='initial guess; current SE/heat re-evaluated'))

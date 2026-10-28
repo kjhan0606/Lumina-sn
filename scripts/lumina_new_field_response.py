@@ -26,7 +26,7 @@ from lumina_fullsr_sc_actual import InputField, publish
 from lumina_common_charge import solve
 from lumina_model_collision_source import ModelCollisionSource
 from lumina_model_freefree import ModelFreeFree
-from lumina_model_linear_lines import LinearModelLines
+from lumina_model_linear_lines import LinearModelLines, SourceModelLines
 from lumina_model_material_bridge import MaterialBridge
 from lumina_model_material_rates import ModelMaterialRates
 from lumina_model_response import ModelResponse
@@ -109,7 +109,7 @@ def comparison(columns, reference, accepted, candidate, radius):
 def memory_inventory(ns, nf, nr, nl, nfull, *, temperature_cache=False):
     # 복사본과 해시의 bytes 임시값, BF longdouble 누적 및 재인수 배열을 포함한다.
     parts = dict(field_copies_and_hash_temporaries=6*ns*nf*8, frequency_vectors=16*nf*8,
-        rate_arrays=12*nr*ns*6*8, line_arrays=3*nl*ns*8,
+        rate_arrays=12*nr*ns*6*8, line_arrays=3*nl*ns*8, line_profile_mass=4*nl*8,
         material_arrays=40*nfull*ns*8, runtime_collision_and_SE_reserve=8*1024**3)
     if temperature_cache:
         parts['temperature_bound_cache_and_workspace'] = extra_memory_reserve(nr, ns, nfull)
@@ -270,7 +270,7 @@ def run(args):
                     library=args.library, line_library=args.line_library,
                     routes=len(routes), lines=len(lines['lower']))
                 result['baseline_reuse'] = seed['provenance']
-                for name in completed_seed.COEFFICIENTS:
+                for name in completed_seed.coefficient_names(seed['report']):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
             if temperature_evaluations:
                 thermal_code = ('lumina_coupled_material.py', 'lumina_model_response.py',
@@ -286,23 +286,30 @@ def run(args):
                              'lumina_temperature_response_cache.py'):
                     path = Path(__file__).with_name(name)
                     inputs[str(path)] = B.sha(path)
+            bb_contract=seed['report'].get('BB_contract','LEGACY_LINEAR_J_EXACT_A') if seed else completed_seed.SAMPLED_BB
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
-                phase='NEW_LINEAR_BB', frequencies=nf, points=ns); save()
+                phase='NEW_BB', BB_contract=bb_contract, frequencies=nf, points=ns); save()
             nu = source.frequency; width = trapezoid_weights(nu)
-            linear = LinearModelLines(lines, S.fixed_profile(runroot/'MODEL'), args.line_library,
-                                      nu, field.values.T, radiation_generation=1)
+            producer=SourceModelLines if bb_contract==completed_seed.SAMPLED_BB else LinearModelLines
+            linear = producer(lines, S.fixed_profile(runroot/'MODEL'), args.line_library,
+                              nu, field.values.T, radiation_generation=1)
             if seed:
                 if linear.signature != seed['report']['BB_signature']:
                     raise ValueError('완료 BB의 실제 장/격자/프로파일/선주소 불일치')
                 jbar = np.load(out/'jbar.npy', mmap_mode='r', allow_pickle=False)
                 status = np.load(out/'line-status.npy', allow_pickle=False)
+                profile_mass=(np.load(out/'line-profile-mass.npy',allow_pickle=False)
+                              if bb_contract==completed_seed.SAMPLED_BB else np.ones(len(jbar)))
             else:
                 jbar = np.lib.format.open_memmap(out/'jbar.npy', mode='w+', dtype='f8', shape=(len(lines['lower']), ns))
                 status = np.zeros(len(jbar), dtype='u1')
+                profile_mass=np.full(len(jbar),np.nan)
                 for first in range(0, len(jbar), 4096):
                     check(); end = min(first+4096, len(jbar)); values = linear.contract(first, end, radiation_generation=1)
                     jbar[first:end] = values['jbar']; status[first:end] = values['status']
+                    profile_mass[first:end]=values['profile_mass']
                 jbar.flush(); np.save(out/'line-status.npy', status)
+                np.save(out/'line-profile-mass.npy',profile_mass)
             result['BB_signature'] = linear.signature; del linear
             if not np.isin(status, [1, 2]).all(): raise ValueError('새 장 선 프로파일 범위 결손; 0 채움 금지')
             provider = ModelMaterialRates(routes, rows, models, args.library, nu, width, field.values,
@@ -342,7 +349,8 @@ def run(args):
                 np.savez(out/'FF-coefficients.npz', **ffcoef)
             reference_table = Path(__file__).resolve().parents[1]/'data/atomic/ionization_reference.csv'
             balance = ResponseBalance(runroot, rows, models, state['columns'], reference_table,
-                source.radius, state['epoch_seconds'], args.library, roster, lines, jbar, ff, ffcoef, state['superlevel'])
+                source.radius, state['epoch_seconds'], args.library, roster, lines, jbar, ff, ffcoef, state['superlevel'],
+                profile_mass=profile_mass)
             inputs.update(balance.owner.input_sha256); inputs.update(balance.decay_metadata['input_sha256'])
             occupation = out/'occupation.bin'
             with occupation.open('xb') as stream:
@@ -369,7 +377,7 @@ def run(args):
                 evaluation_energy[id(data)] = energy
             with MaterialBridge(args.library, atomic, material, occupation, PARAMETERS) as bridge:
                 response = ModelResponse(provider, bridge, ModelCollisionSource(runroot, rows), lines, jbar,
-                    status, trial, bound, roster, deadline=deadline)
+                    status, trial, bound, roster, deadline=deadline,profile_mass=profile_mass)
                 del bound
                 cached_response = TemperatureResponseCache(response, out=out/'temperature-bound-cache') if temperature_evaluations else None
                 def material_evaluate(t, ne):
@@ -471,8 +479,7 @@ def run(args):
             finally: moments._mmap.close()
             if any(B.sha(Path(p)) != h for p, h in inputs.items()): raise ValueError('새 장 응답 중 원 입력 변경')
             result['output_sha256'] = {name: B.sha(out/name) for name in
-                ('Si-S-comparison.csv', 'physical-profiles.npz', 'bound-rates.npy',
-                 'route-roster.npz', 'jbar.npy', 'line-status.npy', 'FF-coefficients.npz')}
+                ('Si-S-comparison.csv', 'physical-profiles.npz', *completed_seed.coefficient_names(result))}
             result['state'] = ('COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' if temperature_evaluations else
                                'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE')
     except Exception as error:

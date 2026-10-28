@@ -15,9 +15,13 @@ from lumina_model_material_rates import FixedTemperatureBoundRates
 
 class ModelResponse:
     def __init__(self,provider,bridge,collision_source,lines,jbar,status,reference_trial,
-                 reference_bound,roster,*,deadline):
+                 reference_bound,roster,*,deadline,profile_mass=None):
         self.provider=provider;self.bridge=bridge;self.source=collision_source
         self.roster=roster;self.lines=lines;self.jbar=jbar;self.status=status
+        self.profile_mass=np.ones(len(jbar)) if profile_mass is None else np.array(profile_mass,dtype='f8',copy=True)
+        if (self.profile_mass.shape!=(len(jbar),) or not np.isfinite(self.profile_mass).all() or
+                np.any(self.profile_mass<=0)):raise ValueError('BB 자발방출 프로파일 질량 결손')
+        self.profile_mass.flags.writeable=False
         self.seed={k:reference_trial.state[k] for k in ('columns','superlevel','temperature','ne')}
         self.bound_cache=FixedTemperatureBoundRates(provider,reference_trial,reference_bound)
         self.species=sorted(set(map(int,self.seed['columns'][:,0])))
@@ -70,7 +74,7 @@ class ModelResponse:
             for node in range(ns):
                 values=self.jbar[ids,node]
                 self.bridge.begin_element(Z,node,lines,bul/lines['g_ratio']*values,
-                                          bul*values,A,self.status[ids])
+                                          bul*values,A*self.profile_mass[ids],self.status[ids])
             for key in sorted(k for k in self.source.models if k[0]==Z):
                 if key not in self.ions:self.ions[key]=self.source.load(*key)
                 ion=self.ions[key]

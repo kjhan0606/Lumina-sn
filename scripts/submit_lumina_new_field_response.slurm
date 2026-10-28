@@ -60,7 +60,7 @@ for name in "${core[@]}"; do
     objects+=("$parent/build/$name.o")
 done
 gcc -shared -fopenmp -Wl,--gc-sections -Wl,-z,defs -o "$parent/build/bridge.so" "${objects[@]}" -lm
-gcc -O2 -std=c11 -Wall -Wextra -Werror -shared -fPIC src/model_line_linear_jbar.c -lm -o "$parent/build/lines.so"
+gcc -O2 -std=c11 -Wall -Wextra -Werror -shared -fPIC -fopenmp src/model_line_linear_jbar.c -lm -o "$parent/build/lines.so"
 sha256sum "$parent/build/bridge.so" "$parent/build/lines.so" > "$parent/build/binary.sha256"
 timeout -k 30 "$((response_seconds+200))s" python3 scripts/lumina_new_field_response.py --seconds "$response_seconds" \
     --library "$parent/build/bridge.so" --line-library "$parent/build/lines.so" \
