@@ -30,4 +30,6 @@ if [[ "${2:-}" == native-lines ]]; then
   extra=(--native-lines-library "$parent/build/native-lines.so")
 fi
 if [[ "${3:-}" == stationary ]]; then extra+=(--stationary); fi
+if [[ -n "${4:-}" ]]; then extra+=(--element "$4"); fi
+if [[ -n "${5:-}" ]]; then extra+=(--node "$5"); fi
 python scripts/compare_lumina_s_node34_operator.py --library "$parent/build/bridge-probe.so" --out "$parent/result" "${extra[@]}"

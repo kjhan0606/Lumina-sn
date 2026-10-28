@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""원70·저장 J의 원34점 S 입력 인구에 대한 C/native SE 작용 비교.
+"""원70·저장 J의 Si/S 지정점 입력 인구에 대한 C/native SE 작용 비교.
 
 기존 BF90/BB90와 충돌 원자료를 재사용한다. 정상해/원자율 적분/수송은 없다.
 생산 BB roster와 native 이산 BB roster가 같다고 주장하지 않는다.
@@ -32,8 +32,9 @@ def sha(p):
     return h.hexdigest()
 
 
-def run(library,out,native_lines_library=None,stationary=False):
-    start=time.monotonic();node=33;Z=16;out=Path(out).resolve()
+def run(library,out,native_lines_library=None,stationary=False,element=16,node=33):
+    start=time.monotonic();Z=int(element);node=int(node);out=Path(out).resolve()
+    if Z not in (14,16) or not 0<=node<90:raise ValueError('비교 원소 또는 원래점 범위 오류')
     if out.exists():raise FileExistsError('기존 결과 보존')
     b=json.loads(BF_RESULT.read_text());bb=json.loads(BB_RESULT.read_text())
     baseline=Path('/gpfs/kjhan/cmfgen_runs/lumina_full_model_response_20261027-vzt2uX/run')
@@ -148,7 +149,7 @@ def run(library,out,native_lines_library=None,stationary=False):
         total=raw_population.sum()
         if not np.isfinite(solved).all() or np.any(solved<0) or not np.isclose(solved.sum(),total,rtol=1e-11):
             raise ValueError('고정장 후보 인구 보존 실패')
-        stationary_result=dict(physical_scope='fixed_T_ne_J_S_only_not_charge_RE_or_transport',ledger=candidate_ledger.tolist(),
+        stationary_result=dict(physical_scope='fixed_T_ne_J_single_element_not_charge_RE_or_transport',ledger=candidate_ledger.tolist(),
             stage_fractions=[dict(charge=int(q),native_input=float(raw_population[cols[selected,1]==q].sum()/total),
                 production_BB_candidate=float(production[cols[selected,1]==q].sum()/total),
                 native_BB_candidate=float(solved[cols[selected,1]==q].sum()/total)) for q in np.unique(cols[selected,1])])
@@ -158,7 +159,7 @@ def run(library,out,native_lines_library=None,stationary=False):
             native_raw=float(native_raw[j]),C_raw=float(c_raw[j]),gross_C=float(gross[j]),
             processes={name:dict(incoming=float(output[1+2*k,c]),outgoing=float(output[2+2*k,c]))
                 for k,name in enumerate(('BF_radiative','BF_collisional','BB_radiative','collision_total','dissolution_subset'))}))
-    result=dict(state='COMPLETE_SAME_INPUT_NATIVE_LINE_DIAGNOSTIC' if native_lines_library else 'COMPLETE_SAME_INPUT_PRODUCTION_ROSTER_DIAGNOSTIC',node_zero_based=node,
+    result=dict(state='COMPLETE_SAME_INPUT_NATIVE_LINE_DIAGNOSTIC' if native_lines_library else 'COMPLETE_SAME_INPUT_PRODUCTION_ROSTER_DIAGNOSTIC',node_zero_based=node,element=Z,
         physical_equivalence='NOT_PROVEN_BF_CONTRACT_MAY_DIFFER',new_BF=0,new_BB=int(native_lines_library is not None),new_SE_solve=int(stationary),
         new_native=0,new_transport=0,rows=len(details),collision_pairs=pairs,
         native_line_info=native_line_info,
@@ -176,4 +177,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--library',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--native-lines-library',type=Path)
     p.add_argument('--stationary',action='store_true')
-    a=p.parse_args();run(a.library,a.out,a.native_lines_library,a.stationary)
+    p.add_argument('--element',type=int,default=16);p.add_argument('--node',type=int,default=33)
+    a=p.parse_args();run(a.library,a.out,a.native_lines_library,a.stationary,a.element,a.node)
