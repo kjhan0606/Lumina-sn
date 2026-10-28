@@ -14,7 +14,7 @@ from lumina_model_material_rates import ModelMaterialRates, FixedTemperatureBoun
 from lumina_new_field_response import trapezoid_weights
 
 
-def reconstruct(node):
+def reconstruct(node, cache_result=None):
     if type(node) is not int or not 0 <= node < 90:
         raise ValueError('F2 원래점 범위 오류')
     root = Path('/gpfs/kjhan/cmfgen_runs/lumina_F2_response_lageunha_20261028-bBbs8U/run')
@@ -77,9 +77,28 @@ def reconstruct(node):
             np.array_equal(roster['target'],[r.target for r in provider.routes]) and
             np.array_equal(roster['phot_grid'],[r.phot_grid for r in provider.routes])):
         raise ValueError('저장 BF 경로와 새 경로 불일치')
-    bound,total = cache.integrate(trial,material_generation=2,radiation_generation=1)
+    if cache_result is None:
+        bound,total = cache.integrate(trial,material_generation=2,radiation_generation=1)
+        reused,direct=cache.last_reused_routes,cache.last_direct_routes
+    else:
+        cache_result=Path(cache_result); saved=json.loads(cache_result.read_text())
+        if (saved['state']!='COMPLETE_F2_SINGLE_ELEMENT_LINE_SENSITIVITY' or saved['node']!=node or
+            saved['field_sha256']!=result['field']['J']['sha256'] or
+            saved['response_sha256']!=result['selected_response']['response_sha256']):
+            raise ValueError('보존 단일점 BF 캐시의 세대 불일치')
+        cache_path=cache_result.parent/'node-bf.npz'
+        if B.sha(cache_path)!=saved['node_bf_sha256']:raise ValueError('보존 단일점 BF 캐시 변경')
+        with np.load(cache_path) as f:
+            bound=f['bound'];total=f['total']
+            np.testing.assert_array_equal(f['saha'],trial.saha)
+            np.testing.assert_array_equal(f['fraction'],trial.fraction)
+            np.testing.assert_array_equal(f['occupation'],trial.state['occupation'])
+        if (bound.shape!=(len(provider.routes),1,6) or total.shape!=bound.shape or
+            not np.isfinite(bound).all() or not np.isfinite(total).all() or np.any(total[:,:,:3]<0)):
+            raise ValueError('보존 단일점 BF 율 형상/값 오류')
+        reused,direct=saved['bound_reused'],saved['bound_direct']
     return dict(state=state,trial=trial,roster=roster,bound=bound,total=total,
                 rows=rows,runroot=runroot,library=library,material=material,
                 provider=provider,
-                reused=cache.last_reused_routes,direct=cache.last_direct_routes,
+                reused=reused,direct=direct,
                 field_sha256=result['field']['J']['sha256'],response_sha256=result['selected_response']['response_sha256'])
