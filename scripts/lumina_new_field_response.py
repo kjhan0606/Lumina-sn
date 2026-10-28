@@ -35,6 +35,7 @@ from run_lumina_common_material import absent_partial_auto_inputs
 from run_lumina_full_material_response import PARAMETERS
 import lumina_fixed_field_thermal as thermal_block
 from run_lumina_fixed_state_balance import adiabatic
+import lumina_completed_field_seed as completed_seed
 
 
 @contextmanager
@@ -142,6 +143,10 @@ def run(args):
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
     if type(temperature_evaluations) is not int or (temperature_evaluations != 0 and not 5 <= temperature_evaluations <= 12):
         raise ValueError('온도 보정은 비활성0 또는 명시한 실제평가5~12회만 허용')
+    resume = getattr(args, 'resume_result', None)
+    resume_sha = getattr(args, 'resume_result_sha', None)
+    if bool(resume) != bool(resume_sha) or (resume and not temperature_evaluations):
+        raise ValueError('완료 계수 재개는 보고서/해시 쌍과 명시한 온도 보정 필요')
     out = args.out.resolve()
     if out.exists(): raise FileExistsError('기존 물질응답 보존')
     if shutil.disk_usage(out.parent).free < 8*1024**3: raise OSError('새 율/후보 보존 여유8GiB 필요')
@@ -173,10 +178,6 @@ def run(args):
             kernel = Path('/gpfs/kjhan/cmfgen_runs/lumina_full_source_tests_20261020-0sY1jL/kernels/model_sources.so')
             inputs = {str(Path(v).resolve()): B.sha(v) for v in (args.preparation, args.feedback,
                 args.library, args.line_library, PARAMETERS, phot, kernel)}
-            if temperature_evaluations:
-                for name in ('lumina_fixed_field_thermal.py', 'lumina_coupled_material.py'):
-                    path = Path(__file__).with_name(name)
-                    inputs[str(path)] = B.sha(path)
             for path, digest in manifest['input_sha256'].items():
                 if B.sha(Path(path)) != digest: raise ValueError('수용 물질의 원 입력 변경')
                 inputs[path] = digest
@@ -198,37 +199,74 @@ def run(args):
             result['memory_inventory'] = memory_inventory(ns, nf, len(routes), len(lines['lower']), len(rows))
             if result['memory_inventory']['known_allocation_and_reserve_bytes'] > 32*1024**3:
                 raise MemoryError('새 장 소비의 알려진 할당/예비분32GiB 초과')
+            seed = None
+            if resume:
+                seed = completed_seed.load(resume, resume_sha, field=last,
+                    source_identity=source.identity, state=state, inputs=inputs,
+                    library=args.library, line_library=args.line_library,
+                    routes=len(routes), lines=len(lines['lower']))
+                result['baseline_reuse'] = seed['provenance']
+                for name in completed_seed.COEFFICIENTS:
+                    check(); shutil.copyfile(seed['paths'][name], out/name)
+            if temperature_evaluations:
+                for name in ('lumina_fixed_field_thermal.py', 'lumina_coupled_material.py',
+                             'lumina_completed_field_seed.py'):
+                    path = Path(__file__).with_name(name)
+                    inputs[str(path)] = B.sha(path)
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
                 phase='NEW_LINEAR_BB', frequencies=nf, points=ns); save()
             nu = source.frequency; width = trapezoid_weights(nu)
             linear = LinearModelLines(lines, S.fixed_profile(runroot/'MODEL'), args.line_library,
                                       nu, field.values.T, radiation_generation=1)
-            jbar = np.lib.format.open_memmap(out/'jbar.npy', mode='w+', dtype='f8', shape=(len(lines['lower']), ns))
-            status = np.zeros(len(jbar), dtype='u1')
-            for first in range(0, len(jbar), 4096):
-                check(); end = min(first+4096, len(jbar)); values = linear.contract(first, end, radiation_generation=1)
-                jbar[first:end] = values['jbar']; status[first:end] = values['status']
-            jbar.flush(); np.save(out/'line-status.npy', status)
+            if seed:
+                if linear.signature != seed['report']['BB_signature']:
+                    raise ValueError('완료 BB의 실제 장/격자/프로파일/선주소 불일치')
+                jbar = np.load(out/'jbar.npy', mmap_mode='r', allow_pickle=False)
+                status = np.load(out/'line-status.npy', allow_pickle=False)
+            else:
+                jbar = np.lib.format.open_memmap(out/'jbar.npy', mode='w+', dtype='f8', shape=(len(lines['lower']), ns))
+                status = np.zeros(len(jbar), dtype='u1')
+                for first in range(0, len(jbar), 4096):
+                    check(); end = min(first+4096, len(jbar)); values = linear.contract(first, end, radiation_generation=1)
+                    jbar[first:end] = values['jbar']; status[first:end] = values['status']
+                jbar.flush(); np.save(out/'line-status.npy', status)
             result['BB_signature'] = linear.signature; del linear
             if not np.isin(status, [1, 2]).all(): raise ValueError('새 장 선 프로파일 범위 결손; 0 채움 금지')
             provider = ModelMaterialRates(routes, rows, models, args.library, nu, width, field.values,
                 radiation_generation=1, dissolution_enabled=B.dissolution_flag(runroot/'MODEL'))
             trial = provider.prepare(state, material_generation=1)
             result.update(phase='NEW_FULL_BF', BF_field_signature=provider.field_signature); save()
-            tick = time.monotonic()
-            bound, total = provider.integrate(trial, material_generation=1, radiation_generation=1, check=check)
-            result.update(full_BF_integrations=1, full_BF_seconds=time.monotonic()-tick); del total
-            np.save(out/'bound-rates.npy', bound); save(); check()
             roster = dict(lower=np.array([r.lower for r in provider.routes]), target=np.array([r.target for r in provider.routes]),
                 Z=np.array([r.Z for r in provider.routes]), stage=np.array([r.stage for r in provider.routes]),
                 threshold=provider.edge, sigma_edge=provider.sigma_edge,
                 phot_grid=np.array([r.phot_grid for r in provider.routes]),
                 probability=np.array([r.probability for r in provider.routes]))
-            np.savez(out/'route-roster.npz', **roster)
+            if seed:
+                if provider.field_signature != seed['report']['BF_field_signature']:
+                    raise ValueError('완료 BF의 실제 장/격자/적분 가중치 불일치')
+                with np.load(out/'route-roster.npz', allow_pickle=False) as saved_roster:
+                    if set(saved_roster.files) != set(roster) or any(
+                            not np.array_equal(saved_roster[k], v) for k, v in roster.items()):
+                        raise ValueError('완료 BF의 원자 경로 불일치')
+                bound = np.load(out/'bound-rates.npy', mmap_mode='r', allow_pickle=False)
+                result['full_BF_seconds'] = 0.
+            else:
+                tick = time.monotonic()
+                bound, total = provider.integrate(trial, material_generation=1, radiation_generation=1, check=check)
+                result.update(full_BF_integrations=1, full_BF_seconds=time.monotonic()-tick); del total
+                np.save(out/'bound-rates.npy', bound)
+                np.savez(out/'route-roster.npz', **roster)
+            save(); check()
             ff = ModelFreeFree(nu, width, field.values, S.SourceKernels(kernel), models, state['columns'], radiation_generation=1)
-            ffc = ff.prepare(state['temperature'], radiation_generation=1); check()
-            ffcoef = dict(signature=ff.signature, temperature=ffc.temperature, heating=ffc.heating, cooling=ffc.cooling)
-            np.savez(out/'FF-coefficients.npz', **ffcoef)
+            if seed:
+                with np.load(out/'FF-coefficients.npz', allow_pickle=False) as saved_ff:
+                    ffcoef = {k: saved_ff[k] for k in saved_ff.files}
+                if str(ffcoef['signature']) != ff.signature:
+                    raise ValueError('완료 FF의 실제 장/격자/원자주소 불일치')
+            else:
+                ffc = ff.prepare(state['temperature'], radiation_generation=1); check()
+                ffcoef = dict(signature=ff.signature, temperature=ffc.temperature, heating=ffc.heating, cooling=ffc.cooling)
+                np.savez(out/'FF-coefficients.npz', **ffcoef)
             reference_table = Path(__file__).resolve().parents[1]/'data/atomic/ionization_reference.csv'
             balance = ResponseBalance(runroot, rows, models, state['columns'], reference_table,
                 source.radius, state['epoch_seconds'], args.library, roster, lines, jbar, ff, ffcoef, state['superlevel'])
@@ -258,12 +296,13 @@ def run(args):
                 del bound
                 def evaluate(ne): return response.evaluate(state['temperature'], ne, save=record)[0]
                 result['phase'] = 'NEW_FIELD_COMMON_CHARGE'; save()
-                first = evaluate(state['ne']); lower = np.zeros(ns); upper = np.zeros(ns)
+                initial_ne = state['ne'] if seed is None else seed['ne']
+                first = evaluate(initial_ne); lower = np.zeros(ns); upper = np.zeros(ns)
                 for z in response.species:
                     select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
                     lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
                 def decision(data, entry): publish(evaluation_roots[id(data)]/'decision.json', entry)
-                solved = solve(evaluate, state['ne'], first['charge_residual'], lower, upper,
+                solved = solve(evaluate, initial_ne, first['charge_residual'], lower, upper,
                                max_evaluations=7, on_evaluation=decision)
                 final = first if solved['payload'] is None else solved['payload']
                 if temperature_evaluations:
@@ -329,6 +368,9 @@ if __name__ == '__main__':
     parser.add_argument('--seconds', type=int, default=6600)
     parser.add_argument('--temperature-evaluations', type=int, default=0,
         help='명시적 고정장 T/ne 보정 실제평가5~12회. 실행 자원/횟수 승인을 대신하지 않음')
+    parser.add_argument('--resume-result', type=Path,
+        help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
+    parser.add_argument('--resume-result-sha')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',

@@ -66,6 +66,15 @@ def test_temperature_mode_rejects_bad_budget_before_creating_output(manual_resou
         N.run(SimpleNamespace(seconds=13800, temperature_evaluations=limit))
 
 
+@pytest.mark.parametrize('path,digest,limit', [('result.json', None, 5),
+    (None, 'sha', 5), ('result.json', 'sha', 0)])
+def test_resume_requires_pin_pair_and_explicit_temperature_mode(manual_resources, path, digest, limit):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError, match='완료 계수 재개'):
+        N.run(SimpleNamespace(seconds=13800, temperature_evaluations=limit,
+                              resume_result=path, resume_result_sha=digest))
+
+
 def test_trapezoid_preserves_original_nonuniform_grid():
     nu = np.array([1., 2., 4., 9.]); saved = nu.copy()
     w = N.trapezoid_weights(nu)
