@@ -126,3 +126,55 @@ CLI import와 새 재개 인수도 확인했다. 실제 전역 물질 재개는 
 섭동을 보존하라는 의견이었다. 이 의견을 계산 승인이나 필수 감사로
 사용하지 않는다. 이후 사용자 지시에 따라 비용·횟수·시간을 이유로 한
 자문은 중단했고, 추가 자문은 없다.
+
+## 온도 보정 후보 → 새 계수 입력 연결
+
+후속 소비자를 확인하니 `prepare_lumina_accepted_material.py`가 이전 깊이
+보정과 고정온도 새 장 응답만 지원해 현재 T/ne 결과를 지원하지 않았다.
+새 `COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE`의
+실제 수용 후보를 기존 점물질 형식으로 내보내도록 연결했다. 과거 소비
+분기는 유지하며 다른 물리식·율·수송 알고리즘은 변경하지 않았다.
+
+`temperature_block.history`와 `thermal_evaluation_order`의 마지막 실제
+수용 단계를 선택한다. 재개된 실행의 선택 후보가 이전 root에 있어도
+그 응답/열장부의 신원을 그대로 확인하고 읽는다. 거부 후 단지 보존된
+기준점을 새 수용 후보로 바꾸지 않는다. 처음부터 고정장 수치수렴이
+확인됐다면 가짜 수용 반복을 만들어 넣지 않고 초기 응답을 사용한다.
+
+기존 독립 전하·정상 SE·원소별 핵수·occupation/full 복원 검증은 유지한다.
+같은 물질의 기존 열장부와 초기 고정 척도로 열잔차 감소를 확인한다.
+내부 수렴이라고 표시한 결과는 그 열·전하 잔차와도 맞아야 한다. 반경,
+밀도, 조성, epoch는 원본대로, T/ne·인구는 실제 선택 배열대로 내보내며
+재평형이나 보간으로 검증을 통과시키지 않는다. 출력은 여전히
+`EXPORTED_NOT_TRANSPORT_READY`, 최종 목표는 NOT_MET다.
+
+Grammar-debug CPU1·4GiB·150초의 격리 시험
+`lumina_thermal_export_tests_20261028-fP2S92`에서 **170 passed / 8.00초**였다.
+온도 후보의 실제 배열 왕복, 이전 root의 수용 후보 소비, 이미 수렴한
+기준점 전달, 미수용·전하 불일치·열 악화·거짓 수렴 표기·변경 파일 거부와
+기존 고정온도/깊이 보정 경로를 함께 확인했다. 같은 명령에는 새 장의
+계수 입력·확산 경계·계속 수송 입력 및 열보정/재개/BF 회귀도 포함했다.
+
+재현은 위 격리 소스에서 다음과 같이 수행한다. 로그인 노드가 아닌
+grammar-debug의 같은 CPU·메모리·시간 한도를 사용한다.
+
+```bash
+python3 -m pytest -q -p no:cacheprovider \
+  tests/test_prepare_lumina_accepted_material.py \
+  tests/test_lumina_accepted_sources_input.py \
+  tests/test_lumina_accepted_field_input.py \
+  tests/test_lumina_continue_accepted_field.py \
+  tests/test_lumina_completed_field_seed.py \
+  tests/test_lumina_new_field_response.py \
+  tests/test_lumina_fixed_field_thermal.py \
+  tests/test_lumina_thermal_replay.py \
+  tests/test_lumina_coupled_material.py \
+  tests/test_lumina_charge_projection.py \
+  tests/test_model_material_rates.py
+```
+
+실제 온도 후보·C full 인구·새 계수/경계·수송의 생산은 아직 수행하지
+않았다. 현재 살아 있는531e0e7f 실행과 그 입력은 바꾸지 않았다.
+실물 수용 후보의 전하가 닫히지 않거나 열이 개선되지 않으면 계수·수송에
+넘기지 않고 원래 고정장 물질 보정을 계속해야 한다. 이 소비 코드의 시험
+통과는 그 물리적 조건이 실제 충족됐다는 증거가 아니다.

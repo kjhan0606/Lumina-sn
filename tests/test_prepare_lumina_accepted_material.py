@@ -179,3 +179,105 @@ def test_new_field_rejects_unconverged_or_mismatched_candidate(tmp_path, monkeyp
     result.write_text(json.dumps(report))
     with pytest.raises(ValueError): E.prepare(result, E.B.sha(result), seed, run, tmp_path/'export')
     assert not (tmp_path/'export/accepted-material.json').exists()
+
+
+def thermal_report(result, *, converged_base=False):
+    old=json.loads(result.read_text());root=result.parent
+    with np.load(root/'evaluation-1/response.npz') as f:target={k:f[k] for k in f.files}
+    entries=[]
+    phases=['T+','T-','ne+','ne-','line_search']
+    total=1 if converged_base else 6
+    for i in range(total):
+        directory=root/('evaluation-'+str(i+1));directory.mkdir(exist_ok=True)
+        data={k:v.copy() for k,v in target.items()}
+        if i<5 and not converged_base:
+            data['temperature']*=1.01
+            if i in (1,2):data['temperature']*=np.exp(1.e-4 if i==1 else -1.e-4)
+            weight=np.array([2.,4.])[:,None]*np.exp(-np.array([0.,1.])[:,None]*E.B.EV/(E.B.KB*data['temperature']))
+            data['fraction']=weight/weight.sum(axis=0)
+        if i in (3,4):data['ne']*=np.exp(1.e-4 if i==3 else -1.e-4)
+        data['charge_residual']=(data['population']*data['columns'][:,1,None]).sum(axis=0)-data['ne']
+        np.savez(directory/'response.npz',**data)
+        net=np.full(3,1.e-12 if converged_base else (.4 if i<5 else .04))
+        np.savez(directory/'balance.npz',physical_stored_net=net,physical_stored_gross=np.full(3,2.))
+        entries.append(dict(root=str(directory),response_sha256=E.B.sha(directory/'response.npz'),
+            balance_sha256=E.B.sha(directory/'balance.npz'),fixed_field_thermal_callback=i>0))
+    history=[dict(evaluation=i,phase=phase) for i,phase in enumerate(phases,1)] if not converged_base else []
+    if history:history[-1].update(accepted=True,alpha=1.,scaled_max=.04/1.2,scaled_start_max=.4/1.2)
+    report=dict(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+        charge_converged=True,fixed_accepted_temperature=False,points=old['points'],
+        input_sha256=old['input_sha256'],selected_response=entries[-1],evaluations=entries,
+        thermal_initial_response=entries[0],thermal_evaluation_order=entries[1:],
+        temperature_block=dict(history=history,evaluations_used=len(history),
+            accepted_iterations=0 if converged_base else 1,fixed_field_numerical_converged=converged_base))
+    result.write_text(json.dumps(report));return report,target
+
+
+def test_thermal_selected_candidate_roundtrips_without_claiming_joint_convergence(tmp_path,monkeypatch):
+    result,seed,run,_,physical,_=fixture(tmp_path,monkeypatch)
+    report,target=thermal_report(result)
+    output=tmp_path/'thermal-export';exported=E.prepare(result,E.B.sha(result),seed,run,output)
+    _,actual,pop,_,_=E.read_nodes(output/'native_material_nodes.bin')
+    np.testing.assert_array_equal(actual[:,[0,3]],physical[:,[0,3]])
+    np.testing.assert_array_equal(actual[:,1],target['temperature'])
+    np.testing.assert_array_equal(pop.T,target['population'])
+    assert exported['source_kind']=='FINITE_NEW_FIELD_TNE_ACCEPTED_STEP'
+    assert exported['accepted_evaluation']==5
+    assert not exported['joint_convergence_certified']
+    assert not exported['checks']['fixed_field_numerical_converged']
+    assert exported['checks']['thermal_selected_scaled_max']<exported['checks']['thermal_initial_scaled_max']
+    assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
+
+
+def test_thermal_selected_replayed_candidate_need_not_be_a_new_evaluation(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result)
+    selected=report['selected_response'];previous=tmp_path/'previous/evaluation-6';previous.mkdir(parents=True)
+    for name in ('response.npz','balance.npz'):(previous/name).write_bytes((Path(selected['root'])/name).read_bytes())
+    selected['root']=str(previous);report['evaluations']=[]
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'replayed-export')
+    assert exported['accepted_response_sha256']==selected['response_sha256']
+    assert str(previous/'response.npz') in exported['input_sha256']
+
+
+def test_already_converged_thermal_base_can_be_forwarded_without_a_fake_accepted_step(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    thermal_report(result,converged_base=True)
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'converged-export')
+    assert exported['source_kind']=='FINITE_NEW_FIELD_TNE_CONVERGED_BASE'
+    assert exported['accepted_evaluation']==0 and exported['checks']['fixed_field_numerical_converged']
+    assert not exported['joint_convergence_certified']
+
+
+@pytest.mark.parametrize('fault',['charge','fixed_T','incomplete','history_length','history_order',
+    'wrong_selection','no_accepted','iteration_count','nonthermal','false_convergence','heat_worse',
+    'changed_initial','changed_selected','actual_charge'])
+def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_path,monkeypatch,fault):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result)
+    if fault=='charge':report['charge_converged']=False
+    elif fault=='fixed_T':report['fixed_accepted_temperature']=True
+    elif fault=='incomplete':report['state']='INCOMPLETE_PRESERVED'
+    elif fault=='history_length':report['temperature_block']['history'].pop()
+    elif fault=='history_order':report['temperature_block']['history'][0]['evaluation']=2
+    elif fault=='wrong_selection':report['selected_response']=report['thermal_initial_response']
+    elif fault=='no_accepted':
+        report['temperature_block']['history'][-1]['accepted']=False;report['temperature_block']['accepted_iterations']=0
+    elif fault=='iteration_count':report['temperature_block']['accepted_iterations']=2
+    elif fault=='nonthermal':report['thermal_evaluation_order'][0]['fixed_field_thermal_callback']=False
+    elif fault=='false_convergence':report['temperature_block']['fixed_field_numerical_converged']=True
+    elif fault=='heat_worse':
+        path=Path(report['selected_response']['root'])/'balance.npz'
+        np.savez(path,physical_stored_net=np.full(3,.5),physical_stored_gross=np.full(3,2.))
+        report['selected_response']['balance_sha256']=E.B.sha(path)
+    elif fault=='actual_charge':
+        path=Path(report['selected_response']['root'])/'response.npz'
+        with np.load(path) as f:data={k:f[k] for k in f.files}
+        data['ne']*=1.001;np.savez(path,**data)
+        report['selected_response']['response_sha256']=E.B.sha(path)
+    elif fault=='changed_initial':(tmp_path/'evaluation-1/balance.npz').write_bytes(b'changed')
+    else:(tmp_path/'evaluation-6/response.npz').write_bytes(b'changed')
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError):E.prepare(result,E.B.sha(result),seed,run,tmp_path/'export')
+    assert not (tmp_path/'export/accepted-material.json').exists()

@@ -58,6 +58,58 @@ def validate(candidate, columns, physical, population, rows, models):
                 stationary_SE_max=float(np.max(ledger[:, :, 6])))
 
 
+def thermal_selection(report):
+    """전역 물질 보정의 실제 마지막 수용 후보를 찾는다. 거부 후보는 전달하지 않는다."""
+    block = report['temperature_block']; order = report['thermal_evaluation_order']
+    history = block['history']
+    if (len(history) != len(order) or block['evaluations_used'] != len(history) or
+            any(entry['evaluation'] != i for i, entry in enumerate(history, 1)) or
+            any(entry.get('fixed_field_thermal_callback') is not True for entry in order)):
+        raise ValueError('온도 응답의 호출 순서/완료 평가 불일치')
+    accepted = [e for e in history if e.get('accepted') is True]
+    if (block['accepted_iterations'] != len(accepted) or
+            any(e['phase'] != 'line_search' for e in accepted)):
+        raise ValueError('온도 응답의 실제 수용 반복 불일치')
+    if accepted:
+        index = accepted[-1]['evaluation']; expected = order[index-1]
+        kind = 'FINITE_NEW_FIELD_TNE_ACCEPTED_STEP'
+    elif block['fixed_field_numerical_converged'] is True:
+        index = 0; expected = report['thermal_initial_response']
+        kind = 'FINITE_NEW_FIELD_TNE_CONVERGED_BASE'
+    else:
+        raise ValueError('수용된 온도 보정이 없음; 실패 후 기존 물질을 새 후보로 전달하지 않음')
+    if report['selected_response'] != expected:
+        raise ValueError('온도 응답의 마지막 수용 후보와 선택 결과 불일치')
+    return index, expected, kind
+
+
+def thermal_checks(report, candidate, directory):
+    """기존 열장부와 초기 고정 척도로 실제 열 감소/수렴 표기를 확인한다."""
+    first = Path(report['thermal_initial_response']['root'])
+    ns = len(candidate['ne'])
+    with np.load(first/'balance.npz', allow_pickle=False) as initial, np.load(directory/'balance.npz', allow_pickle=False) as final:
+        old = initial['physical_stored_net']; gross = initial['physical_stored_gross']
+        new = final['physical_stored_net']
+        if (any(a.shape != (ns,) or not np.isfinite(a).all() for a in (old, gross, new)) or
+                np.any(gross < 0)):
+            raise ValueError('온도 응답의 실제 열장부 형상/값 오류')
+        scale = .5*(gross+abs(old))
+        if np.any(scale <= 0): raise ValueError('초기 물질 열잔차 척도 오류')
+        before = float(np.max(abs(old)/scale)); after = float(np.max(abs(new)/scale))
+    with np.load(first/'response.npz', allow_pickle=False) as initial:
+        ne = initial['ne']
+        if ne.shape != (ns,) or not np.isfinite(ne).all() or np.any(ne <= 0):
+            raise ValueError('초기 물질 전하잔차 척도 오류')
+        charge = float(np.max(abs(candidate['charge_residual'])/ne))
+    if not (after < before or (after <= 1.e-10 and before <= 1.e-10)):
+        raise ValueError('온도 보정의 실제 열잔차 개선 없음')
+    converged = report['temperature_block']['fixed_field_numerical_converged']
+    if converged and max(after, charge) > 1.e-10:
+        raise ValueError('고정장 수렴 표기와 실제 열/전하잔차 불일치')
+    return dict(thermal_initial_scaled_max=before, thermal_selected_scaled_max=after,
+                charge_initial_scaled_max=charge, fixed_field_numerical_converged=converged)
+
+
 def prepare(result, result_sha, seed, run, out):
     result, seed, run, out = [Path(p).resolve() for p in (result, seed, run, out)]
     if out.exists():
@@ -93,10 +145,24 @@ def prepare(result, result_sha, seed, run, out):
         response = directory/'response.npz'; response_sha = selected['response_sha256']
         entry = {'response.npz': response_sha, 'balance.npz': selected['balance_sha256']}
         source_kind = 'FINITE_NEW_FIELD_FIXED_T_CHARGE_RESPONSE'
+    elif (report['state'] == 'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' and
+          report['charge_converged'] is True and report['fixed_accepted_temperature'] is False):
+        index, selected, source_kind = thermal_selection(report)
+        directory = Path(selected['root']).resolve()
+        response = directory/'response.npz'; response_sha = selected['response_sha256']
+        entry = {'response.npz': response_sha, 'balance.npz': selected['balance_sha256']}
     else:
         raise ValueError('전하 수렴이 확인된 지원 물질 후보가 아님')
     identities = {str(result): result_sha, str(response): response_sha,
                   **{str(directory/name): entry[name] for name in ('response.npz', 'balance.npz')}}
+    thermal = source_kind.startswith('FINITE_NEW_FIELD_TNE_')
+    if thermal:
+        first = report['thermal_initial_response']
+        for name, key in (('response.npz', 'response_sha256'), ('balance.npz', 'balance_sha256')):
+            path = str(Path(first['root'])/name)
+            if path in identities and identities[path] != first[key]:
+                raise ValueError('초기/선택 물질 파일의 신원 충돌')
+            identities[path] = first[key]
     # 전체 큰 장/계수를 다시 읽지 않는다. 이번 전달에서 실제 소비하는 봉인 입력만 확인한다.
     nodes = seed/'native_material_nodes.bin'; levels = seed/'atomic/levels.csv'
     for path in (nodes, levels, *[run/name for name in ('MODEL', 'MODEL_SPEC', 'atomic_links.txt')]):
@@ -133,6 +199,7 @@ def prepare(result, result_sha, seed, run, out):
             not np.all(np.diff(physical[:, 0]) < 0)):
         raise ValueError('원래점 기하/원자 모형 불일치')
     checks = validate(candidate, columns, physical, old_population, rows, models)
+    if thermal: checks.update(thermal_checks(report, candidate, directory))
     out.mkdir(); atomic = out/'atomic'; atomic.mkdir()
     for path in (seed/'atomic').iterdir():
         if atomic_asset(path.name) and path.is_file():
@@ -179,6 +246,9 @@ def prepare(result, result_sha, seed, run, out):
         next='actual C import/full export, new whole-grid coefficients, new diffusion boundary, new self field/flux and material response',
         output_sha256={name: B.sha(out/name) for name in names},
         new_BF_BB_integrals=0, new_SE_solves=0, new_transport=0, final_goal='NOT_MET')
+    if thermal:
+        record.update(accepted_evaluation_role='thermal callback order; 0 is initial response',
+                      joint_convergence_certified=False, thermal_energy_policy='physical_stored')
     with (out/'accepted-material.json').open('x') as f:
         json.dump(record, f, ensure_ascii=False, indent=2, allow_nan=False); f.write('\n')
     return record
