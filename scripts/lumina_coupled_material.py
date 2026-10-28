@@ -102,10 +102,13 @@ def newton_direction(matrix,scaled_residual):
 
 
 def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-10,
-                  max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None):
+                  max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None,
+                  project_candidate=None):
     """동적 물질 생산 callback을 쓰는 전체 깊이 감쇠 Newton.
 
     evaluate(T,ne)는 모든 동적 율과 SE를 갱신한 MaterialPacket을 반환한다.
+    project_candidate는 같은 T에서만 전하를 닫는다. 추가 실제평가도 같은
+    총예산을 소비하며 실패하면 후보를 수용하지 않는다. 기본 경로는 보존한다.
     iteration/관측 한도는 미수렴으로 반환하며 마지막 수용 상태를 보존한다.
     numerical_converged는 이 고정장 계의 내부 잔차만 뜻한다.
     """
@@ -114,7 +117,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         not np.isfinite(numerical_tolerance) or numerical_tolerance<=0 or
         not np.isfinite(max_log_step) or max_log_step<=0):
         raise ValueError('공동 Newton 비용/수치 목표 오류')
-    c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0
+    c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0;entries={}
     def call(t,ne,phase):
         nonlocal used
         value=evaluate(t,ne);value.validate();used+=1
@@ -123,6 +126,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         entry=dict(evaluation=used,phase=phase,
             scaled_max=float(abs(residual(value,adiabatic,c,h)).max()))
         history.append(entry)
+        entries[id(value)]=(value,entry)
         if on_evaluation is not None:on_evaluation(value,entry)
         return value
     while True:
@@ -144,11 +148,30 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 trial=np.exp(x+alpha*direction)
             if not np.isfinite(trial).all() or np.any(trial<=0):alpha*=.5;continue
             candidate=call(trial[:n],trial[n:],'line_search')
+            if project_candidate is not None:
+                raw=candidate
+                def at_fixed_T(ne):
+                    if used>=max_evaluations:raise RuntimeError('공동 열보정 실제평가 한도 초과')
+                    return call(raw.temperature,ne,'charge_projection_ne')
+                candidate=project_candidate(raw,at_fixed_T,max_evaluations-used)
+                if candidate is None:
+                    entry=entries[id(raw)][1]
+                    entry.update(alpha=alpha,accepted=False,charge_solved=False)
+                    if on_evaluation is not None:on_evaluation(raw,entry)
+                    alpha*=.5;continue
+                candidate.validate()
+                if (not np.array_equal(candidate.temperature,raw.temperature) or
+                    id(candidate) not in entries or
+                    not np.allclose(candidate.nuclei,base.nuclei,rtol=1.e-12,atol=0)):
+                    raise ValueError('전하 보정은 실제 평가된 동일 T/핵수 후보만 반환해야 함')
             merit=float(abs(residual(candidate,adiabatic,c,h)).max())
             accepted=bool(merit<=numerical_tolerance or merit<norm*(1.-1.e-4*alpha))
-            history[-1].update(alpha=alpha,accepted=accepted)
-            history[-1].update(predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()),
-                               scaled_start_max=norm)
+            entry=entries[id(candidate)][1]
+            entry.update(alpha=alpha,accepted=accepted,
+                predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()),scaled_start_max=norm)
+            if project_candidate is not None:
+                entry.update(phase='charge_projected_line',charge_solved=True)
+                if on_evaluation is not None:on_evaluation(candidate,entry)
             if accepted:base=candidate;iterations+=1;break
             alpha*=.5
         if not accepted:break

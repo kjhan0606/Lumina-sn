@@ -71,6 +71,58 @@ def test_same_temperature_charge_projection_reuses_saved_trial_then_evaluates_on
     assert [e['evaluation'] for e in result['history']]==list(range(1,len(fresh)+2))
 
 
+def test_normal_temperature_iteration_closes_charge_without_a_manual_replay_run():
+    first, saved, ad, basis, payload=projection_case(); calls=[]; decisions=[]
+    def evaluate(t,ne):
+        value=payload(t,ne,len(calls)+1);calls.append(value);return value
+    result=T.solve(evaluate,first,ad,policy='physical_stored',max_evaluations=8,
+        charge_bounds=(np.full(3,1.e8),np.full(3,4.e8)),
+        on_evaluation=lambda value,entry:decisions.append((value,entry.copy())))
+    assert result['charge_projected_trials'] and result['accepted_iterations']==1
+    assert result['charge_relative']<=1.e-10
+    assert 6<=len(calls)<=8 and result['fresh_evaluations_used']==len(calls)
+    assert len(result['history'])==len(calls)
+    assert result['selected'] is not first and result['history'][-1]['accepted']
+    assert result['history'][-1]['phase']=='charge_projected_line'
+    assert all(np.array_equal(value[0]['temperature'],calls[4][0]['temperature']) for value in calls[5:])
+    assert any(entry.get('accepted') is True and value is result['selected'] for value,entry in decisions)
+    assert not result['joint_convergence']
+
+
+@pytest.mark.parametrize('fault',['budget','charge','heat'])
+def test_normal_projection_keeps_the_accepted_state_on_failure(fault):
+    first, saved, ad, basis, payload=projection_case();calls=[]
+    def evaluate(t,ne):
+        value=payload(t,ne,len(calls)+1)
+        if len(calls)>=4:
+            if fault=='charge':value[0]['charge_residual']=np.full(3,1.e7)
+            if fault=='heat':value[1]['physical_stored_net']+=.2
+        calls.append(value);return value
+    limit=5 if fault=='budget' else 8
+    result=T.solve(evaluate,first,ad,policy='physical_stored',max_evaluations=limit,
+                   charge_bounds=(np.full(3,1.e8),np.full(3,4.e8)))
+    assert result['selected'] is first and result['accepted_iterations']==0
+    assert not result['fixed_field_numerical_converged']
+    assert len(calls)==limit and result['fresh_evaluations_used']==limit
+
+
+def test_projected_iteration_resumes_its_exact_callbacks_without_repeating_a_temperature():
+    first,saved,ad,basis,payload=projection_case();preserved=[]
+    bounds=(np.full(3,1.e8),np.full(3,4.e8))
+    def original(t,ne):preserved.append(payload(t,ne,len(preserved)+1));return preserved[-1]
+    stopped=T.solve(original,first,ad,policy='physical_stored',max_evaluations=5,charge_bounds=bounds)
+    assert len(preserved)==5 and stopped['accepted_iterations']==0
+    fresh=[]
+    def more(t,ne):
+        np.testing.assert_array_equal(t,preserved[-1][0]['temperature'])
+        fresh.append(payload(t,ne,len(preserved)+len(fresh)+1));return fresh[-1]
+    continued=T.solve(more,first,ad,policy='physical_stored',max_evaluations=3,
+                      charge_bounds=bounds,replay=preserved)
+    assert 1<=len(fresh)<=3 and continued['accepted_iterations']==1
+    assert continued['replayed_evaluations']==5 and continued['fresh_evaluations_used']==len(fresh)
+    assert continued['selected'] is fresh[-1] and continued['charge_relative']<=1.e-10
+
+
 @pytest.mark.parametrize('fault',['charge','heat'])
 def test_projection_cannot_accept_charge_failure_or_thermal_worsening(fault):
     first,saved,ad,basis,payload=projection_case();fresh=[]

@@ -55,6 +55,14 @@ def test_completed_values_are_loaded_without_changing_source_files(preserved):
         assert R.B.sha(Path(path))==digest and args['inputs'][path]==digest
 
 
+def test_normal_projection_call_order_is_explicit_in_saved_and_resumed_runs(preserved):
+    assert load(preserved)['charge_projected_trials'] is False
+    preserved[1]['charge_projected_trials']=True
+    assert load(preserved)['charge_projected_trials'] is True
+    preserved[1]['charge_projected_trials']='True'
+    with pytest.raises(ValueError,match='호출 방식'):load(preserved)
+
+
 def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(preserved):
     root, report, args = preserved
     receipt = dict(path=str(root/'temperature-bound-cache/table.json'), sha256='table-sha')

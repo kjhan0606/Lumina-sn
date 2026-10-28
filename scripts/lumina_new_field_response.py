@@ -405,6 +405,8 @@ def run(args):
                 if temperature_evaluations:
                     result['thermal_initial_response'] = candidates[id(final)]
                     result['charge_history'] = solved['history']
+                    result['charge_projected_trials'] = not projecting and (
+                        replay_source is None or replay_source['charge_projected_trials'])
                     result['phase'] = 'FIXED_NEW_FIELD_T_NE_CORRECTION'; save()
                     def evaluate_temperature(t, ne):
                         data = material_evaluate(t, ne)[0]
@@ -437,7 +439,8 @@ def run(args):
                         block = thermal_block.solve(evaluate_temperature, first_value, full_ad,
                             policy=thermal_policy, max_evaluations=temperature_evaluations,
                             on_evaluation=thermal_decision, on_direction=thermal_direction,
-                            replay=() if replay_source is None else replay_source['replay'], on_replay=replayed)
+                            replay=() if replay_source is None else replay_source['replay'], on_replay=replayed,
+                            charge_bounds=(lower, upper) if result['charge_projected_trials'] else None)
                     final = block.pop('selected')[0]
                     result['temperature_block'] = block
                     result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])

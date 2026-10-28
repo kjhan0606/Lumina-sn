@@ -44,6 +44,9 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
     report = json.loads(path.read_text())
+    projected_trials = report.get('charge_projected_trials', False)
+    if type(projected_trials) is not bool:
+        raise ValueError('보존 열평가의 정상 전하보정 호출 방식 오류')
     previous_policy = energy_policy(report, default='physical_stored')
     if prefix is not None and (type(prefix) is not int or not 1 <= prefix <= 4):
         raise ValueError('다른 열정책 미분에는 초기 섭동1~4개만 명시적으로 재사용 가능')
@@ -138,7 +141,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
                           source_trial=replay[-1][2], original_alpha=history[-1]['alpha']))
     inputs.update(consumed)
     return dict(first=first, replay=replay, charge_history=report.get('charge_history', []),
-                projection=projection,
+                projection=projection, charge_projected_trials=projected_trials,
                 bound_temperature_tables=report.get('temperature_bound_cache', {}).get('completed_bound_tables', []),
                 provenance=dict(result=str(path), result_sha256=digest,
                     source_report_state=report['state'], source_process_missing=stopped,
