@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import time
+from types import SimpleNamespace
 
 import numpy as np
 from lumina_model_collision_source import ModelCollisionSource
@@ -19,6 +20,9 @@ from ptf_gated_metrics import read_variables
 from run_cmfgen_native_se_observation import read_witness
 from run_lumina_full_material_response import BASE, BF_RESULT, BB_RESULT, PARAMETERS
 import cmfgen_model_continuum as B
+import cmfgen_model_sources as S
+import lumina_native_line_quadrature as L
+from run_cmfgen_formal_primary import fields
 
 
 def sha(p):
@@ -28,7 +32,7 @@ def sha(p):
     return h.hexdigest()
 
 
-def run(library,out):
+def run(library,out,native_lines_library=None,stationary=False):
     start=time.monotonic();node=33;Z=16;out=Path(out).resolve()
     if out.exists():raise FileExistsError('기존 결과 보존')
     b=json.loads(BF_RESULT.read_text());bb=json.loads(BB_RESULT.read_text())
@@ -78,12 +82,32 @@ def run(library,out):
     np.testing.assert_array_equal(snapshot['ne'][node],native_values['pops'][-2,node])
     rows=list(csv.DictReader((atomic/'levels.csv').open()));zs=np.array([int(r['atomic_number']) for r in rows])
     ids=np.flatnonzero(zs[lines['lower']]==Z);sel={k:v[ids] for k,v in lines.items()}
-    nu=sel['nu0'];A=sel['A'];bul=A*B.C**2/(2*B.H*nu**3);J=jbar[ids,node]
     source=ModelCollisionSource(material,rows);state={k:snapshot[k] for k in ('columns','superlevel','temperature','ne','occupation')}
+    nu=sel['nu0'];A=sel['A'];bul=A*B.C**2/(2*B.H*nu**3);J=jbar[ids,node]
+    absorption,stimulated,spontaneous,bb_status=bul/sel['g_ratio']*J,bul*J,A,status[ids]
+    native_line_info=None
+    if native_lines_library is not None:
+        if sha(field)!=plan['reference_field_sha256']:raise ValueError('원 복사장 변경')
+        geometry,field_values=fields(field)
+        try:
+            frequency=np.asarray(field_values['freq'][::-1])*1e15
+            field_j=np.asarray(field_values['field'][::-1,0,node])
+            width=np.zeros_like(frequency);width[:-1]+=.5*np.diff(frequency);width[1:]+=.5*np.diff(frequency)
+            producer=SimpleNamespace(lines=sel,profile=S.fixed_profile(material/'MODEL'),dll=C.CDLL(str(native_lines_library)))
+            first,last,active,native_line_info=L.intervals(native/'material',rows,source.models,sel,len(frequency))
+            values=L.contract(producer,frequency,width,field_j,first,last,active)
+        finally:field_values._mmap.close()
+        absorption,stimulated,spontaneous=values['absorption'],values['stimulated'],values['spontaneous_native_discrete']
+        bb_status=values['status'].copy()
+        if np.any((bb_status==5)&((absorption!=0)|(stimulated!=0)|(spontaneous!=0))):
+            raise ValueError('native 비활성 선의 비영 잔차')
+        bb_status[bb_status==5]=2
+        native_line_info['library_sha256']=sha(native_lines_library)
+        native_line_info['profile_mass_minmax']=[float(values['profile_mass'].min()),float(values['profile_mass'].max())]
     output=np.empty((11,len(cols)),dtype='f8');pairs=0
     with MaterialBridge(library,atomic,nodes,baseline/'occupation.bin',PARAMETERS) as bridge:
         bridge.prepare(state,snapshot['fraction'],snapshot['saha'],roster,rates,trial_id=2,radiation_generation=70)
-        bridge.begin_element(Z,node,sel,bul/sel['g_ratio']*J,bul*J,A,status[ids])
+        bridge.begin_element(Z,node,sel,absorption,stimulated,spontaneous,bb_status)
         for key in sorted(k for k in source.models if k[0]==Z):
             ion=source.load(*key)
             for lo,up,omega,_ in ion.blocks([state['temperature'][node]]):
@@ -104,16 +128,41 @@ def run(library,out):
     scaled=np.divide(abs(c_raw),gross,out=np.zeros_like(c_raw),where=gross>0)
     with np.load(baseline/'response.npz') as f:
         old=float(f['ledger'][list(map(int,f['species'])).index(Z),node,5])
-    if not np.isclose(scaled.max(),old,rtol=2e-11,atol=0):raise ValueError('기존 C 입력 잔차 불일치')
+    if native_lines_library is None and not np.isclose(scaled.max(),old,rtol=2e-11,atol=0):raise ValueError('기존 C 입력 잔차 불일치')
+    stationary_result=None
+    if stationary:
+        if native_lines_library is None:raise ValueError('native 선 비교에만 정상해 요청 가능')
+        candidate=np.zeros_like(state['superlevel'])
+        with MaterialBridge(library,atomic,nodes,baseline/'occupation.bin',PARAMETERS) as bridge:
+            bridge.prepare(state,snapshot['fraction'],snapshot['saha'],roster,rates,trial_id=2,radiation_generation=70)
+            bridge.begin_element(Z,node,sel,absorption,stimulated,spontaneous,bb_status)
+            for key in sorted(k for k in source.models if k[0]==Z):
+                ion=source.load(*key)
+                for lo,up,omega,_ in ion.blocks([state['temperature'][node]]):bridge.push(Z,node,lo,up,omega[0])
+                ion.verify_identity()
+            candidate_ledger=bridge.finish(Z,node,candidate)
+        with np.load(baseline/'response.npz') as f:
+            if not np.array_equal(f['columns'],cols):raise ValueError('기존 정상해 원자 주소 불일치')
+            production=f['population'][selected,node]
+        raw_population=np.asarray(original);solved=candidate[selected,node]
+        total=raw_population.sum()
+        if not np.isfinite(solved).all() or np.any(solved<0) or not np.isclose(solved.sum(),total,rtol=1e-11):
+            raise ValueError('고정장 후보 인구 보존 실패')
+        stationary_result=dict(physical_scope='fixed_T_ne_J_S_only_not_charge_RE_or_transport',ledger=candidate_ledger.tolist(),
+            stage_fractions=[dict(charge=int(q),native_input=float(raw_population[cols[selected,1]==q].sum()/total),
+                production_BB_candidate=float(production[cols[selected,1]==q].sum()/total),
+                native_BB_candidate=float(solved[cols[selected,1]==q].sum()/total)) for q in np.unique(cols[selected,1])])
     details=[]
     for j,c in enumerate(selected):
         details.append(dict(Z=Z,charge=int(cols[c,1]),superlevel=int(cols[c,2]),population=float(original[j]),
             native_raw=float(native_raw[j]),C_raw=float(c_raw[j]),gross_C=float(gross[j]),
             processes={name:dict(incoming=float(output[1+2*k,c]),outgoing=float(output[2+2*k,c]))
                 for k,name in enumerate(('BF_radiative','BF_collisional','BB_radiative','collision_total','dissolution_subset'))}))
-    result=dict(state='COMPLETE_SAME_INPUT_PRODUCTION_ROSTER_DIAGNOSTIC',node_zero_based=node,
-        physical_equivalence='NOT_PROVEN_NATIVE_BB_CONTRACT_DIFFERS',new_BF=0,new_BB=0,new_SE_solve=0,
+    result=dict(state='COMPLETE_SAME_INPUT_NATIVE_LINE_DIAGNOSTIC' if native_lines_library else 'COMPLETE_SAME_INPUT_PRODUCTION_ROSTER_DIAGNOSTIC',node_zero_based=node,
+        physical_equivalence='NOT_PROVEN_BF_CONTRACT_MAY_DIFFER',new_BF=0,new_BB=int(native_lines_library is not None),new_SE_solve=int(stationary),
         new_native=0,new_transport=0,rows=len(details),collision_pairs=pairs,
+        native_line_info=native_line_info,
+        stationary=stationary_result,
         C_max_scaled_residual=float(scaled.max()),baseline_C_max_scaled_residual=old,
         maximum_abs_row_difference=float(np.max(abs(c_raw-native_raw))),
         input_sha256={str(p):h for p,h in paths.items()},library_sha256=sha(library),
@@ -125,4 +174,6 @@ def run(library,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--library',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
-    a=p.parse_args();run(a.library,a.out)
+    p.add_argument('--native-lines-library',type=Path)
+    p.add_argument('--stationary',action='store_true')
+    a=p.parse_args();run(a.library,a.out,a.native_lines_library,a.stationary)

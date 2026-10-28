@@ -24,4 +24,10 @@ export LUMINA_ARTIS_PARITY=0 LUMINA_NLTE_BF_COLLISION=1
 export LUMINA_TOPION_LEVELS_FILE="$parent/source/data/atomic/topion_levels.csv"
 export LUMINA_IONIZATION_REFERENCE_FILE="$parent/source/data/atomic/ionization_reference.csv"
 export PYTHONPATH="$parent/source/scripts"
-python scripts/compare_lumina_s_node34_operator.py --library "$parent/build/bridge-probe.so" --out "$parent/result"
+extra=()
+if [[ "${2:-}" == native-lines ]]; then
+  gcc -O2 -std=gnu11 -fPIC -shared -Isrc src/model_source_kernels.c -o "$parent/build/native-lines.so" -lm
+  extra=(--native-lines-library "$parent/build/native-lines.so")
+fi
+if [[ "${3:-}" == stationary ]]; then extra+=(--stationary); fi
+python scripts/compare_lumina_s_node34_operator.py --library "$parent/build/bridge-probe.so" --out "$parent/result" "${extra[@]}"
