@@ -12,7 +12,7 @@ from run_cmfgen_formal_primary import fields
 from run_lumina_full_material_response import BASE
 
 
-def run(node,z,stage,out):
+def run(node,z,stage,out,bands=False):
     start=time.monotonic();out=Path(out)
     if out.exists():raise FileExistsError('기존 실행 보존')
     out.mkdir();r=reconstruct(node);p=r['provider'];trial=r['trial'];roster=r['roster']
@@ -56,15 +56,37 @@ def run(node,z,stage,out):
         if len(ix)!=1:raise ValueError('F2 저장 이온 주소 오류')
         stored=f['bf_ion_number_flows'][ix[0],:3,node]
     np.testing.assert_allclose(f2,stored,rtol=3e-12,atol=0)
+    band_result=None
+    if bands:
+        edges=np.array([0.,250.,350.,450.,550.,650.,750.,1000.,1500.,2500.,1.e9])
+        photo=np.zeros((2,len(edges)-1),dtype=np.longdouble)
+        weight=np.asarray(prob*lower_pop,dtype=np.longdouble)
+        for first,last in p.frequency_blocks(trial):
+            wave=B.C*1e8/nu[first:last]
+            bins=np.searchsorted(edges,wave,side='right')-1
+            if np.any(bins<0) or np.any(bins>=len(edges)-1):raise ValueError('파장 구간 범위 오류')
+            cuts=np.r_[0,np.flatnonzero(np.diff(bins)!=0)+1,len(bins)]
+            for lo,hi in zip(cuts[:-1],cuts[1:]):
+                a,b=first+int(lo),first+int(hi);band=int(bins[lo])
+                for k,(provider,current_trial) in enumerate(((p,trial),(old,old_trial))):
+                    _,rates=provider.contract_block(current_trial,a,b,ids,
+                        material_generation=current_trial.material_generation,radiation_generation=1)
+                    photo[k,band]+=np.sum(weight*np.asarray(rates[:,0,0],dtype=np.longdouble))
+        np.testing.assert_allclose(np.asarray(photo.sum(axis=1),dtype='f8'),[f2[0],cmf[0]],rtol=4e-12,atol=0)
+        band_result=[dict(wavelength_A=[float(edges[i]),float(edges[i+1])],
+            F2_photo=float(photo[0,i]),CMF_photo=float(photo[1,i]),difference=float(photo[0,i]-photo[1,i]))
+            for i in range(len(edges)-1)]
     result=dict(state='COMPLETE_SAME_MATERIAL_GRID_FIELD_BF_COMPARISON',node=node,Z=z,stage=stage,
         routes=len(ids),ion_density=float(ion_density),F2_flows=f2.tolist(),CMF70_interpolated_flows=cmf.tolist(),
         F2_photo_rate_per_ion=float(f2[0]/ion_density),CMF70_photo_rate_per_ion=float(cmf[0]/ion_density),
         field_sha256=r['field_sha256'],CMF70_field_sha256=plan['reference_field_sha256'],
         response_sha256=r['response_sha256'],interpolation='linear J vs log frequency, no extrapolation',
+        wavelength_bands=band_result,
         native_CMFGEN_grid_quadrature=False,new_transport=0,new_SE=0,seconds=time.monotonic()-start,final_goal='NOT_MET')
     (out/'result.json').write_text(json.dumps(result,indent=2,allow_nan=False)+'\n');print(json.dumps(result))
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--node',type=int,required=True);p.add_argument('--element',type=int,choices=(14,16),required=True)
     p.add_argument('--stage',type=int,default=3);p.add_argument('--out',type=Path,required=True)
-    a=p.parse_args();run(a.node,a.element,a.stage,a.out)
+    p.add_argument('--bands',action='store_true')
+    a=p.parse_args();run(a.node,a.element,a.stage,a.out,a.bands)
