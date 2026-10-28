@@ -37,21 +37,8 @@ def e_coeff(tau):
     return ee,e0,e1,e2
 
 
-def bezier_source(sup,target,far,tau,neighbor):
-    if tau<=0:
-        return 0.
-    if tau<=.5:
-        weights=BEZIER_COEFFICIENTS[12]
-        for i in range(11,-1,-1):
-            weights=-tau*weights+BEZIER_COEFFICIENTS[i]
-        weights=tau*weights
-    else:
-        inverse=1/tau
-        ee=np.exp(-tau)
-        weights=np.array([
-            2*inverse*inverse-ee*(1+2*inverse+2*inverse*inverse),
-            2*inverse-4*inverse*inverse+ee*(2*inverse+4*inverse*inverse),
-            1-2*inverse+2*inverse*inverse-2*ee*inverse*inverse])
+def bezier_control(sup,target,far,tau,neighbor):
+    """원 SC가 정의한 source/광학깊이 연속장의 제어점을 그대로 반환한다."""
     if neighbor<=0:
         control=.5*sup+.5*target
     else:
@@ -80,6 +67,25 @@ def bezier_source(sup,target,far,tau,neighbor):
                 control=lo if distance>=base-lo else base-distance
             else:
                 control=hi if distance>=hi-base else base+distance
+    return float(control)
+
+
+def bezier_source(sup,target,far,tau,neighbor):
+    if tau<=0:
+        return 0.
+    if tau<=.5:
+        weights=BEZIER_COEFFICIENTS[12]
+        for i in range(11,-1,-1):
+            weights=-tau*weights+BEZIER_COEFFICIENTS[i]
+        weights=tau*weights
+    else:
+        inverse=1/tau
+        ee=np.exp(-tau)
+        weights=np.array([
+            2*inverse*inverse-ee*(1+2*inverse+2*inverse*inverse),
+            2*inverse-4*inverse*inverse+ee*(2*inverse+4*inverse*inverse),
+            1-2*inverse+2*inverse*inverse-2*ee*inverse*inverse])
+    control=bezier_control(sup,target,far,tau,neighbor)
     return float(np.dot(weights,[sup,control,target]))
 
 
