@@ -18,9 +18,14 @@ from prepare_lumina_accepted_material import prepare
 
 
 def run(args):
-    if not args.recover and (os.environ.get('SLURM_CPUS_PER_TASK') != '1' or
-                             not os.environ.get('SLURM_JOB_ID')):
-        raise ValueError('grammar-debug CPU1 Slurm 실행 필요')
+    if not args.recover:
+        manual = (args.manual_lageunha and os.uname().nodename.lower() == 'lageunha' and
+                  os.environ.get('OMP_NUM_THREADS') == '1' and
+                  os.environ.get('OPENBLAS_NUM_THREADS') == '1')
+        slurm = (not args.manual_lageunha and os.environ.get('SLURM_CPUS_PER_TASK') == '1' and
+                 bool(os.environ.get('SLURM_JOB_ID')))
+        if not (manual or slurm):
+            raise ValueError('grammar-debug CPU1 Slurm 또는 Lageunha 수동 CPU1 실행 필요')
     root = args.out.resolve()
     if not root.is_dir() or (any(root.iterdir()) and not args.recover):
         raise ValueError('새 실행에는 빈 출력 root 필요')
@@ -111,6 +116,7 @@ if __name__ == '__main__':
                  'ionref-sha'):
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--recover', action='store_true', help='기존 성공 C export의 비교/기록만 복구')
+    parser.add_argument('--manual-lageunha', action='store_true', help='Lageunha CPU1 소형 직접시험')
     parser.add_argument('--execution-script-sha', help='복구 대상 원 실행 스크립트 SHA')
     record = run(parser.parse_args())
     print(json.dumps(record, ensure_ascii=False, indent=2, allow_nan=False))
