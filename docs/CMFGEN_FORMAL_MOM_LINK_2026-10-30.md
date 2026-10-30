@@ -61,6 +61,27 @@ formal 모멘트는 기존 `angular_support()`의 두 각도 지지 행렬 검�
 해가 아니라 같은 도함수 식의 조건부 평가다. 원점1의 formal P_J도
 음수이지만 `HONJ` 외부 경계행은 P_J를 사용하지 않으므로 별도로 구분한다.
 
+## formal-only 설정을 즉시 수리로 채택하지 않는 이유
+
+현재 설치 소스의 `new_main/mod_subs/comp_j_blank.f`에는 `USE_LAM_ES`로
+formal J를 그대로 쓰는 분기가 있다. 그러나 `USE_J_REL` 분기보다 뒤에
+있으므로 현재 설정에서 `USE_LAM_ES=T`만 추가해도 MOM 호출을 우회하지
+못한다. 반대로 `USE_J_REL=F`로 바꾸는 것은 단순한 수치 알고리즘 선택이
+아니다.
+
+- `rd_control_variables.f`는 `USE_J_REL=F`일 때 `INCL_REL` 또는
+  `INCL_ADV_TRANS`가 켜져 있으면 STOP하도록 되어 있다.
+- `cmfgen_sub.f`의 기계적 에너지와 광도 변환도
+  `USE_J_REL .AND. INCL_REL_TERMS`에 따라 다른 식을 사용한다.
+- `do_var_cont.f`의 `USE_J_REL`은 `VAR_JREL_V5` 변분 호출을 선택하며,
+  그 뒤의 `USE_LAM_ES` 분기는 비어 있다.
+
+따라서 현재 formal 모멘트가 위 필요조건을 만족한다는 이유로 이 옵션들을
+전환해 matched-physics 수리라고 부를 수 없다. formal 경로의 산란 수렴,
+동일 이류·상대론·열식·변분을 따로 확인해야 하며, 이번에는 옵션 변경이나
+새 CMFGEN 실행을 하지 않았다. 이는 현재 설치 소스의 정적 경로 조사이며
+다른 설정의 실제 실행 성공/실패를 재현한 판정은 아니다.
+
 ## 입력 신원과 재현
 
 공통 실행 자료 루트를 `CMFGEN_RUNS_ROOT`로 지정한다. 이번 판독은 작은
