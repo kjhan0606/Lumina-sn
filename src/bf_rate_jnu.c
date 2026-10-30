@@ -116,11 +116,37 @@ static int material_block_contract(const BfMaterialRateBlock *v,
            v->bound_sigma[r*nf+k]<0. ||
            (v->bound_sigma[r*nf+k]>0. && v->evaluation_Hz[k]<edge))return -1;
     }
+    /* 단면과 용해 지지가 모두 없는 경로는 모든 점에서 정확히 0이다.
+       기존의 전체 입력 검사는 그대로 끝낸 뒤에만 경로별로 생략한다. */
+    unsigned char *active=calloc(nr,sizeof(*active));
+    if(!active)return -1;
+    size_t active_count=0;
+    for(size_t r=0;r<nr;r++){
+        const double edge=v->threshold_Hz[r];
+        if(!pseudo_only){
+            for(size_t k=0;k<nf;k++)if(v->bound_sigma[r*nf+k]>0.){
+                active[r]=1;break;
+            }
+        }
+        if(!active[r] && v->dissolved && v->dissolution_primary[r] && v->sigma_edge[r]>0.){
+            for(size_t k=0;k<nf;k++){
+                double evaluation=v->evaluation_Hz[k];
+                if(evaluation<edge && evaluation>.8*edge &&
+                   evaluation>edge-3.289395e15/4.){active[r]=1;break;}
+            }
+        }
+        active_count+=active[r];
+    }
+    if(!active_count){
+        for(size_t i=0;i<nout;i++)bound[i]=total[i]=(BfPointRates){0};
+        free(active);
+        return 0;
+    }
     long double *thermal=malloc(np*nf*sizeof(*thermal)),*weight=malloc(nf*sizeof(*weight));
     long double *photon=malloc(nf*sizeof(*photon));
     BfPointRates *work_bound=malloc(nout*sizeof(*work_bound)),*work_total=malloc(nout*sizeof(*work_total));
     if(!thermal || !weight || !photon || !work_bound || !work_total){
-        free(thermal);free(weight);free(photon);free(work_bound);free(work_total);return -1;
+        free(active);free(thermal);free(weight);free(photon);free(work_bound);free(work_total);return -1;
     }
     for(size_t k=0;k<nf;k++){
         const long double nu=v->frequency_Hz[k];
@@ -134,6 +160,11 @@ static int material_block_contract(const BfMaterialRateBlock *v,
 #pragma omp parallel for schedule(static) reduction(|:failed)
 #endif
     for(size_t r=0;r<nr;r++)for(size_t p=0;p<np;p++){
+        if(!active[r]){
+            work_bound[r*np+p]=(BfPointRates){0};
+            work_total[r*np+p]=(BfPointRates){0};
+            continue;
+        }
         long double sums[2][6]={{0}},normalization=0.;int normalized=0;
         const double edge=v->threshold_Hz[r];
         for(size_t k=0;k<nf;k++){
@@ -188,7 +219,7 @@ static int material_block_contract(const BfMaterialRateBlock *v,
         work_bound[r*np+p]=values[0];work_total[r*np+p]=values[1];
     }
     if(!failed){memcpy(bound,work_bound,nout*sizeof(*bound));memcpy(total,work_total,nout*sizeof(*total));}
-    free(thermal);free(weight);free(photon);free(work_bound);free(work_total);
+    free(active);free(thermal);free(weight);free(photon);free(work_bound);free(work_total);
     return failed?-1:0;
 }
 

@@ -218,3 +218,50 @@ def test_pseudo_bad_input_preserves_outputs_and_does_not_read_bound_sigma(librar
     arrays[3][-1]=1.e-5;block.bound_sigma=DP()
     assert call()==0
     np.testing.assert_array_equal(bound,0.);np.testing.assert_array_equal(total,0.)
+
+
+def test_zero_support_route_elision_preserves_mixed_and_pseudo_rates(library):
+    provider,state=example(library)
+    trial=provider.prepare(state,material_generation=1)
+    # 20eV 경로는 용해 지지 내부, 35eV 경로는 지지 밖이다.
+    route20=next(i for i,r in enumerate(provider.routes) if abs(r.threshold_Hz*B.H/B.EV-20.)<1e-10)
+    route35=next(i for i,r in enumerate(provider.routes) if abs(r.threshold_Hz*B.H/B.EV-35.)<1e-10)
+    edge=provider.routes[route20].threshold_Hz
+    index=np.flatnonzero((provider.evaluation<edge)&(provider.evaluation>.8*edge)&
+                         (provider.evaluation>edge-3.289395e15/4))[-1]
+    start,end=int(index),int(index)+1
+    ids=np.arange(len(provider.routes))
+    bound,total=provider.contract_block(trial,start,end,ids,material_generation=1,radiation_generation=7)
+    np.testing.assert_array_equal(bound[route20],0.)
+    assert np.any(total[route20,:,0]>0.)
+    np.testing.assert_array_equal(bound[route35],0.)
+    np.testing.assert_array_equal(total[route35],0.)
+    for node in range(provider.n_points):
+        point=ModelPointBoundRates(provider.routes,provider.rows,provider.models,trial.state,node,library)
+        reference=ReferencePointRates(point)
+        for route in ids:
+            expected=reference.contract(int(route),provider.frequency[start:end],provider.width[start:end],
+                provider.J[node,start:end],provider.evaluation[start:end],dissolution_enabled=True)
+            np.testing.assert_allclose(bound[route,node],expected[0],rtol=5.e-12,atol=0)
+            np.testing.assert_allclose(total[route,node],expected[1],rtol=5.e-12,atol=0)
+    zero_bound,zero_total=provider.contract_block(trial,start,end,np.array([route35]),
+        material_generation=1,radiation_generation=7)
+    np.testing.assert_array_equal(zero_bound,0.)
+    np.testing.assert_array_equal(zero_total,0.)
+
+
+def test_zero_support_still_rejects_invalid_input_before_publication(library):
+    dll=C.CDLL(str(library));fn=dll.bf_rate_material_block_contract
+    fn.argtypes=[C.POINTER(Block),C.POINTER(Rates),C.POINTER(Rates)];fn.restype=C.c_int
+    arrays=[np.array(x,dtype='f8') for x in ([1.e15,1.01e15],[1.e15,1.01e15],[1.e12,1.e12],
+        [1.e-5,1.e-5,1.e-5,np.nan],[0.,0.],[2.e15],[1.e-8,1.e-8],[1.e-14,1.e-14])]
+    block=Block(2,1,2,*[a.ctypes.data_as(DP) for a in arrays],0,BP(),DP(),DP(),DP(),DP(),DP())
+    bound=np.full((1,2,6),-123.);total=bound.copy()
+    def call():return fn(C.byref(block),bound.ctypes.data_as(C.POINTER(Rates)),total.ctypes.data_as(C.POINTER(Rates)))
+    assert call()!=0
+    np.testing.assert_array_equal(bound,-123.)
+    np.testing.assert_array_equal(total,-123.)
+    arrays[3][-1]=1.e-5
+    assert call()==0
+    np.testing.assert_array_equal(bound,0.)
+    np.testing.assert_array_equal(total,0.)
