@@ -2,6 +2,32 @@
 
 ## 판독 결과와 해석 범위
 
+### 기존 수리와 현재 진단의 판본 구분
+
+이 결과를 10월19일의 수리가 사라졌다는 회귀 증거로 해석하지 않는다.
+현재 entry build manifest의 scope는 **부모와 동일 산술의 선택 MOM 호출
+포획**이며 rebuilt parent SHA256은
+`a6d2844a1561feb8cea48ff173cd59e6e6b9bb5ec5d4658b2f7d3d702f496581`다.
+이 build의 MOM·호출부에는 `LUMINA_AFFINE_BOUNDARY` 경로가 없다.
+
+입력·반환의 `HN_DEF_ON_NODES=1`, `ND=ND_STORE=90`을 확인했다.
+반환 `K_ON_J/H_ON_J/N_ON_J`는 같은 formal `K/H/N`을 J로 나눈 값과
+배열 원소별 동일하고, 반환 `*_PREV`는 진입 `*_SAVE`와 원소별 동일하다.
+J/H의 PREV도 같은 복사 관계다. 따라서 이 포획에서 단순한 노드/경계 혼용이나
+한 주파수 잘못 복사한 것으로 현재 불일치를 설명할 증거는 없다.
+
+formal 외곽의 H/J와 N/J는 각각 `-0.416026414`, `-0.120493522`인데
+현재 MOM의 HBC/NBC는 모두0이다. native formal 소스의 음수 비율 절단과
+일치한다. **이 경계 결함 자체는 새 발견이 아니다.** 10월19일 private
+affine 공간 수리의 두 주파수 국소 통과, 전체 연결에서 남은66069 실패,
+후속 uniform `formal_primary_v11`의 전197291주파수 완료는
+[당시 결과 기록](BUNDLE_CMFGEN_SI_S_BF_CHANNELS_2026-10-19.md)의 해당 절에
+보존돼 있다. 그 전주파수 완료도 released-T 수렴 앵커나 최종 Si/S·스펙트럼
+동질성의 증거는 아니었다. 이번 판독을 이유로 이미 한 수리를 재구현하거나
+같은 전체 시험을 다시 제출하지 않는다.
+
+### 같은 주파수의 실제 배열
+
 기존 78회 이전 주파수 진입 포획과 완료된 단일 MOM 재생을 읽었다.
 주파수는 양쪽 모두 `6.107497416899375e15 Hz`다. 입력의 formal
 `JNU_STORE/HNU_STORE/KNU_STORE/NNU_STORE` 90점 배열은 재생 반환까지
@@ -81,6 +107,8 @@ formal J를 그대로 쓰는 분기가 있다. 그러나 `USE_J_REL` 분기보�
 동일 이류·상대론·열식·변분을 따로 확인해야 하며, 이번에는 옵션 변경이나
 새 CMFGEN 실행을 하지 않았다. 이는 현재 설치 소스의 정적 경로 조사이며
 다른 설정의 실제 실행 성공/실패를 재현한 판정은 아니다.
+이 주의사항은 native 설정 플래그에 한정되며, 위에서 구분한 기존 private
+`formal_primary` 구현을 평가하거나 무효화한 결론이 아니다.
 
 ## 입력 신원과 재현
 
@@ -111,10 +139,20 @@ inventory = json.loads((root/files[0][0]).read_text())
 entry, final = [capture(root/name, inventory) for name, _ in files[1:]]
 q, j, qf = entry['modules']['ray'], final['modules']['jrel'], final['modules']['ray']
 v = lambda group, name: group[name]['values']
+assert q['HN_DEF_ON_NODES'] == qf['HN_DEF_ON_NODES'] == 1
+assert q['ND_STORE'] == qf['ND_STORE'] == j['ND'] == 90
 names = ('JNU_STORE', 'HNU_STORE', 'KNU_STORE', 'NNU_STORE')
 formal = [v(q, name) for name in names]
 assert entry['args']['FREQ'] == j['FREQ_SAVE']
 assert all(np.array_equal(v(q, name), v(qf, name)) for name in names)
+for name, stored in zip(('K_ON_J', 'H_ON_J', 'N_ON_J'),
+                        ('KNU_STORE', 'HNU_STORE', 'NNU_STORE')):
+    assert np.array_equal(v(qf, name), v(qf, stored)/v(qf, 'JNU_STORE'))
+    assert np.array_equal(v(qf, name+'_SAVE'), v(qf, name))
+    assert np.array_equal(v(qf, name+'_PREV'), v(q, name+'_SAVE'))
+for name in ('GAM_RSQJNU', 'GAM_RSQHNU'):
+    assert np.array_equal(v(j, name+'_PREV'),
+                          v(entry['modules']['jrel'], name+'_SAVE'))
 print('formal_support', angular_support(*formal))
 print('formal_max_H2_JK', np.max(formal[1]**2/(formal[0]*formal[2])))
 J = v(j, 'GAM_RSQJNU_SAVE'); H = v(j, 'GAM_RSQHNU_SAVE')[:-1]
