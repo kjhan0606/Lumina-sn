@@ -93,13 +93,20 @@ def thermal_checks(report, candidate, directory):
     ns = len(candidate['ne'])
     with np.load(first/'balance.npz', allow_pickle=False) as initial, np.load(directory/'balance.npz', allow_pickle=False) as final:
         old = initial[policy+'_net']; gross = initial[policy+'_gross']
-        new = final[policy+'_net']
-        if (any(a.shape != (ns,) or not np.isfinite(a).all() for a in (old, gross, new)) or
-                np.any(gross < 0)):
+        new = final[policy+'_net']; new_gross = final[policy+'_gross']
+        if (any(a.shape != (ns,) or not np.isfinite(a).all()
+                for a in (old, gross, new, new_gross)) or
+                np.any(gross < 0) or np.any(new_gross < 0)):
             raise ValueError('온도 응답의 실제 열장부 형상/값 오류')
         scale = .5*(gross+abs(old))
+        selected_scale = .5*(new_gross+abs(new))
         if np.any(scale <= 0): raise ValueError('초기 물질 열잔차 척도 오류')
-        before = float(np.max(abs(old)/scale)); after = float(np.max(abs(new)/scale))
+        if np.any(selected_scale <= 0): raise ValueError('선택 물질 열잔차 척도 오류')
+        before = float(np.max(abs(old)/scale))
+        after_on_base_scale = float(np.max(abs(new)/scale))
+        # v2 acceptance normalizes each physical state by its own heating/cooling
+        # scale; retain the fixed initial scale separately to reproduce line search.
+        after = float(np.max(abs(new)/selected_scale))
     with np.load(first/'response.npz', allow_pickle=False) as initial:
         ne = initial['ne']
         if ne.shape != (ns,) or not np.isfinite(ne).all() or np.any(ne <= 0):
@@ -121,9 +128,11 @@ def thermal_checks(report, candidate, directory):
     if converged:
         if charge > min(charge_tolerance, 1.e-10) or after > min(thermal_tolerance, 1.e-3):
             raise ValueError('고정장 수렴 표기와 실제 전하/RE 잔차 불일치')
-    elif not (after < before or (after <= 1.e-10 and before <= 1.e-10)):
+    elif not (after_on_base_scale < before or
+              (after_on_base_scale <= 1.e-10 and before <= 1.e-10)):
         raise ValueError('온도 보정의 실제 열잔차 개선 없음')
     return dict(thermal_initial_scaled_max=before, thermal_selected_scaled_max=after,
+                thermal_selected_base_scaled_max=after_on_base_scale,
                 charge_initial_scaled_max=charge, fixed_field_numerical_converged=converged,
                 charge_tolerance=charge_tolerance, thermal_tolerance=thermal_tolerance)
 

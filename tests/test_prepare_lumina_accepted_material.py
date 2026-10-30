@@ -322,7 +322,8 @@ def test_converged_base_rejects_tolerances_looser_than_v2_contract(tmp_path,monk
 
 @pytest.mark.parametrize('fault',['charge','fixed_T','incomplete','history_length','history_order',
     'wrong_selection','no_accepted','iteration_count','nonthermal','false_convergence','heat_worse',
-    'heat_improved_above_tolerance','changed_initial','changed_selected','actual_charge'])
+    'heat_improved_above_tolerance','heat_gross_shrunk_false_pass','changed_initial',
+    'changed_selected','actual_charge'])
 def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_path,monkeypatch,fault):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
     report,_=thermal_report(result)
@@ -346,6 +347,10 @@ def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_p
     elif fault=='heat_improved_above_tolerance':
         path=Path(report['selected_response']['root'])/'balance.npz'
         np.savez(path,physical_stored_net=np.full(3,.004),physical_stored_gross=np.full(3,2.))
+        report['selected_response']['balance_sha256']=E.B.sha(path)
+    elif fault=='heat_gross_shrunk_false_pass':
+        path=Path(report['selected_response']['root'])/'balance.npz'
+        np.savez(path,physical_stored_net=np.full(3,.0004),physical_stored_gross=np.full(3,.0005))
         report['selected_response']['balance_sha256']=E.B.sha(path)
     elif fault=='actual_charge':
         path=Path(report['selected_response']['root'])/'response.npz'
