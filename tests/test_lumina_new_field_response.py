@@ -59,6 +59,28 @@ def test_existing_slurm_resources_remain_supported(monkeypatch):
     with pytest.raises(ValueError): N.execution_resources(13800)
 
 
+def test_long_thermal_requires_real_slurm_time_and_temperature_evaluations(monkeypatch):
+    monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'slurm')
+    monkeypatch.setenv('LUMINA_RESPONSE_LONG_THERMAL', '1')
+    monkeypatch.setenv('OMP_NUM_THREADS', '16')
+    monkeypatch.setenv('SLURM_CPUS_PER_TASK', '16')
+    monkeypatch.setenv('SLURM_MEM_PER_NODE', '32768')
+    monkeypatch.setenv('SLURM_JOB_ID', '456')
+    monkeypatch.setenv('SLURM_TIMELIMIT', '1800')
+    result=N.execution_resources(106200, 12)
+    assert result['long_thermal'] and result['seconds']==106200
+    with pytest.raises(ValueError, match='온도 평가'):
+        N.execution_resources(106200, 0)
+    with pytest.raises(ValueError, match='시간 할당 부족'):
+        monkeypatch.setenv('SLURM_TIMELIMIT', '1774')
+        N.execution_resources(106200, 12)
+    monkeypatch.setenv('SLURM_TIMELIMIT', '1800')
+    with pytest.raises(ValueError): N.execution_resources(106201, 12)
+    monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')
+    with pytest.raises(ValueError, match='Slurm 경로'):
+        N.execution_resources(106200, 12)
+
+
 def test_approved_manual_duration_keeps_cpu_memory_and_host_limits(manual_resources):
     result=N.execution_resources(42600)
     assert result['seconds']==42600 and result['CPUs']==16

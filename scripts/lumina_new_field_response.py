@@ -117,18 +117,29 @@ def memory_inventory(ns, nf, nr, nl, nfull, *, temperature_cache=False):
                 whole_process_peak_RSS_verified=False)
 
 
-def execution_resources(seconds):
+def execution_resources(seconds, temperature_evaluations=0):
     """Slurm 할당 또는 실제 수동 제한을 확인한다. 가짜 Slurm 변수는 쓰지 않는다."""
     mode = os.environ.get('LUMINA_RESPONSE_EXECUTOR', 'slurm')
-    max_seconds = 42600 if mode == 'manual-lageunha' else 13800
+    long_setting = os.environ.get('LUMINA_RESPONSE_LONG_THERMAL', '0')
+    if long_setting not in ('0', '1'):
+        raise ValueError('장시간 열보정 실행 설정 오류')
+    long_thermal = long_setting == '1'
+    if long_thermal and (mode != 'slurm' or type(temperature_evaluations) is not int or temperature_evaluations <= 0):
+        raise ValueError('장시간 Slurm 경로는 실제 온도 평가에만 허용')
+    max_seconds = 106200 if long_thermal else (42600 if mode == 'manual-lageunha' else 13800)
     if os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= seconds <= max_seconds:
         raise ValueError('CPU16/32GiB/OpenMP16·명시한 단회 시간 필요')
     record = dict(executor=mode, hostname=socket.gethostname(), pid=os.getpid(),
-                  CPUs=16, memory_limit_bytes=32*1024**3, seconds=seconds)
+                  CPUs=16, memory_limit_bytes=32*1024**3, seconds=seconds,
+                  long_thermal=long_thermal)
     if mode == 'slurm':
         if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
                 os.environ.get('SLURM_MEM_PER_NODE') != '32768'):
             raise ValueError('CPU16/32GiB Slurm 할당 필요')
+        if long_thermal:
+            minutes = os.environ.get('SLURM_TIMELIMIT', '')
+            if not minutes.isdecimal() or int(minutes)*60 < seconds+300:
+                raise ValueError('장시간 열보정 Slurm 시간 할당 부족')
         record['job_id'] = os.environ.get('SLURM_JOB_ID')
     elif mode == 'manual-lageunha':
         soft, _ = resource.getrlimit(resource.RLIMIT_AS)
@@ -187,8 +198,8 @@ def continued_energy_policy(manifest, requested, *, required=False):
 
 
 def run(args):
-    execution = execution_resources(args.seconds)
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
+    execution = execution_resources(args.seconds, temperature_evaluations)
     replay_path = getattr(args, 'resume_thermal_result', None)
     replay_sha = getattr(args, 'resume_thermal_result_sha', None)
     minimum = 1 if replay_path else 5
