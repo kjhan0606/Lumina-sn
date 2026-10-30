@@ -23,8 +23,9 @@ if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
     max_seconds=106200
     [[ " $* " = *" --temperature-evaluations "* ]]
-    [[ "${SLURM_TIMELIMIT:-}" =~ ^[0-9]+$ ]]
-    (( SLURM_TIMELIMIT*60 >= response_seconds+300 ))
+    # 이 Slurm 배포는 SLURM_TIMELIMIT를 export하지 않는다. 실제 작업 기록을 읽는다.
+    allocation=$(scontrol show job "${SLURM_JOB_ID:?}" -o)
+    [[ " $allocation " == *" TimeLimit=1-06:00:00 "* ]]
 fi
 (( response_seconds >= 600 && response_seconds <= max_seconds ))
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]; then

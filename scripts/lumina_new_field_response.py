@@ -12,9 +12,11 @@ import json
 import os
 from pathlib import Path
 import resource
+import re
 import shutil
 import socket
 import struct
+import subprocess
 import time
 
 import numpy as np
@@ -117,6 +119,21 @@ def memory_inventory(ns, nf, nr, nl, nfull, *, temperature_cache=False):
                 whole_process_peak_RSS_verified=False)
 
 
+def slurm_allocation_seconds(job_id):
+    """실제 Slurm 제어기 할당 시간. 이 클러스터는 SLURM_TIMELIMIT를 내보내지 않는다."""
+    if not isinstance(job_id, str) or not job_id.isdecimal():
+        raise ValueError('실제 Slurm 작업 번호 필요')
+    output = subprocess.run(['scontrol', 'show', 'job', job_id, '-o'],
+        check=True, capture_output=True, text=True, timeout=10).stdout
+    match = re.search(r'(?:^|\s)TimeLimit=(\S+)', output)
+    clock = re.fullmatch(r'(?:(\d+)-)?(\d+):([0-5]\d):([0-5]\d)',
+                         match.group(1) if match else '')
+    if clock is None:
+        raise ValueError('Slurm 할당 시간 확인 실패')
+    days, hours, minutes, seconds = clock.groups()
+    return int(days or 0)*86400+int(hours)*3600+int(minutes)*60+int(seconds)
+
+
 def execution_resources(seconds, temperature_evaluations=0):
     """Slurm 할당 또는 실제 수동 제한을 확인한다. 가짜 Slurm 변수는 쓰지 않는다."""
     mode = os.environ.get('LUMINA_RESPONSE_EXECUTOR', 'slurm')
@@ -137,9 +154,10 @@ def execution_resources(seconds, temperature_evaluations=0):
                 os.environ.get('SLURM_MEM_PER_NODE') != '32768'):
             raise ValueError('CPU16/32GiB Slurm 할당 필요')
         if long_thermal:
-            minutes = os.environ.get('SLURM_TIMELIMIT', '')
-            if not minutes.isdecimal() or int(minutes)*60 < seconds+300:
+            allocated = slurm_allocation_seconds(os.environ.get('SLURM_JOB_ID'))
+            if allocated < seconds+300:
                 raise ValueError('장시간 열보정 Slurm 시간 할당 부족')
+            record['allocated_seconds'] = allocated
         record['job_id'] = os.environ.get('SLURM_JOB_ID')
     elif mode == 'manual-lageunha':
         soft, _ = resource.getrlimit(resource.RLIMIT_AS)

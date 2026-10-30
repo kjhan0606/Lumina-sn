@@ -60,25 +60,41 @@ def test_existing_slurm_resources_remain_supported(monkeypatch):
 
 
 def test_long_thermal_requires_real_slurm_time_and_temperature_evaluations(monkeypatch):
+    from types import SimpleNamespace
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'slurm')
     monkeypatch.setenv('LUMINA_RESPONSE_LONG_THERMAL', '1')
     monkeypatch.setenv('OMP_NUM_THREADS', '16')
     monkeypatch.setenv('SLURM_CPUS_PER_TASK', '16')
     monkeypatch.setenv('SLURM_MEM_PER_NODE', '32768')
     monkeypatch.setenv('SLURM_JOB_ID', '456')
-    monkeypatch.setenv('SLURM_TIMELIMIT', '1800')
+    shown={'value': 'JobId=456 JobState=RUNNING TimeLimit=1-06:00:00 NumCPUs=16'}
+    def show(command, **kwargs):
+        assert command == ['scontrol', 'show', 'job', '456', '-o']
+        assert kwargs['check'] and kwargs['timeout'] == 10
+        return SimpleNamespace(stdout=shown['value'])
+    monkeypatch.setattr(N.subprocess, 'run', show)
     result=N.execution_resources(106200, 12)
     assert result['long_thermal'] and result['seconds']==106200
+    assert result['allocated_seconds']==108000
     with pytest.raises(ValueError, match='온도 평가'):
         N.execution_resources(106200, 0)
     with pytest.raises(ValueError, match='시간 할당 부족'):
-        monkeypatch.setenv('SLURM_TIMELIMIT', '1774')
+        shown['value']='JobId=456 JobState=RUNNING TimeLimit=1-05:00:00 NumCPUs=16'
         N.execution_resources(106200, 12)
-    monkeypatch.setenv('SLURM_TIMELIMIT', '1800')
+    shown['value']='JobId=456 JobState=RUNNING TimeLimit=1-06:00:00 NumCPUs=16'
     with pytest.raises(ValueError): N.execution_resources(106201, 12)
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')
     with pytest.raises(ValueError, match='Slurm 경로'):
         N.execution_resources(106200, 12)
+
+
+@pytest.mark.parametrize('reported', ['JobId=456 TimeLimit=UNLIMITED',
+    'JobId=456 TimeLimit=1-06:00', 'JobId=456'])
+def test_long_thermal_rejects_missing_or_ambiguous_allocation(monkeypatch, reported):
+    from types import SimpleNamespace
+    monkeypatch.setattr(N.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(stdout=reported))
+    with pytest.raises(ValueError, match='할당 시간 확인 실패'):
+        N.slurm_allocation_seconds('456')
 
 
 def test_approved_manual_duration_keeps_cpu_memory_and_host_limits(manual_resources):
