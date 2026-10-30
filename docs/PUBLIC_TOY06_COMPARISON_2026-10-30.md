@@ -235,6 +235,56 @@ generation14를 공개 toy06 19.480일과 비교했다. 진행 중인 T/ne 작�
 `new_J_response_fraction`을 이용하며 `CMFGEN70_fraction`이나 직전 수용
 물질 열을 공개 CMFGEN으로 착각하지 않는다.
 
+### 공개 전자밀도만 바꾼 Si의 조건부 응답
+
+같은 완료 복사장·온도·원자모형을 유지하고, 앞의 S 시험과 같이 **Si 한
+원소만** 공개 전자밀도에서 다시 풀었다. 원래 충돌 설정
+`LUMINA_ARTIS_PARITY=0`, `LUMINA_NLTE_BF_COLLISION=1`을 사용했다. 먼저
+각 점의 기존 Si 인구 전체가 저장된 선택 인구와 `rtol=2e-8`,
+`atol=1e-30`에서 재현되는지 확인했고, Si II/III의 photo·유도/자발
+재결합 흐름도 저장 장부와 일치했다. 바뀐 ne에서는 occupation·충돌
+이온화·재결합율 등을 다시 계산했으며, 고정 온도의 bound 적분을
+재사용하되 원 계산의 전90점 fallback 선택도 복원했다.
+
+| 원점 · 속도 km/s | Si 이온 | 공개 CMFGEN | 현재 ne | 공개 ne만 적용 |
+| --- | --- | ---: | ---: | ---: |
+| 50 · 12376 | II | `0.0158594` | `5.19624e-6` | `4.46348e-6` |
+| 50 · 12376 | III | `0.970772` | `0.995154` | `0.994369` |
+| 34 · 21534 | II | `0.158011` | `4.28652e-8` | `2.95620e-8` |
+| 34 · 21534 | III | `0.791562` | `0.705294` | `0.643846` |
+
+원점50의 현재/공개 ne는 `3.78469e8/3.25389e8 cm^-3`, 온도는
+`10302.01 K`다. 원점34는 `1.86661e7/1.41029e7 cm^-3`, `9845.83 K`다.
+두 점 모두 공개 ne만 적용하면 Si II는 오히려 더 줄었다. Si III는 원점50에서
+공개값에 약간 가까워졌지만 원점34에서는 더 멀어졌다. 따라서 **이 두 점에서
+현재 J/T와 원자모형을 고정한 전자밀도 차이만으로 공개 Si II 결손을 설명할
+수 없다.** 공개 분포와의 차이에는 시간 의존성·비열·원자모형·복사장 등
+다른 조건도 섞여 있다. 이는 전 원소의 전하·온도·복사장을 새로 맞춘 해나
+공개 CMFGEN 재현이 아니며, 다른 깊이 또는 다른 J에 일반화하지 않는다.
+
+두 실행은 grammar `debug`에서 각각 CPU1·4GiB, 시간 상한10분이며 기존 J와
+인구·자료는 변경하지 않았다. 완료 response SHA는
+`e3a5b1f73ef7f2cc5785d92bc1937cbfbe0cef92330816c288a61bf315826b65`,
+복사장 SHA는 `f8369b3553638c586f19c38ac4447860708dc1965a9278300e40617d75da83be`,
+공개 물리표 SHA는 `a504a3d98284d8db8f72b53f1679bfa335cc3f51de40e351635fdbd78201ebef`다.
+기존 사용자 작업인 미추적 `scripts/compare_lumina_public_ne_response.py`를
+변경하지 않고 메모리에서만 S의 Z=16을 Si의 Z=14로 바꾸고 장부 원소 인덱스
+1을 0으로 바꾸어 실행했다. 원본 SHA는
+`ff5fb6b25e0a74f460e59b79cd778386f05792ec036e118f470e9c5e035eb0a6`,
+변환된 입력 SHA는 `a8e0af40d0b8ebbb170861d5a28bc8027ca0fdf9e0072cbde3ba8442b082bf23`다.
+이 미추적 원본은 이번 커밋에 포함하지 않았으므로 다른 환경에서 재현할 때는
+해당 원본과 SHA가 필요하다. 같은 완료 결과와 준비 파일을 각각 `RESULT_JSON`,
+`PREP_JSON`에 지정하고 원점 50 또는 34로 바꿔 아래 명령을 사용한다.
+
+```bash
+sed -E 's/\b16\b/14/g; s/output\[\x27ledger\x27\]\[1, i\]/output[\x27ledger\x27][0, i]/g; s/S_III_over_II/Si_III_over_II/g; s/SINGLE_S_RESPONSE/SINGLE_SI_RESPONSE/g' \
+  scripts/compare_lumina_public_ne_response.py | \
+  env PYTHONPATH=scripts OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  LUMINA_ARTIS_PARITY=0 LUMINA_NLTE_BF_COLLISION=1 \
+  python3 - --result "$RESULT_JSON" --preparation "$PREP_JSON" \
+  --public data/standart_data1/toy06 --node 50
+```
+
 원래 90개 점의 속도는 `radius_cm / (19.48*86400) / 1e5`다. 공개 100점
 값을 각 속도에서 선형 보간했다. 최소 공개 속도보다 약0.029 km/s 낮은
 내부점90은 외삽하지 않고 제외해 89점을 비교했다. 구간 평균이나 최종
