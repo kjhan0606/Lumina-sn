@@ -128,13 +128,20 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
     def residual_metrics(value):
         scaled=residual(value,adiabatic,c,h);n=len(value.ne)
         return scaled,float(abs(scaled[:n]).max()),float(abs(scaled[n:]).max())
+    def physical_metrics(value):
+        # 초기 척도는 Newton 행과 line search의 merit에만 사용한다.
+        # 수렴은 실제 후보의 ne와 가열/냉각 척도로 판단해야 한다.
+        scaled=residual(value,adiabatic,value.ne,value.thermal_scale);n=len(value.ne)
+        return float(abs(scaled[:n]).max()),float(abs(scaled[n:]).max())
     def within_tolerances(value):
-        _,charge_max,thermal_max=residual_metrics(value)
+        charge_max,thermal_max=physical_metrics(value)
         return charge_max<=charge_tolerance and thermal_max<=thermal_tolerance
     def result(value,converged):
         scaled,charge_max,thermal_max=residual_metrics(value)
+        physical_charge,physical_thermal=physical_metrics(value)
         return dict(numerical_converged=converged,packet=value,history=history,iterations=iterations,
             charge_scaled_max=charge_max,thermal_scaled_max=thermal_max,
+            charge_physical_scaled_max=physical_charge,thermal_physical_scaled_max=physical_thermal,
             charge_tolerance=float(charge_tolerance),thermal_tolerance=float(thermal_tolerance),
             scaled_max=float(abs(scaled).max()))
     def call(t,ne,phase):

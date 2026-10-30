@@ -91,9 +91,10 @@ def trial(evaluate,base,adiabatic,basis,alpha,*,numerical_tolerance=1.e-10,max_l
     if not np.array_equal(candidate.temperature,values[:n]) or not np.array_equal(candidate.ne,values[n:]):
         raise ValueError('보존 방향 평가가 요청 T/ne를 소비하지 않음')
     current=float(abs(f).max());actual=float(abs(residual(candidate,adiabatic,c,h)).max())
-    accepted=bool(actual<=numerical_tolerance or actual<current*(1.-1.e-4*alpha))
+    physical=float(abs(residual(candidate,adiabatic,candidate.ne,candidate.thermal_scale)).max())
+    accepted=bool(physical<=numerical_tolerance or actual<current*(1.-1.e-4*alpha))
     entry=dict(evaluation=1,phase='frozen_direction',alpha=alpha,accepted=accepted,
         scaled_start_max=current,scaled_max=actual,predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()))
     if on_evaluation is not None:on_evaluation(candidate,entry)
-    return dict(numerical_converged=accepted and actual<=numerical_tolerance,
+    return dict(numerical_converged=accepted and physical<=numerical_tolerance,
         packet=candidate if accepted else base,history=[entry],iterations=int(accepted))

@@ -247,6 +247,27 @@ def thermal_report(result, *, converged_base=False, converged_net=1.e-12):
     result.write_text(json.dumps(report));return report,target
 
 
+def test_thermal_convergence_uses_selected_electron_density(tmp_path):
+    initial=tmp_path/'initial';selected=tmp_path/'selected'
+    initial.mkdir();selected.mkdir()
+    np.savez(initial/'response.npz',ne=np.ones(2))
+    for directory in (initial,selected):
+        np.savez(directory/'balance.npz',physical_stored_net=np.zeros(2),
+                 physical_stored_gross=np.full(2,2.))
+    report=dict(thermal_initial_response=dict(root=str(initial)),
+        thermal_energy_policy='physical_stored',temperature_block=dict(
+            fixed_field_numerical_converged=True,charge_tolerance=1.e-10,
+            thermal_tolerance=1.e-3))
+    candidate=dict(ne=np.full(2,.9),charge_residual=np.full(2,9.5e-11))
+    with pytest.raises(ValueError,match='전하/RE 잔차 불일치'):
+        E.thermal_checks(report,candidate,selected)
+    candidate['ne']=np.full(2,1.1)
+    candidate['charge_residual']=np.full(2,1.05e-10)
+    metrics=E.thermal_checks(report,candidate,selected)
+    assert metrics['charge_initial_scaled_max']>1.e-10
+    assert metrics['charge_physical_scaled_max']<1.e-10
+
+
 def test_thermal_selected_candidate_roundtrips_without_claiming_joint_convergence(tmp_path,monkeypatch):
     result,seed,run,_,physical,_=fixture(tmp_path,monkeypatch)
     report,target=thermal_report(result)

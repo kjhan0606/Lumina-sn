@@ -12,6 +12,7 @@ from lumina_coupled_material import MaterialPacket,jacobian,residual,newton_dire
 import lumina_coupled_material as coupled
 from run_lumina_fixed_state_balance import adiabatic
 import lumina_frozen_direction as frozen
+import lumina_charge_projection as projection
 
 
 @pytest.fixture(scope='module')
@@ -85,6 +86,59 @@ def test_separate_physical_tolerances_do_not_hide_a_failing_residual(charge,heat
         charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
     assert not result['numerical_converged'] and result['packet'] is base
     assert result['charge_scaled_max']==charge and result['thermal_scaled_max']==heat
+
+
+@pytest.mark.parametrize('final_scale,expected',[(.01,False),(100.,True)])
+def test_convergence_uses_the_candidate_thermal_scale(final_scale,expected):
+    # 선탐색 merit는 초기 척도로 감소하지만 최종 수렴은 후보 자신의 척도다.
+    def evaluate(t,ne):
+        x=np.log(t)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),
+            x-.05+.2*x*x,ne-1.,np.exp(x*np.log(final_scale)/.05))
+    zero_ad=lambda *args:np.zeros(2)
+    base=evaluate(np.ones(2),np.ones(2))
+    solved=solve_coupled(evaluate,base,zero_ad,max_evaluations=5,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-4 if expected else 1.e-3)
+    actual=float(np.max(abs(solved['packet'].local_heat/solved['packet'].thermal_scale)))
+    assert solved['iterations']==1 and solved['numerical_converged'] is expected
+    assert solved['thermal_physical_scaled_max']==pytest.approx(actual)
+    assert solved['thermal_scaled_max']==pytest.approx(5.e-4,rel=1.e-6)
+    assert (actual <= (1.e-4 if expected else 1.e-3)) is expected
+
+
+def test_convergence_uses_the_candidate_electron_density():
+    def evaluate(t,ne):
+        x=np.log(ne)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),np.log(t),
+            x+.05+3.9e-8*x*x,np.ones(2))
+    base=evaluate(np.ones(2),np.ones(2))
+    solved=solve_coupled(evaluate,base,lambda *args:np.zeros(2),max_evaluations=5,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert solved['iterations']==1 and not solved['numerical_converged']
+    assert solved['charge_scaled_max'] < 1.e-10
+    assert solved['charge_physical_scaled_max'] > 1.e-10
+    assert solved['charge_physical_scaled_max']==pytest.approx(
+        np.max(abs(solved['packet'].charge/solved['packet'].ne)))
+
+
+@pytest.mark.parametrize('method',['frozen','projected'])
+def test_replayed_direction_does_not_claim_convergence_on_base_scale(method):
+    zero_ad=lambda *args:np.zeros(2)
+    base=MaterialPacket(np.ones(2),np.ones(2),np.ones(2),np.ones(2),
+        np.full(2,.05),np.zeros(2),np.ones(2))
+    f=residual(base,zero_ad,base.ne,base.thermal_scale)
+    basis=dict(temperature=base.temperature,ne=base.ne,charge_scale=base.ne,
+        thermal_scale=base.thermal_scale,scaled_residual=f,jacobian=np.eye(4),direction=-f)
+    def evaluate(t,ne):
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),np.full(2,5.e-11),
+            np.zeros(2),np.full(2,.01))
+    if method=='frozen':
+        result=frozen.trial(evaluate,base,zero_ad,basis,.5)
+    else:
+        result=projection.trial(evaluate,base,zero_ad,basis,.5,
+            np.full(2,.1),np.full(2,2.))
+    assert result['iterations']==1 and not result['numerical_converged']
+    assert np.max(abs(result['packet'].local_heat/result['packet'].thermal_scale)) > 1.e-10
 
 
 def test_energy_policy_is_explicit_and_uses_original_v2_row_scale():

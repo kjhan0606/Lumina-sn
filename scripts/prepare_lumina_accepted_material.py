@@ -112,6 +112,10 @@ def thermal_checks(report, candidate, directory):
         if ne.shape != (ns,) or not np.isfinite(ne).all() or np.any(ne <= 0):
             raise ValueError('초기 물질 전하잔차 척도 오류')
         charge = float(np.max(abs(candidate['charge_residual'])/ne))
+        selected_ne = candidate['ne']
+        if selected_ne.shape != (ns,) or not np.isfinite(selected_ne).all() or np.any(selected_ne <= 0):
+            raise ValueError('선택 물질 전하잔차 척도 오류')
+        selected_charge = float(np.max(abs(candidate['charge_residual'])/selected_ne))
     block = report['temperature_block']
     converged = block['fixed_field_numerical_converged']
     charge_tolerance = block.get('charge_tolerance', 1.e-10)
@@ -126,7 +130,7 @@ def thermal_checks(report, candidate, directory):
     if after > allowed_thermal:
         raise ValueError('고정장 물질 전달의 실제 열잔차가 사전 허용치 초과')
     if converged:
-        if charge > min(charge_tolerance, 1.e-10) or after > min(thermal_tolerance, 1.e-3):
+        if selected_charge > min(charge_tolerance, 1.e-10) or after > min(thermal_tolerance, 1.e-3):
             raise ValueError('고정장 수렴 표기와 실제 전하/RE 잔차 불일치')
     elif not (after_on_base_scale < before or
               (after_on_base_scale <= 1.e-10 and before <= 1.e-10)):
@@ -134,6 +138,7 @@ def thermal_checks(report, candidate, directory):
     return dict(thermal_initial_scaled_max=before, thermal_selected_scaled_max=after,
                 thermal_selected_base_scaled_max=after_on_base_scale,
                 charge_initial_scaled_max=charge, fixed_field_numerical_converged=converged,
+                charge_physical_scaled_max=selected_charge,
                 charge_tolerance=charge_tolerance, thermal_tolerance=thermal_tolerance)
 
 

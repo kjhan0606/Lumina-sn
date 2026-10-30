@@ -73,11 +73,12 @@ def trial(evaluate,base,adiabatic,basis,alpha,lower,upper,*,max_evaluations=8,
     c,h=basis['charge_scale'],basis['thermal_scale']
     start=float(abs(residual(base,adiabatic,c,h)).max())
     current=float(abs(residual(candidate,adiabatic,c,h)).max())
-    accepted=bool(converged and (current<=numerical_tolerance or current<start*(1.-1.e-4*alpha)))
+    physical=float(abs(residual(candidate,adiabatic,candidate.ne,candidate.thermal_scale)).max())
+    accepted=bool(converged and (physical<=numerical_tolerance or current<start*(1.-1.e-4*alpha)))
     entry=dict(evaluation=used,phase='charge_projected_line',alpha=alpha,accepted=accepted,
         charge_solved=bool(converged),charge_relative=float(abs(candidate.charge/candidate.ne).max()),
         scaled_start_max=start,scaled_max=current)
     if on_evaluation is not None:on_evaluation(candidate,entry)
-    return dict(numerical_converged=accepted and current<=numerical_tolerance,
+    return dict(numerical_converged=accepted and physical<=numerical_tolerance,
         packet=candidate if accepted else base,iterations=int(accepted),history=[entry],
         charge_history=charge_history,evaluations_used=used)
