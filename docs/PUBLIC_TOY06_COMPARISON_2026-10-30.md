@@ -142,6 +142,85 @@ Lumina는 고정 복사장·고정 온도의 정상 물질응답이므로 물리
 이산화, 장 및 원자모형 차이가 혼합돼 있다. 공개 분율을 소스에 주입하거나
 수렴된 공동해로 표기하지 않는다. 이 비교에는 새 BF/SE/수송이 없다.
 
+### generation18 열잔차: gross 기준과 순채널 기준
+
+2026-10-28의 [F2 열수지 기록](LUMINA_F2_THERMAL_STATE_2026-10-28.md)에서
+이미 밝혔듯이 큰 선 가열과 냉각의 상쇄 때문에 gross 정규화와 채널
+정규화는 매우 다를 수 있다. 이는 새로운 열정책 발견이 아니다. 이번에는
+진행 중 작업의 **generation18 내부 시험점**에서도 그 상황이 지속되는지
+확인했다. 활성 정책은 `native_instantaneous_scenario`다.
+
+| 원점 | 전체 순열 | 최대(총 가열, 총 냉각)으로 나눈 절대 순열 | 순채널 절대값 합으로 나눈 절대 순열 |
+| ---: | ---: | ---: | ---: |
+| 42 | +4.13934e-5 | 3.12323e-6 | 0.999875 |
+| 45 | +4.82685e-5 | 1.62615e-6 | 0.999716 |
+| 50 | +3.44670e-5 | 2.44574e-7 | 0.997408 |
+| 55 | −4.75302e-5 | 1.15058e-7 | 0.229617 |
+
+순열의 단위는 `erg cm^-3 s^-1`이다. 순채널 정규화는 90점 중 69점에서
+0.1보다 크고 85점에서 0.01보다 크다. 42점의 선 가열/냉각은 각각
+`13.25338454 / 13.25334315`로 매우 비슷하지만 그 차이가 나머지 열항보다
+크다. 채널 정규화는 기존 v2 합의 문턱이 아니므로 이 수치만으로 시험점이
+기준에 실패했다고 판정하거나 새로운 차단 조건을 만들지 않는다. 반대로
+기존 gross 기준을 만족한다는 사실만으로 순채널까지 잘 상쇄되거나 정확한
+평형 온도에 도달했다고 주장하지 않는다.
+
+기존 평가1의 고정장 기준과 평가2/3의 모든 점 동시 `T×exp(±1e-4)`,
+동일 `ne` 섭동을 재사용하면, 42점의 순열은 `+4.44511e-5`, 동시
+로그온도 방향 도함수는 약 `−1.86855e-4`, 50점은 각각 `+3.69490e-5`,
+`−4.58654e-3`이다. 단열 항은 전 깊이에 결합되므로 이 값은 **프로필 전체를
+같은 비율로 바꾼 방향 미분**이며, 점별 독립 Jacobian이나 전하를 재평형한
+온도 보정량이 아니다. 선형 외삽만으로 실제 온도 오차를 정하지 않는다.
+generation18의 순열은 42점 `+4.13934e-5`, 50점 `+3.44670e-5`로 기준보다
+감소했지만 상당한 순채널은 남아 있다.
+
+따라서 최종 선택 응답의 기존 합의 판정은 그대로 적용하면서, 결과 해석에는
+같은 정책의 **절대 순열과 채널별 순열도 함께 제시**해야 한다. 더 엄격한
+온도 수렴이 실제 Si/S와 스펙트럼에 어떤 차이를 주는지는 최종 선택 결과와
+새 복사장 왕복 또는 명시된 민감도 계산으로 확인해야 하며, 현 자료만으로
+CMFGEN 불일치의 원인이나 전역 온도 오차를 확정하지 않는다.
+
+재현 입력은 진행 작업 root `lumina_second_field_thermal_replacement_20261030-fz3u4uV0/run`의
+완료된 evaluation 1/2/3/8이다. `balance.npz` SHA256은 차례로
+`ab755cc6d7e5c08e1c42d41b6354b6d425eb4e624c8f3d6ca1806113a9610f29`,
+`a4d248fc3379a1e6e247dfcba073b890675a97dfd9736a5334274e9a4f628d8e`,
+`02c002ef09adb20ee71593f6366ae3c9bc0f34b2a612198263a4ead7ffccef8a`,
+`5acaddf8e9d1758ca18b8a1a70e13ae8115ba6625de7b9ac7eb01087fe01ca6c`다.
+evaluation 1/2/3 `response.npz` SHA256은 각각
+`e3a5b1f73ef7f2cc5785d92bc1937cbfbe0cef92330816c288a61bf315826b65`,
+`5a0573c23543dc4bf35ba3a4a4a1e34826fa1ecfa29a3fa938d9c916e9056af9`,
+`b5cfe9307cc14ea81a8171c0a1430702a0d8db40cb49d5546f02c0951a831138`이다.
+새 물질·복사 수송 계산은 없고, 최종 응답 선택이나 작업 중단도 하지 않았다.
+
+읽기 전용 재현은 위 진행 작업 root를 `TRIAL_RUN`에 지정하고 실행한다.
+
+```bash
+python3 - "$TRIAL_RUN" <<'PY'
+import sys
+from pathlib import Path
+import numpy as np
+root = Path(sys.argv[1])
+balances = [np.load(root / f'evaluation-{n}/balance.npz') for n in (1, 2, 3, 8)]
+responses = [np.load(root / f'evaluation-{n}/response.npz') for n in (1, 2, 3)]
+T0, Tplus, Tminus = [r['temperature'] for r in responses]
+assert np.array_equal(responses[0]['ne'], responses[1]['ne'])
+assert np.array_equal(responses[0]['ne'], responses[2]['ne'])
+assert np.allclose(Tplus / T0, np.exp(1e-4), rtol=1e-14)
+assert np.allclose(Tminus / T0, np.exp(-1e-4), rtol=1e-14)
+key = 'native_instantaneous_scenario'
+net = balances[3][key + '_net']
+gross = balances[3][key + '_gross']
+channel = balances[3][key + '_channel_normalized']
+scaled = abs(net) / (.5 * (gross + abs(net)))
+print('channel >0.1, >0.01:', (channel > .1).sum(), (channel > .01).sum())
+for n in (42, 45, 50, 55):
+    i = n - 1
+    derivative = ((balances[1][key + '_net'][i] - balances[2][key + '_net'][i])
+                  / np.log(Tplus[i] / Tminus[i]))
+    print(n, net[i], scaled[i], channel[i], balances[0][key + '_net'][i], derivative)
+PY
+```
+
 ### 진행 중 generation18의 물리 잔차와 공개 분율
 
 진행 중 `1243823`의 generation18은 내부 선분에서 수용됐지만, 해당 작업의
