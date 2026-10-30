@@ -134,6 +134,67 @@ state = capture(root/'replay/MOM_CAPTURE.bin',
 print(previous_state_audit(state))
 ```
 
+#### 음수 해에 들어간 한 단계 더 앞의 플럭스
+
+같은 진입 snapshot에서 `GAM_RSQJNU_PREV`, `GAM_RSQHNU_PREV`,
+`KMID_ON_J_PREV`는 위에서 역산한 직전 주파수 방정식이 사용한 **그보다
+한 주파수 더 앞의 상태**다. 새 주파수 진입에서 SAVE를 PREV로 덮어쓰기
+전의 값이므로, 현재 호출의 바로 앞 SAVE와 혼동하지 않는다. 원점2 우변의
+원래 항을 재구성하면 아래와 같다.
+
+| 항 | 원점2 우변 기여 |
+| --- | ---: |
+| 국소 방출 | `+0.000033` |
+| 앞선 주파수 J | `+356.827958` |
+| 앞선 주파수 H | `−449.443811` |
+| 앞선 주파수 N 하측 / 상측 | `−25.693264 / +25.603250` |
+| 합 | `−92.705833` |
+
+따라서 이 음수 우변에서는 이전 H 항이 큰 음의 기여를 한다. 외곽 경계행을
+포함해 나머지 깊이와 결합된 원래 삼중대각계를 풀어야 하므로, 음수 우변
+하나만으로 두 음수 J의 유일한 원인을 증명하지는 않는다.
+
+같은 앞선 상태에서 경계2의 `H=−985.01704`, 양 인접 J 최댓값
+`1043.56783`, 저장 closure를 결합한 경계 K는 `225.43729`다. 그러므로
+`H²/(max(J_left,J_right)*K)=4.12421`이다. 두 J와 K가 양수이며 중간 J가
+두 값 사이에 있다면, 이 보수적인 필요조건 위반은 비음수 각강도로부터
+같은 위치의 J/H/K를 만들 수 없다는 뜻이다. 같은 조건 위반은 경계1–7에
+나타난다. 경계2는 `|H|/max(J_left,J_right)=0.94389`이어서 기존 MAX_VAL
+제한을 통과하지만, 이것이 물리적인 J/H/K 조합을 보장하지 않는다. 경계3·4는
+각각 `−0.9999*max(J_left,J_right)`에 놓여 있다.
+
+방정식 계수와 다른 입력은 고정한 **가상 선형 민감도**에서, 앞선 경계2 H를
+0 쪽으로 1% 움직이고 그 경계가 연결하는 원점2·3 우변을 양쪽 모두 보존형으로
+변경하면, 앞 절의 raw J1/J2는 각각 `−4.9876/−6.1832`에서
+`+9.7772/+8.5997`로 바뀐다. 이때 90점 음수 J는 없다. 그러나 계수·closure는
+고정되어 있고 앞선 수송해를 다시 푼 것이 아니다. 특히 다른 경계의 필요조건
+위반이 남는다. 이는 **플럭스 경로가 음수 해에 민감하다는 증거**이지 H를
+임의로 1% 조정하는 수리법이나 물리해가 아니다. 위 결론은 snapshot의 PREV
+배열과 마지막 선형계의 계보가 정확하다는 전제를 가지며, 진행 중인 실제
+호출 재생과 전체 수송으로 확인해야 한다. 최초의 비물리 상태가 어느 더 앞선
+주파수에서 만들어졌는지는 아직 미확정이다.
+
+재현은 위 `state`를 사용하며, 결과를 입력 자료에 쓰지 않는다.
+
+```python
+import numpy as np
+j = state['modules']['jrel']
+q = state['modules']['ray']
+from solve_cmfgen_mom_kernel import completed_operator, tri_matrix
+A = completed_operator(state)
+matrix = tri_matrix(A)
+v = lambda name: j[name]['values']
+jp, hp, hs = v('GAM_RSQJNU_PREV'), v('GAM_RSQHNU_PREV'), v('HS')
+k = q['KMID_ON_J_PREV']['values'][:-1] * (jp[:-1] + jp[1:])
+jm = np.maximum(jp[:-1], jp[1:])
+print('edge2 H²/(maxJ K)', hp[1]**2/(jm[1]*k[1]))
+delta = np.zeros_like(jp)
+delta[1] += hs[1] * (-hp[1])
+delta[2] -= hs[1] * (-hp[1])
+candidate = np.linalg.solve(matrix, A[3] + .01*delta)
+print('J1,J2', candidate[:2], 'negative depths', np.flatnonzero(candidate < 0) + 1)
+```
+
 #### 음수 대체와 잔차의 정량적 연결
 
 같은 재구성 행렬을 고정하고 직전 SAVE의 원점3–90을 유지했다. 원점3 행을
