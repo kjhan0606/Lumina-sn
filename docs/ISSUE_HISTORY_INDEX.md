@@ -129,6 +129,12 @@
   재명명하지 말고 종료 후 실제 선택 상태를 판독한다.
 - 재사용: `scripts/lumina_coupled_material.py`, `lumina_fixed_field_thermal.py`,
   `prepare_lumina_accepted_material.py`의 실제 실행 판본을 구별한다.
+- 후속 전달 수리(10월31일): 1243823은 정상 종료하고 generation22를 선택했지만,
+  전달기가 `charge_projection`만 읽고 통상 결합 solver의
+  `charge_projected_trials`를 읽지 않아 실제 수용 이력을 거부했다.
+  두 모드를 각각 인식하도록 수정했다. 원 계산·결과는 변경하지 않았고
+  전하/SE/열 문턱과 마지막 거부 후보 차단도 유지했다. 실제 solver 출력의
+  소비 시험을 포함해 수정 전3실패를 재현했고, 관련148시험을 통과했다.
 - 정본: [10월30일 인계](HANDOVER_2026-10-30.md)의 `고정장 수렴 판정의 후보 척도 수정`,
   `실행 봉인본과 현행 열수용 기준 대조`.
 

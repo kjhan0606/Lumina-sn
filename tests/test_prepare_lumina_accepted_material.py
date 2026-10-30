@@ -295,18 +295,40 @@ def test_legacy_thermal_result_uses_v2_re_tolerance_when_field_missing(tmp_path,
     assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
 
 
-def test_charge_projected_step_exports_only_its_actual_final_selected_response(tmp_path,monkeypatch):
+@pytest.mark.parametrize('mode_key', ['charge_projection', 'charge_projected_trials'])
+def test_charge_projected_step_exports_only_its_actual_final_selected_response(tmp_path,monkeypatch,mode_key):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
     report,target=thermal_report(result)
-    report['temperature_block']['charge_projection']=True
+    report['temperature_block'][mode_key]=True
     report['temperature_block']['history'][-1]['phase']='charge_projected_line'
     result.write_text(json.dumps(report))
     exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'projected-export')
     assert exported['accepted_evaluation']==5 and not exported['joint_convergence_certified']
-    report['temperature_block']['charge_projection']=False
+    report['temperature_block'][mode_key]=False
     result.write_text(json.dumps(report))
     with pytest.raises(ValueError,match='실제 수용 반복'):
         E.prepare(result,E.B.sha(result),seed,run,tmp_path/'wrong-export')
+
+
+def test_projected_solver_handoff_keeps_accepted_state_after_rejected_last_trial(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result)
+    block=report['temperature_block']
+    block['charge_projected_trials']=True
+    block['history'][-1]['phase']='charge_projected_line'
+    rejected=dict(report['selected_response'],root=str(tmp_path/'rejected-trial'))
+    report['evaluations'].append(rejected)
+    report['thermal_evaluation_order'].append(rejected)
+    block['history'].append(dict(evaluation=6,phase='line_search',accepted=False))
+    block['evaluations_used']=6
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'projected-export')
+    assert exported['accepted_evaluation']==5
+    assert exported['accepted_response_sha256']==report['selected_response']['response_sha256']
+    report['selected_response']=rejected
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match='마지막 수용 후보'):
+        E.prepare(result,E.B.sha(result),seed,run,tmp_path/'rejected-export')
 
 
 def test_thermal_selected_replayed_candidate_need_not_be_a_new_evaluation(tmp_path,monkeypatch):

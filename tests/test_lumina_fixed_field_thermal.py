@@ -127,6 +127,14 @@ def test_normal_temperature_iteration_closes_charge_without_a_manual_replay_run(
     assert all(np.array_equal(value[0]['temperature'],calls[4][0]['temperature']) for value in calls[5:])
     assert any(entry.get('accepted') is True and value is result['selected'] for value,entry in decisions)
     assert not result['joint_convergence']
+    # Consume the producer's real mode key rather than a handcrafted alias.
+    from prepare_lumina_accepted_material import thermal_selection
+    order=[dict(value[2],fixed_field_thermal_callback=True) for value in calls]
+    report=dict(temperature_block=result,thermal_evaluation_order=order,
+        selected_response=dict(result['selected'][2],fixed_field_thermal_callback=True))
+    index,selected,kind=thermal_selection(report)
+    assert index==result['history'][-1]['evaluation']
+    assert selected==order[index-1] and kind=='FINITE_NEW_FIELD_TNE_ACCEPTED_STEP'
 
 
 def test_secant_after_charge_projection_uses_actual_closed_candidate():
