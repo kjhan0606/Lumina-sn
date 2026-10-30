@@ -15,6 +15,8 @@ from run_cmfgen_lambda_probe import sha, stage, stop_child, scan_logs, control
 
 FAILURE_TARGET = dict(frequency_native=6.10732968, outer_iteration=78,
                       frequency_absolute_tolerance=5.e-9)
+BLUE_ENTRY_TARGET = dict(frequency_native=6.107497416899375, outer_iteration=78,
+                         frequency_absolute_tolerance=5.e-9)
 FAILURE_SECONDS = 13680
 
 
@@ -39,7 +41,11 @@ def failure_build(path,expected_sha,parent_sha,reference_sha):
     if not re.fullmatch('[0-9a-f]{64}',expected_sha or '') or sha(report)!=expected_sha:
         raise ValueError('포획 build 보고서 신원 불일치')
     data=json.loads(report.read_text());parent=Path(data['parent'])/'parent-build-identity.json'
-    if (data.get('capture_target')!=FAILURE_TARGET or data.get('first_repair') is not False or
+    entry_only=data.get('entry_only',False)
+    if type(entry_only) is not bool:
+        raise ValueError('포획 진입 모드 형식 오류')
+    expected_target=BLUE_ENTRY_TARGET if entry_only else FAILURE_TARGET
+    if (data.get('capture_target')!=expected_target or data.get('first_repair') is not False or
         data.get('rebuilt_unmodified_sha256')!=parent_sha or sha(parent)!=data['parent_manifest_sha256']):
         raise ValueError('포획 주파수/반복/교정 부모 불일치')
     provenance=json.loads(parent.read_text())
@@ -54,7 +60,7 @@ def failure_build(path,expected_sha,parent_sha,reference_sha):
         raise ValueError('포획 실행파일/상태 목록 누락')
     return dict(directory=str(path),report_sha256=expected_sha,
         executable=str(executable),executable_sha256=data['output_sha256'][str(executable)],
-        inventory=str(inventory),target=FAILURE_TARGET,parent_executable_sha256=parent_sha)
+        inventory=str(inventory),target=expected_target,entry_only=entry_only,parent_executable_sha256=parent_sha)
 
 
 def failure_inputs(path,expected_sha,args,identity,parent_sha):
@@ -75,6 +81,16 @@ def failure_evidence(root,context,returncode):
     """완전 snapshot/trace를 확인한다. 물리 수렴이나 전체모델 성공은 아니다."""
     from analyze_cmfgen_mom_capture import capture,trace,summary
     root=Path(root);snapshot=root/'MOM_CAPTURE.bin';history=root/'MOM_TRACE.bin'
+    if context.get('entry_only',False):
+        if returncode!=96 or not snapshot.is_file() or snapshot.stat().st_size>224*1024**2:
+            raise ValueError('예상 STOP96 또는 이전 주파수 진입 snapshot이 없음')
+        header=capture_header(snapshot,expected_outer=78)
+        saved=capture(snapshot,json.loads(Path(context['inventory']).read_text()))
+        target=context['target']
+        if abs(saved['args']['FREQ']-target['frequency_native'])>target['frequency_absolute_tolerance']:
+            raise ValueError('이전 주파수 진입 snapshot 신원 불일치')
+        return dict(phase=header,frequency_native=saved['args']['FREQ'],
+                    sha256={snapshot.name:sha(snapshot)},status='BLUE_ENTRY_NOT_PHYSICAL_CONVERGENCE')
     if returncode!=93 or not snapshot.is_file() or not history.is_file():
         raise ValueError('예상 STOP93 또는 실패 포획물이 없음')
     if snapshot.stat().st_size>224*1024**2 or history.stat().st_size>32*1024**2:

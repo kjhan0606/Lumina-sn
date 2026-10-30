@@ -123,6 +123,19 @@ def test_hooks_keep_native_solver_calls_and_failure_accuracy_limit():
     assert result.index("'RAW0'") < result.index("RECORDED_ERROR=.FALSE.")
 
 
+def test_entry_capture_stops_before_selected_native_call_and_requires_target(tmp_path):
+    text=(NATIVE/"plane/mom_jrel_v9.f").read_text()
+    split=re.search(r"(?im)^\s*END MODULE MOD_JREL_V9\s*$",text)
+    result=instrument_mom(text[split.end():],entry_only=True)
+    assert result.index("CALL LUMINA_TAKE_ARGS") < result.index("LUMINA_SNAPSHOT_IO('MOM_CAPTURE.bin'")
+    assert result.index("LUMINA_SNAPSHOT_IO('MOM_CAPTURE.bin'") < result.index("STOP 96")
+    assert result.index("STOP 96") < result.index("C_KMS=1.0E-05")
+    with pytest.raises(ValueError,match="진입 포획"):
+        prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',entry_only=True)
+    with pytest.raises(ValueError,match="진입 포획"):
+        prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',True,entry_only=True)
+
+
 def compile_io_test(tmp_path,first_repair=False,**selection):
     files=[]
     inventories=[]

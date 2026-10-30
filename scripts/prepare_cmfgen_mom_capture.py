@@ -367,7 +367,7 @@ END SUBROUTINE
 """
 
 
-def instrument_mom(source):
+def instrument_mom(source, *, entry_only=False):
     source = once(source,"\tUSE MOD_RAY_MOM_STORE\n", "\tUSE MOD_RAY_MOM_STORE\n\tUSE LUMINA_MOM_DIAG\n")
     declarations = """
 \tTYPE(LUMINA_JREL_STATE) LUM_J
@@ -389,6 +389,11 @@ def instrument_mom(source):
 \t WRITE(LUM_TRACE) 'CALL',LUMINA_OUTER,LUMINA_FREQ_INDEX,LUMINA_JIT,LUMINA_FIRST,LUMINA_NEW,FREQ,FREQ_SAVE,ND_SM
 \tEND IF
 """.replace("__NAMES__",",".join(name for name,_,_ in ARGUMENTS))
+    if entry_only:
+        take = once(take, "\t OPEN(NEWUNIT=LUM_TRACE,FILE='MOM_TRACE.bin'",
+                    "\t CALL LUMINA_SNAPSHOT_IO('MOM_CAPTURE.bin',LUM_A,LUM_J,LUM_R,.FALSE.)\n"
+                    "\t WRITE(6,'(A,3I8,ES24.16)')'LUMINA_MOM_ENTRY ',LUMINA_OUTER,LUMINA_FREQ_INDEX,LUMINA_JIT,FREQ\n"
+                    "\t STOP 96\n\t OPEN(NEWUNIT=LUM_TRACE,FILE='MOM_TRACE.bin'")
     source = once(source,start,take+start)
     source = once(source,"\t  CALL THOMAS(TA,TB,TC,XM,ND,1)",
                   "\t  IF(LUM_SELECTED)CALL LUMINA_TRACE_BUDGET(LUM_TRACE,ND)\n\t  IF(LUM_SELECTED)WRITE(LUM_TRACE) 'TRI0',ICOUNT,ND,TA,TB,TC,XM\n\t  CALL THOMAS(TA,TB,TC,XM,ND,1)")
@@ -574,8 +579,11 @@ def rebuild_unmodified_sources(parent,native,out,*,explicit_objects=()):
     return base/"cmfgen_unmodified.exe"
 
 
-def prepare(parent, native, out, first_repair=False, *, target_frequency=None, target_outer=None):
+def prepare(parent, native, out, first_repair=False, *, target_frequency=None, target_outer=None,
+            entry_only=False):
     target = capture_target(first_repair, target_frequency=target_frequency, target_outer=target_outer)
+    if entry_only and (first_repair or target is None):
+        raise ValueError("진입 포획은 first-repair 없이 주파수/외부 반복을 지정해야 함")
     identity = json.loads((parent/"parent-build-identity.json").read_text())
     explicit_objects = [Path(p).resolve() for p in identity.get("explicit_objects", [])]
     if (len(set(explicit_objects)) != len(explicit_objects) or
@@ -607,7 +615,7 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
                "\tCALL LUMINA_MOM_STOP_BEFORE_POP()\n\tCALL SOLVE_FOR_POPS(")
     caller = (native/"new_main/mod_subs/comp_j_blank.f").read_text()
     caller = once(caller,"\t       CALL MOM_JREL_V9", "\t       CALL LUMINA_MOM_SET_PHASE(FREQ_INDX,J_IT_COUNTER,FIRST_FREQ,NEW_FREQ)\n\t       CALL MOM_JREL_V9")
-    mom_builder=instrument_first_mom if first_repair else instrument_mom
+    mom_builder=instrument_first_mom if first_repair else lambda s: instrument_mom(s,entry_only=entry_only)
     sources = {"mod_jrel_v9.f":jrel,"mod_ray_mom_store.f":ray,
                "lumina_mom_diag.f90":diagnostic_module(first_repair,
                    target_frequency=target_frequency, target_outer=target_outer),
@@ -639,7 +647,7 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
                   explicit_objects=[str(p) for p in explicit_objects],
                   input_sha256={str(p):sha(p) for p in inputs},output_sha256={str(p):sha(p) for p in output_files},
                   JREL_fields=len(jfields),RAY_fields=len(rfields),first_repair=first_repair,
-                  capture_target=target,final_goal="NOT_JUDGED")
+                  capture_target=target,entry_only=entry_only,final_goal="NOT_JUDGED")
     (out/"capture-build.json").write_text(json.dumps(record,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:v for k,v in record.items() if not k.endswith("sha256")},ensure_ascii=False))
 
@@ -649,10 +657,11 @@ if __name__ == "__main__":
     for name in ("parent","native","out"):
         parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--first-repair",action="store_true")
+    parser.add_argument("--entry-only",action="store_true")
     parser.add_argument("--target-frequency",type=float,
                         help="포획할 native 주파수; --target-outer와 함께 지정")
     parser.add_argument("--target-outer",type=int,
                         help="포획할 외부 반복; 그 전의 정상 물질 갱신은 막지 않음")
     a=parser.parse_args()
     prepare(a.parent.resolve(),a.native.resolve(),a.out.resolve(),a.first_repair,
-            target_frequency=a.target_frequency,target_outer=a.target_outer)
+            target_frequency=a.target_frequency,target_outer=a.target_outer,entry_only=a.entry_only)

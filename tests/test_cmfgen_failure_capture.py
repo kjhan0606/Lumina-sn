@@ -62,6 +62,16 @@ def test_current_parent_capture_build_is_hash_checked_and_read_only(tmp_path):
     with pytest.raises(ValueError,match='입력/출력'):R.failure_build(build,sha(report),'d'*64,'c'*64)
 
 
+def test_blue_entry_build_requires_its_own_exact_frequency_and_mode(tmp_path):
+    build,_,report,data=build_fixture(tmp_path)
+    data.update(capture_target=R.BLUE_ENTRY_TARGET.copy(),entry_only=True)
+    report.write_text(json.dumps(data))
+    result=R.failure_build(build,sha(report),'d'*64,'c'*64)
+    assert result['entry_only'] is True and result['target']==R.BLUE_ENTRY_TARGET
+    data['capture_target']=R.FAILURE_TARGET.copy();report.write_text(json.dumps(data))
+    with pytest.raises(ValueError):R.failure_build(build,sha(report),'d'*64,'c'*64)
+
+
 @pytest.mark.parametrize('bad',['hash','parent','target','inventory'])
 def test_capture_build_wrong_provenance_or_scope_rejected(tmp_path,bad):
     build,source,report,data=build_fixture(tmp_path)
@@ -109,6 +119,17 @@ def test_expected_stop93_is_capture_not_physical_convergence(tmp_path,monkeypatc
     assert result['status']=='CAPTURED_NOT_PHYSICAL_CONVERGENCE'
     assert result['last_iteration']['iteration']==100
     assert result['phase']['outer_iteration']==78
+
+
+def test_blue_entry_requires_stop96_and_exact_previous_frequency(tmp_path,monkeypatch):
+    context,saved,_,_=evidence_fixture(tmp_path,monkeypatch)
+    context.update(entry_only=True,target=R.BLUE_ENTRY_TARGET.copy())
+    saved['args']['FREQ']=R.BLUE_ENTRY_TARGET['frequency_native']
+    result=R.failure_evidence(tmp_path,context,96)
+    assert result['status']=='BLUE_ENTRY_NOT_PHYSICAL_CONVERGENCE'
+    with pytest.raises(ValueError):R.failure_evidence(tmp_path,context,93)
+    saved['args']['FREQ']=R.FAILURE_TARGET['frequency_native']
+    with pytest.raises(ValueError):R.failure_evidence(tmp_path,context,96)
 
 
 @pytest.mark.parametrize('bad',['returncode','phase','frequency','incomplete','converged'])

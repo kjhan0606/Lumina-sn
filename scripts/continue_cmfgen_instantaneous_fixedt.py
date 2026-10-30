@@ -201,8 +201,10 @@ def run(args):
                           variant['executable_sha256'],args.build_report_sha256)
             record['capture']=failure_evidence(material,context,child.returncode)
             record['capture_complete']=True
-            record['status']='CAPTURED_NOT_PHYSICAL_CONVERGENCE'
-            record['stop_reason']='moment_failure_captured_before_population_update'
+            record['status']=('BLUE_ENTRY_NOT_PHYSICAL_CONVERGENCE' if context.get('entry_only',False)
+                              else 'CAPTURED_NOT_PHYSICAL_CONVERGENCE')
+            record['stop_reason']=('moment_blue_entry_captured_before_population_update' if context.get('entry_only',False)
+                                   else 'moment_failure_captured_before_population_update')
         except (ValueError,OSError,RuntimeError) as error:
             record['capture_error']=str(error)
     (out/'result.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
