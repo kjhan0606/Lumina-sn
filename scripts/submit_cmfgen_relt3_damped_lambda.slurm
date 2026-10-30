@@ -18,14 +18,26 @@ setup_source=${2:?matching atom-link source required}
 run=${3:?new isolated run root required}
 executable=${4:?sealed CMFGEN binary required}
 repository=${5:?repository root required}
+source_commit=${6:?committed driver source required}
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+git -C "$repository" cat-file -e "${source_commit}^{commit}"
+[[ "$run" = /* ]]
+driver_root="${run}.driver-source"
+test ! -e "$driver_root"
+mkdir "$driver_root"
+git -C "$repository" archive "$source_commit" \
+  scripts/run_cmfgen_relt3_damped_lambda.py \
+  scripts/configure_cmfgen_stageA.py \
+  scripts/ptf_gated_metrics.py | tar -x -C "$driver_root"
 
 module purge
 module load gnu13/13.2.0
 module list
 export OMP_NUM_THREADS=16 OMP_DYNAMIC=FALSE OMP_STACKSIZE=512M
 export OMP_PROC_BIND=close OMP_PLACES=cores
-export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repository/scripts"
-cd "$repository"
+export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$driver_root/scripts"
+export LUMINA_CMFGEN_PROBE_SOURCE_COMMIT="$source_commit"
+cd "$driver_root"
 python3 scripts/run_cmfgen_relt3_damped_lambda.py \
   --seed "$seed" --setup-source "$setup_source" --run "$run" \
   --executable "$executable"

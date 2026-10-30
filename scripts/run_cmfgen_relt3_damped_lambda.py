@@ -29,9 +29,20 @@ SEED_RESTART = (
     "JH_AT_CURRENT_TIME", "JH_AT_CURRENT_TIME_INFO",
 )
 STATIC_MATCH = (
-    "MODEL_SPEC", "SN_HYDRO_DATA", "MODEL", "SPECIES_MASSES",
+    "MODEL_SPEC", "SN_HYDRO_DATA", "SPECIES_MASSES",
     "LEVEL_SL_STEQ_LINKS",
 )
+MODEL_RUN_CONTROL_KEYS = frozenset({
+    "NUM_ITS", "DO_LAM_IT", "DO_LAM_AUTO", "DO_T_AUTO", "MAX_LIN",
+    "MAX_LAM", "COMP_BA", "N_FIX_BA", "DO_NG",
+})
+MODEL_SEED_CONTROLS = {
+    "NUM_ITS": "5", "DO_LAM_IT": "T", "DO_LAM_AUTO": "F",
+    "DO_T_AUTO": "F", "MAX_LIN": "1.05", "MAX_LAM": "1.10",
+    "COMP_BA": "T", "N_FIX_BA": "0", "DO_NG": "F",
+}
+MODEL_RECORD = re.compile(r"^\s*\S+\s+\[([A-Z0-9_]+)\]")
+MODEL_STAMP = re.compile(r"^\s*Model Started on:", re.IGNORECASE)
 LOCAL_ATOMIC = (
     "atomic_local/SUL/III/19apr23/phot_data_A",
     "atomic_local/COB/II/19apr23/phot_data_A",
@@ -86,6 +97,36 @@ def configure(vadat: str, in_its: str) -> str:
     return set_control(vadat, "MAX_LAM", "1.01D0")
 
 
+def validate_seed_model_controls(text: str) -> dict[str, str]:
+    """Require the exact iteration-55 model controls expected by this probe."""
+    actual = {}
+    for key, expected in MODEL_SEED_CONTROLS.items():
+        value = control(text, key)
+        if key in {"MAX_LIN", "MAX_LAM"}:
+            matches = float(value.replace("D", "E")) == float(expected)
+        elif key in {"NUM_ITS", "N_FIX_BA"}:
+            matches = int(value) == int(expected)
+        else:
+            matches = value == expected
+        if not matches:
+            raise ValueError(f"checkpoint MODEL 실행 제어 불일치: {key}={value}")
+        actual[key] = value
+    return actual
+
+
+def model_physics_signature(text: str) -> bytes:
+    """Preserve byte identity of MODEL physics while excluding known run controls."""
+    kept = []
+    for line in text.splitlines(keepends=True):
+        if MODEL_STAMP.match(line):
+            continue
+        match = MODEL_RECORD.match(line)
+        if match and match.group(1) in MODEL_RUN_CONTROL_KEYS:
+            continue
+        kept.append(line)
+    return "".join(kept).encode("utf-8")
+
+
 def point_iteration(path: Path) -> int:
     lines = path.read_text(errors="strict").splitlines()
     if len(lines) < 2:
@@ -118,6 +159,8 @@ def stage(seed: Path, setup_source: Path, run: Path, executable: Path) -> dict:
         source = setup_source / name
         if not source.is_file():
             raise ValueError(f"원자자료 연결 입력 누락: {name}")
+    if not (setup_source / "MODEL").is_file() or (setup_source / "MODEL").is_symlink():
+        raise ValueError("기준 물리 MODEL 누락 또는 외부 링크")
     for name in LOCAL_ATOMIC:
         source = setup_source / name
         if not source.is_file() or source.is_symlink():
@@ -126,6 +169,15 @@ def stage(seed: Path, setup_source: Path, run: Path, executable: Path) -> dict:
     for name in STATIC_MATCH:
         if sha(seed / name) != sha(setup_source / name):
             raise ValueError(f"CMFGEN 고정 입력 계보 불일치: {name}")
+    seed_model = (seed / "MODEL").read_text(errors="strict")
+    setup_model = (setup_source / "MODEL").read_text(errors="strict")
+    seed_model_controls = validate_seed_model_controls(seed_model)
+    model_signature = model_physics_signature(seed_model)
+    if model_signature != model_physics_signature(setup_model):
+        raise ValueError("CMFGEN 물리 MODEL 계보 불일치")
+    source_commit = os.environ.get("LUMINA_CMFGEN_PROBE_SOURCE_COMMIT", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
+        raise ValueError("고정 probe 소스 commit 누락 또는 형식 오류")
     for name in ("POINT1", "POINT2"):
         if point_iteration(seed / name) != 55:
             raise ValueError(f"예상한 iteration-55 checkpoint가 아님: {name}")
@@ -185,11 +237,24 @@ def stage(seed: Path, setup_source: Path, run: Path, executable: Path) -> dict:
     record = {
         "schema": "cmfgen-relt3-damped-lambda-v1",
         "scope": "fixed-T, five forced LAMBDA iterations from iteration 55; MAX_LAM 1.10 to 1.01 only",
+        "source_commit": source_commit,
+        "source_files_sha256": {
+            name: sha(Path(__file__).resolve().parent / name)
+            for name in ("run_cmfgen_relt3_damped_lambda.py",
+                         "configure_cmfgen_stageA.py", "ptf_gated_metrics.py")
+        },
         "seed_pointer": 55,
         "expected_last_iteration": 60,
         "seed_inputs_sha256": {name: sha(seed / name) for name in SEED_INPUTS + SEED_RESTART},
         "setup_inputs_sha256": {name: sha(setup_source / name)
-                                for name in ("atomic_links.txt", "setup_links.sh", "model_spec_isf.txt")},
+                                for name in ("MODEL", "atomic_links.txt", "setup_links.sh",
+                                             "model_spec_isf.txt")},
+        "model_comparison": {
+            "method": "byte-identical physics records after excluding only the CMFGEN run stamp and declared iteration controls",
+            "physics_signature_sha256": hashlib.sha256(model_signature).hexdigest(),
+            "excluded_run_control_keys": sorted(MODEL_RUN_CONTROL_KEYS),
+            "seed_run_controls": seed_model_controls,
+        },
         "binary": {"path": str(executable), "sha256": sha(executable)},
         "run": str(run),
         "controls": {"FIX_T": "T", "SCALE_OPT": "MAJOR", "MAX_LIN": "1.05D0",
