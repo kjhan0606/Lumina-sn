@@ -48,6 +48,14 @@
 - 재사용: 이미 있는 `scripts/prepare_cmfgen_formal_primary.py`와 private
   판본을 먼저 확인한다. native `USE_LAM_ES` 설정 전환과 같은 구현으로 취급하지
   않는다. 물리 플래그를 바꾸는 단순 우회와 기존 private 수리를 구분한다.
+- 물질 연결의 범위: 완료 `toy06_19p48d_field_feedback_429062`의 물질71은
+  물질70에서 만든 장을 고정한 `USE_FIXED_J=T`, `DO_LAM_IT=T`, `FIX_T=T`
+  경로다. 실제 stage/runtime도 `full_coupled_Jacobian=False`,
+  `released_T=False`, `joint_convergence=False`로 기록한다.
+  native `cmfgen_sub.f`의 두 `DO_VAR_CONT` 호출은 모두
+  `.NOT. LAMBDA_ITERATION` 조건 안에 있다. 따라서 이 분리 물질 단계에
+  옛 MOM 복사장 변분이 섞였다고 단정하지 않는다. 전체 결합 Jacobian의
+  검증은 여전히 별개이며, 이 확인을 온도 해제나 전체 결합 실행 승인으로 쓰지 않는다.
 - 정본: [Si/S 묶음](BUNDLE_CMFGEN_SI_S_BF_CHANNELS_2026-10-19.md)의
   `연속 SC 수정본 직접 증거`, `428782 전주파수 완주`.
 
