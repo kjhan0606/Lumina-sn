@@ -9,6 +9,11 @@
 입력 전체의 유한성·부호·주소 검사를 생략하지 않으며, 새 물리 근사나
 수렴 문턱을 추가하지 않는다. 경로별 유효성은 깊이와 무관한 단면/지지로만
 결정한다. 이 변경은 진행 중인 봉인 작업 1243823에 소급 적용되지 않는다.
+기존 작업의 보존 열평가를 재생하는 경로는 원래 `bridge.so`의 해시와
+실제 바이너리가 같아야 한다. 수정 소스로 새로 빌드한 바이너리가 기존
+것과 같다고 가정하거나 이 신원 검사를 우회하지 않는다. 재생이 필요한
+경우에는 원 실행의 봉인 소스·바이너리 계보를 사용하고, 새 코드와 새 장을
+쓰는 후속 계산은 별도의 물질응답으로 처리한다.
 
 ## 직접시험과 제한된 실물 비교
 
@@ -80,3 +85,10 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python3 -m pytest -q \
 ```
 
 CPU4 재현은 `OMP_NUM_THREADS=4`로 바꾼다. 최종 목표는 여전히 미달이다.
+
+추가 연결 확인으로 위 두 파일에 `test_lumina_coupled_material.py`,
+`test_lumina_fixed_field_thermal.py`, `test_lumina_new_field_response.py`,
+`test_lumina_bundle_dispatch.py`, `test_prepare_lumina_accepted_material.py`를
+묶어 grammar `debug` CPU4·4GiB에서 실행했고 **221개가 통과**했다. 이는
+합성 입력의 구현·전달 회귀이며, 전90점 S II 실물 율 비교나 미완료인
+새 수송·물리 공동수렴을 대신하지 않는다.
