@@ -106,10 +106,31 @@ Jacobian을 재사용했다. 같은 기준점에서 **공개 총 침적이 전�
 아니다. 공개 총 침적의 열·여기·이온화 분배와 새 물질/복사장 계산 없이
 이 값을 실제 최종 결과로 사용하지 않는다.
 
+같은 기준의 저장된 T±/ne± 응답에서 각 이온 분율의 중심차분을 구해,
+위 `Δlog T/ne`에 곱한 **분율의 1차 제안 차이**는 다음과 같다.
+
+| 원점 | Si II | Si III | S II | S III |
+| ---: | ---: | ---: | ---: | ---: |
+| 50 | +3.89e-9 | −4.56e-6 | −3.91e-6 | +2.98e-6 |
+| 54 | +9.93e-9 | −6.01e-8 | −6.20e-6 | +6.19e-6 |
+| 60 | −2.59e-10 | +2.91e-4 | +2.72e-8 | +1.68e-4 |
+
+원점50의 공개/기준 S II 분율은 `0.845199/0.00271238`이므로 위
+선형 제안은 그 차이보다 훨씬 작고 방향도 멀어지는 쪽이다. 그러나 이는
+**현재 고정 J, 정상 물질, 국소 선형화, 공개 총 침적의 전량 열화 가정**에
+한정된다. 공개 모델의 실제 열원 분배, 비열·시간항, 인구와 복사장 피드백이
+없으므로 침적 처리의 실제 영향 전체나 최종 오차를 평가한 것이 아니다.
+원점1–29는 위 `|Δlog T|>0.1` 때문에 이 선형 분율 예측의 해석 대상에서
+제외한다. 새 물질을 풀거나 온도를 갱신하지 않았다.
+
 선형화 입력의 SHA256은
 `7f5949f94899b2485253f4a9ffbee4c5da9ea9a7f52ebf4393eddb1bcdf89bdb`,
 기준 evaluation-1 balance는
 `ab755cc6d7e5c08e1c42d41b6354b6d425eb4e624c8f3d6ca1806113a9610f29`다.
+추가로 사용한 evaluation-4/5 `response.npz`의 SHA256은 각각
+`29fd692f0af4acabb92b9d5074c445b46666264b955aa91ca6e9d90cd03873fe`,
+`2bc3c3477d025d76bd82c263f8dc78f63135e5aa93e8ef84e21bef277ab90340`이고,
+evaluation-1/2/3 응답의 SHA는 아래 generation18 열잔차 절에 있다.
 공개 침적과 완료 반경 배열 SHA는 위 표의 신원과 같다. `TRIAL_RUN`은
 진행 중 물질응답의 `lumina_second_field_thermal_replacement_20261030-fz3u4uV0/run`,
 `RESULT_RUN`은 위 완료 응답 root다. 재현은 아래 읽기 전용 선형대수이며,
@@ -148,6 +169,32 @@ with np.load(trial/'thermal-direction-1/linearization.npz') as jac, \
     for n in (19, 42, 45, 50, 55, 60):
         i = n-1
         print(n, velocity[i], delta[i], dx[i], dx[90+i])
+    others = [np.load(trial/f'evaluation-{k}/response.npz') for k in (2, 3, 4, 5)]
+    try:
+        all_responses = [state] + others
+        cols = state['columns']
+        assert all(np.array_equal(r['columns'], cols) for r in others)
+        for k, sign in ((1, 1), (2, -1)):
+            assert np.array_equal(all_responses[k]['ne'], state['ne'])
+            assert np.allclose(all_responses[k]['temperature']/state['temperature'],
+                               np.exp(sign*1e-4), rtol=1e-14, atol=0)
+        for k, sign in ((3, 1), (4, -1)):
+            assert np.array_equal(all_responses[k]['temperature'], state['temperature'])
+            assert np.allclose(all_responses[k]['ne']/state['ne'],
+                               np.exp(sign*1e-4), rtol=1e-14, atol=0)
+        def fraction(r, z, charge, i):
+            populations = r['population'][:, i]
+            return populations[(cols[:, 0] == z) & (cols[:, 1] == charge)].sum() / populations[cols[:, 0] == z].sum()
+        for n in (50, 54, 60):
+            i = n-1
+            for z in (14, 16):
+                for charge in (1, 2):
+                    f = [fraction(r, z, charge, i) for r in all_responses]
+                    change = ((f[1]-f[2])*dx[i] + (f[3]-f[4])*dx[90+i])/(2e-4)
+                    print('fraction', n, z, charge, f[0], change)
+    finally:
+        for r in others:
+            r.close()
 PY
 ```
 
