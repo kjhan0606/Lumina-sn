@@ -77,11 +77,13 @@ def compare(result, public):
             if z not in (14, 16) or q not in (1, 2, 3, 4):
                 continue
             key = (z, q, node)
-            x = float(row['new_J_response_fraction'])
-            if (key in values or not 0 <= node < 90 or not np.isfinite(x) or x < 0
+            fractions = tuple(float(row[name]) for name in
+                ('CMFGEN70_fraction', 'accepted_fraction', 'new_J_response_fraction'))
+            if (key in values or not 0 <= node < 90 or not np.isfinite(fractions).all()
+                    or any(x < 0 for x in fractions)
                     or float(row['radius_cm']) != radius[node]):
                 raise ValueError('이온분율 표의 점·주소·값 오류')
-            values[key] = x
+            values[key] = fractions
     if len(values) != 2 * 4 * 90:
         raise ValueError('Si/S II–V 분율 표 누락')
 
@@ -89,7 +91,8 @@ def compare(result, public):
     for z in (14, 16):
         for q in (1, 2, 3, 4):
             ref = interp_columns(pub[z], velocity, q + 1)
-            candidate = np.array([values[(z, q, i)] for i in range(90)])
+            original, previous, candidate = np.array(
+                [values[(z, q, i)] for i in range(90)]).T
             valid = np.isfinite(ref)
             if not valid.any():
                 raise ValueError('공개 속도와 겹치는 점 없음')
@@ -97,10 +100,14 @@ def compare(result, public):
             stage[f'{z}:{q}'] = dict(compared_nodes=int(valid.sum()),
                 max_abs_fraction=float(abs(candidate[index] - ref[index])),
                 node_1based=int(index + 1), velocity_km_s=float(velocity[index]),
-                public_fraction=float(ref[index]), lumina_fraction=float(candidate[index]))
+                public_fraction=float(ref[index]), lumina_fraction=float(candidate[index]),
+                max_previous_to_new_abs=float(np.max(abs(candidate - previous))),
+                max_model70_to_new_abs=float(np.max(abs(candidate - original))),
+                max_public_to_previous_abs=float(np.max(abs(previous[valid] - ref[valid]))))
             for i in np.flatnonzero(valid):
                 profiles.append(dict(node_1based=int(i + 1), Z=z, charge=q,
                     velocity_km_s=float(velocity[i]), public_fraction=float(ref[i]),
+                    model70_fraction=float(original[i]), previous_fraction=float(previous[i]),
                     lumina_fraction=float(candidate[i])))
     overlap = np.isfinite(interp_columns(pub['phys'], velocity, 1))
     return dict(state='DIAGNOSTIC_NOT_JOINT_CONVERGENCE', epoch_days=19.48,

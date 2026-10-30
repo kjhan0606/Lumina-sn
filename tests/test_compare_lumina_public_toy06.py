@@ -29,12 +29,14 @@ def fixture(tmp_path):
     table = run / 'Si-S-comparison.csv'
     with table.open('w', newline='') as f:
         w = csv.DictWriter(f, fieldnames=['node', 'radius_cm', 'Z', 'charge',
-                                           'new_J_response_fraction'])
+            'CMFGEN70_fraction', 'accepted_fraction', 'new_J_response_fraction'])
         w.writeheader()
         for z in (14, 16):
             for q in (1, 2, 3, 4):
                 for node in range(90):
                     w.writerow(dict(node=node, radius_cm=radius[node], Z=z, charge=q,
+                                    CMFGEN70_fraction=q / 10 - .01,
+                                    accepted_fraction=q / 10,
                                     new_J_response_fraction=q / 10 + .01))
     report = dict(state='COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',
         fixed_accepted_temperature=True, source_identity={'epoch_seconds': epoch},
@@ -53,6 +55,9 @@ def test_comparison_is_stage_mapped_and_scientifically_conditional(tmp_path):
     assert output['stages']['14:2']['public_fraction'] == pytest.approx(.2)
     assert output['stages']['14:2']['lumina_fraction'] == pytest.approx(.21)
     assert output['stages']['16:1']['max_abs_fraction'] == pytest.approx(.01)
+    assert output['stages']['14:2']['max_previous_to_new_abs'] == pytest.approx(.01)
+    assert output['stages']['14:2']['max_model70_to_new_abs'] == pytest.approx(.02)
+    assert output['stages']['14:2']['max_public_to_previous_abs'] == pytest.approx(0)
     assert output['final_equivalence'] == 'NOT_JUDGED'
     assert output['new_physical_calculations'] == 0
 
