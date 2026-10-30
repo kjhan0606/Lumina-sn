@@ -27,6 +27,26 @@ def test_number_flows_use_candidate_populations_route_weights_and_terminal():
     np.testing.assert_allclose(flows[2, :, 0], [24., 120., 160., -256.])
 
 
+def test_number_flows_include_every_rostered_si_s_stage():
+    roster = {'Z': np.array([14, 14, 16, 16, 16, 16]),
+              'stage': np.array([2, 5, 1, 2, 3, 4]),
+              'lower': np.zeros(6, dtype=int), 'target': np.full(6, -1, dtype=int),
+              'probability': np.ones(6)}
+    targets = {(14, 2), (14, 3), (16, 2), (16, 3), (14, 5),
+               (16, 1), (16, 4)}
+    index = {(z, stage, -1): i+1 for i, (z, stage) in enumerate(sorted(targets))}
+    group = np.array([0]); pop = np.arange(1., len(index)+2)[:, None]
+    fraction = np.array([[.5]])
+    rates = np.ones((6, 1, 6)); rates[:, :, 0] = 2.; rates[:, :, 1] = 3.; rates[:, :, 2] = 4.
+    labels, flows = ion_number_flows(roster, group, index, pop, fraction, rates)
+    np.testing.assert_array_equal(labels, np.array(sorted(targets)))
+    assert flows.shape == (len(targets), 4, 1)
+    stage5_si = np.flatnonzero(np.all(labels == [14, 5], axis=1))[0]
+    stage1_s = np.flatnonzero(np.all(labels == [16, 1], axis=1))[0]
+    assert flows[stage5_si, 0, 0] > 0.
+    assert flows[stage1_s, 0, 0] > 0.
+
+
 def test_density_denominator_uses_charge_not_roman_stage():
     labels = np.array([[14, 2], [14, 3], [16, 2], [16, 3]])
     columns = np.array([[14, 1, 0], [14, 1, 1], [14, 2, 0], [14, 3, -1],

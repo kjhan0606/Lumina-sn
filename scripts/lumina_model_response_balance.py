@@ -15,8 +15,17 @@ from run_lumina_fixed_state_balance import adiabatic
 
 
 def ion_number_flows(roster, group, index, population, fraction, rates):
-    """이미 소비한 BF율로 Si/S 각 이온의 광이온화·재결합 수를 합한다."""
-    targets = ((14, 2), (14, 3), (16, 2), (16, 3))
+    """소비한 BF율로 Si/S의 핵심 이온과 모든 저장 BF 단계를 합한다.
+
+    네 핵심 단계는 안정적인 최소 출력으로 남기고, roster에 추가로 존재하는
+    Si/S 단계도 포함해 전체 이온분포 진단에서 상위/하위 전이율이 빠지지 않게 한다.
+    이는 BF 흐름 요약이며 full M/E/S acceptance 활동집합을 대신하지 않는다.
+    """
+    targets = {(14, 2), (14, 3), (16, 2), (16, 3)}
+    for z, stage in zip(roster['Z'], roster['stage']):
+        if int(z) in (14, 16):
+            targets.add((int(z), int(stage)))
+    targets = tuple(sorted(targets))
     ns = population.shape[1]
     flows = np.zeros((len(targets), 4, ns), dtype=np.longdouble)
     for k, (z, stage) in enumerate(targets):
