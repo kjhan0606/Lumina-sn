@@ -87,12 +87,29 @@ def dispatch(config, digest, step):
             raise ValueError('새 완성 자체장 없음; 물질응답 제출 안 함')
         entry = f['sweeps'][last['sweep']-1]
         if entry['state'] != 'COMPLETE_F_NOT_CONVERGENCE': raise ValueError('부분장 소비 금지')
+        limits = c.get('limits', {})
+        temperature_evaluations = limits.get('response_temperature_evaluations', 0)
+        if type(temperature_evaluations) is not int or temperature_evaluations not in (0, 12):
+            raise ValueError('반환장 열보정은 미사용 또는 12평가 단회만 허용')
+        response_options = ['--preparation', str(prep), '--preparation-sha', p['sha256'],
+            '--feedback', str(feedback), '--feedback-sha', sha(feedback)]
+        if temperature_evaluations:
+            policy = limits.get('response_thermal_policy')
+            expected_limits = dict(response_allocations=1, response_CPU=16, response_GiB=32,
+                response_hours=30, automatic_retries=0)
+            if (policy != 'native_instantaneous_scenario' or
+                    coefficient.get('thermal_energy_policy') != policy or
+                    any(limits.get(key) != value for key, value in expected_limits.items())):
+                raise ValueError('반환장 열보정 정책 불일치')
+            common += ['--time=1-06:00:00',
+                '--export=ALL,LUMINA_RESPONSE_LONG_THERMAL=1,LUMINA_RESPONSE_SECONDS=106200']
+            response_options += ['--temperature-evaluations', str(temperature_evaluations),
+                '--thermal-policy', policy, '--secant-after-accept']
         parent = Path(c['response_parent'])
         parent.mkdir(exist_ok=False)
         command = common+['--output='+str(parent/'slurm-%j.out'), '--error='+str(parent/'slurm-%j.err'),
             str(control/'submit_lumina_new_field_response.slurm'), str(parent), c['response_commit'],
-            '--preparation', str(prep), '--preparation-sha', p['sha256'],
-            '--feedback', str(feedback), '--feedback-sha', sha(feedback)]
+            *response_options]
     ssh_command=ssh+[shlex.join(command)]
     record = dict(state='SUBMISSION_ATTEMPT_STARTED', step=step, host=host, command=command,
                   ssh_command=ssh_command,automatic_retries=0, config_sha256=digest)

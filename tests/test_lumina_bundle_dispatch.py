@@ -67,6 +67,59 @@ def test_response_requires_completed_new_field(setup, complete):
         assert not calls and not Path(c['response_parent']).exists()
 
 
+def test_response_can_submit_bounded_returned_field_TNE_solve(setup):
+    config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
+    result=Path(c['coefficient_result']);coefficient=json.loads(result.read_text())
+    coefficient['thermal_energy_policy']='native_instantaneous_scenario'
+    result.write_text(json.dumps(coefficient))
+    (gpu/'feedback/feedback.json').write_text(json.dumps(dict(last_complete=dict(sweep=1),
+        accepted_preparation_sha256=coefficient['preparation']['sha256'],
+        sweeps=[dict(state='COMPLETE_F_NOT_CONVERGENCE')])))
+    c['limits']=dict(response_allocations=1,response_CPU=16,response_GiB=32,response_hours=30,
+        response_temperature_evaluations=12,response_thermal_policy='native_instantaneous_scenario',
+        automatic_retries=0)
+    config.write_text(json.dumps(c))
+    D.dispatch(config,D.sha(config),'response')
+    command=shlex.split(calls[0][-1])
+    assert '--time=1-06:00:00' in command
+    assert 'LUMINA_RESPONSE_LONG_THERMAL=1' in next(x for x in command if x.startswith('--export='))
+    assert command[command.index('--temperature-evaluations')+1]=='12'
+    assert command[command.index('--thermal-policy')+1]=='native_instantaneous_scenario'
+    assert '--secant-after-accept' in command
+
+
+@pytest.mark.parametrize('count',[1,13,True])
+def test_response_rejects_unbounded_or_unmeasured_temperature_evaluation_count(setup,count):
+    config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
+    coefficient=json.loads(Path(c['coefficient_result']).read_text())
+    (gpu/'feedback/feedback.json').write_text(json.dumps(dict(last_complete=dict(sweep=1),
+        accepted_preparation_sha256=coefficient['preparation']['sha256'],
+        sweeps=[dict(state='COMPLETE_F_NOT_CONVERGENCE')])))
+    c['limits']=dict(response_temperature_evaluations=count,
+        response_thermal_policy='native_instantaneous_scenario')
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'response')
+    assert not calls and not Path(c['response_parent']).exists()
+
+
+@pytest.mark.parametrize(('key','value'),[
+    ('response_hours',4),('response_CPU',8),('response_GiB',16),('automatic_retries',1)])
+def test_returned_field_TNE_submission_rejects_mismatched_resource_contract(setup,key,value):
+    config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
+    result=Path(c['coefficient_result']);coefficient=json.loads(result.read_text())
+    coefficient['thermal_energy_policy']='native_instantaneous_scenario'
+    result.write_text(json.dumps(coefficient))
+    (gpu/'feedback/feedback.json').write_text(json.dumps(dict(last_complete=dict(sweep=1),
+        accepted_preparation_sha256=coefficient['preparation']['sha256'],
+        sweeps=[dict(state='COMPLETE_F_NOT_CONVERGENCE')])))
+    limits=dict(response_allocations=1,response_CPU=16,response_GiB=32,response_hours=30,
+        response_temperature_evaluations=12,response_thermal_policy='native_instantaneous_scenario',
+        automatic_retries=0)
+    limits[key]=value;c['limits']=limits;config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'response')
+    assert not calls and not Path(c['response_parent']).exists()
+
+
 def test_response_uses_verified_IP_but_retains_alias_authentication_and_strict_host_key(setup):
     config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
     coefficient=json.loads(Path(c['coefficient_result']).read_text())
@@ -146,10 +199,13 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     monkeypatch.setattr(P.subprocess,'run',git_show)
     prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'new-coeff/result.json',
         tmp_path/'response','c'*40,max_sweeps=1,input_j=tmp_path/'old/J.npy',input_j_sha256='a'*64,
-        initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64)
+        initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64,thermal_response=True)
     config=json.loads(Path(prepared['config']).read_text())
     assert config['coefficient_commit']=='c'*40 and config['response_commit']=='b'*40
     assert config['limits']['maximum_F']==1 and config['limits']['GPU_hours']==12
+    assert config['limits']['response_hours']==30
+    assert config['limits']['response_temperature_evaluations']==12
+    assert config['limits']['response_thermal_policy']=='native_instantaneous_scenario'
     assert config['initial_field']['J']['path']==str(tmp_path/'old/J.npy')
     assert prepared['jobs_submitted']==0
 

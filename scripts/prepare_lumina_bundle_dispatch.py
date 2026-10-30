@@ -11,11 +11,13 @@ from lumina_bundle_dispatch import sha
 
 def prepare(project, out, commit, gpu_root, coefficient_result, response_parent, coefficient_commit,
             max_sweeps=2, input_j=None, input_j_sha256=None,
-            initial_preparation=None, initial_preparation_sha256=None):
+            initial_preparation=None, initial_preparation_sha256=None, thermal_response=False):
     project, out, gpu_root = map(lambda p: Path(p).resolve(), (project, out, gpu_root))
     if (not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (commit, coefficient_commit)) or
             type(max_sweeps) is not int or not 1 <= max_sweeps <= 2):
         raise ValueError('실제 계수/후속 소스 commit과 F1~2회 한도 필요')
+    if type(thermal_response) is not bool:
+        raise ValueError('반환장 열보정 선택은 불리언이어야 함')
     initial = (input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
     if any(v is not None for v in initial) and (not all(v is not None for v in initial) or
             not all(re.fullmatch(r'[0-9a-f]{64}', value) for value in (input_j_sha256, initial_preparation_sha256))):
@@ -35,7 +37,10 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
         gpu_prepared_sha256=sha(gpu_root/'prepared.json'), response_parent=str(Path(response_parent).resolve()),
         control_sha256={name: sha(out/name) for name in names},
         limits=dict(GPU_allocations=1, GPU_hours=12, maximum_F=max_sweeps,
-                    response_allocations=1, response_CPU=16, response_GiB=32, response_hours=4,
+                    response_allocations=1, response_CPU=16, response_GiB=32,
+                    response_hours=30 if thermal_response else 4,
+                    response_temperature_evaluations=12 if thermal_response else 0,
+                    response_thermal_policy='native_instantaneous_scenario' if thermal_response else None,
                     automatic_retries=0))
     if input_j is not None:
         c['initial_field'] = dict(J=dict(path=str(Path(input_j).resolve()), sha256=input_j_sha256),
@@ -56,4 +61,6 @@ if __name__ == '__main__':
     p.add_argument('--input-j-sha256')
     p.add_argument('--initial-preparation', type=Path)
     p.add_argument('--initial-preparation-sha256')
+    p.add_argument('--thermal-response', action='store_true',
+        help='반환 J에 대한 T/ne 열보정을 최대12평가·30시간 단회로 이어 실행')
     print(json.dumps(prepare(**vars(p.parse_args())), indent=2))
