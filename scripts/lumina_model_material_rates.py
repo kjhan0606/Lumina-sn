@@ -12,6 +12,7 @@ import numpy as np
 import cmfgen_model_continuum as B
 from lumina_model_point_rates import Rates
 
+_ROUTE_SIGMA_METHOD=B.Route.sigma
 
 DP=C.POINTER(C.c_double)
 BP=C.POINTER(C.c_uint8)
@@ -182,8 +183,22 @@ class ModelMaterialRates:
             raise ValueError('경로/주파수 블록 주소 오류')
         # 공유 σ만 route×주파수다. route×점×주파수 3D 배열은 만들지 않는다.
         evaluation=np.ascontiguousarray(self.evaluation[start:end])
-        sigma=(np.zeros((len(ids),len(evaluation))) if pseudo_only else
-               np.ascontiguousarray([self.routes[int(i)].sigma(evaluation) for i in ids]))
+        sigma=np.zeros((len(ids),len(evaluation)))
+        if not pseudo_only:
+            if not np.isfinite(evaluation).all() or np.any(evaluation<=0):
+                raise ValueError('잘못된 단면 평가 주파수')
+            maximum=float(evaluation.max())
+            for row,i in enumerate(ids):
+                route=self.routes[int(i)]
+                method=route.sigma
+                # 원 Route.sigma의 모든 모델 시작점이 블록보다 높으면 정확히 0.
+                # 사용자 정의 구현과 비스칼라 시작점은 기존 평가 경로를 유지한다.
+                if (type(route) is B.Route and getattr(method,'__func__',None) is _ROUTE_SIGMA_METHOD
+                    and all(isinstance(model,(tuple,list)) and len(model)==4 and
+                            isinstance(model[2],(float,int,np.floating,np.integer)) and
+                            model[2]>maximum for model in route.models)):
+                    continue
+                sigma[row]=method(evaluation)
         arrays=[np.ascontiguousarray(a) for a in (self.frequency[start:end],evaluation,self.width[start:end],
                 self.J[:,start:end],sigma,self.edge[ids],trial.milne_prefactor[ids],trial.inverse_kT_Hz)]
         prim=np.ascontiguousarray(self.primary[ids])

@@ -76,6 +76,48 @@ def test_batch_matches_existing_scalar_at_each_point_and_all_six_terms(library):
     assert np.any(total[:,:,0]>bound[:,:,0])
 
 
+def test_sigma_prefilter_retains_custom_route_method(library):
+    provider,state=example(library)
+    provider.dissolved=False
+    route=provider.routes[1]
+    function,nodes,_,kind=route.models[0]
+    route.models=((function,nodes,1.e30,kind),)
+    calls=[]
+    def custom(frequency):
+        calls.append(len(frequency))
+        return np.full_like(frequency,1.e-18)
+    route.sigma=custom
+    trial=provider.prepare(state,material_generation=1)
+    bound,_=provider.contract_block(trial,0,3,[1],material_generation=1,radiation_generation=7)
+    assert calls==[3]
+    assert np.all(bound[:,:,0]>0)
+
+
+def test_sigma_prefilter_checks_all_model_starts_in_nonmonotonic_evaluation(library):
+    provider,state=example(library)
+    provider.dissolved=False
+    route=provider.routes[1]
+    function,nodes,_,kind=route.models[0]
+    route.models=((function,nodes,np.nan,kind),
+                  (function,nodes,provider.evaluation[2],kind))
+    evaluation=provider.evaluation.copy()
+    evaluation[:3]=evaluation[[2,0,1]]
+    provider.evaluation=evaluation
+    trial=provider.prepare(state,material_generation=1)
+    bound,_=provider.contract_block(trial,0,3,[1],material_generation=1,radiation_generation=7)
+    assert evaluation[0]>evaluation[1]
+    assert np.all(bound[:,:,0]>0)
+
+
+def test_sigma_prefilter_does_not_hide_malformed_inactive_model(library):
+    provider,state=example(library)
+    route=provider.routes[1]
+    trial=provider.prepare(state,material_generation=1)
+    route.models=((None,None,1.e30),)
+    with pytest.raises(ValueError):
+        provider.contract_block(trial,0,3,[1],material_generation=1,radiation_generation=7)
+
+
 def test_trial_owns_input_and_positive_ion_change_rebuilds_occupation(library):
     provider,state=example(library);first=provider.prepare(state,material_generation=1)
     before=provider.integrate(first,material_generation=1,radiation_generation=7)
