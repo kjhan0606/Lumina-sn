@@ -1,0 +1,76 @@
+# 고정 복사장 T/ne 보정의 Jacobian 상태 — 2026-10-30
+
+## 판독 범위
+
+Slurm 작업 1243823의 봉인 실행(commit
+`044df9eaad59aa1d5a5d4756904fa964e227c647`)에서 17:15 KST까지 게시된
+증거만 판독했다. 실행 결과 파일은 `STARTED`, 최종 목표 `NOT_MET`,
+선택 응답 없음, 새 수송 0회다. 완료 평가는 generation11–15이며 로그는
+generation16의 동적 BF 평가 시작까지만 기록했다. generation16은 아직 실제
+후보 결과로 판독할 수 없다. 실행은 계속 보존하며 취소·재제출하지 않는다.
+
+1243823은 17:13 KST Slurm 조회에서 `RUNNING`(경과 5:47:03, CPU16·32GiB,
+30시간, 재시작0)이었다. 17:14:31 `sstat` 누적 CPU는 약49시간29분, RSS는
+약5.8GiB였다. 결과 JSON의 마지막 게시 시각은 16:34:24이므로 그 이후의
+미게시 세대는 완료로 간주하지 않는다.
+
+## 저장된 실제 응답과 섭동
+
+| 세대 | 용도 | BF 벽시간 | 전하 상대잔차 | SE 잔차 |
+| --- | --- | ---: | ---: | ---: |
+| 11 | 기준 응답 | 315초 | `1.17567e-12` | `1.01983e-16` |
+| 12 | T+ Jacobian 섭동 | 8,744초 | `8.58494e-6` | `9.98548e-17` |
+| 13 | T− Jacobian 섭동 | 8,721초 | `8.58470e-6` | `1.01028e-16` |
+| 14 | ne+ Jacobian 섭동 | 254초 | `1.08863e-4` | `9.96832e-17` |
+| 15 | ne− Jacobian 섭동 | 254초 | `1.08875e-4` | `9.81767e-17` |
+
+기준 응답의 선택 열정책(`native_instantaneous_scenario`) 정규화 RE는
+`3.35407e-6`이다. 내부 공동 solver 문턱은 `1e-10`이므로 이 기준 응답과
+네 섭동은 수렴 후보가 아니다. 네 섭동은 centered Jacobian 계산용이며,
+그 자체를 물리 상태로 비교하거나 전달하지 않는다.
+
+## 선형화 민감도
+
+`run/thermal-direction-1/linearization.npz`의 180×180 Jacobian에 대해
+NumPy 2-노름 조건수는 `1.28109e9`다. 특잇값은 최대 `1.09023`, 최소
+`8.51022e-10`이며, 32개가 `1e-6` 미만, 20개가 `1e-8` 미만이다. 최소
+우특이벡터는 주로 깊이 3–11의 T 성분에, 대응 좌특이벡터는 같은 깊이대의
+RE 행에 놓였다. 따라서 적어도 이 선형화에서는 안쪽 온도 방향 일부가 열잔차에
+약하게 구속된다. 이것은 수치 민감성 위험의 증거이지, 물리적으로 열평형이
+불가능하거나 Jacobian 구현이 틀렸다는 단독 증명은 아니다.
+
+저장 방향의 최대 `|dlog(T,ne)|`는 깊이4의 T에서 `1.49015`다. 제한
+`max_log_step=0.1`로 감쇠한 `alpha=0.0671074`를 적용하면 제안된 깊이4는
+T `−9.516%`, ne `−0.1800%`다. 선형 예측 `f + alpha J d`에서 최대 정규화
+RE는 `3.35407e-6 → 3.12898e-6`(약6.7% 감소), 전하는
+`1.17567e-12 → 1.09677e-12`다. 이는 실제 callback 재평가 전 예측일 뿐이다.
+
+## 다음 판정
+
+1. 같은 승인 실행에서 generation16의 완전한 결과와 실제 선탐색 판정을 기다린다.
+2. 후보가 게시되면 선택표식만 믿지 않고 실제 전하·SE·고정 척도 RE, T/ne 이동,
+   nuclei 보존, 응답 SHA를 재확인한다.
+3. 실제 잔차가 줄고 후보가 사전 조건을 통과할 때만 기존 단일 왕복 카드의
+   다음 단계로 넘긴다. 거부·미수렴이면 실패 증거를 보존하고 원인을 분류한다.
+   이 작업의 한도 밖 재실행·새 수송은 자동으로 시작하지 않는다.
+
+현재 판단은 `IN_PROGRESS / NO_ACCEPTED_CANDIDATE / SELF_CONSISTENCY_NOT_PROVEN`이다.
+이 Jacobian 분석은 source 변경·추가 물리 평가·새 수송을 수행하지 않았다.
+
+## 재현 위치
+
+`scontrol show job -o 1243823`에서 해당 실행의 출력 경로를 확인한 뒤 그 실행
+루트의 `run/result.json`, `run/thermal-direction-1/result.json`,
+`run/thermal-direction-1/linearization.npz`를 사용한다. 시점 고정 SHA256:
+
+- `run/result.json`: `775be3ca2fa60cbb54694baf712e858e7ed5c015ee6792cecbc4610465438f76`
+- `run/thermal-direction-1/result.json`:
+  `b155671c45269ef608c14120b3e9bf025760b74eb9c7911ee0fea7a88b382f9b`
+- `run/thermal-direction-1/linearization.npz`:
+  `7f5949f94899b2485253f4a9ffbee4c5da9ea9a7f52ebf4393eddb1bcdf89bdb`
+
+선형화 재현은 이 실행 루트에서 다음 NumPy 항목을 계산한다: `J`의
+`numpy.linalg.cond(J)`와 `numpy.linalg.svd(J)` 특잇값, `d=log_direction`,
+`f=scaled_residual`, `alpha=min(1,0.1/max(abs(d)))`, `f+alpha*(J@d)`.
+분율·CMFGEN 동질성 또는 최종 self-consistency 주장은 이 진단 범위에 포함되지
+않는다.
