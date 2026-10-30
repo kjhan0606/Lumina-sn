@@ -66,6 +66,18 @@ def test_v2_residual_tolerances_accept_base_without_new_material_callbacks():
     assert result['new_transport']==0 and not result['joint_convergence']
 
 
+def test_already_converged_base_does_not_require_replaying_old_perturbations():
+    first=case(np.array([2.,3.]),[5.,7.]);replayed=[]
+    result=T.solve(lambda *args:pytest.fail('수렴된 기준에서 새 평가 불필요'),
+        first,adiabatic,policy='physical_stored',max_evaluations=1,
+        replay=(first,)*4,on_replay=replayed.append,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert result['fixed_field_numerical_converged'] and result['selected'] is first
+    assert result['evaluations_used']==result['fresh_evaluations_used']==0
+    assert result['replayed_evaluations']==0 and not replayed
+    assert not result['joint_convergence']
+
+
 def projection_case():
     from test_lumina_charge_projection import case as build
     from lumina_charge_projection import proposal

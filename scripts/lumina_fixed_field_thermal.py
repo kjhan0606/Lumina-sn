@@ -125,7 +125,11 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
         project_candidate=projector,secant_after_accept=secant_after_accept,
         charge_tolerance=charge_tolerance,thermal_tolerance=thermal_tolerance)
     selected = values[id(outer['packet'])]
-    if len(used) < len(replay):
+    # 기준 물질 자체가 물리 문턱을 만족하면 섭동은 필요 없다. 사용한 섭동의
+    # 순서 검증은 그대로 두고, 미사용 섭동을 소비한 것으로 보고하지 않는다.
+    converged_without_replay = (not used and outer['iterations'] == 0 and
+                                outer['numerical_converged'])
+    if len(used) < len(replay) and not converged_without_replay:
         raise ValueError('현재 해법에서 보존 열평가 순서가 끝까지 재현되지 않음')
     result = selected[0]
     charge = float(np.max(abs(result['charge_residual']/result['ne'])))
