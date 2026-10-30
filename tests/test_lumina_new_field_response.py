@@ -241,9 +241,30 @@ def test_ion_comparison_has_all_nodes_and_preserves_absolute_values():
     assert len(summary) == 4 and len(rows) == 8
     si = next(v for v in summary if v['Z'] == 14 and v['charge'] == 1)
     assert si['max_absolute_fraction_difference'] == pytest.approx(.1)
+    assert si['fraction_active_shells'] == 2
+    assert si['fraction_active_max_absolute_difference'] == pytest.approx(.1)
+    assert si['fraction_active_log10_ratio_max_dex'] == pytest.approx(np.log10(1.5))
+    assert si['fraction_active_support_mismatch_shells'] == 0
+    assert si['acceptance'] == 'DIAGNOSTIC_ONLY_NOT_FULL_V2_ACCEPTANCE'
     r = next(v for v in rows if v['Z'] == 14 and v['charge'] == 1 and v['node'] == 0)
     assert r['CMFGEN70_fraction'] == .2 and r['new_J_response_fraction'] == .3
+    assert r['fraction_active'] is True
+    assert r['absolute_log10_ratio_dex'] == pytest.approx(np.log10(1.5))
     assert r['radius_cm'] == 20.
+
+
+def test_ion_comparison_reports_active_support_mismatch_without_flooring():
+    columns = np.array([[14, 1, 0], [14, 2, 0]])
+    reference = np.array([[0.], [1.]])
+    candidate = np.array([[.2], [.8]])
+    summary, rows = N.comparison(columns, reference, reference, candidate, np.array([10.]))
+    si2 = next(v for v in summary if v['Z'] == 14 and v['charge'] == 1)
+    row = next(v for v in rows if v['charge'] == 1)
+    assert si2['fraction_active_shells'] == 1
+    assert si2['fraction_active_support_mismatch_shells'] == 1
+    assert si2['fraction_active_log10_ratio_max_dex'] is None
+    assert row['absolute_log10_ratio_dex'] is None
+    assert row['fraction_support_mismatch'] is True
 
 
 def test_followup_memory_inventory_is_separate_from_coefficient_inventory():

@@ -95,16 +95,41 @@ def comparison(columns, reference, accepted, candidate, radius):
         for charge in sorted(set(map(int, columns[element, 1]))):
             select = element & (columns[:, 1] == charge)
             fractions = [v[select].sum(axis=0)/total for v, total in zip(arrays, totals)]
-            delta = fractions[2]-fractions[0]; index = int(np.argmax(abs(delta)))
+            ref_fraction, candidate_fraction = fractions[0], fractions[2]
+            delta = candidate_fraction-ref_fraction; index = int(np.argmax(abs(delta)))
+            # v2 ion-fraction diagnostics use the union of shells active in either
+            # solution. This producer has populations but no rate-contribution
+            # activity map, so report the fraction-only subset explicitly and do
+            # not turn these partial metrics into a full acceptance verdict.
+            active = np.maximum(ref_fraction, candidate_fraction) > 1.e-8
+            support_mismatch = active & ((ref_fraction <= 0) | (candidate_fraction <= 0))
+            paired = active & (ref_fraction > 0) & (candidate_fraction > 0)
+            log_ratio = np.abs(np.log10(candidate_fraction[paired]/ref_fraction[paired]))
+            if log_ratio.size:
+                log_median, log_p95, log_max = map(float, np.percentile(log_ratio, (50, 95, 100)))
+            else:
+                log_median = log_p95 = log_max = None
             summary.append(dict(Z=z, charge=charge, max_absolute_fraction_difference=float(abs(delta[index])),
                 node=index, radius_cm=float(radius[index]), reference_fraction=float(fractions[0][index]),
                 new_response_fraction=float(fractions[2][index]),
-                max_change_from_accepted=float(np.max(abs(fractions[2]-fractions[1])))))
+                max_change_from_accepted=float(np.max(abs(fractions[2]-fractions[1]))),
+                fraction_active_shells=int(np.count_nonzero(active)),
+                fraction_active_max_absolute_difference=float(np.max(abs(delta[active]))) if active.any() else None,
+                fraction_active_log10_ratio_median_dex=log_median,
+                fraction_active_log10_ratio_p95_dex=log_p95,
+                fraction_active_log10_ratio_max_dex=log_max,
+                fraction_active_support_mismatch_shells=int(np.count_nonzero(support_mismatch)),
+                activity_basis='ION_FRACTION_ONLY; RATE_ACTIVITY_NOT_AVAILABLE',
+                acceptance='DIAGNOSTIC_ONLY_NOT_FULL_V2_ACCEPTANCE'))
             if z in (14, 16):
                 for i, r in enumerate(radius):
                     rows.append(dict(node=i, radius_cm=float(r), Z=z, charge=charge,
                         CMFGEN70_fraction=float(fractions[0][i]), accepted_fraction=float(fractions[1][i]),
-                        new_J_response_fraction=float(fractions[2][i]), difference=float(delta[i])))
+                        new_J_response_fraction=float(fractions[2][i]), difference=float(delta[i]),
+                        fraction_active=bool(active[i]),
+                        absolute_log10_ratio_dex=(float(abs(np.log10(candidate_fraction[i]/ref_fraction[i])))
+                            if ref_fraction[i] > 0 and candidate_fraction[i] > 0 else None),
+                        fraction_support_mismatch=bool(support_mismatch[i])))
     return summary, rows
 
 
