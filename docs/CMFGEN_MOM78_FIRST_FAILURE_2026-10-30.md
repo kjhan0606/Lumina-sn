@@ -97,6 +97,43 @@ MOM 사이에 어떤 처리나 근사가 최초 불일치를 만들었는지는 
 `analyze_cmfgen_initial_closure.angular_support()`를 적용한다. 다섯 경계의
 보수적인 부등식은 중간 J의 구체적인 보간값 없이도 재현된다.
 
+### 직전 저장 J의 원래 방정식 잔차
+
+현재 실패 주파수 진입에 보존된 **직전 주파수 SAVE와 계수**로 기존
+`completed_operator()`의 삼중대각 방정식을 재구성했다. 각 행의 잔차는
+`|Ax-b|/(|A||x|+|b|)`로 정규화한다. 직전 주파수 `6.107497416899375`에서
+전90점 최대는 **0.92738463**, 원점3이다. 해당 행의 좌변과 우변은 각각
+`−8489.40254`와 `+275.81383`이다. 원점1·2·3의 정규화 잔차는 각각
+`5.3923e-4`, `1.2041e-2`, `0.92738`이며, 원점4·5는 각각
+`1.67e-16`, `2.02e-16`이다. `1e-8`을 초과한 점은 1·2·3뿐이다.
+저장된 공간미분 계수를 저장 J에서 다시 평가해도 최대 잔차는 같다.
+
+이는 **이 snapshot에 남은 계수가 직전 MOM 호출의 최종 계수이고 재조립된
+경계가 그 호출과 같다는 전제**에서, 다음 주파수에 전달된 직전 J가 직전
+이산 방정식에도 맞지 않는다는 증거다. 위 음수 J의 `FORM_VAL` 대체와
+연관될 수 있지만, 이 수치만으로 대체가 최초 원인인지 또는 재구성 계수가
+마지막 실제 호출과 정확히 같은지 증명하지 않는다. 진행 중인 `1245331`의
+이전 호출 진입 및 재생으로 해당 전제와 대체 순서를 확인한다. 원점3의 큰
+잔차를 Lumina 불일치나 CMFGEN 전체 해의 오차로 일반화하지 않는다.
+
+입력 `MOM_CAPTURE.bin` SHA256은
+`72803ecf9b45e7ebe6c9d12bee16bc6a26532ea0bbc079720422b429a3c5ed43`,
+`state_inventory.json` SHA256은
+`2c5cada170a9731c2870ae66f71c67ccb698a181731d9c3d6effb82a70610d83`다.
+재현은 grammar `debug`의 CPU1·2GiB에서 프로젝트 루트의 `scripts`를
+`PYTHONPATH`에 넣고 다음을 실행한다. 새 수송이나 물질 갱신은 없다.
+
+```python
+import json, os
+from pathlib import Path
+from analyze_cmfgen_mom_capture import capture
+from solve_cmfgen_mom_kernel import previous_state_audit
+root = Path(os.environ['MOM78_ROOT'])  # 위에 기록한 전용 결과 디렉터리
+state = capture(root/'replay/MOM_CAPTURE.bin',
+                json.loads((root/'build/state_inventory.json').read_text()))
+print(previous_state_audit(state))
+```
+
 ### 이전 주파수의 음수 J 기록과 저장 분포
 
 원래 실행의 `MOM_J_ERRORS` 마지막 부분을 확인했다. 출력 정밀도로
