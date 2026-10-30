@@ -15,6 +15,9 @@ F [FIX_T_AUTO]
 MAJOR [SCALE_OPT]
 1.05D0 [MAX_LIN]
 1.10D0 [MAX_LAM]
+T [COMP_BA]
+0 [N_FIX_BA]
+F [DO_NG]
 """
 IN_ITS = """5 [NUM_ITS]
 T [DO_LAM_IT]
@@ -62,6 +65,9 @@ def test_damped_probe_changes_only_lambda_cap():
         (VADAT.replace("1.10D0", "1.20D0"), IN_ITS),
         (VADAT.replace("T [FIX_T]", "F [FIX_T]"), IN_ITS),
         (VADAT + "1.10D0 [MAX_LAM]\n", IN_ITS),
+        (VADAT.replace("T [COMP_BA]", "F [COMP_BA]"), IN_ITS),
+        (VADAT.replace("0 [N_FIX_BA]", "2 [N_FIX_BA]"), IN_ITS),
+        (VADAT.replace("F [DO_NG]", "T [DO_NG]"), IN_ITS),
         (VADAT, IN_ITS.replace("F [DO_T_AUTO]", "T [DO_T_AUTO]")),
         (VADAT, IN_ITS.replace("T [DO_LAM_IT]", "F [DO_LAM_IT]")),
     ],

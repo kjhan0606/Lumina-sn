@@ -78,7 +78,7 @@ def control(text: str, key: str) -> str:
 def configure(vadat: str, in_its: str) -> str:
     required_vadat = {
         "FIX_T": "T", "SCALE_OPT": "MAJOR", "MAX_LIN": "1.05D0",
-        "MAX_LAM": "1.10D0",
+        "MAX_LAM": "1.10D0", "COMP_BA": "T", "N_FIX_BA": "0", "DO_NG": "F",
     }
     for key, expected in required_vadat.items():
         actual = control(vadat, key)
@@ -259,7 +259,8 @@ def stage(seed: Path, setup_source: Path, run: Path, executable: Path) -> dict:
         "run": str(run),
         "controls": {"FIX_T": "T", "SCALE_OPT": "MAJOR", "MAX_LIN": "1.05D0",
                      "MAX_LAM": "1.01D0", "NUM_ITS": "5", "DO_LAM_IT": "T",
-                     "DO_LAM_AUTO": "F", "DO_T_AUTO": "F"},
+                     "DO_LAM_AUTO": "F", "DO_T_AUTO": "F", "COMP_BA": "T",
+                     "N_FIX_BA": "0", "DO_NG": "F"},
         "resources": {"CPUs": 16, "GiB": 256, "wall_hours": 3, "GPU": 0,
                       "automatic_retries": 0},
         "linked_inputs": linked,
