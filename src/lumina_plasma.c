@@ -11622,12 +11622,65 @@ static int ioniz_selftest_mode(void) {
     }
     return g_ioniz_selftest;
 }
-/* forward decl: the NLTE-route photoion rate, cross-checked in the same table */
+/* Independent all-level J_nu rate used only by the ionization self-test's
+ * side-by-side column.  The production Gph path below owns the actual solve.
+ * Keep this small diagnostic independent: Boltzmann weights, the shared
+ * CMFGEN sigma grid, and the current shell J_nu. */
 static double coupled_photoion_rate_jnu(AtomicData *atom, NLTEConfig *nlte,
-                                        int ip, int s, double T_e, int n_shells,
-                                        const double *jblend_lstar,
-                                        const double *jblend_b, double jblend_W,
-                                        double wbfloor_T, double *Krow);
+                                        int ip, int s, double T_e, int n_shells) {
+    if (!atom || !nlte || !nlte->J_nu || !atom->cmfgen_loaded ||
+        !atom->cmfgen_has_sigma || !atom->cmfgen_sigma_bf ||
+        T_e <= 0.0 || !isfinite(T_e) || ip < 0 ||
+        ip + 1 >= atom->n_ion_pops || s < 0 || s >= n_shells ||
+        nlte->n_freq_bins <= 0 || nlte->nu_min <= 0.0 ||
+        nlte->d_log_nu <= 0.0 ||
+        atom->cmfgen_n_freq_bins != nlte->n_freq_bins)
+        return -1.0;
+    double chi_eV = find_ioniz_energy(atom, atom->ion_pop_Z[ip],
+                                      atom->ion_pop_stage[ip]);
+    if (chi_eV <= 0.0 || !isfinite(chi_eV)) return -1.0;
+    const int nfb = nlte->n_freq_bins;
+    const double log_numin = log(nlte->nu_min);
+    const double kT = K_BOLTZMANN * T_e;
+    const int g0 = atom->level_offset[ip], g1 = atom->level_offset[ip + 1];
+    double partition = 0.0, weighted_gamma = 0.0;
+    int any_sigma = 0;
+    for (int gl = g0; gl < g1; gl++) {
+        double E = atom->level_energy_eV[gl] * EV_TO_ERG;
+        double weight = (double)atom->level_g[gl] * exp(-E / kT);
+        if (!isfinite(weight) || weight <= 0.0) continue;
+        partition += weight;
+        if (!atom->cmfgen_has_sigma[gl]) continue;
+        double binding = chi_eV * EV_TO_ERG - E;
+        if (binding <= 0.0) continue;
+        double nu_threshold = binding / H_PLANCK;
+        const double *sigma = &atom->cmfgen_sigma_bf[(size_t)gl * (size_t)nfb];
+        double gamma_level = 0.0;
+        for (int bb = 0; bb < nfb; bb++) {
+            double lo = log_numin + bb * nlte->d_log_nu;
+            double nu = exp(lo + 0.5 * nlte->d_log_nu);
+            if (nu < nu_threshold || sigma[bb] <= 0.0) continue;
+            double J = nlte->J_nu[(size_t)s * nfb + bb];
+            if (g_photoion_mc_J && s < g_photoion_mc_nshells &&
+                g_photoion_mc_nfb == nfb &&
+                !(g_photoion_mc_occ && g_photoion_mc_count &&
+                  g_photoion_mc_count[(size_t)s * nfb + bb] == 0))
+                J = g_photoion_mc_alpha * g_photoion_mc_J[(size_t)s * nfb + bb] +
+                    (1.0 - g_photoion_mc_alpha) * J;
+            if (g_ioniz_selftest == 1) J = planck_bnu(T_e, nu);
+            if (J <= 0.0) continue;
+            double dnu = exp(lo + nlte->d_log_nu) - exp(lo);
+            gamma_level += 4.0 * M_PI_VAL * J * sigma[bb] /
+                           (H_PLANCK * nu) * dnu;
+        }
+        weighted_gamma += weight * gamma_level;
+        any_sigma = 1;
+    }
+    if (!any_sigma || !(partition > 0.0) || !isfinite(weighted_gamma))
+        return -1.0;
+    double gamma = weighted_gamma / partition;
+    return isfinite(gamma) && gamma >= 0.0 ? gamma : -1.0;
+}
 /* Partition function on the SAME level list + x<50 cut the production integrals
  * use (frozenin_alpha_rr's U_ion recipe), so the reference is not a second
  * convention. floor_g: fall back to the ground g when the sum underflows. */
@@ -12719,8 +12772,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                 /* [IONIZ-SELFTEST] detailed-balance identity for this pair. Both
                  * halves are the PRODUCTION ones: G above (radeq Gph route) and
                  * frozenin_alpha_rr (the alpha simul_ladder divides by).  Also
-                 * evaluates the NLTE-route Gamma (coupled_photoion_rate_jnu) on
-                 * the same field for a side-by-side. Gate off => never runs. */
+                 * prints an independent Boltzmann all-level J_nu rate. */
                 if (g_ioniz_selftest) {
                     int ipl = ip0 + j;
                     double Ts = plasma->T_e[s];
@@ -12735,8 +12787,7 @@ static void radeq_simul_all(PlasmaState *plasma, GammaDeposition *gamma_dep,
                         ? 2.0 * (Uu / Ul) * inv_lam3 * exp(-xchi) : 0.0;
                     double q = (alpha > 0.0) ? G / alpha : -1.0;
                     double Gc = coupled_photoion_rate_jnu(atom, nlte, ipl, s, Ts,
-                                                          n_shells, NULL, NULL, 0.0,
-                                                          0.0, NULL);
+                                                          n_shells);
                     double qc = (alpha > 0.0 && Gc >= 0.0) ? Gc / alpha : -1.0;
 #ifdef _OPENMP
                     #pragma omp critical

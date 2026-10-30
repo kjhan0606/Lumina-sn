@@ -1,8 +1,15 @@
-/* selftest_ioniz_saha.c — KNOWN-ANSWER (constrained) test of the IONIZATION path.
+/* selftest_ioniz_saha.c — LEGACY ionization diagnostic; currently blocked.
+ *
+ * The old test expected compute_radiative_equilibrium_te() to route
+ * LUMINA_RADEQ_SIMUL into radeq_simul_all(). That call was retired when the
+ * active entry point moved to A2-10. This harness has not been migrated to the
+ * active material-response path and must not be reported as a physics PASS.
+ * Its execution deliberately fails if the active solve is not reached.
  *
  * The transport side already has four known-answer self-tests
  * (cmf_plasma_selftest / cmf_nlte_selftest / cmf_fsolve_selftest / cmf_obs_selftest).
- * The ionization/photoionization path had none. This is that test.
+ * This file preserves the former ionization diagnostic while that migration is
+ * pending.
  *
  * IDENTITY UNDER TEST
  *   Impose J_nu = B_nu(T_e).  With detailed balance intact, the production
@@ -11,22 +18,22 @@
  *       q_saha = 2 (U_{i+1}/U_i) (2 pi m_e k T / h^2)^{3/2} exp(-chi/kT)
  *   and n(i+1)/n(i) = q/n_e, i.e. the r of the brief.  ratio = q/q_saha must be 1.
  *
- * WHAT IS EXERCISED — all PRODUCTION code, nothing re-implemented:
+ * WHAT THE RETIRED TEST INTENDED TO EXERCISE:
  *   radeq_simul_all()            Gph assembly (lumina_plasma.c)
  *   frozenin_alpha_rr()          Milne recombination coefficient
  *   coupled_photoion_rate_jnu()  the NLTE-route photoion rate
  *   simul_ladder()               the ion ladder + n_e fixed point
  * reached through the public entry compute_radiative_equilibrium_te() with
- * LUMINA_RADEQ_SIMUL=1.  The probe itself lives behind LUMINA_IONIZ_SELFTEST
- * (default OFF => production byte-identical).
+ * LUMINA_RADEQ_SIMUL=1. The current entry point no longer routes there. The
+ * probe remains behind LUMINA_IONIZ_SELFTEST (default OFF).
  *
  * One shell per test temperature; T_e[s] is what the Gph loop and the Milne
  * integral both read, and Gph is built BEFORE the radeq T bisection, so the
  * printed identity is evaluated exactly at the requested T.
  *
- * Build: make selftest_ioniz_saha      (CPU only, gcc, no GPU needed)
- * Run:   LUMINA_IONIZ_SELFTEST=1 LUMINA_RADEQ_SIMUL=1 \
- *        ./selftest_ioniz_saha data/tardis_reference 5000,10000,20000,50000
+ * Build: make selftest_ioniz_saha (CPU only, gcc, no GPU needed)
+ * Run:   scripts/run_ioniz_saha_selftest.sh (currently fails closed; do not
+ *        interpret an old prebuilt executable's output as current physics).
  */
 #include "src/lumina.h"
 #include <math.h>
@@ -150,8 +157,13 @@ int main(int argc, char **argv) {
     fflush(stdout);
 
     /* PRODUCTION entry; LUMINA_RADEQ_SIMUL=1 routes into radeq_simul_all. */
-    compute_radiative_equilibrium_te(&plasma, NULL, &nlte, &atom, &opacity,
-                                     86400.0, n_shells);
+    if (!compute_radiative_equilibrium_te(&plasma, NULL, &nlte, &atom,
+                                          &opacity, NULL, 86400.0, n_shells)) {
+        fprintf(stderr,
+                "[IONIZ-SELFTEST][BLOCKED] active A2-10 production solve did "
+                "not run; no detailed-balance result was produced\n");
+        return 3;
+    }
     printf("=== done ===\n");
     return 0;
 }
