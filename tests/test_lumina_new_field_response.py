@@ -163,11 +163,21 @@ def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_acc
             scaled_residual=residual,log_direction=delta,charge_scale=charge_scale,
             thermal_scale=thermal_scale).items():np.testing.assert_array_equal(saved[key],value)
     assert record['base_response']==metadata and len(record['probes'])==4
+    assert record['linearization_kind']=='centered' and record['centered_log_step']==1.e-4
     assert record['state']=='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE'
     assert not record['joint_convergence'] and record['new_material_evaluations']==0
     with pytest.raises(FileExistsError):
         N.preserve_thermal_direction(tmp_path,1,(data,{},metadata),matrix,residual,delta,
             charge_scale,thermal_scale,field={},source_identity={},probes=[])
+    secant=N.preserve_thermal_direction(tmp_path,2,(data,{},metadata),matrix,residual,delta,
+        charge_scale,thermal_scale,field={'J':'F2'},source_identity={'material':'accepted'},
+        probes=[],linearization_kind='secant')
+    assert secant['linearization_kind']=='secant' and secant['centered_log_step'] is None
+    assert secant['probes']==[] and secant['base_response']==metadata
+    with pytest.raises(ValueError,match='선형화'):
+        N.preserve_thermal_direction(tmp_path,3,(data,{},metadata),matrix,residual,delta,
+            charge_scale,thermal_scale,field={},source_identity={},probes=[{}],
+            linearization_kind='secant')
 
 
 def test_trapezoid_preserves_original_nonuniform_grid():

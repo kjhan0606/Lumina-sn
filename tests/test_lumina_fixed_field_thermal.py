@@ -38,6 +38,21 @@ def test_actual_new_field_callback_reaches_fixed_field_root_not_joint_convergenc
     assert result['new_transport']==0 and not result['joint_convergence']
 
 
+def test_actual_new_field_secant_is_opt_in_and_still_rechecks_heat():
+    first=case(np.array([2.,3.])*1.2,[5.,7.]);calls=[];directions=[]
+    def evaluate(t,ne):
+        value=case(t,ne,len(calls)+1);calls.append(value);return value
+    result=T.solve(evaluate,first,adiabatic,policy='physical_stored',
+                   max_evaluations=12,secant_after_accept=True,
+                   on_direction=lambda *args:directions.append(args[-1]))
+    assert result['secant_after_accept'] is True
+    assert result['fresh_evaluations_used']==len(calls)==len(result['history'])
+    assert result['fixed_field_numerical_converged']
+    assert result['new_transport']==0 and not result['joint_convergence']
+    assert directions[0]=='centered' and 'secant' in directions[1:]
+    np.testing.assert_allclose(result['selected'][0]['temperature'],[2.,3.],rtol=1.e-10)
+
+
 def projection_case():
     from test_lumina_charge_projection import case as build
     from lumina_charge_projection import proposal
@@ -87,6 +102,20 @@ def test_normal_temperature_iteration_closes_charge_without_a_manual_replay_run(
     assert all(np.array_equal(value[0]['temperature'],calls[4][0]['temperature']) for value in calls[5:])
     assert any(entry.get('accepted') is True and value is result['selected'] for value,entry in decisions)
     assert not result['joint_convergence']
+
+
+def test_secant_after_charge_projection_uses_actual_closed_candidate():
+    first, saved, ad, basis, payload=projection_case();calls=[];directions=[]
+    def evaluate(t,ne):
+        value=payload(t,ne,len(calls)+1);calls.append(value);return value
+    result=T.solve(evaluate,first,ad,policy='physical_stored',max_evaluations=8,
+        charge_bounds=(np.full(3,1.e8),np.full(3,4.e8)),secant_after_accept=True,
+        on_direction=lambda *args:directions.append(args[-1]))
+    assert directions==['centered','secant']
+    assert result['accepted_iterations']==2 and result['fixed_field_numerical_converged']
+    assert result['charge_relative']<=1.e-10 and result['secant_after_accept']
+    assert len(calls)==result['fresh_evaluations_used']==len(result['history'])==8
+    assert result['selected'] is calls[-1] and not result['joint_convergence']
 
 
 @pytest.mark.parametrize('fault',['budget','charge','heat'])

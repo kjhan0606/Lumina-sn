@@ -145,12 +145,16 @@ def execution_resources(seconds):
 
 def preserve_thermal_direction(out, index, value, matrix, residual, delta,
                                charge_scale, thermal_scale, *, field,
-                               source_identity, probes, policy='physical_stored'):
+                               source_identity, probes, policy='physical_stored',
+                               linearization_kind='centered'):
     """비싼 섭동을 다시 계산하지 않도록 방향 후보 실행 전에 선형계를 보존한다.
 
     저장은 수용/수렴 판정이나 새 후보 실행 권한이 아니다. 후보와 그 열장부는
     기존 실제 물질 callback으로 별도 평가해야 한다.
     """
+    if linearization_kind not in ('centered', 'secant') or (
+            linearization_kind == 'secant' and probes):
+        raise ValueError('열 방향의 실제 선형화 신원/섭동 목록 오류')
     root = Path(out)/('thermal-direction-'+str(index)); root.mkdir()
     data, energy, metadata = value
     path = root/'linearization.npz'
@@ -160,7 +164,8 @@ def preserve_thermal_direction(out, index, value, matrix, residual, delta,
     record = dict(state='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE',
         field=field, source_identity=source_identity, base_response=metadata,
         probes=probes, rows=['charge', 'RE'], columns=['logT', 'logne'],
-        energy_policy=policy, centered_log_step=1.e-4,
+        energy_policy=policy, linearization_kind=linearization_kind,
+        centered_log_step=1.e-4 if linearization_kind == 'centered' else None,
         numerical_tolerance=1.e-10, max_log_step=.1,
         root=str(root), linearization_sha256=B.sha(path),
         new_material_evaluations=0, new_transport=0, joint_convergence=False)
@@ -202,6 +207,10 @@ def run(args):
     if replay_prefix is not None and (not replay_path or type(replay_prefix) is not int or not 1 <= replay_prefix <= 4):
         raise ValueError('초기 열섭동 재사용은 봉인 재개 보고서와1~4개 명시가 필요')
     projecting = getattr(args, 'charge_projection', False)
+    secant_after_accept = getattr(args, 'secant_after_accept', False)
+    if type(secant_after_accept) is not bool or (secant_after_accept and
+            (temperature_evaluations == 0 or projecting)):
+        raise ValueError('실제 온도 반복에만 선택적 secant 방향 재사용 가능')
     if projecting and (not replay_path or replay_prefix is not None or not 1 <= temperature_evaluations <= 4):
         raise ValueError('고정 T 전하 보정은 전체 완료 열평가 재개와 신규1~4회 한도 필요')
     out = args.out.resolve()
@@ -212,6 +221,7 @@ def run(args):
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
         charge_projection=projecting, fresh_temperature_full_BF_integrations_max=0 if projecting else None,
+        secant_after_accept=secant_after_accept,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
@@ -427,12 +437,15 @@ def run(args):
                             publish(evaluation_roots[id(value[0])]/'thermal-decision.json', entry)
                     def replayed(value):
                         result.setdefault('thermal_evaluation_order', []).append(value[2]); save()
-                    def thermal_direction(value, matrix, residual, delta, charge_scale, thermal_scale):
+                    def thermal_direction(value, matrix, residual, delta, charge_scale, thermal_scale,
+                                          linearization_kind='centered'):
                         records = result.setdefault('thermal_directions', [])
                         records.append(preserve_thermal_direction(out, len(records)+1,
                             value, matrix, residual, delta, charge_scale, thermal_scale,
                             field=last, source_identity=source.identity,
-                            probes=result['thermal_evaluation_order'][-4:].copy(), policy=thermal_policy))
+                            probes=(result['thermal_evaluation_order'][-4:].copy()
+                                    if linearization_kind == 'centered' else []),
+                            policy=thermal_policy, linearization_kind=linearization_kind))
                         save()
                     first_value = (final, evaluation_energy[id(final)], candidates[id(final)])
                     if projecting:
@@ -448,7 +461,8 @@ def run(args):
                             policy=thermal_policy, max_evaluations=temperature_evaluations,
                             on_evaluation=thermal_decision, on_direction=thermal_direction,
                             replay=() if replay_source is None else replay_source['replay'], on_replay=replayed,
-                            charge_bounds=(lower, upper) if result['charge_projected_trials'] else None)
+                            charge_bounds=(lower, upper) if result['charge_projected_trials'] else None,
+                            secant_after_accept=secant_after_accept)
                     final = block.pop('selected')[0]
                     result['temperature_block'] = block
                     result['temperature_updated'] = not np.array_equal(final['temperature'], state['temperature'])
@@ -512,6 +526,8 @@ if __name__ == '__main__':
         help='정책 변경 시 기존 방향 후보가 아닌 초기1~4개 물질 섭동만 재사용. 새 정책의 잔차/척도/방향을 재구성')
     parser.add_argument('--charge-projection', action='store_true',
         help='같은 정책의 완료 거부 후보 T를 고정하고 완료 적분을 재사용해 전하 보정. 신규 ne 평가1~4회')
+    parser.add_argument('--secant-after-accept', action='store_true',
+        help='실제 수용 후보 뒤 Jacobian secant 갱신. 새 후보의 전율·SE·열 재평가는 유지')
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',

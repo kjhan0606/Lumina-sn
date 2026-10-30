@@ -9,6 +9,7 @@ import pytest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from lumina_coupled_material import MaterialPacket,jacobian,residual,newton_direction,packet,solve_coupled
+import lumina_coupled_material as coupled
 from run_lumina_fixed_state_balance import adiabatic
 import lumina_frozen_direction as frozen
 
@@ -88,6 +89,58 @@ def test_global_newton_changes_T_and_ne_to_actual_depth_coupled_root(ad):
     limited=solve_coupled(evaluate,base,ad,max_evaluations=4)
     assert not limited['numerical_converged'] and limited['iterations']==0
     assert limited['packet'] is base
+
+
+def test_optional_secant_uses_actual_accepted_residual_and_fewer_full_probes():
+    target_t=np.array([1.e4,1.2e4]);target_ne=np.array([1.e8,2.e8])
+    def zero_ad(t,ne,nuclei,u):return np.zeros_like(t)
+    def evaluate(t,ne):
+        x=np.log(t/target_t);y=np.log(ne/target_ne)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),
+            1.e-5*(x+.2*y+.2*x*x),
+            target_ne*(np.exp(y)-1+.25*x+.05*x*x),np.full(2,1.e-5))
+    base=evaluate(target_t*1.8,target_ne*.75)
+    default=solve_coupled(evaluate,base,zero_ad,max_evaluations=30,max_log_step=.15)
+    secant=solve_coupled(evaluate,base,zero_ad,max_evaluations=30,max_log_step=.15,
+                         secant_after_accept=True)
+    assert default['numerical_converged'] and secant['numerical_converged']
+    assert len(secant['history'])<len(default['history'])-10
+    assert len([entry for entry in secant['history'] if entry['phase']=='T+'])==1
+    assert len([entry for entry in default['history'] if entry['phase']=='T+'])>1
+    assert secant['iterations']>1
+    np.testing.assert_allclose(secant['packet'].temperature,target_t,rtol=2.e-10)
+    np.testing.assert_allclose(secant['packet'].ne,target_ne,rtol=2.e-10)
+    assert np.max(abs(residual(secant['packet'],zero_ad,base.ne,base.thermal_scale)))<=1.e-10
+    limited=solve_coupled(evaluate,base,zero_ad,max_evaluations=6,max_log_step=.15,
+                          secant_after_accept=True)
+    assert not limited['numerical_converged'] and limited['iterations']==2
+    assert len(limited['history'])==6
+    assert limited['packet'] is not base
+    with pytest.raises(ValueError,match='비용/수치'):
+        solve_coupled(evaluate,base,zero_ad,secant_after_accept=1)
+
+
+def test_singular_secant_direction_refreshes_centered_jacobian(monkeypatch):
+    target=np.array([2.,3.]);calls=[];directions=[]
+    def evaluate(t,ne):
+        calls.append(1)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),
+            np.log(t/target),np.log(ne/np.array([5.,7.])),np.ones(2))
+    original=coupled.newton_direction
+    def fail_second(matrix,values):
+        if len(directions)==1:
+            directions.append('singular_secant')
+            raise np.linalg.LinAlgError('synthetic singular update')
+        return original(matrix,values)
+    monkeypatch.setattr(coupled,'newton_direction',fail_second)
+    base=evaluate(target*1.2,np.array([5.,7.]))
+    result=solve_coupled(evaluate,base,lambda *args:np.zeros(2),
+        max_evaluations=12,max_log_step=.1,secant_after_accept=True,
+        on_direction=lambda *args:directions.append(args[-1]))
+    assert directions[:3]==['centered','singular_secant','centered']
+    assert sum(entry['phase']=='T+' for entry in result['history'])==2
+    assert len(calls)==len(result['history'])+1
+    assert result['iterations']>=1
 
 
 def test_frozen_direction_uses_one_actual_trial_and_no_centered_probes(ad):

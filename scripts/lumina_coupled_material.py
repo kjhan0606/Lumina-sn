@@ -103,7 +103,7 @@ def newton_direction(matrix,scaled_residual):
 
 def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-10,
                   max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None,
-                  project_candidate=None):
+                  project_candidate=None,secant_after_accept=False):
     """동적 물질 생산 callback을 쓰는 전체 깊이 감쇠 Newton.
 
     evaluate(T,ne)는 모든 동적 율과 SE를 갱신한 MaterialPacket을 반환한다.
@@ -115,9 +115,11 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
     base.validate()
     if (type(max_evaluations) is not int or max_evaluations<0 or
         not np.isfinite(numerical_tolerance) or numerical_tolerance<=0 or
-        not np.isfinite(max_log_step) or max_log_step<=0):
+        not np.isfinite(max_log_step) or max_log_step<=0 or
+        type(secant_after_accept) is not bool):
         raise ValueError('공동 Newton 비용/수치 목표 오류')
     c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0;entries={}
+    secant_matrix=None
     def call(t,ne,phase):
         nonlocal used
         value=evaluate(t,ne);value.validate();used+=1
@@ -133,13 +135,28 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         f=residual(base,adiabatic,c,h);norm=float(abs(f).max())
         if norm<=numerical_tolerance:
             return dict(numerical_converged=True,packet=base,history=history,iterations=iterations)
-        if max_evaluations-used<5:break # centered 4개와 실제 방향 후보1개를 함께 예산화
+        if max_evaluations-used<(1 if secant_matrix is not None else 5):break
         t=base.temperature;ne=base.ne
-        probes=(call(t*np.exp(step),ne,'T+'),call(t*np.exp(-step),ne,'T-'),
-                call(t,ne*np.exp(step),'ne+'),call(t,ne*np.exp(-step),'ne-'))
-        j=jacobian(base,*probes,step,adiabatic,charge_scale=c,thermal_scale=h)
-        direction=newton_direction(j,f);n=len(t);x=np.r_[np.log(t),np.log(ne)]
-        if on_direction is not None:on_direction(base,j,f,direction,c,h)
+        using_secant=secant_matrix is not None
+        if using_secant:
+            j=secant_matrix
+        else:
+            probes=(call(t*np.exp(step),ne,'T+'),call(t*np.exp(-step),ne,'T-'),
+                    call(t,ne*np.exp(step),'ne+'),call(t,ne*np.exp(-step),'ne-'))
+            j=jacobian(base,*probes,step,adiabatic,charge_scale=c,thermal_scale=h)
+        try:
+            direction=newton_direction(j,f)
+        except np.linalg.LinAlgError:
+            if using_secant and max_evaluations-used>=5:
+                secant_matrix=None
+                continue
+            raise
+        n=len(t);x=np.r_[np.log(t),np.log(ne)]
+        if on_direction is not None:
+            if secant_after_accept:
+                on_direction(base,j,f,direction,c,h,'secant' if using_secant else 'centered')
+            else:
+                on_direction(base,j,f,direction,c,h)
         # 전체 방향에 같은 감쇠를 적용한다. 개별 T/ne의 물리값을 clamp하지 않는다.
         magnitude=float(abs(direction).max())
         accepted=False;alpha=min(1.,max_log_step/magnitude) if magnitude>0 else 1.
@@ -172,7 +189,23 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
             if project_candidate is not None:
                 entry.update(phase='charge_projected_line',charge_solved=True)
                 if on_evaluation is not None:on_evaluation(candidate,entry)
-            if accepted:base=candidate;iterations+=1;break
+            if accepted:
+                if secant_after_accept:
+                    # 실제 재평가된 잔차만으로 갱신한다. 원 centered J는 첫
+                    # 반복과 secant 실패 시 복원하며, 물리 후보를 보간하지 않는다.
+                    displacement=np.r_[np.log(candidate.temperature),np.log(candidate.ne)]-x
+                    squared=float(displacement@displacement)
+                    if squared>np.finfo('f8').tiny:
+                        change=residual(candidate,adiabatic,c,h)-f
+                        updated=j+np.outer(change-j@displacement,displacement)/squared
+                        secant_matrix=updated if np.isfinite(updated).all() else None
+                    else:
+                        secant_matrix=None
+                base=candidate;iterations+=1;break
             alpha*=.5
-        if not accepted:break
+        if not accepted:
+            if using_secant and max_evaluations-used>=5:
+                secant_matrix=None
+                continue
+            break
     return dict(numerical_converged=False,packet=base,history=history,iterations=iterations)
