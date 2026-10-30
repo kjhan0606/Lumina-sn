@@ -155,9 +155,10 @@ selftest_a2_13_gpu_oracle: tests/a2_13_gpu_oracle.cu $(GPU_PHYSICS_KERNELS) $(GP
 		$(GPU_PHYSICS_KERNELS) $(GPU_OPACITY_KERNELS) $(GPU_EMISSIVITY_KERNELS) $(CUDA_RF_MIRROR) $(GPU_RF_CONTRACT) \
 		$(GPU_PHYSICS_CONTRACT) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c $(NVLDFLAGS)
 
-# Known-answer (Saha) self-test of the ionization/photoionization path — CPU only
+# Legacy Saha diagnostic of the ionization/photoionization path — CPU only
+SELFTEST_IONIZ_BIN ?= selftest_ioniz_saha
 selftest_ioniz_saha: selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) $(ATOMIC_INTERNAL_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(HEADERS)
-	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o selftest_ioniz_saha selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) $(ATOMIC_INTERNAL_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
+	$(CC) -O2 -std=gnu11 -D_GNU_SOURCE -o "$(SELFTEST_IONIZ_BIN)" selftest_ioniz_saha.c src/lumina_plasma.c $(POPULATION_SRC) $(A2_PUBLICATION_SRC) $(NLTE_CANDIDATE_SRC) $(ATOMIC_INTERNAL_SRC) src/bf_rate_jnu.c src/radiation_field.c src/seed_capability.c src/lumina_element_wide.c src/lumina_atomic.c $(LDFLAGS)
 
 # seed T_e 부트스트랩 발행의 음성대조 배터리 (docs/RUNG_SEED_TE_PUBLICATION.md G2/G4/G5)
 # Gate-recovery selftest; uses the production publication/link set.

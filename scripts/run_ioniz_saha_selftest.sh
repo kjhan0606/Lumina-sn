@@ -15,13 +15,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 OUT=${1:-logs/ioniz_saha_selftest}
+if [[ -e "$OUT" ]]; then
+  echo "output root exists; refusing to overwrite: $OUT" >&2
+  exit 2
+fi
+BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lumina-ioniz-saha.XXXXXX")
+SELFTEST_BIN="$BUILD_DIR/selftest_ioniz_saha"
+trap 'rm -f -- "$SELFTEST_BIN"; rmdir -- "$BUILD_DIR" 2>/dev/null || true' EXIT
+make --no-print-directory -B "SELFTEST_IONIZ_BIN=$SELFTEST_BIN" selftest_ioniz_saha
 mkdir -p "$OUT"
 
 run() { tag=$1; shift
   local status=0
   if env "$@" LUMINA_IONIZ_SELFTEST=1 LUMINA_RADEQ_SIMUL=1 \
       LUMINA_RADEQ_LINE_CULL=1e40 \
-      ./selftest_ioniz_saha > "$OUT/$tag.log" 2>&1; then
+      "$SELFTEST_BIN" > "$OUT/$tag.log" 2>&1; then
     :
   else
     status=$?
