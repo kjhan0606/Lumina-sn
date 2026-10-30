@@ -136,6 +136,23 @@ def test_entry_capture_stops_before_selected_native_call_and_requires_target(tmp
         prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',True,entry_only=True)
 
 
+def test_flux_trace_brackets_native_limiter_and_requires_selected_replay(tmp_path):
+    text=(NATIVE/"plane/mom_jrel_v9.f").read_text()
+    split=re.search(r"(?im)^\s*END MODULE MOD_JREL_V9\s*$",text)
+    result=instrument_mom(text[split.end():],trace_flux=True)
+    assert result.index("'HRAW'") < result.index("IF(H_CHK_OPTION .EQ. 'AV_VAL')THEN")
+    assert result.index("'HFIX'") > result.index("IF(H_CHK_OPTION .EQ. 'MAX_VAL')THEN")
+    assert result.index("'HFIX'") < result.index("IF(.NOT. INCL_ADVEC_TERMS)THEN")
+    assert "CLOSE(LUM_H_TRACE)" in result
+    with pytest.raises(ValueError,match='함께 사용할 수 없음'):
+        instrument_mom(text[split.end():],entry_only=True,trace_flux=True)
+    with pytest.raises(ValueError,match='flux 재생'):
+        prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',trace_flux=True)
+    with pytest.raises(ValueError,match='flux 재생'):
+        prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',entry_only=True,trace_flux=True,
+                target_frequency=6.1,target_outer=78)
+
+
 def compile_io_test(tmp_path,first_repair=False,**selection):
     files=[]
     inventories=[]

@@ -367,7 +367,9 @@ END SUBROUTINE
 """
 
 
-def instrument_mom(source, *, entry_only=False):
+def instrument_mom(source, *, entry_only=False, trace_flux=False):
+    if entry_only and trace_flux:
+        raise ValueError('진입 즉시 종료와 flux 재생은 함께 사용할 수 없음')
     source = once(source,"\tUSE MOD_RAY_MOM_STORE\n", "\tUSE MOD_RAY_MOM_STORE\n\tUSE LUMINA_MOM_DIAG\n")
     declarations = """
 \tTYPE(LUMINA_JREL_STATE) LUM_J
@@ -376,6 +378,8 @@ def instrument_mom(source, *, entry_only=False):
 \tLOGICAL LUM_SELECTED
 \tINTEGER LUM_TRACE
 """
+    if trace_flux:
+        declarations += "\tINTEGER LUM_H_TRACE\n"
     start = "\tC_KMS=1.0E-05_LDP*SPEED_OF_LIGHT()"
     source = once(source,"\tEXTERNAL SPEED_OF_LIGHT,ERROR_LU,GET_RSQJ_FROM_J\n",
                   "\tEXTERNAL SPEED_OF_LIGHT,ERROR_LU,GET_RSQJ_FROM_J\n"+declarations)
@@ -394,11 +398,22 @@ def instrument_mom(source, *, entry_only=False):
                     "\t CALL LUMINA_SNAPSHOT_IO('MOM_CAPTURE.bin',LUM_A,LUM_J,LUM_R,.FALSE.)\n"
                     "\t WRITE(6,'(A,3I8,ES24.16)')'LUMINA_MOM_ENTRY ',LUMINA_OUTER,LUMINA_FREQ_INDEX,LUMINA_JIT,FREQ\n"
                     "\t STOP 96\n\t OPEN(NEWUNIT=LUM_TRACE,FILE='MOM_TRACE.bin'")
+    if trace_flux:
+        take = once(take, "\t WRITE(LUM_TRACE) 'CALL',",
+                    "\t OPEN(NEWUNIT=LUM_H_TRACE,FILE='MOM_H_TRACE.bin',FORM='UNFORMATTED',ACCESS='STREAM',STATUS='NEW')\n"
+                    "\t WRITE(LUM_TRACE) 'CALL',")
     source = once(source,start,take+start)
     source = once(source,"\t  CALL THOMAS(TA,TB,TC,XM,ND,1)",
                   "\t  IF(LUM_SELECTED)CALL LUMINA_TRACE_BUDGET(LUM_TRACE,ND)\n\t  IF(LUM_SELECTED)WRITE(LUM_TRACE) 'TRI0',ICOUNT,ND,TA,TB,TC,XM\n\t  CALL THOMAS(TA,TB,TC,XM,ND,1)")
     source = once(source,"\t  RECORDED_ERROR=.FALSE.",
                   "\t  IF(LUM_SELECTED)WRITE(LUM_TRACE) 'RAW0',ICOUNT,ND,XM\n\t  RECORDED_ERROR=.FALSE.")
+    if trace_flux:
+        source = once(source,"\t  IF(H_CHK_OPTION .EQ. 'AV_VAL')THEN",
+                      "\t  IF(LUM_SELECTED)WRITE(LUM_H_TRACE) 'HRAW',ICOUNT,ND,GAM_RSQHNU(1:ND-1)\n"
+                      "\t  IF(H_CHK_OPTION .EQ. 'AV_VAL')THEN")
+        source = once(source,"\t  IF(.NOT. INCL_ADVEC_TERMS)THEN",
+                      "\t  IF(LUM_SELECTED)WRITE(LUM_H_TRACE) 'HFIX',ICOUNT,ND,GAM_RSQHNU(1:ND-1)\n"
+                      "\t  IF(.NOT. INCL_ADVEC_TERMS)THEN")
     source = once(source,"\t    IF(MAX_ER .LT. 1.0E-08_LDP)ACCURATE=.TRUE.",
                   "\t    IF(LUM_SELECTED)WRITE(LUM_TRACE) 'ERR0',ICOUNT,ND,MAX_ER,GAM_RSQJOLD,GAM_RSQJNU,dlnGRSQJdlnR\n\t    IF(MAX_ER .LT. 1.0E-08_LDP)ACCURATE=.TRUE.")
     failure = """\t      IF(LUM_SELECTED .AND. MAX_ER >= 1.0E-08_LDP)THEN
@@ -413,6 +428,9 @@ def instrument_mom(source, *, entry_only=False):
     if not source.rstrip().endswith(tail):
         raise ValueError("MOM 종료 위치 불일치")
     source = source.rstrip()[:-len(tail)]+"\tIF(LUM_SELECTED)CLOSE(LUM_TRACE)\n"+tail+"\n"
+    if trace_flux:
+        source=once(source,"\tIF(LUM_SELECTED)CLOSE(LUM_TRACE)",
+                    "\tIF(LUM_SELECTED)CLOSE(LUM_H_TRACE)\n\tIF(LUM_SELECTED)CLOSE(LUM_TRACE)")
     return source
 
 
@@ -523,9 +541,9 @@ def instrument_first_mom(source):
     return source.rstrip()[:-len(tail)]+complete+tail+"\n"
 
 
-def replay_source():
+def replay_source(*, save_final=False):
     actuals = ",".join("A%"+name for name,_,_ in ARGUMENTS)
-    return """PROGRAM LUMINA_MOM_REPLAY
+    source = """PROGRAM LUMINA_MOM_REPLAY
 USE SET_KIND_MODULE
 USE MOD_JREL_V9
 USE MOD_RAY_MOM_STORE
@@ -547,6 +565,12 @@ CALL MOM_JREL_V9(__ACTUALS__)
 WRITE(6,'(A)')'LUMINA_MOM_RETURNED_WITHOUT_CAPTURE'
 END PROGRAM
 """.replace("__ACTUALS__",actuals)
+    if save_final:
+        source=once(source,"WRITE(6,'(A)')'LUMINA_MOM_RETURNED_WITHOUT_CAPTURE'",
+                    "CALL LUMINA_JREL_TAKE(J)\nCALL LUMINA_RAY_TAKE(RSTATE)\n"
+                    "CALL LUMINA_SNAPSHOT_IO('MOM_FINAL.bin',A,J,RSTATE,.FALSE.)\n"
+                    "WRITE(6,'(A)')'LUMINA_MOM_RETURNED_WITHOUT_CAPTURE'")
+    return source
 
 
 def command(args, cwd):
@@ -580,10 +604,12 @@ def rebuild_unmodified_sources(parent,native,out,*,explicit_objects=()):
 
 
 def prepare(parent, native, out, first_repair=False, *, target_frequency=None, target_outer=None,
-            entry_only=False):
+            entry_only=False, trace_flux=False):
     target = capture_target(first_repair, target_frequency=target_frequency, target_outer=target_outer)
     if entry_only and (first_repair or target is None):
         raise ValueError("진입 포획은 first-repair 없이 주파수/외부 반복을 지정해야 함")
+    if trace_flux and (entry_only or first_repair or target is None):
+        raise ValueError("flux 재생은 진입 포획/first-repair 없이 주파수/외부 반복을 지정해야 함")
     identity = json.loads((parent/"parent-build-identity.json").read_text())
     explicit_objects = [Path(p).resolve() for p in identity.get("explicit_objects", [])]
     if (len(set(explicit_objects)) != len(explicit_objects) or
@@ -615,12 +641,12 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
                "\tCALL LUMINA_MOM_STOP_BEFORE_POP()\n\tCALL SOLVE_FOR_POPS(")
     caller = (native/"new_main/mod_subs/comp_j_blank.f").read_text()
     caller = once(caller,"\t       CALL MOM_JREL_V9", "\t       CALL LUMINA_MOM_SET_PHASE(FREQ_INDX,J_IT_COUNTER,FIRST_FREQ,NEW_FREQ)\n\t       CALL MOM_JREL_V9")
-    mom_builder=instrument_first_mom if first_repair else lambda s: instrument_mom(s,entry_only=entry_only)
+    mom_builder=instrument_first_mom if first_repair else lambda s: instrument_mom(s,entry_only=entry_only,trace_flux=trace_flux)
     sources = {"mod_jrel_v9.f":jrel,"mod_ray_mom_store.f":ray,
                "lumina_mom_diag.f90":diagnostic_module(first_repair,
                    target_frequency=target_frequency, target_outer=target_outer),
                "mom_jrel_v9.f":mom_builder(mom[split.end():]),
-               "comp_j_blank.f":caller,"cmfgen_sub.f":sub,"replay_mom.f90":replay_source()}
+               "comp_j_blank.f":caller,"cmfgen_sub.f":sub,"replay_mom.f90":replay_source(save_final=trace_flux)}
     if out.exists():
         raise ValueError("기존 build 보존")
     out.mkdir()
@@ -647,7 +673,7 @@ def prepare(parent, native, out, first_repair=False, *, target_frequency=None, t
                   explicit_objects=[str(p) for p in explicit_objects],
                   input_sha256={str(p):sha(p) for p in inputs},output_sha256={str(p):sha(p) for p in output_files},
                   JREL_fields=len(jfields),RAY_fields=len(rfields),first_repair=first_repair,
-                  capture_target=target,entry_only=entry_only,final_goal="NOT_JUDGED")
+                  capture_target=target,entry_only=entry_only,trace_flux=trace_flux,final_goal="NOT_JUDGED")
     (out/"capture-build.json").write_text(json.dumps(record,ensure_ascii=False,indent=2)+"\n")
     print(json.dumps({k:v for k,v in record.items() if not k.endswith("sha256")},ensure_ascii=False))
 
@@ -658,10 +684,12 @@ if __name__ == "__main__":
         parser.add_argument("--"+name,type=Path,required=True)
     parser.add_argument("--first-repair",action="store_true")
     parser.add_argument("--entry-only",action="store_true")
+    parser.add_argument("--trace-flux",action="store_true")
     parser.add_argument("--target-frequency",type=float,
                         help="포획할 native 주파수; --target-outer와 함께 지정")
     parser.add_argument("--target-outer",type=int,
                         help="포획할 외부 반복; 그 전의 정상 물질 갱신은 막지 않음")
     a=parser.parse_args()
     prepare(a.parent.resolve(),a.native.resolve(),a.out.resolve(),a.first_repair,
-            target_frequency=a.target_frequency,target_outer=a.target_outer,entry_only=a.entry_only)
+            target_frequency=a.target_frequency,target_outer=a.target_outer,entry_only=a.entry_only,
+            trace_flux=a.trace_flux)
