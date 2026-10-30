@@ -1,5 +1,79 @@
 # 공개 CMFGEN toy06 19.48일과 완료 물질응답 비교
 
+## 공개 비국소 침적과 현재 국소 붕괴 시나리오
+
+공개 `edep_toy06_cmfgen.txt`의 19.48일 열은 γ선과 양전자에 의한 **총
+에너지 침적**이다. 공개 논문은 이를 셀 중심 속도와 체적당 단위
+`erg cm^-3 s^-1`로 정의하며, CMFGEN이 γ 수송과 비열 전자 처리를 사용한다고
+설명한다. [StaNdaRT 자료 정의](https://arxiv.org/html/2209.11671)
+
+완료 F2 고정-T 물질응답의 `evaluation-4/balance.npz`에 저장된
+`instantaneous_scenario`는 같은 붕괴 에너지가 **생성된 곳에서 전부 국소적으로
+침적된다고 가정한 열원**이다. 저장된 `stored_decay`는 기존 0시간 분기 때문에
+전점 0이다. 두 항을 공개 침적과 같은 물리량이나 같은 수송 조건으로 보지
+않는다. 공개 111개 속도점의 19.48일 열을 완료 응답의 반경을 속도로 바꾼
+90개 점에 선형 보간했고, 공개 속도 범위 밖 한 점은 외삽하지 않았다.
+
+| 원점 | 속도 km/s | 공개 총 침적 | 현재 국소 열원 가정 | 공개/국소 |
+| ---: | ---: | ---: | ---: | ---: |
+| 30 | 23909.69 | 2.46513e-8 | 8.12037e-16 | 3.04e7 |
+| 40 | 18021.47 | 3.69927e-7 | 6.20850e-15 | 5.96e7 |
+| 45 | 15178.76 | 1.61281e-6 | 1.65787e-14 | 9.73e7 |
+| 50 | 12376.06 | 8.00060e-6 | 7.91744e-10 | 1.01e4 |
+| 55 | 9610.02 | 6.80230e-5 | 7.78249e-5 | 0.874 |
+| 60 | 7018.76 | 4.46357e-4 | 5.67862e-4 | 0.786 |
+| 65 | 5066.17 | 1.10443e-3 | 1.13831e-3 | 0.970 |
+
+수치는 모두 `erg cm^-3 s^-1`이고 원점 번호는 1부터 센다. 외곽에서는
+국소 붕괴원이 작더라도 다른 곳에서 온 γ선이 침적될 수 있다. 이 결과는
+**공개 toy06의 침적 프로필이 현재의 국소 가정과 큰 차이를 보이는 실제
+자료**이며, 특히 S II/III 공개 불일치가 가장 큰 원점50도 여기에 포함된다.
+그러나 두 시나리오는 γ 수송, 물질 상태와 열·비열 분배가 다르다. 공개 총
+침적을 곧바로 전자 열원이나 S II 이온화율로 넣을 수 없고, 그 차이가 S
+분율 불일치의 원인 또는 해결책이라는 증거도 아니다. 비열 이온화는 방향상
+S III를 늘릴 수 있으므로 S II를 증가시키는 설명으로 단정하지 않는다.
+
+원점50 완료 고정-T 장부에서 BF 가열/냉각은 각각 `3.15986e-6`/
+`2.88238e-6`이며, 공개 **총** 침적 `8.00060e-6`은 이 규모와 비교할 만하다.
+다만 공개 총 침적의 열 분배율은 미확인이고, 이 장부의 전체 순열잔차는
+BB·FF·단열과 다른 항을 모두 포함한다. 공개 침적을 기존 계산에 주입하거나
+재계산하지 않았고, 진행 중인 T/ne 작업의 최종 결과로도 취급하지 않는다.
+후속 공개-물리 비교에서는 비국소 침적과 열/여기/이온화 분배를 함께 맞춰야
+하며, matched-physics 정상 기준에서는 양쪽에 같은 열원 계약을 명시한다.
+
+입력 SHA256: 공개 침적 파일
+`cb107dae9b451c3e6d1faacec29dad4c03b5c2ae38b48c3601c740fb56ecfc4e`, 완료
+`physical-profiles.npz` `766329d782f34a2c22bc6acaf4feb82b36c93d63ac74b5855a0272a0d858b29f`,
+완료 `evaluation-4/balance.npz` `9d42fd13bef1291cf21f6387d68de0aa93876d34c9cf6920cbe061a37975d232`.
+완료 응답 root 이름은 `lumina_second_field_gpu_20261030-DBmS99/response/run`이다.
+
+재현은 `RESULT_RUN`에 그 완료 응답 root를 지정한 뒤 프로젝트 루트에서 아래
+읽기 전용 명령을 실행한다. 배열과 epoch를 확인하며 재수송·새 물질 계산은 없다.
+
+```bash
+python3 - "$RESULT_RUN" <<'PY'
+import sys
+from pathlib import Path
+import numpy as np
+p = Path('data/standart_data1/toy06/edep_toy06_cmfgen.txt')
+root = Path(sys.argv[1])
+times = np.array(p.read_text().splitlines()[2].split(':')[1].split(), dtype=float)
+table = np.loadtxt(p)
+idx = np.flatnonzero(np.isclose(times, 19.48, rtol=0, atol=1e-9))
+assert table.shape == (111, 57) and len(idx) == 1
+assert np.isfinite(table).all() and np.all(np.diff(table[:, 0]) > 0)
+with np.load(root / 'physical-profiles.npz') as profiles, \
+     np.load(root / 'evaluation-4/balance.npz') as balance:
+    velocity = profiles['radius_cm'] / (19.48 * 86400 * 1e5)
+    public = np.interp(velocity, table[:, 0], table[:, idx[0] + 1],
+                       left=np.nan, right=np.nan)
+    local = balance['instantaneous_scenario']
+    for node in (30, 40, 45, 50, 55, 60, 65):
+        i = node - 1
+        print(node, velocity[i], public[i], local[i], public[i] / local[i])
+PY
+```
+
 ## 해석 정정
 
 공개 CMFGEN 이온분포·물리량·스펙트럼은 이미 저장소에 있으며 과거에도
