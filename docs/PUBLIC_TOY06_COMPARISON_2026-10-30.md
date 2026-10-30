@@ -74,6 +74,83 @@ with np.load(root / 'physical-profiles.npz') as profiles, \
 PY
 ```
 
+### 침적 차이에 대한 기존 결합 행렬의 조건부 민감도
+
+위 침적 비율이 곧 온도 변화 비율을 뜻하는 것은 아니다. 이미 완료된
+고정 J의 기준 generation11과 그 T/ne 중심차분으로 저장된 180×180 결합
+Jacobian을 재사용했다. 같은 기준점에서 **공개 총 침적이 전부 전자열로
+바뀐다고 가정**하여, 현재 국소 순간열과의 차이 `ΔQ`를 열잔차에만 더했을
+때 두 Newton 제안의 선형 차이 `Δx = −Jacobian⁻¹(0, ΔQ/열척도)`를
+계산했다. 전하 행과 깊이 결합 단열항은 기존 행렬 그대로다.
+
+이것은 실제 공개 모델의 열원 분배나 시간항이 아니며, 이미 수렴한 두
+물리해의 차이도 아니다. 기준점 자체에 잔차가 있으므로 `Δx`는 **같은
+기준점에서의 Newton 제안 차이**다. 공개 분포의 셀 중심을 원점으로 선형
+보간했고, 공개 속도 범위 밖인 원점90은 `ΔQ=0`으로 둔 조건부 결과다.
+
+| 원점 · 속도 km/s | 가상 열원 변화 erg cm^-3 s^-1 | `Δlog T` | `Δlog ne` |
+| --- | ---: | ---: | ---: |
+| 42 · 16875 | +6.58513e-7 | +0.003528 | +1.408e-5 |
+| 45 · 15179 | +1.61281e-6 | +0.002824 | +4.625e-6 |
+| 50 · 12376 | +7.99981e-6 | +0.001744 | +2.149e-6 |
+| 55 · 9610 | −9.80185e-6 | −0.000420 | −6.372e-7 |
+| 60 · 7019 | −1.21505e-4 | −0.003163 | −1.801e-4 |
+
+원점50에서는 가상 열원 변화에 대한 선형 Newton 제안 차이가 약 0.17%의
+로그온도다. 그렇다고 실제 열원 교체 시 온도가 그만큼만 바뀐다거나,
+침적·비열이 Si/S 불일치에 중요하지 않다는 결론은 아니다. 특히 전체 90점
+중 바깥 29점에서 `|Δlog T|>0.1`, 원점19에서는 `+0.883`이다. 이런 크기는
+국소 선형 근사의 유효성을 넘어설 수 있다. 행 척도가 적용된 저장 행렬의
+2-노름 조건수는 약 `1.28e9`이며 선형계 상대 잔차는 `1.77e-13`이다.
+이는 선형계를 풀었다는 확인이지 비선형 물리 응답의 정확도나 오차 상한은
+아니다. 공개 총 침적의 열·여기·이온화 분배와 새 물질/복사장 계산 없이
+이 값을 실제 최종 결과로 사용하지 않는다.
+
+선형화 입력의 SHA256은
+`7f5949f94899b2485253f4a9ffbee4c5da9ea9a7f52ebf4393eddb1bcdf89bdb`,
+기준 evaluation-1 balance는
+`ab755cc6d7e5c08e1c42d41b6354b6d425eb4e624c8f3d6ca1806113a9610f29`다.
+공개 침적과 완료 반경 배열 SHA는 위 표의 신원과 같다. `TRIAL_RUN`은
+진행 중 물질응답의 `lumina_second_field_thermal_replacement_20261030-fz3u4uV0/run`,
+`RESULT_RUN`은 위 완료 응답 root다. 재현은 아래 읽기 전용 선형대수이며,
+기존 작업이나 물질·열원을 변경하지 않는다.
+
+```bash
+OPENBLAS_NUM_THREADS=1 python3 - "$TRIAL_RUN" "$RESULT_RUN" <<'PY'
+import sys
+from pathlib import Path
+import numpy as np
+trial, result = map(Path, sys.argv[1:])
+public = Path('data/standart_data1/toy06/edep_toy06_cmfgen.txt')
+times = np.array(public.read_text().splitlines()[2].split(':')[1].split(), float)
+table = np.loadtxt(public)
+idx = np.flatnonzero(np.isclose(times, 19.48, rtol=0, atol=1e-9))
+assert table.shape == (111, 57) and len(idx) == 1
+with np.load(trial/'thermal-direction-1/linearization.npz') as jac, \
+     np.load(trial/'evaluation-1/balance.npz') as bal, \
+     np.load(trial/'evaluation-1/response.npz') as state, \
+     np.load(result/'physical-profiles.npz') as profiles:
+    assert np.array_equal(jac['temperature'], state['temperature'])
+    assert np.array_equal(jac['ne'], state['ne'])
+    key = 'native_instantaneous_scenario'
+    scale = .5*(bal[key+'_gross'] + abs(bal[key+'_net']))
+    assert np.array_equal(scale, jac['thermal_scale'])
+    velocity = profiles['radius_cm'] / (19.48*86400*1e5)
+    dep = np.interp(velocity, table[:, 0], table[:, idx[0]+1], left=np.nan, right=np.nan)
+    delta = np.where(np.isfinite(dep), dep-bal['instantaneous_scenario'], 0.)
+    forcing = np.r_[np.zeros(90), delta/scale]
+    matrix = jac['jacobian']
+    dx = np.linalg.solve(matrix, -forcing)
+    print('uncovered:', np.flatnonzero(~np.isfinite(dep))+1,
+          'large_T:', np.flatnonzero(abs(dx[:90]) > .1)+1)
+    print('condition:', np.linalg.cond(matrix),
+          'linear_relative_residual:', np.linalg.norm(matrix@dx+forcing, np.inf)/np.linalg.norm(forcing, np.inf))
+    for n in (19, 42, 45, 50, 55, 60):
+        i = n-1
+        print(n, velocity[i], delta[i], dx[i], dx[90+i])
+PY
+```
+
 ## 해석 정정
 
 공개 CMFGEN 이온분포·물리량·스펙트럼은 이미 저장소에 있으며 과거에도
