@@ -174,6 +174,42 @@ Fe I도 별도 `f_to_s`의 앞136개가 44 SL·논문 마지막 준위와 대응
 이들은 파일 기반 후보일 뿐 공개 실행의 확정 입력이나 물리적 효과가 아니다.
 새 native·BF·SE·수송 계산과 원 파일 교체는 하지 않았다.
 
+### 공개 후보 밖 추가 준위의 현재 광이온화 흐름
+
+위 접두 준위 대응을 완료된 새 J 고정-T 응답의 기존 BF 율에 적용했다.
+각 이온의 현재 bound photo 흐름 중 공개 표의 준위 수를 넘어서는 FL에서
+나온 비율이다. 322개만 포함된 현재 S II에는 이 기준의 추가 FL이 없다.
+
+| 원점(1기준) · 속도 km/s | Si II→III 추가 FL | Si III→IV 추가 FL | S III→IV 추가 FL |
+| --- | ---: | ---: | ---: |
+| 50 · 12,376 | 0.657% | 3.259% | 1.237% |
+| 54 · 10,164 | 1.598% | 11.926% | 3.260% |
+| 60 · 7,019 | 4.269% | 18.025% | 5.034% |
+
+예를 들어 원점60의 Si III bound photo 총흐름은 `174609.62`, 그중 추가
+FL은 `31473.80 cm^-3 s^-1`다. S III는 `59197.60` 중 `2979.80`이다.
+이 값은 **현재 J/T/ne와 현재 FL 인구를 고정한 방향별 bound photo의
+분해**이며, 공개 계산의 rate가 아니다. 이 표의 S III는 S III→IV이지
+관심 비율을 직접 정하는 S II→III가 아니다. 총 BF photo에는 bound 외
+pseudo 항도 포함되며 원점60에서 위 두 bound 합은 총 BF photo의 각각
+`99.77%`, `99.61%`다.
+
+따라서 실제 현 상태에서 Si III 추가 준위의 해당 광이온화 흐름은 일부 깊이에서
+무시하기 어렵고, 원점50의 S III 추가준위 직접 photo 비중은 작다. 그러나
+준위를 실제로 빼거나 추가하면 SL 분할·다른 인구·복사장과 역방향 율이 함께
+바뀌므로, 위 수치만으로 재계산 결과나 공개 S II/III 불일치의 기여율을
+예측하지 않는다. S II의 빠진323·324번 준위는 현재 응답에 없으므로 이
+분해의 `0% 추가`에 포함되지 않는다.
+
+재현은 완료 `route-roster.npz`의 `(Z,stage,lower,probability)`,
+`bound-rates.npy`의 photo열, 선택 `response.npz`의 `population`, `fraction`,
+`columns`, 실제 `levels.csv`를 사용한다. 각 경로에서
+`population[lower의 SL,node] * fraction[lower,node] * probability *
+bound_rates[route,node,0]`을 더하고, 원자번호별 `level_number`를 공개 표의
+FL 개수와 비교한다. 파일 SHA는 아래 신원과 S II 분해 절에 기록된 것을
+사용하며, 분모를 선택 응답의 `balance.npz` BF photo 총흐름과 대조했다.
+입력은 읽기만 했고 새 BF 적분·SE·수송은 없다.
+
 ## 공개 오프셋과 마지막 새 장 응답을 분리
 
 같은 완료 분율표의 `CMFGEN70_fraction`, `accepted_fraction`,
