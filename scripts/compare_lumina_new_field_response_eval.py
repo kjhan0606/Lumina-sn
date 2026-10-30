@@ -42,17 +42,34 @@ def checked_input(report, basename):
     return path
 
 
-def accepted_material_paths(preparation):
+def accepted_manifest(preparation):
     manifest_path = Path(preparation['accepted_material']).resolve()
     expected_manifest = preparation.get('input_sha256', {}).get(str(manifest_path))
     if not expected_manifest or B.sha(manifest_path) != expected_manifest:
         raise ValueError('수용 물질 manifest의 봉인 해시 불일치')
-    manifest = json.loads(manifest_path.read_text())
+    return json.loads(manifest_path.read_text())
+
+
+def accepted_material_paths(preparation):
+    manifest = accepted_manifest(preparation)
     material = Path(preparation['material']).resolve()
     expected_material = manifest.get('output_sha256', {}).get('native_material_nodes.bin')
     if not expected_material or B.sha(material) != expected_material:
         raise ValueError('수용 입력 물질 파일의 봉인 해시 불일치')
     return material
+
+
+def original_reference_path(preparation, report):
+    # Match the producer: the original is an input to the accepted-material
+    # manifest, not the accepted output recorded in field preparation.
+    manifest = accepted_manifest(preparation)
+    inputs = manifest.get('input_sha256', {})
+    reference = input_path(inputs, 'native_material_nodes.bin')
+    expected = inputs[str(reference)]
+    if (not expected or B.sha(reference) != expected or
+            report.get('input_sha256', {}).get(str(reference)) != expected):
+        raise ValueError('원 기준 물질의 manifest/실행 봉인 해시 불일치')
+    return reference
 
 
 def compare_result(result_path, expected_sha256, index):
@@ -72,13 +89,7 @@ def compare_result(result_path, expected_sha256, index):
     feedback = json.loads(feedback_path.read_text())
     accepted_path = accepted_material_paths(preparation)
 
-    seed_matches = [Path(path) for path in preparation.get('input_sha256', {})
-                    if Path(path).name == 'native_material_nodes.bin']
-    if len(seed_matches) != 1:
-        raise ValueError('원 기준 물질 파일 주소가 하나로 특정되지 않음')
-    reference_path = seed_matches[0]
-    if B.sha(reference_path) != preparation['input_sha256'][str(reference_path)]:
-        raise ValueError('원 기준 물질 파일의 봉인 해시 불일치')
+    reference_path = original_reference_path(preparation, report)
 
     rows = list(csv.DictReader(levels.open()))
     models = B.atomic.load_cmfgen_model_spec(model_spec, links)
@@ -101,7 +112,8 @@ def compare_result(result_path, expected_sha256, index):
         result_state=report.get('state'), final_goal=report.get('final_goal'),
         selected_response_is_this_evaluation=(report.get('selected_response') == entry),
         evaluation_index=index, generation=entry.get('generation'),
-        baseline=report.get('comparison_baseline'), input_J_sha256=j_sha,
+        baseline='ACCEPTED_MANIFEST_ORIGINAL_NATIVE_MATERIAL_NOT_INDEPENDENTLY_CERTIFIED',
+        producer_declared_baseline=report.get('comparison_baseline'), input_J_sha256=j_sha,
         result_sha256=expected_sha256, response_sha256=entry['response_sha256'],
         balance_sha256=entry['balance_sha256'], reference_material_sha256=B.sha(reference_path),
         accepted_material_sha256=B.sha(accepted_path),
