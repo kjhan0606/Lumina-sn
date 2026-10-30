@@ -75,6 +75,21 @@ generation16 후보를 대체하거나 선택 응답으로 승격하지 않는�
 
 ## 다음 판정
 
+### 결과의 `selected_response`와 수치수렴 표식은 다른 주장
+
+봉인 소스에서 `solve_coupled()`는 평가 예산이 끝나면 마지막 기준/수용 packet을
+`packet`으로 반환하면서 `numerical_converged=False`를 함께 남긴다.
+`lumina_fixed_field_thermal.solve()`는 이 packet을 `selected`로 보존하고 별도
+`fixed_field_numerical_converged` 표식을 반환한다. 호출부는 해당 `selected`
+packet을 `selected_response`에 기록한다. 따라서 결과 JSON에 `selected_response`가
+있다는 사실만으로 T/ne Newton 수렴이나 물리 수용을 주장할 수 없다.
+
+완료 판독에서는 결과 상태, `temperature_block.fixed_field_numerical_converged`,
+최종 후보의 실제 charge/SE/RE·핵수·입력/응답 SHA를 각각 구분해 확인한다.
+수치 flag와 기존 물리 수용문턱(`1e-10` 전하·`1e-8` SE·`1e-3` 열)의 의미도
+서로 바꾸어 쓰지 않는다. 다음 단계로 전달 가능한지는 봉인된 묶음 기준 전체로
+판정하며, 필드 존재 하나로 자동 전달하지 않는다.
+
 1. 같은 승인 실행에서 generation16의 완전한 결과와 실제 선탐색 판정을 기다린다.
 2. 후보가 게시되면 선택표식만 믿지 않고 실제 전하·SE·고정 척도 RE, T/ne 이동,
    nuclei 보존, 응답 SHA를 재확인한다.
