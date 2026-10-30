@@ -263,6 +263,17 @@ def test_thermal_selected_candidate_roundtrips_without_claiming_joint_convergenc
     assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
 
 
+def test_legacy_thermal_result_uses_v2_re_tolerance_when_field_missing(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result)
+    del report['temperature_block']['thermal_tolerance']
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'legacy-thermal-export')
+    assert exported['checks']['thermal_selected_scaled_max']<1.e-3
+    assert not exported['checks']['fixed_field_numerical_converged']
+    assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
+
+
 def test_charge_projected_step_exports_only_its_actual_final_selected_response(tmp_path,monkeypatch):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
     report,target=thermal_report(result)

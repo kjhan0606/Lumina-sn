@@ -108,7 +108,9 @@ def thermal_checks(report, candidate, directory):
     block = report['temperature_block']
     converged = block['fixed_field_numerical_converged']
     charge_tolerance = block.get('charge_tolerance', 1.e-10)
-    thermal_tolerance = block.get('thermal_tolerance', 1.e-10)
+    # Older sealed response runs predate an explicit tolerance field. In that
+    # case use the v2 physical RE acceptance, not the solver's stricter default.
+    thermal_tolerance = block.get('thermal_tolerance', 1.e-3)
     if (not np.isfinite([charge_tolerance, thermal_tolerance]).all() or
             charge_tolerance <= 0 or thermal_tolerance <= 0 or
             charge_tolerance > 1.e-10 or thermal_tolerance > 1.e-3):
