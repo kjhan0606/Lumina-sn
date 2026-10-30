@@ -195,6 +195,45 @@ candidate = np.linalg.solve(matrix, A[3] + .01*delta)
 print('J1,J2', candidate[:2], 'negative depths', np.flatnonzero(candidate < 0) + 1)
 ```
 
+#### 앞선 H를 필요조건에 맞춰도 다음 상태는 여전히 불가능
+
+단순 H 제한이 수리가 될 수 있는지 같은 저장 선형계에서 반증했다. 앞선
+주파수 각 경계의 H만 `±sqrt(max(J_left,J_right)*K)` 범위에 넣고,
+변화량은 연결된 두 내부 우변에 반대 부호로 반영했다. 앞선 J와 K, 이번
+주파수의 선형계·closure 및 다른 입력은 그대로다. 원본을 변경하거나 실제
+주파수 수송을 다시 풀지는 않았다.
+
+이 가상 계의 해는 90점 모두 양수이고 선형계 최대 정규화 잔차는
+`1.14e-16`이다. 그러나 원래 H 식으로 계산한 **이번 주파수 raw H**와
+저장 closure를 결합하면, 기존 `|H|≤max(J_left,J_right)`를 모든 경계에서
+만족하면서도 경계1–4에서 `H²≤max(J_left,J_right)*K`를 위반한다.
+각 비율은 `1.10036, 1.22492, 1.16756, 1.00746`이다. J와 K는 양수다.
+
+따라서 이 동결 계에서는 앞선 H를 필요조건에 맞춰 음수 J를 제거하더라도
+다음 J/H/K가 실제 각강도에서 가능한 조합이라는 보장은 없다. 이는 H를
+제한한 값을 실제 ray 해나 물리적 수리로 취급하지 말아야 할 직접적인
+사례다. 이전 주파수의 각강도·closure와 현재 공간·주파수 수송을 함께
+다뤄야 하며, 실제 재생 및 공동수렴 없이 전주파수 결과로 일반화하지 않는다.
+
+재현은 앞 블록의 `jp`, `hp`, `hs`, `jm`, `k`, `A`, `matrix`에 이어 실행한다.
+
+```python
+limit = np.sqrt(jm*k)
+dh = np.clip(hp[:-1], -limit, limit) - hp[:-1]
+b = A[3].copy()
+b[1:-1] += -hs[:-2]*dh[:-1] + hs[1:-1]*dh[1:]
+new_j = np.linalg.solve(matrix, b)
+new_h = (v('HU')[:-1]*new_j[1:] - v('HL')[:-1]*new_j[:-1]
+         + hs[:-1]*(hp[:-1]+dh)
+         + v('EPS_PREV')[:-1]*(jp[:-1]+jp[1:])
+         - v('EPS')[:-1]*(new_j[:-1]+new_j[1:]))
+new_k = q['KMID_ON_J_SAVE']['values'][:-1]*(new_j[:-1]+new_j[1:])
+new_jmax = np.maximum(new_j[:-1], new_j[1:])
+print('negative J', np.flatnonzero(new_j < 0) + 1)
+print('necessary-condition violations',
+      np.flatnonzero(new_h**2 > new_jmax*new_k) + 1)
+```
+
 #### 음수 대체와 잔차의 정량적 연결
 
 같은 재구성 행렬을 고정하고 직전 SAVE의 원점3–90을 유지했다. 원점3 행을
