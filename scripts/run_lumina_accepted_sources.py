@@ -62,6 +62,7 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
     manifest = json.loads(paths['accepted_material'].read_text())
     if manifest['schema'] != 'lumina-accepted-nodal-material-v1':
         raise ValueError('수용 물질의 실제 manifest 필요')
+    A.validate_material_closure(manifest)
     free_free_policy=coefficient_free_free_policy(manifest,free_free_policy)
     for name, digest in manifest['output_sha256'].items():
         if B.sha(material/name) != digest: raise ValueError('새 물질 출력 변경: '+name)
