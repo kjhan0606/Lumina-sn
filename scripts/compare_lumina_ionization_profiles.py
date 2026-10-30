@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""같은 원래점의 Si/S 분율을 비교한다. 비수렴 CMFGEN 입력을 앵커로 인증하지 않는다."""
+"""봉인된 원 물질과 후보의 같은 원래점 Si/S 분율을 비교한다."""
 import argparse
 import csv
 import hashlib
@@ -92,7 +92,10 @@ def compare(result_path, expected_hash, out, rejected_evaluation=None):
         tag, ns, nc, nl, epoch = struct.unpack('<8sIIId', stream.read(28))
         columns = np.fromfile(stream, dtype='<i4', count=3 * nc).reshape(nc, 3)
         physical = np.fromfile(stream, dtype='<f8', count=4 * ns).reshape(ns, 4)
+        native_population = np.fromfile(stream, dtype='<f8', count=ns * nc).reshape(ns, nc).T
+        trailing = stream.read(1)
     if (tag != b'LUMNOD01' or ns != 90 or not np.isfinite(epoch) or epoch <= 0 or
+        trailing or not np.array_equal(native_population, initial['superlevel']) or
         not np.array_equal(columns, initial['columns']) or not np.array_equal(columns, candidate['columns']) or
         not np.array_equal(physical[:, 1], initial['temperature']) or
         not np.array_equal(physical[:, 2], initial['ne']) or
@@ -122,8 +125,8 @@ def compare(result_path, expected_hash, out, rejected_evaluation=None):
             ne_reference_cm3=float(initial['ne'][i]), ne_candidate_cm3=float(candidate['ne'][i]))
         label = 'Lumina' if rejected_evaluation is None else 'Lumina_REJECTED_eval' + str(rejected_evaluation)
         for name, (old, new, log) in values.items():
-            row.update({name + '_CMFGEN70': float(old[i]), name + '_' + label: float(new[i]),
-                        name + '_log10_' + label + '_over_CMFGEN70': float(log[i]) if np.isfinite(log[i]) else ''})
+            row.update({name + '_reference': float(old[i]), name + '_' + label: float(new[i]),
+                        name + '_log10_' + label + '_over_reference': float(log[i]) if np.isfinite(log[i]) else ''})
         rows.append(row)
     out.mkdir()
     table = out / 'profiles.csv'
@@ -136,7 +139,8 @@ def compare(result_path, expected_hash, out, rejected_evaluation=None):
     summary = dict(state=('COMPLETE_SAME_NATIVE_NODE_IONIZATION_COMPARISON' if rejected_evaluation is None
                           else 'COMPLETE_REJECTED_CANDIDATE_IONIZATION_DIAGNOSTIC'),
         **selection,
-        baseline='CMFGEN 물질70 고정T 비수렴 입력; certified released-T 앵커 아님',
+        baseline='봉인된 native 원 물질 입력; 물리 출처와 앵커 자격은 별도 확인 필요',
+        producer_declared_baseline=report.get('comparison_baseline'),
         source_run=result_path.parent.parent.name, points=ns, summary=summaries,
         input_sha256=dict(result=expected_hash, accepted=inputs[accepted], candidate_response=selected_hash,
             snapshot=inputs[paths['snapshot']], nodes=inputs[paths['nodes']]),

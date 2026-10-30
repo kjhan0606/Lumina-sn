@@ -1,9 +1,11 @@
 import tempfile
 from pathlib import Path
 import unittest
+import csv
 import json
+import struct
 import numpy as np
-from compare_lumina_ionization_profiles import compare, diagnostics, response_selection
+from compare_lumina_ionization_profiles import compare, diagnostics, response_selection, sha
 
 
 class ProfileTests(unittest.TestCase):
@@ -67,6 +69,52 @@ class ProfileTests(unittest.TestCase):
             root = Path(folder)
             with self.assertRaises(FileExistsError):
                 compare(root / 'absent.json', 'bad-hash', root)
+
+    def test_snapshot_must_match_native_population_not_only_temperature_and_charge(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            seed = root / 'seed'; seed.mkdir()
+            bf = root / 'bf'; bf.mkdir()
+            nodes = seed / 'native_material_nodes.bin'
+            snapshot = bf / 'material-snapshot.npz'
+            accepted = root / 'accepted-response.npz'
+            columns = np.array([[14, 1, 0], [14, 2, 0], [16, 1, 0], [16, 2, 0]], dtype='<i4')
+            ns, nc = 90, len(columns)
+            physical = np.column_stack((np.linspace(90., 1., ns), np.full(ns, 10000.),
+                                        np.full(ns, 1.e6), np.ones(ns))).astype('<f8')
+            population = np.tile(np.array([.2, .8, .3, .7])[:, None], (1, ns))
+            with nodes.open('wb') as stream:
+                stream.write(struct.pack('<8sIIId', b'LUMNOD01', ns, nc, nc, 1.e5))
+                stream.write(columns.tobytes())
+                stream.write(physical.tobytes())
+                stream.write(population.T.astype('<f8').tobytes())
+            np.savez(accepted, columns=columns, population=population,
+                     temperature=physical[:, 1], ne=physical[:, 2])
+            mismatched = population.copy()
+            mismatched[0, 0] += .1; mismatched[1, 0] -= .1  # Preserve element total.
+            np.savez(snapshot, columns=columns, superlevel=mismatched,
+                     temperature=physical[:, 1], ne=physical[:, 2])
+            result = root / 'result.json'
+            def publish_report():
+                result.write_text(json.dumps({'accepted_output_sha256': sha(accepted),
+                    'comparison_baseline': 'producer-declared reference',
+                    'input_sha256': {str(snapshot): sha(snapshot), str(nodes): sha(nodes)}}))
+            publish_report()
+            out = root / 'comparison'
+            with self.assertRaisesRegex(ValueError, '같은 원래90점/원자 주소/물질'):
+                compare(result, sha(result), out)
+            self.assertFalse(out.exists())
+            np.savez(snapshot, columns=columns, superlevel=population,
+                     temperature=physical[:, 1], ne=physical[:, 2])
+            publish_report()
+            report = compare(result, sha(result), out)
+            self.assertEqual(report['summary']['Si_III']['max_abs_fraction'], 0.)
+            self.assertEqual(report['producer_declared_baseline'], 'producer-declared reference')
+            self.assertIn('별도 확인 필요', report['baseline'])
+            with (out / 'profiles.csv').open() as stream:
+                row = next(csv.DictReader(stream))
+            self.assertIn('Si_III_reference', row)
+            self.assertNotIn('Si_III_CMFGEN70', row)
 
 
 if __name__ == '__main__':
