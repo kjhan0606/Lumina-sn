@@ -134,6 +134,45 @@ state = capture(root/'replay/MOM_CAPTURE.bin',
 print(previous_state_audit(state))
 ```
 
+#### 음수 대체와 잔차의 정량적 연결
+
+같은 재구성 행렬을 고정하고 직전 SAVE의 원점3–90을 유지했다. 원점3 행을
+만족하는 원점2의 값을 대수적으로 구한 다음, 원점2 행을 만족하는 원점1을
+구했다. 두 값만 바꾼 가상 배열은 다음과 같다.
+
+| 원점 | 저장 J | 행식에서 역산한 J | 원 오류 로그 raw J |
+| ---: | ---: | ---: | ---: |
+| 1 | `35595.61824` | `−4.98758162` | 약 `−4.9876` |
+| 2 | `35599.81257` | `−6.18324097` | 약 `−6.1832` |
+
+역산값은 당시 마지막 두 오류 행의 음수 raw J와 **로그 출력 정밀도에서
+일치**한다. 원점3 행의 원점2 계수는 `−0.24617248`이다. 가상 배열을
+90개 행 전체에 대입한 정규화 잔차 최대는 `2.04e-13`이다. 즉 이 snapshot
+계수와 J1·J2를 제외한 나머지가 해당 호출의 최종 계수·raw 해라는 전제에서,
+두 음수 값을 formal 양수로 교체한 것이 저장 J의 원래 선형 방정식 잔차를
+만드는 구체적인 경로가 된다. 이전 로그의 출력 정밀도와 snapshot에서
+독립적으로 맞는 양도 늘었지만, 정확한 마지막 호출과 계수의 동일성은
+진행 중인 진입 snapshot 재생에서 확인한다.
+
+이것은 **선형화된 한 주파수 방정식의 가상 역산**이지 양의 물리해가 아니다.
+원점1·2의 역산값은 음수이므로 저장 J를 이 값으로 바꾸거나 이를 수리로
+채택해서는 안 된다. 이보다 앞 주파수의 입력과 경계·closure가 왜 음수
+해를 만들었는지가 여전히 근본 추적 대상이다. 수송·인구는 갱신하지 않았다.
+
+재현은 위 `state`를 재사용한다.
+
+```python
+import numpy as np
+from analyze_cmfgen_mom_capture import residual
+from solve_cmfgen_mom_kernel import completed_operator, tri_matrix
+A = completed_operator(state)
+matrix = tri_matrix(A)
+x = state['modules']['jrel']['GAM_RSQJNU_SAVE']['values'].copy()
+x[1] += (A[3, 2] - matrix[2] @ x) / matrix[2, 1]
+x[0] += (A[3, 1] - matrix[1] @ x) / matrix[1, 0]
+print(x[:2], residual(A, x), np.flatnonzero(x < 0) + 1)
+```
+
 ### 이전 주파수의 음수 J 기록과 저장 분포
 
 원래 실행의 `MOM_J_ERRORS` 마지막 부분을 확인했다. 출력 정밀도로
