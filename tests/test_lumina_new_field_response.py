@@ -192,7 +192,8 @@ def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_acc
     delta=np.linalg.solve(matrix,-residual);charge_scale=data['ne'];thermal_scale=np.array([1.,2.])
     record=N.preserve_thermal_direction(tmp_path,1,(data,{},metadata),matrix,residual,delta,
         charge_scale,thermal_scale,field={'J':'F2'},source_identity={'material':'accepted'},
-        probes=[{'root':'evaluation-'+str(i)} for i in range(2,6)])
+        probes=[{'root':'evaluation-'+str(i)} for i in range(2,6)],
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
     root=tmp_path/'thermal-direction-1';path=root/'linearization.npz'
     assert record['linearization_sha256']==N.B.sha(path)
     assert json.loads((root/'result.json').read_text())==record
@@ -202,6 +203,7 @@ def test_saved_direction_keeps_exact_linear_system_and_never_marks_candidate_acc
             thermal_scale=thermal_scale).items():np.testing.assert_array_equal(saved[key],value)
     assert record['base_response']==metadata and len(record['probes'])==4
     assert record['linearization_kind']=='centered' and record['centered_log_step']==1.e-4
+    assert record['charge_tolerance']==1.e-10 and record['thermal_tolerance']==1.e-3
     assert record['state']=='SAVED_DIRECTION_NOT_ACCEPTED_CANDIDATE'
     assert not record['joint_convergence'] and record['new_material_evaluations']==0
     with pytest.raises(FileExistsError):

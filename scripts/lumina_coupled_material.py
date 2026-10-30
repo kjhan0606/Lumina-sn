@@ -103,38 +103,55 @@ def newton_direction(matrix,scaled_residual):
 
 def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-10,
                   max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None,
-                  project_candidate=None,secant_after_accept=False):
+                  project_candidate=None,secant_after_accept=False,
+                  charge_tolerance=None,thermal_tolerance=None):
     """동적 물질 생산 callback을 쓰는 전체 깊이 감쇠 Newton.
 
     evaluate(T,ne)는 모든 동적 율과 SE를 갱신한 MaterialPacket을 반환한다.
     project_candidate는 같은 T에서만 전하를 닫는다. 추가 실제평가도 같은
     총예산을 소비하며 실패하면 후보를 수용하지 않는다. 기본 경로는 보존한다.
     iteration/관측 한도는 미수렴으로 반환하며 마지막 수용 상태를 보존한다.
-    numerical_converged는 이 고정장 계의 내부 잔차만 뜻한다.
+    numerical_converged는 이 고정장 계에서 별도로 지정한 전하/RE 잔차기준을
+    만족한다는 뜻이며 복사장과의 공동수렴을 뜻하지 않는다.
     """
     base.validate()
+    charge_tolerance=numerical_tolerance if charge_tolerance is None else charge_tolerance
+    thermal_tolerance=numerical_tolerance if thermal_tolerance is None else thermal_tolerance
     if (type(max_evaluations) is not int or max_evaluations<0 or
-        not np.isfinite(numerical_tolerance) or numerical_tolerance<=0 or
+        not np.isfinite([numerical_tolerance,charge_tolerance,thermal_tolerance]).all() or
+        min(numerical_tolerance,charge_tolerance,thermal_tolerance)<=0 or
         not np.isfinite(max_log_step) or max_log_step<=0 or
         type(secant_after_accept) is not bool):
         raise ValueError('공동 Newton 비용/수치 목표 오류')
     c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0;entries={}
     secant_matrix=None
+    def residual_metrics(value):
+        scaled=residual(value,adiabatic,c,h);n=len(value.ne)
+        return scaled,float(abs(scaled[:n]).max()),float(abs(scaled[n:]).max())
+    def within_tolerances(value):
+        _,charge_max,thermal_max=residual_metrics(value)
+        return charge_max<=charge_tolerance and thermal_max<=thermal_tolerance
+    def result(value,converged):
+        scaled,charge_max,thermal_max=residual_metrics(value)
+        return dict(numerical_converged=converged,packet=value,history=history,iterations=iterations,
+            charge_scaled_max=charge_max,thermal_scaled_max=thermal_max,
+            charge_tolerance=float(charge_tolerance),thermal_tolerance=float(thermal_tolerance),
+            scaled_max=float(abs(scaled).max()))
     def call(t,ne,phase):
         nonlocal used
         value=evaluate(t,ne);value.validate();used+=1
         if not np.array_equal(value.temperature,t) or not np.array_equal(value.ne,ne):
             raise ValueError('동적 평가가 요청 T/ne를 소비하지 않음')
-        entry=dict(evaluation=used,phase=phase,
-            scaled_max=float(abs(residual(value,adiabatic,c,h)).max()))
+        scaled,charge_max,thermal_max=residual_metrics(value)
+        entry=dict(evaluation=used,phase=phase,scaled_max=float(abs(scaled).max()),
+            charge_scaled_max=charge_max,thermal_scaled_max=thermal_max)
         history.append(entry)
         entries[id(value)]=(value,entry)
         if on_evaluation is not None:on_evaluation(value,entry)
         return value
     while True:
         f=residual(base,adiabatic,c,h);norm=float(abs(f).max())
-        if norm<=numerical_tolerance:
-            return dict(numerical_converged=True,packet=base,history=history,iterations=iterations)
+        if within_tolerances(base):return result(base,True)
         if max_evaluations-used<(1 if secant_matrix is not None else 5):break
         t=base.temperature;ne=base.ne
         using_secant=secant_matrix is not None
@@ -182,7 +199,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                     not np.allclose(candidate.nuclei,base.nuclei,rtol=1.e-12,atol=0)):
                     raise ValueError('전하 보정은 실제 평가된 동일 T/핵수 후보만 반환해야 함')
             merit=float(abs(residual(candidate,adiabatic,c,h)).max())
-            accepted=bool(merit<=numerical_tolerance or merit<norm*(1.-1.e-4*alpha))
+            accepted=bool(within_tolerances(candidate) or merit<norm*(1.-1.e-4*alpha))
             entry=entries[id(candidate)][1]
             entry.update(alpha=alpha,accepted=accepted,
                 predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()),scaled_start_max=norm)
@@ -208,4 +225,4 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 secant_matrix=None
                 continue
             break
-    return dict(numerical_converged=False,packet=base,history=history,iterations=iterations)
+    return result(base,False)

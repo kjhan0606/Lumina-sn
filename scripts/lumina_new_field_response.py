@@ -175,7 +175,8 @@ def execution_resources(seconds, temperature_evaluations=0):
 def preserve_thermal_direction(out, index, value, matrix, residual, delta,
                                charge_scale, thermal_scale, *, field,
                                source_identity, probes, policy='physical_stored',
-                               linearization_kind='centered'):
+                               linearization_kind='centered', charge_tolerance=1.e-10,
+                               thermal_tolerance=1.e-3):
     """비싼 섭동을 다시 계산하지 않도록 방향 후보 실행 전에 선형계를 보존한다.
 
     저장은 수용/수렴 판정이나 새 후보 실행 권한이 아니다. 후보와 그 열장부는
@@ -195,7 +196,8 @@ def preserve_thermal_direction(out, index, value, matrix, residual, delta,
         probes=probes, rows=['charge', 'RE'], columns=['logT', 'logne'],
         energy_policy=policy, linearization_kind=linearization_kind,
         centered_log_step=1.e-4 if linearization_kind == 'centered' else None,
-        numerical_tolerance=1.e-10, max_log_step=.1,
+        charge_tolerance=charge_tolerance,
+        thermal_tolerance=thermal_tolerance, max_log_step=.1,
         root=str(root), linearization_sha256=B.sha(path),
         new_material_evaluations=0, new_transport=0, joint_convergence=False)
     publish(root/'result.json', record)
@@ -474,7 +476,8 @@ def run(args):
                             field=last, source_identity=source.identity,
                             probes=(result['thermal_evaluation_order'][-4:].copy()
                                     if linearization_kind == 'centered' else []),
-                            policy=thermal_policy, linearization_kind=linearization_kind))
+                            policy=thermal_policy, linearization_kind=linearization_kind,
+                            charge_tolerance=1.e-10, thermal_tolerance=1.e-3))
                         save()
                     first_value = (final, evaluation_energy[id(final)], candidates[id(final)])
                     if projecting:
@@ -488,6 +491,7 @@ def run(args):
                     else:
                         block = thermal_block.solve(evaluate_temperature, first_value, full_ad,
                             policy=thermal_policy, max_evaluations=temperature_evaluations,
+                            charge_tolerance=1.e-10, thermal_tolerance=1.e-3,
                             on_evaluation=thermal_decision, on_direction=thermal_direction,
                             replay=() if replay_source is None else replay_source['replay'], on_replay=replayed,
                             charge_bounds=(lower, upper) if result['charge_projected_trials'] else None,

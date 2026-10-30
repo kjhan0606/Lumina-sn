@@ -52,7 +52,8 @@ def project(evaluate, first, saved_trial, adiabatic, basis, alpha, lower, upper,
 
 
 def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
-          numerical_tolerance=1.e-10, max_log_step=.1, on_evaluation=None,
+          numerical_tolerance=1.e-10, charge_tolerance=None, thermal_tolerance=None,
+          max_log_step=.1, on_evaluation=None,
           on_direction=None, replay=(), on_replay=None, charge_bounds=None,
           secant_after_accept=False):
     """evaluate(T,ne)는 같은 J에서 (전체 SE 결과, 전체 열장부, 기록)을 반환한다."""
@@ -121,7 +122,8 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
     outer = solve_coupled(actual, initial, adiabatic,
         max_evaluations=len(replay)+max_evaluations, numerical_tolerance=numerical_tolerance,
         max_log_step=max_log_step, on_evaluation=decision, on_direction=direction,
-        project_candidate=projector,secant_after_accept=secant_after_accept)
+        project_candidate=projector,secant_after_accept=secant_after_accept,
+        charge_tolerance=charge_tolerance,thermal_tolerance=thermal_tolerance)
     selected = values[id(outer['packet'])]
     if len(used) < len(replay):
         raise ValueError('현재 해법에서 보존 열평가 순서가 끝까지 재현되지 않음')
@@ -130,6 +132,10 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
     return dict(selected=selected, history=outer['history'],
         accepted_iterations=outer['iterations'],
         fixed_field_numerical_converged=outer['numerical_converged'],
+        charge_scaled_max=outer['charge_scaled_max'],
+        thermal_scaled_max=outer['thermal_scaled_max'],
+        charge_tolerance=outer['charge_tolerance'],
+        thermal_tolerance=outer['thermal_tolerance'],
         charge_relative=charge, evaluations_used=len(outer['history']),
         fresh_evaluations_used=fresh, replayed_evaluations=len(used)-fresh,
         charge_projected_trials=projector is not None,

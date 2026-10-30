@@ -60,6 +60,33 @@ def test_wrong_profile_generation_and_invalid_scales_are_rejected(ad):
     with pytest.raises(np.linalg.LinAlgError):newton_direction(np.zeros((2,2)),np.ones(2))
 
 
+def test_separate_physical_tolerances_stop_without_expensive_probes_when_base_passes():
+    base=MaterialPacket(np.array([1.e4,1.1e4]),np.ones(2),np.ones(2),np.ones(2),
+        np.array([2.e-6,-1.e-6]),np.array([1.e-12,-1.e-12]),np.ones(2))
+    calls=[]
+    def evaluate(t,ne):
+        calls.append(1)
+        raise AssertionError('이미 전하/RE 기준 안에 든 상태는 더 평가하지 않는다')
+    result=solve_coupled(evaluate,base,lambda *args:np.zeros(2),max_evaluations=12,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert result['numerical_converged'] and result['iterations']==0
+    assert result['packet'] is base and not result['history'] and not calls
+    assert result['charge_scaled_max']==1.e-12
+    assert result['thermal_scaled_max']==2.e-6
+    assert result['charge_tolerance']==1.e-10 and result['thermal_tolerance']==1.e-3
+
+
+@pytest.mark.parametrize('charge,heat',[(1.e-9,1.e-6),(1.e-12,2.e-3)])
+def test_separate_physical_tolerances_do_not_hide_a_failing_residual(charge,heat):
+    base=MaterialPacket(np.array([1.e4,1.1e4]),np.ones(2),np.ones(2),np.ones(2),
+        np.full(2,heat),np.full(2,charge),np.ones(2))
+    result=solve_coupled(lambda *args:pytest.fail('insufficient budget must not call probes'),base,
+        lambda *args:np.zeros(2),max_evaluations=4,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert not result['numerical_converged'] and result['packet'] is base
+    assert result['charge_scaled_max']==charge and result['thermal_scaled_max']==heat
+
+
 def test_energy_policy_is_explicit_and_uses_original_v2_row_scale():
     r=dict(temperature=np.full(4,1.e4),ne=np.ones(4),energy=np.ones((4,3)),
            population=np.ones((2,4)),charge_residual=np.zeros(4))

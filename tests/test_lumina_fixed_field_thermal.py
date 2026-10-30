@@ -53,6 +53,19 @@ def test_actual_new_field_secant_is_opt_in_and_still_rechecks_heat():
     np.testing.assert_allclose(result['selected'][0]['temperature'],[2.,3.],rtol=1.e-10)
 
 
+def test_v2_residual_tolerances_accept_base_without_new_material_callbacks():
+    first=case(np.array([2.,3.])*1.00005,[5.,7.]);calls=[]
+    result=T.solve(lambda t,ne:(calls.append(1),case(t,ne))[1],first,adiabatic,
+        policy='physical_stored',max_evaluations=12,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert result['fixed_field_numerical_converged']
+    assert result['charge_scaled_max']<=1.e-10
+    assert result['thermal_scaled_max']<=1.e-3
+    assert result['evaluations_used']==0 and not calls
+    assert result['selected'] is first
+    assert result['new_transport']==0 and not result['joint_convergence']
+
+
 def projection_case():
     from test_lumina_charge_projection import case as build
     from lumina_charge_projection import proposal

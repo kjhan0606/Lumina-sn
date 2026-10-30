@@ -86,7 +86,7 @@ def thermal_selection(report):
 
 
 def thermal_checks(report, candidate, directory):
-    """기존 열장부와 초기 고정 척도로 실제 열 감소/수렴 표기를 확인한다."""
+    """고정-J 응답 개선 또는 사전 RE/전하 문턱의 실제 수렴을 확인한다."""
     first = Path(report['thermal_initial_response']['root'])
     policy = energy_policy(report, default='physical_stored')
     if policy not in ENERGY_POLICIES: raise ValueError('온도 후보의 열방정식 정책 오류')
@@ -105,13 +105,22 @@ def thermal_checks(report, candidate, directory):
         if ne.shape != (ns,) or not np.isfinite(ne).all() or np.any(ne <= 0):
             raise ValueError('초기 물질 전하잔차 척도 오류')
         charge = float(np.max(abs(candidate['charge_residual'])/ne))
-    if not (after < before or (after <= 1.e-10 and before <= 1.e-10)):
+    block = report['temperature_block']
+    converged = block['fixed_field_numerical_converged']
+    charge_tolerance = block.get('charge_tolerance', 1.e-10)
+    thermal_tolerance = block.get('thermal_tolerance', 1.e-10)
+    if (not np.isfinite([charge_tolerance, thermal_tolerance]).all() or
+            charge_tolerance <= 0 or thermal_tolerance <= 0 or
+            charge_tolerance > 1.e-10 or thermal_tolerance > 1.e-3):
+        raise ValueError('고정장 전하/RE 정지기준이 사전 허용치보다 느슨함')
+    if converged:
+        if charge > min(charge_tolerance, 1.e-10) or after > min(thermal_tolerance, 1.e-3):
+            raise ValueError('고정장 수렴 표기와 실제 전하/RE 잔차 불일치')
+    elif not (after < before or (after <= 1.e-10 and before <= 1.e-10)):
         raise ValueError('온도 보정의 실제 열잔차 개선 없음')
-    converged = report['temperature_block']['fixed_field_numerical_converged']
-    if converged and max(after, charge) > 1.e-10:
-        raise ValueError('고정장 수렴 표기와 실제 열/전하잔차 불일치')
     return dict(thermal_initial_scaled_max=before, thermal_selected_scaled_max=after,
-                charge_initial_scaled_max=charge, fixed_field_numerical_converged=converged)
+                charge_initial_scaled_max=charge, fixed_field_numerical_converged=converged,
+                charge_tolerance=charge_tolerance, thermal_tolerance=thermal_tolerance)
 
 
 def prepare(result, result_sha, seed, run, out):

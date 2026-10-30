@@ -214,7 +214,7 @@ def test_new_field_rejects_unconverged_or_mismatched_candidate(tmp_path, monkeyp
     assert not (tmp_path/'export/accepted-material.json').exists()
 
 
-def thermal_report(result, *, converged_base=False):
+def thermal_report(result, *, converged_base=False, converged_net=1.e-12):
     old=json.loads(result.read_text());root=result.parent
     with np.load(root/'evaluation-1/response.npz') as f:target={k:f[k] for k in f.files}
     entries=[]
@@ -231,7 +231,7 @@ def thermal_report(result, *, converged_base=False):
         if i in (3,4):data['ne']*=np.exp(1.e-4 if i==3 else -1.e-4)
         data['charge_residual']=(data['population']*data['columns'][:,1,None]).sum(axis=0)-data['ne']
         np.savez(directory/'response.npz',**data)
-        net=np.full(3,1.e-12 if converged_base else (.4 if i<5 else .04))
+        net=np.full(3,converged_net if converged_base else (.4 if i<5 else .04))
         np.savez(directory/'balance.npz',physical_stored_net=net,physical_stored_gross=np.full(3,2.))
         entries.append(dict(root=str(directory),response_sha256=E.B.sha(directory/'response.npz'),
             balance_sha256=E.B.sha(directory/'balance.npz'),fixed_field_thermal_callback=i>0))
@@ -242,7 +242,8 @@ def thermal_report(result, *, converged_base=False):
         input_sha256=old['input_sha256'],selected_response=entries[-1],evaluations=entries,
         thermal_initial_response=entries[0],thermal_evaluation_order=entries[1:],
         temperature_block=dict(history=history,evaluations_used=len(history),
-            accepted_iterations=0 if converged_base else 1,fixed_field_numerical_converged=converged_base))
+            accepted_iterations=0 if converged_base else 1,fixed_field_numerical_converged=converged_base,
+            charge_tolerance=1.e-10,thermal_tolerance=1.e-3))
     result.write_text(json.dumps(report));return report,target
 
 
@@ -290,11 +291,22 @@ def test_thermal_selected_replayed_candidate_need_not_be_a_new_evaluation(tmp_pa
 
 def test_already_converged_thermal_base_can_be_forwarded_without_a_fake_accepted_step(tmp_path,monkeypatch):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
-    thermal_report(result,converged_base=True)
+    thermal_report(result,converged_base=True,converged_net=5.e-4)
     exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'converged-export')
     assert exported['source_kind']=='FINITE_NEW_FIELD_TNE_CONVERGED_BASE'
     assert exported['accepted_evaluation']==0 and exported['checks']['fixed_field_numerical_converged']
+    assert 1.e-10<exported['checks']['thermal_selected_scaled_max']<1.e-3
     assert not exported['joint_convergence_certified']
+
+
+@pytest.mark.parametrize('name,value',[('charge_tolerance',1.e-9),('thermal_tolerance',1.e-2)])
+def test_converged_base_rejects_tolerances_looser_than_v2_contract(tmp_path,monkeypatch,name,value):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result,converged_base=True,converged_net=5.e-4)
+    report['temperature_block'][name]=value
+    result.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match='사전 허용치'):
+        E.prepare(result,E.B.sha(result),seed,run,tmp_path/'loose-export')
 
 
 @pytest.mark.parametrize('fault',['charge','fixed_T','incomplete','history_length','history_order',
