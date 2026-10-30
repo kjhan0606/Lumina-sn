@@ -62,11 +62,16 @@ def fixture(root, library):
     accepted = material_dir/'accepted-material.json'
     accepted.write_text(json.dumps(dict(schema='lumina-accepted-nodal-material-v1', points=ns,
         full_levels=1, accepted_response_sha256='c'*64,
+        source_kind='FINITE_NEW_FIELD_TNE_ACCEPTED_STEP',
+        thermal_energy_policy='native_instantaneous_scenario',
+        checks=dict(charge_relative_max=1.e-12, stationary_SE_max=1.e-9,
+            nuclei_relative_max=1.e-12, thermal_selected_scaled_max=5.e-4,
+            occupation_relative_max=0., restored_full_relative_max=0.),
         output_sha256={'native_material_nodes.bin': A.sha(material)},
         input_sha256={str(p): A.sha(p) for p in (old_seed, model)})))
     report = source.parent/'sources.json'
     report.write_text(json.dumps(dict(schema='lumina-model-local-sources-v1', cells=ns,
-        frequencies=len(nu), full_levels=1,
+        frequencies=len(nu), full_levels=1,free_free=dict(policy='NATIVE_UPPER_IONS'),
         C_full_population_comparison=dict(max_relative_error=0.),
         input_sha256={str(p): A.sha(p) for p in (material, full, grid, model)},
         output_sha256={'sources.bin': A.sha(source)})))
@@ -91,6 +96,47 @@ def repin(config, key, path):
     config.write_text(json.dumps(data))
 
 
+@pytest.mark.parametrize('source_kind', [
+    'FINITE_NEW_FIELD_FIXED_T_CHARGE_RESPONSE', 'DEPTH_COUPLED_ACCEPTED_STEP', None])
+def test_fixed_T_or_unverified_material_cannot_seed_a_new_transport(field_library,tmp_path,source_kind):
+    config,paths,*_=fixture(tmp_path,field_library)
+    manifest=json.loads(paths['accepted_material'].read_text())
+    if source_kind is None:manifest.pop('source_kind')
+    else:manifest['source_kind']=source_kind
+    paths['accepted_material'].write_text(json.dumps(manifest));repin(config,'accepted_material',paths['accepted_material'])
+    with pytest.raises(ValueError,match='TNE 후보만 허용'):
+        A.prepare(config,A.sha(config),tmp_path/'ready')
+    assert not (tmp_path/'ready').exists()
+
+
+@pytest.mark.parametrize('policy',[None,'unknown'])
+def test_new_transport_requires_an_explicit_supported_heat_equation(field_library,tmp_path,policy):
+    config,paths,*_=fixture(tmp_path,field_library)
+    manifest=json.loads(paths['accepted_material'].read_text())
+    if policy is None:manifest.pop('thermal_energy_policy')
+    else:manifest['thermal_energy_policy']=policy
+    paths['accepted_material'].write_text(json.dumps(manifest));repin(config,'accepted_material',paths['accepted_material'])
+    with pytest.raises(ValueError,match='열방정식 정책이 명시'):
+        A.prepare(config,A.sha(config),tmp_path/'ready')
+    assert not (tmp_path/'ready').exists()
+
+
+@pytest.mark.parametrize(('field','value'),[
+    ('thermal_selected_scaled_max',1.0001e-3),('charge_relative_max',1.0001e-10),
+    ('stationary_SE_max',1.0001e-8),('nuclei_relative_max',1.0001e-10),
+    ('occupation_relative_max',5.0001e-12),('restored_full_relative_max',5.0001e-12),
+    ('thermal_selected_scaled_max',None)])
+def test_new_field_requires_each_actual_physical_closure_metric(field_library,tmp_path,field,value):
+    config,paths,*_=fixture(tmp_path,field_library)
+    manifest=json.loads(paths['accepted_material'].read_text())
+    if value is None:manifest['checks'].pop(field)
+    else:manifest['checks'][field]=value
+    paths['accepted_material'].write_text(json.dumps(manifest));repin(config,'accepted_material',paths['accepted_material'])
+    with pytest.raises(ValueError,match='수용 문턱|closure 검사'):
+        A.prepare(config,A.sha(config),tmp_path/'ready')
+    assert not (tmp_path/'ready').exists()
+
+
 @pytest.mark.parametrize('policy,ff',[('native_instantaneous_scenario','NATIVE_UPPER_IONS'),
     ('physical_instantaneous_scenario','ALL_POSITIVE_IONS')])
 def test_declared_heat_policy_and_actual_coefficient_policy_reach_boundary(field_library,tmp_path,policy,ff):
@@ -109,9 +155,10 @@ def test_native_material_cannot_use_undeclared_or_all_ion_coefficients(field_lib
     config,paths,*_=fixture(tmp_path,field_library)
     m=json.loads(paths['accepted_material'].read_text());m['thermal_energy_policy']='native_instantaneous_scenario'
     paths['accepted_material'].write_text(json.dumps(m));repin(config,'accepted_material',paths['accepted_material'])
-    if ff is not None:
-        s=json.loads(paths['sources'].read_text());s['free_free']=dict(policy=ff)
-        paths['sources'].write_text(json.dumps(s));repin(config,'sources',paths['sources'])
+    s=json.loads(paths['sources'].read_text())
+    if ff is None:s.pop('free_free')
+    else:s['free_free']=dict(policy=ff)
+    paths['sources'].write_text(json.dumps(s));repin(config,'sources',paths['sources'])
     with pytest.raises(ValueError,match='FF 선택 불일치'):A.prepare(config,A.sha(config),tmp_path/'ready')
     assert not (tmp_path/'ready').exists()
 

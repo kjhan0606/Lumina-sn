@@ -14,6 +14,7 @@ from lumina_local_micro import open_geometry
 from lumina_native_columns import NativeSourceColumns, sha
 from lumina_outer_c_backend import diffusion_boundary
 from prepare_lumina_outer_input import read_native
+from lumina_thermal_replay import ENERGY_POLICIES
 
 
 def pinned(config, key, identities):
@@ -38,6 +39,28 @@ def coefficient_free_free_policy(manifest, requested=None):
     return requested or expected
 
 
+def validate_material_closure(manifest):
+    """Only a physically closed fixed-field T/ne response may seed a new F."""
+    if manifest.get('source_kind') not in (
+            'FINITE_NEW_FIELD_TNE_ACCEPTED_STEP',
+            'FINITE_NEW_FIELD_TNE_CONVERGED_BASE'):
+        raise ValueError('새 수송에는 T/ne/열 문턱을 통과한 TNE 후보만 허용')
+    if manifest.get('thermal_energy_policy') not in ENERGY_POLICIES:
+        raise ValueError('새 수송 물질의 열방정식 정책이 명시되지 않음')
+    checks = manifest.get('checks')
+    limits = dict(charge_relative_max=1.e-10, stationary_SE_max=1.e-8,
+        nuclei_relative_max=1.e-10, thermal_selected_scaled_max=1.e-3,
+        occupation_relative_max=5.e-12, restored_full_relative_max=5.e-12)
+    if not isinstance(checks, dict):
+        raise ValueError('새 수송 물질의 물리 closure 검사 누락')
+    for name, limit in limits.items():
+        value = checks.get(name)
+        if (isinstance(value, bool) or not isinstance(value, (int, float)) or
+                not np.isfinite(value) or value < 0 or value > limit):
+            raise ValueError('새 수송 물질의 수용 문턱 미달: '+name)
+    return checks
+
+
 def prepare(config_path, config_sha, out):
     config_path, out = Path(config_path).resolve(), Path(out).resolve()
     if out.exists():
@@ -57,6 +80,7 @@ def prepare(config_path, config_sha, out):
     previous = json.loads(paths['geometry_preparation'].read_text())
     if m['schema'] != 'lumina-accepted-nodal-material-v1':
         raise ValueError('별도 수용 물질 manifest 필요; 원70으로 가장하지 않음')
+    validate_material_closure(m)
     source_ff=sources.get('free_free',{}).get('policy')
     if m.get('thermal_energy_policy') is not None and source_ff!=coefficient_free_free_policy(m):
         raise ValueError('새 물질 열행과 실제 완성 계수의 FF 선택 불일치')
