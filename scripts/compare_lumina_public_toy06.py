@@ -41,6 +41,63 @@ def interp_columns(table, velocity, column):
     return np.interp(v, table[:, 0], table[:, column], left=np.nan, right=np.nan)
 
 
+def volume_weighted_public_bins(table, velocity, column):
+    """공개 점값의 선형보간을 인접점 중간 경계에서 r² 가중 평균한다.
+
+    이는 실제 코드의 bin/질량가중 분율이 아니라 구간 평균 민감도 진단이다.
+    공개 격자 밖 외삽과 양 끝점의 임의 경계는 허용하지 않는다.
+    """
+    v = np.asarray(velocity, dtype=float)
+    if (v.ndim != 1 or len(v) < 3 or not np.isfinite(v).all() or np.any(v <= 0)
+            or not (np.all(np.diff(v) > 0) or np.all(np.diff(v) < 0))):
+        raise ValueError('양수 단조 속도점 3개 이상 필요')
+    if (table.ndim != 2 or table.shape[0] < 2 or column < 1 or column >= table.shape[1]
+            or not np.isfinite(table).all() or np.any(np.diff(table[:, 0]) <= 0)):
+        raise ValueError('공개 속도점/분율 주소 오류')
+    values = np.full(v.shape, np.nan)
+    nodes, weights = np.polynomial.legendre.leggauss(3)
+    for i in range(1, len(v) - 1):
+        lo, hi = sorted(((v[i - 1] + v[i]) / 2, (v[i] + v[i + 1]) / 2))
+        if lo < table[0, 0] or hi > table[-1, 0]:
+            continue
+        knots = np.r_[lo, table[(table[:, 0] > lo) & (table[:, 0] < hi), 0], hi]
+        numerator = 0.
+        for a, b in zip(knots[:-1], knots[1:]):
+            x = (a + b) / 2 + (b - a) * nodes / 2
+            numerator += (b - a) / 2 * np.sum(weights * x**2 * np.interp(x, table[:, 0], table[:, column]))
+        values[i] = numerator / ((hi**3 - lo**3) / 3)
+    return values
+
+
+def compare_bin_sensitivity(result, public):
+    """완료 입력의 점값과 공개 선형분포의 근사 구간평균만 비교한다."""
+    output = compare(result, public)  # 원 결과·표·공개 입력 신원/완결성 확인
+    with np.load(Path(result).parent / 'physical-profiles.npz', allow_pickle=False) as p:
+        velocity = p['radius_cm'].copy() / (19.48 * 86400 * 1.e5)
+    stages = {}
+    for z, symbol in ((14, 'si'), (16, 's')):
+        table = public_block(Path(public) / f'ionfrac_{symbol}_toy06_cmfgen.txt')
+        for charge in (1, 2):
+            center = interp_columns(table, velocity, charge + 1)
+            averaged = volume_weighted_public_bins(table, velocity, charge + 1)
+            valid = np.flatnonzero(np.isfinite(averaged) & np.isfinite(center))
+            if not len(valid):
+                raise ValueError('공개 범위 내 구간 없음')
+            i = valid[np.argmax(np.abs(averaged[valid] - center[valid]))]
+            j = 49
+            stages[f'{z}:{charge}'] = dict(compared_bins=len(valid),
+                maximum_abs_change=float(abs(averaged[i] - center[i])),
+                maximum_node_1based=int(i + 1), maximum_velocity_km_s=float(velocity[i]),
+                node50_center=float(center[j]) if np.isfinite(center[j]) else None,
+                node50_volume_mean=float(averaged[j]) if np.isfinite(averaged[j]) else None,
+                node50_difference=(float(averaged[j] - center[j])
+                                   if np.isfinite(averaged[j]) and np.isfinite(center[j]) else None))
+    return dict(state='CONDITIONAL_PUBLIC_INTERPOLATED_BIN_SENSITIVITY',
+        scope='공개 점 선형보간·인접 원점 중간 경계·구형 체적 가중; 실제 질량가중 bin 아님',
+        input_sha256=output['input_sha256'], stages=stages, new_physical_calculations=0,
+        final_equivalence='NOT_JUDGED')
+
+
 def compare(result, public):
     result, public = Path(result), Path(public)
     report = json.loads(result.read_text())
@@ -130,5 +187,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--result', type=Path, required=True)
     parser.add_argument('--public', type=Path, required=True)
+    parser.add_argument('--shell-average-check', action='store_true',
+                        help='공개 점값의 조건부 체적평균 민감도만 출력')
     args = parser.parse_args()
-    print(json.dumps(compare(args.result, args.public), ensure_ascii=False, allow_nan=False))
+    value = (compare_bin_sensitivity(args.result, args.public) if args.shell_average_check
+             else compare(args.result, args.public))
+    print(json.dumps(value, ensure_ascii=False, allow_nan=False))

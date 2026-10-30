@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from compare_lumina_public_toy06 import compare, interp_columns, sha
+from compare_lumina_public_toy06 import (compare, compare_bin_sensitivity,
+    interp_columns, sha, volume_weighted_public_bins)
 
 
 def fixture(tmp_path):
@@ -84,3 +85,26 @@ def test_reject_nonmatching_epoch(tmp_path):
     result.write_text(json.dumps(report))
     with pytest.raises(ValueError, match='epoch'):
         compare(result, pub)
+
+
+def test_conditional_volume_average_is_exact_for_linear_profile():
+    table = np.array([[1., 1.], [2., 2.], [4., 4.], [7., 7.]])
+    velocity = np.array([2., 3., 5.])
+    result = volume_weighted_public_bins(table, velocity, 1)
+    lo, hi = 2.5, 4.
+    expected = ((hi**4 - lo**4) / 4) / ((hi**3 - lo**3) / 3)
+    assert np.isnan(result[[0, 2]]).all()
+    assert result[1] == pytest.approx(expected)
+    reversed_result = volume_weighted_public_bins(table, velocity[::-1], 1)
+    assert reversed_result[1] == pytest.approx(expected)
+    assert np.isnan(volume_weighted_public_bins(table, [1., 2., 20.], 1)).all()
+
+
+def test_constant_public_profiles_have_zero_bin_difference(tmp_path):
+    result, pub = fixture(tmp_path)
+    output = compare_bin_sensitivity(result, pub)
+    assert output['final_equivalence'] == 'NOT_JUDGED'
+    assert output['new_physical_calculations'] == 0
+    for entry in output['stages'].values():
+        assert entry['compared_bins'] == 88
+        assert entry['maximum_abs_change'] == pytest.approx(0., abs=1.e-14)
