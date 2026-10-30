@@ -113,6 +113,9 @@ def thermal_checks(report, candidate, directory):
             charge_tolerance <= 0 or thermal_tolerance <= 0 or
             charge_tolerance > 1.e-10 or thermal_tolerance > 1.e-3):
         raise ValueError('고정장 전하/RE 정지기준이 사전 허용치보다 느슨함')
+    allowed_thermal = min(thermal_tolerance, 1.e-3)
+    if after > allowed_thermal:
+        raise ValueError('고정장 물질 전달의 실제 열잔차가 사전 허용치 초과')
     if converged:
         if charge > min(charge_tolerance, 1.e-10) or after > min(thermal_tolerance, 1.e-3):
             raise ValueError('고정장 수렴 표기와 실제 전하/RE 잔차 불일치')

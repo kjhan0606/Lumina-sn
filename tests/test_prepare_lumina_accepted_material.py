@@ -231,12 +231,12 @@ def thermal_report(result, *, converged_base=False, converged_net=1.e-12):
         if i in (3,4):data['ne']*=np.exp(1.e-4 if i==3 else -1.e-4)
         data['charge_residual']=(data['population']*data['columns'][:,1,None]).sum(axis=0)-data['ne']
         np.savez(directory/'response.npz',**data)
-        net=np.full(3,converged_net if converged_base else (.4 if i<5 else .04))
+        net=np.full(3,converged_net if converged_base else (.4 if i<5 else .0004))
         np.savez(directory/'balance.npz',physical_stored_net=net,physical_stored_gross=np.full(3,2.))
         entries.append(dict(root=str(directory),response_sha256=E.B.sha(directory/'response.npz'),
             balance_sha256=E.B.sha(directory/'balance.npz'),fixed_field_thermal_callback=i>0))
     history=[dict(evaluation=i,phase=phase) for i,phase in enumerate(phases,1)] if not converged_base else []
-    if history:history[-1].update(accepted=True,alpha=1.,scaled_max=.04/1.2,scaled_start_max=.4/1.2)
+    if history:history[-1].update(accepted=True,alpha=1.,scaled_max=.0004/1.2,scaled_start_max=.4/1.2)
     report=dict(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
         charge_converged=True,fixed_accepted_temperature=False,points=old['points'],
         input_sha256=old['input_sha256'],selected_response=entries[-1],evaluations=entries,
@@ -311,7 +311,7 @@ def test_converged_base_rejects_tolerances_looser_than_v2_contract(tmp_path,monk
 
 @pytest.mark.parametrize('fault',['charge','fixed_T','incomplete','history_length','history_order',
     'wrong_selection','no_accepted','iteration_count','nonthermal','false_convergence','heat_worse',
-    'changed_initial','changed_selected','actual_charge'])
+    'heat_improved_above_tolerance','changed_initial','changed_selected','actual_charge'])
 def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_path,monkeypatch,fault):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
     report,_=thermal_report(result)
@@ -325,10 +325,16 @@ def test_thermal_export_rejects_unaccepted_unclosed_or_unimproved_material(tmp_p
         report['temperature_block']['history'][-1]['accepted']=False;report['temperature_block']['accepted_iterations']=0
     elif fault=='iteration_count':report['temperature_block']['accepted_iterations']=2
     elif fault=='nonthermal':report['thermal_evaluation_order'][0]['fixed_field_thermal_callback']=False
-    elif fault=='false_convergence':report['temperature_block']['fixed_field_numerical_converged']=True
+    elif fault=='false_convergence':
+        report['temperature_block']['fixed_field_numerical_converged']=True
+        report['temperature_block']['thermal_tolerance']=1.e-5
     elif fault=='heat_worse':
         path=Path(report['selected_response']['root'])/'balance.npz'
         np.savez(path,physical_stored_net=np.full(3,.5),physical_stored_gross=np.full(3,2.))
+        report['selected_response']['balance_sha256']=E.B.sha(path)
+    elif fault=='heat_improved_above_tolerance':
+        path=Path(report['selected_response']['root'])/'balance.npz'
+        np.savez(path,physical_stored_net=np.full(3,.004),physical_stored_gross=np.full(3,2.))
         report['selected_response']['balance_sha256']=E.B.sha(path)
     elif fault=='actual_charge':
         path=Path(report['selected_response']['root'])/'response.npz'
@@ -349,11 +355,11 @@ def test_thermal_export_checks_declared_native_equation_not_a_more_favorable_led
         path=Path(entry['root'])/'balance.npz'
         with np.load(path) as f:heat={k:f[k] for k in f.files}
         selected=entry==report['selected_response']
-        heat[policy+'_net']=np.full(3,.02 if selected else .4)
+        heat[policy+'_net']=np.full(3,.0002 if selected else .4)
         heat[policy+'_gross']=np.full(3,2.)
         if selected:heat['physical_stored_net']=np.full(3,.8)
         np.savez(path,**heat);entry['balance_sha256']=E.B.sha(path)
     result.write_text(json.dumps(report))
     exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'native-export')
     assert exported['thermal_energy_policy']==policy and not exported['joint_convergence_certified']
-    assert exported['checks']['thermal_selected_scaled_max']<exported['checks']['thermal_initial_scaled_max']
+    assert exported['checks']['thermal_selected_scaled_max']<1.e-3
