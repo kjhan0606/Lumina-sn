@@ -22,8 +22,15 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
     if any(v is not None for v in initial) and (not all(v is not None for v in initial) or
             not all(re.fullmatch(r'[0-9a-f]{64}', value) for value in (input_j_sha256, initial_preparation_sha256))):
         raise ValueError('이전 물질 J와 원 준비 기록 및 각 SHA가 함께 필요')
-    if json.loads((gpu_root/'prepared.json').read_text())['source_commit'] != commit:
-        raise ValueError('봉인 GPU 소스와 후속 commit 불일치')
+    staged_commit = json.loads((gpu_root/'prepared.json').read_text()).get('source_commit')
+    if staged_commit != commit:
+        if not isinstance(staged_commit, str) or not re.fullmatch(r'[0-9a-f]{7,40}', staged_commit):
+            raise ValueError('봉인 GPU 소스 commit 식별자 형식 오류')
+        resolved = subprocess.run(['git', '-C', str(project), 'rev-parse', '--verify',
+                                   staged_commit+'^{commit}'], check=True, capture_output=True,
+                                  text=True, timeout=10).stdout.strip()
+        if not re.fullmatch(r'[0-9a-f]{40}', resolved) or resolved != commit:
+            raise ValueError('봉인 GPU 소스와 후속 commit 불일치')
     if Path(response_parent).exists(): raise FileExistsError('기존 후속 물질응답 보존')
     out.mkdir(exist_ok=False)
     names = ('lumina_bundle_dispatch.py', 'submit_lumina_accepted_feedback.slurm', 'submit_lumina_new_field_response.slurm')

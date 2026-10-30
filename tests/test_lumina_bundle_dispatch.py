@@ -210,6 +210,22 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     assert prepared['jobs_submitted']==0
 
 
+def test_control_preparation_resolves_short_prepared_source_commit(tmp_path,monkeypatch):
+    import prepare_lumina_bundle_dispatch as P
+    gpu=tmp_path/'gpu';gpu.mkdir()
+    (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*8)))
+    def git_run(args,**kwargs):
+        if args[3]=='rev-parse':
+            return SimpleNamespace(stdout='b'*40+'\n')
+        return SimpleNamespace(stdout=b'# sealed control\n')
+    monkeypatch.setattr(P.subprocess,'run',git_run)
+    prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'coeff/result.json',
+        tmp_path/'response','c'*40,max_sweeps=1,thermal_response=True)
+    config=json.loads(Path(prepared['config']).read_text())
+    assert config['response_commit']=='b'*40
+    assert config['gpu_prepared_sha256']==D.sha(gpu/'prepared.json')
+
+
 @pytest.mark.parametrize('control',[False,True])
 def test_real_batch_wrapper_forwards_bounded_feedback_options_and_response(tmp_path,control):
     gpu=tmp_path/'gpu';(gpu/'code/scripts').mkdir(parents=True)
