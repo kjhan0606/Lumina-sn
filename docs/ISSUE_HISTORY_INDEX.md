@@ -151,6 +151,10 @@
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
 - 범위 구분: 주 비교는 matched-physics steady self-run이다. 공개 StaNdaRT의
   시간의존·비국소 침적·비열·다른 원자모형은 과학 교차검사로 구분한다.
+- 기존 연결: `run_lumina_resident_observer.py`와 관측자 NPZ 비교기는 이미 있다.
+  공통 `InputField`가 동일 물질의 완료장 계보를 검사한다. 새 observer나 중복
+  계보 검사를 만들기 전에 [10월30일 인계](HANDOVER_2026-10-30.md)의
+  `최종 스펙트럼 deliverable의 실제 경로`와 그 뒤의 바이너리/소스 대조를 읽는다.
 - 정본: [Si/S 묶음](BUNDLE_CMFGEN_SI_S_BF_CHANNELS_2026-10-19.md)의
   `실제71 완료`, `감쇠/복원 분기 종료`;
   [동등성 계획 v2](CODEX_CMFGEN_EQUIVALENCE_PLAN_v2.md),
