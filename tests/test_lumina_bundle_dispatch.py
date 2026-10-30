@@ -23,7 +23,8 @@ def setup(tmp_path, monkeypatch):
         preparation=dict(path=str(prep), sha256=D.sha(prep)))))
     c = dict(schema='lumina-accepted-bundle-dispatch-v1', control_sha256={},
         coefficient_result=str(result), coefficient_commit='a'*40, gpu_root=str(gpu),
-        gpu_prepared_sha256=D.sha(gpu/'prepared.json'), response_parent=str(tmp_path/'response'), response_commit='b'*40)
+        gpu_prepared_sha256=D.sha(gpu/'prepared.json'), response_parent=str(tmp_path/'response'), response_commit='b'*40,
+        limits=dict(maximum_F=1))
     config = control/'config.json'; config.write_text(json.dumps(c)); calls = []
     def submit(*args, **kwargs):
         calls.append(args[0]); return SimpleNamespace(returncode=0, stdout='12345\n', stderr='')
@@ -179,7 +180,7 @@ def test_one_sweep_and_previous_material_trial_reach_the_submission_argv(setup):
     assert '--resume-checkpoint' not in command
 
 
-@pytest.mark.parametrize('fault',[0,3,True,'missing_J','bad_sha'])
+@pytest.mark.parametrize('fault',[0,2,3,True,'missing_J','bad_sha'])
 def test_invalid_sweep_or_partial_warm_start_cannot_submit(setup,fault):
     config,c,calls=setup
     if fault in ('missing_J','bad_sha'):
@@ -208,6 +209,26 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     assert config['limits']['response_thermal_policy']=='native_instantaneous_scenario'
     assert config['initial_field']['J']['path']==str(tmp_path/'old/J.npy')
     assert prepared['jobs_submitted']==0
+
+
+def test_control_preparation_defaults_to_one_transport_sweep(tmp_path,monkeypatch):
+    import prepare_lumina_bundle_dispatch as P
+    gpu=tmp_path/'gpu';gpu.mkdir()
+    (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*40)))
+    monkeypatch.setattr(P.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(stdout=b'# sealed control\n'))
+    prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'coeff/result.json',
+        tmp_path/'response','c'*40)
+    config=json.loads(Path(prepared['config']).read_text())
+    assert config['limits']['maximum_F']==1
+
+
+@pytest.mark.parametrize('limits',[{},dict(maximum_F=2)])
+def test_transport_dispatch_requires_exactly_one_sweep(setup,limits):
+    config,c,calls=setup
+    c['limits']=limits
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'field')
+    assert not calls and not (config.parent/'field-submission.json').exists()
 
 
 def test_control_preparation_resolves_short_prepared_source_commit(tmp_path,monkeypatch):

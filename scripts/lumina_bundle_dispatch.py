@@ -64,9 +64,9 @@ def dispatch(config, digest, step):
     if marker.exists(): raise FileExistsError('제출 시도 이력 있음; 중복 제출/자동 재시도 금지')
     common = ['sbatch', '--parsable', '--no-requeue']
     if step == 'field':
-        maximum_F = c.get('limits', {}).get('maximum_F', 2)
-        if type(maximum_F) is not int or not 1 <= maximum_F <= 2:
-            raise ValueError('묶음 F 횟수는1~2회만 허용')
+        maximum_F = c.get('limits', {}).get('maximum_F')
+        if type(maximum_F) is not int or maximum_F != 1:
+            raise ValueError('외부 물질-장 왕복당 F 1회 설정이 필요')
         options = ['--max-sweeps', str(maximum_F)]
         initial = c.get('initial_field')
         if initial is not None:

@@ -10,12 +10,12 @@ from lumina_bundle_dispatch import sha
 
 
 def prepare(project, out, commit, gpu_root, coefficient_result, response_parent, coefficient_commit,
-            max_sweeps=2, input_j=None, input_j_sha256=None,
+            max_sweeps=1, input_j=None, input_j_sha256=None,
             initial_preparation=None, initial_preparation_sha256=None, thermal_response=False):
     project, out, gpu_root = map(lambda p: Path(p).resolve(), (project, out, gpu_root))
     if (not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (commit, coefficient_commit)) or
-            type(max_sweeps) is not int or not 1 <= max_sweeps <= 2):
-        raise ValueError('실제 계수/후속 소스 commit과 F1~2회 한도 필요')
+            type(max_sweeps) is not int or max_sweeps != 1):
+        raise ValueError('실제 계수/후속 소스 commit과 왕복당 F 1회 한도 필요')
     if type(thermal_response) is not bool:
         raise ValueError('반환장 열보정 선택은 불리언이어야 함')
     initial = (input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
@@ -63,7 +63,7 @@ if __name__ == '__main__':
         p.add_argument('--'+name, type=Path, required=True)
     p.add_argument('--commit', required=True)
     p.add_argument('--coefficient-commit', required=True)
-    p.add_argument('--max-sweeps', type=int, choices=(1,2), default=2)
+    p.add_argument('--max-sweeps', type=int, choices=(1,), default=1)
     p.add_argument('--input-j', type=Path)
     p.add_argument('--input-j-sha256')
     p.add_argument('--initial-preparation', type=Path)
