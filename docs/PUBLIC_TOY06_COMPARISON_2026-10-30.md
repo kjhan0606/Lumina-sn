@@ -628,6 +628,66 @@ J/T/ne 또는 SL 내부 분율과 원자모형 자체를 바꾸면 이 한계는
 `bf_ion_number_density`, `bf_ion_number_flow_channels`를 읽고 위 정의로
 나누어 재현한다. 작업은 grammar-debug CPU1·4GiB·3분 범위의 읽기만 했다.
 
+### 고정된 현재 장에서 공개 분율의 조건부 지속시간
+
+위 BF 계수의 상·하한을 시간 방향으로도 사용하면, 현재 장에서 공개
+분율이 단순한 과도 상태로 얼마나 유지될 수 있는지 **조건부**로 볼 수
+있다. 원점50에서 초기 S II/S III 분율을 공개 19.48일의
+`0.8451990006 / 0.1537675248`로 두고, 두 단계의 합 `0.9989665254`이
+보존된다고 가정한다. 같은 J/T/ne와 원 원자모형, 각 SL 내부 FL 분율,
+비음수 용해항 및 위 BF 율의 상·하한이 시간 내내 유지되며, 다른 이온·
+충돌·비열·시간적으로 변하는 원천은 없다고 가정한다.
+
+이때 S II 분율 `x`는 `dx/dt ≤ −g*x + a*(N−x)`를 만족한다. `N`은 위 두
+단계 분율의 합이고, `g=0.020899682592 s^-1`,
+`a=0.0010288904282 s^-1`는 앞 절의 광이온화 하한과 재결합 상한이다.
+따라서 공개 초기값에서 출발하는 이 가상계의 S II 분율 상한은 다음과 같다.
+
+| 경과 시간 | S II 분율 상한 |
+| ---: | ---: |
+| 0초 | 0.845199 |
+| 60초 | 0.261049 |
+| 300초 | 0.047981 |
+| 무한시간 | 0.046872 |
+
+상한식의 완화 시간은 `1/(g+a)=45.60초`다. 실제 공개 파일에서 같은
+속도의 S II 분율은 17.71일 `0.860145`, 19.48일 `0.845199`, 21.43일
+`0.819001`이다. 인접 출력 사이 평균 변화율은 각각 `−9.77e-8`,
+`−1.55e-7 s^-1`이며, 이는 각 epoch 사이의 평균이지 19.48일 순간 변화율
+또는 그 사이의 급변을 제한하는 증거는 아니다.
+
+결론은 **현재 Lumina의 J와 BF 계수를 그대로 유지하면서 다른 과정 없이
+시간항만 추가하는 두 단계 가상계는 공개의 높은 S II를 수분간 유지하지
+못한다**는 것이다. 공개 CMFGEN 자체의 장이나 BF 율은 확보하지 못했다.
+공개 모델의 비국소 침적, 비열·충돌, 다른 이온, 시간에 따라 변하는 장과
+물질·준위분율은 모두 위 가정 밖이다. 따라서 이 비교로 공개 모델의
+시간의존 효과가 작다거나 복사장이 틀렸다고 판정하지 않는다. 실제 해결을
+위해서는 같은 물리 계약의 CMFGEN 내부 장·율과 새 공동수렴 상태가 필요하다.
+
+재현은 공개 S 파일과 위 절에서 신원 확인한 BF 한계만 읽는다. 새 율 적분,
+물질응답 또는 시간진화 계산은 없다.
+
+```bash
+OPENBLAS_NUM_THREADS=1 PYTHONPATH=scripts python3 - <<'PY'
+from pathlib import Path
+import numpy as np
+from compare_lumina_public_toy06 import public_block, interp_columns
+p = Path('data/standart_data1/toy06/ionfrac_s_toy06_cmfgen.txt')
+v = np.array([12376.055805864145])
+epochs = ('17.710', '19.480', '21.430')
+values = [(t, float(interp_columns(public_block(p, t), v, 2)[0]),
+           float(interp_columns(public_block(p, t), v, 3)[0])) for t in epochs]
+g, a = 0.020899682592, 0.0010288904282
+x, N = values[1][1], values[1][1] + values[1][2]
+equilibrium = N * a / (g + a)
+print('epochs:', values, 'equilibrium:', equilibrium, 'seconds:', 1/(g+a))
+for t in (0, 60, 300):
+    print(t, equilibrium + (x-equilibrium)*np.exp(-(g+a)*t))
+for left, right in zip(values[:-1], values[1:]):
+    print(left[0], right[0], (right[1]-left[1])/((float(right[0])-float(left[0]))*86400))
+PY
+```
+
 ## S II 광이온화의 실제 하위준위 구성
 
 위 원래점50의 새 장 응답에 대해 기존 bound-rate, PHOT route, 선택된
