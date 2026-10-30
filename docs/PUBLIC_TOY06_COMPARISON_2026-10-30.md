@@ -237,6 +237,52 @@ generation14를 공개 toy06 19.480일과 비교했다. 진행 중인 T/ne 작�
 
 ### 공개 전자밀도만 바꾼 Si의 조건부 응답
 
+#### 공개 온도와 전자밀도를 함께 적용한 추가 확인
+
+Si II의 공개값과 기존 응답 차이가 가장 큰 원점34, 속도 `21533.88 km/s`에서
+완료 F2 복사장과 원자모형을 유지하고 공개 온도와 전자밀도를 함께 적용했다.
+온도가 바뀌므로 고정온도 적분을 재사용하지 않고 Si의 661개 bound-free
+경로를 기존 전주파수 격자에서 직접 다시 적분했다. 충돌과 occupation도 새
+온도·전자밀도에서 계산했다. 선 복사장 입력은 기존 값을 고정했다.
+
+| Si 이온 | 공개 CMFGEN | 기존 T/ne | 공개 ne만 적용 | 공개 T/ne 적용 |
+| --- | ---: | ---: | ---: | ---: |
+| II | `0.15801146` | `4.28652498e-8` | `2.95620e-8` | `2.91299731e-8` |
+| III | `0.7915622` | `0.705294338` | `0.6438464` | `0.650102346` |
+
+기존 T/ne는 `9845.829669 K`/`1.86661132e7 cm^-3`, 공개 값은
+`9243.838591 K`/`1.41029144e7 cm^-3`다. 같은 고정 복사장에서 공개
+T/ne를 함께 적용해도 Si II의 큰 차이는 남는다. 다만 두 값을 동시에
+변경했으므로 온도 단독의 영향은 이 시험으로 분리하지 않는다. 공개 모델은
+시간의존성·비열 과정과 원자모형도 다르며, 한 원소의 고정장 응답은 공통
+전하·열·수송 수렴이 아니다. 이 결과만으로 차이를 복사장 하나의 문제로
+단정하지 않는다.
+
+기존 조건에서는 저장된 Si 전체 개체수가 `rtol=2e-8`, `atol=1e-30`으로
+재현됐고 Si II/III의 광이온화·유도/자발 재결합 흐름도 저장값과 일치했다.
+새 T/ne의 정상상태 잔차는 `7.90e-17`이지만 이는 해당 단일 원소 방정식의
+잔차이지 공동수렴의 증거가 아니다. grammar debug 작업 `1245601`은 CPU1,
+8GiB, 최대15분으로 실행해 1분21초에 `COMPLETED`, exit `0:0`이었다.
+
+실행 wrapper [compare_lumina_si_public_tne.py](../scripts/compare_lumina_si_public_tne.py)의
+SHA256은 `bd8b3a1f58807e0fc3ee4aa6139efee552dc2cfcd2b3514b116ecb84c5f65c16`이다.
+이 wrapper는 바로 아래에 기록한 **미추적 원본**의 SHA를 확인한 뒤 메모리에서
+변환한다. 따라서 원본이 없는 다른 환경에서는 이 커밋만으로 재현되지 않는다.
+원본의 결과 JSON에 있던 `scope`와 `state`의 `FIXED_J_T` 표기는 그대로 남아
+있지만, 이번 `public_T_ne` 사례는 실제로 T와 ne를 모두 바꿨으므로 그 문구는
+이 사례에 적용되지 않는다. 저장된 J와 선 복사장 입력만 고정이다.
+동일 완료 결과와 준비 파일을 사용한 재현 명령은 다음과 같다.
+
+```bash
+env PYTHONPATH=scripts OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+  LUMINA_ARTIS_PARITY=0 LUMINA_NLTE_BF_COLLISION=1 \
+  python3 scripts/compare_lumina_si_public_tne.py \
+  --result "$RESULT_JSON" --preparation "$PREP_JSON" \
+  --public data/standart_data1/toy06 --node 34
+```
+
+아래의 두 지점 표는 이 추가 계산보다 먼저 실행한 공개 ne 단독 시험이다.
+
 같은 완료 복사장·온도·원자모형을 유지하고, 앞의 S 시험과 같이 **Si 한
 원소만** 공개 전자밀도에서 다시 풀었다. 원래 충돌 설정
 `LUMINA_ARTIS_PARITY=0`, `LUMINA_NLTE_BF_COLLISION=1`을 사용했다. 먼저
