@@ -134,11 +134,15 @@ disagree most in the transition zone (v ≈ 7–9 kK).
 
 ## Status and caveats
 
-- Definitive validation requires the **converged** model: rerun
-  `cmp_rvtj_T_ne_vs_published.py` on the converged `RVTJ` (after stint 2), then
-  overlay the emergent spectrum and ion fractions. Convergence is in progress.
+- 최종 검증에는 수렴된 released-T 모델이 필요하다. **2026-10-31 현재 유효한
+  수렴 기준해는 없다.** 고정-T 중간값은 기준해가 아니며, CMFGEN 포획 job
+  `1245331`도 `BLUE_ENTRY_NOT_PHYSICAL_CONVERGENCE`로 끝나 수렴한 `RVTJ`·스펙트럼·
+  이온분포 앵커를 만들지 못했다. 유효한 모델이 생긴 뒤에만
+  `cmp_rvtj_T_ne_vs_published.py`와 emergent spectrum/ion-fraction 대조를 수행한다.
+  최신 실행 상태와 판독은 저장소의 `docs/HANDOVER_2026-10-30.md`를 따른다.
 - `data/tardis_reference_toy06_19p48d/` in the repo is a **TARDIS** run of toy06
   (it provides TARDIS-format atomic data), not a CMFGEN reference. The CMFGEN
   benchmark is `data/standart_data1/toy06/*_cmfgen.txt`.
-- Job IDs and PIDs move; the authoritative live state is
-  `PROVENANCE_R8_campaign_ledger.txt`.
+- `PROVENANCE_R8_campaign_ledger.txt`는 해당 CMFGEN campaign의 역사 기록이지 현재
+  PID/job 상태의 live source가 아니다. 현재 프로세스는 Slurm 회계와 최신
+  인수인계 기록으로 확인한다.
