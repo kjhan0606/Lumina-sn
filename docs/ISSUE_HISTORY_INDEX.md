@@ -199,7 +199,11 @@
   `H_CHK=MAX_VAL`, `XM_CHK=NONE`을 확인한다. target node1의 `PSIPREV×J_PREV`도
   `+4.2803e5`여서 음수 이전주파수 RHS 하나만으로 설명되지 않는다. outer-row
   operator/closure spectral coupling이 선도 후보지만 319 Å의 전체 계수가 없어
-  인과는 미확정이다.
+  인과는 미확정이다. 추가 재현에서는 target 490.873 Å trace 해시를 맞춰 읽었고,
+  raw 선형계 잔차`1.4188e-16`에서 `FORM_VAL` 교체 뒤`0.927384637`로 악화됨을
+  확인했다. 최대 잔차는 node3이며, node2 J 대체가 node3 하부결합항에 만든
+  변화`−8765.2134`와 node3 방정식 잔차 증분이 일치한다. 이는 후반 capture 점의
+  clipping/수렴판정 실패 메커니즘만 확정하며 298–319 Å 최초 원인은 아니다.
   정본: [2026-10-31 인계](HANDOVER_2026-10-31.md).
   정본: [formal/MOM 연결](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md),
   [첫 MOM 실패](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md).
