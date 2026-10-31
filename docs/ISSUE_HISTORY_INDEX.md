@@ -422,6 +422,13 @@
   고정B 인구의 photo율이며 이온분율·수용 판정은 아니다. 구현/재현은
   `compare_cmfgen_bound_photo_profiles.py` 및 10월31일 인계의
   `90점 bound photo 비교의 재사용 구현`을 참조한다.
+- 실행 판본 재대조(11월1일): 실제444706의 control/stage는
+  `lumina_f1_generation15_sources_20261031/dispatch_bundle_a100pcie.ZrU1ai` 아래다.
+  `lumina_feedback_generation15_20261031`의 미제출 구성을 현 실행으로 대용하지 않는다.
+  실제 stage76파일의 해시가 봉인값 및 HEAD와 전부 같고 두 실행 binary도 일치했다.
+  이 범위에서 코드 소실/앱·터미널의 서로 다른 물리 판본은 확인되지 않았다.
+  Slurm 출력 발견 후 단회 확인에서는 H200에서 RUNNING이었다. 최신 상태는
+  인계서 맨 위와 `실제 제출 코드와 현재 코드의 신원 대조`를 따른다.
 - generation15 새 계수/경계 job `1250253`은 완료됐지만 상태는
   `PREPARED_NEW_COEFFICIENT_BOUNDARY_NOT_RUN`이다. 원 주파수1,115,020에서 총소광
   음수표본7,985, signed line 소광 음수표본10,278,542이며 producer는 native zero
