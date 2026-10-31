@@ -97,6 +97,12 @@
   `+2.4954e−4`다. entry coefficient와 trace RHS 사이 차는 절대 `2e−8` 이내다.
   따라서 row2 음수 RHS는 직전 H 전달항이 지배하지만, raw-H 국소 반사실에서도 RHS와
   J가 음수라 H 제한 하나만으로 설명되지는 않는다.
+- 같은 capture의 직전 SAVE J/H/K에 `H² ≤ max(J_left,J_right)K`를 적용하면
+  edges1·2·4·6이 위반되고 최대비 `3.64775`(edge2)다. 따라서 `MAX_VAL` H 제한 뒤에도
+  K와 결합한 직전 주파수 장은 실현 불가능했고, Fortran의 주파수 전환은 그 J/H/K를
+  PREV 입력으로 복사한다. 이는 318.962 Å MOM 호출이 이미 비실현 가능한 직전 장을
+  받았다는 직접 상태 증거다. 다만 이 상태를 predecessor frequency에서 최초 생성한
+  formal→MOM 단계와 항은 job `1252379` 결과 전까지 미확정이다.
 - 현재 원인 판정은 **MOM 갱신 단계의 비실현 가능 결과가 직접 확인됐으나 그 원식 항의
   근본 원인은 미해결**이다. `1252379`의 직전 주파수 formal→MOM capture가 끝나기 전에
   경계 제한이나 source/closure 수정을 가정하지 않는다.
