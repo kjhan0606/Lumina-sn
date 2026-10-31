@@ -106,6 +106,13 @@
 - 현재 원인 판정은 **MOM 갱신 단계의 비실현 가능 결과가 직접 확인됐으나 그 원식 항의
   근본 원인은 미해결**이다. `1252379`의 직전 주파수 formal→MOM capture가 끝나기 전에
   경계 제한이나 source/closure 수정을 가정하지 않는다.
+- 기존 318.962 Å capture의 중간점 변환도 재구성했다. formal 4모멘트의
+  Steffen 보간 뒤 angular-support 최소 고유값은 `+0.0256830`, 최대 `H²/(J*K)`는
+  `0.899068`이고, 재구성 K/J 중간점 closure와 SAVE의 최대 상대차는 `3.30e-15`다.
+  따라서 이 target의 raw formal K 보간만으로 MOM 반환 위반을 설명할 근거는 없다.
+  고정 closure는 고정된 **비율**이며 오래된 절대 K 복사와 구별한다. 새 native 호출·
+  수송은 없고 다른 closure 제한·경계식·직전 주파수는 미해결이다. 재구성식과 범위는
+  아래 정본의 `기존 318.962 Å capture의 중간점 보간 확인`을 참조한다.
 - 정본: [78회 실패 재현](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md),
   [동일 주파수 대조](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md).
 

@@ -600,6 +600,28 @@ MOM H 갱신인지까지는 이 snapshot만으로 판정하지 않는다.
   시작되는지 분리한다. 그 전에는 `MAX_VAL`을 K-aware 제한으로 바꾸거나
   MOM 결과를 유효한 CMFGEN anchor로 채택하지 않는다.
 
+### 기존 318.962 Å capture의 중간점 보간 확인
+
+노드의 formal 모멘트가 허용돼도 독립 보간 뒤에는 달라질 가능성을 따로 확인했다.
+소스 기준 `dd1660af`의 `plane/get_moms_rel.f`는 절대 K를 저장하는 것이 아니라
+`K_ON_J=K/J`, `KMID_ON_J=MON_INTERP(γr²K)/(γr²J_i+γr²J_{i+1})`를 만든다.
+따라서 고정 closure는 오래된 절대 K를 그대로 붙이는 것과 구별한다.
+
+위 entry/replay의 같은 저장 배열에서 `HN_DEF_ON_NODES=1`, 두 반경 격자의
+원소별 일치를 확인했다. `subs/mon_interp.f`와 동일한 Steffen 제한 도함수는
+기존 `solve_cmfgen_mom_kernel.linmon()`으로 계산하고, 각
+`y=γr²(J,H,K,N)`의 중간점을
+`(y_i+y_{i+1})/2 + (r_{i+1}-r_i)*(d_i-d_{i+1})/8`로 재구성했다.
+
+- formal 중간점 89개의 angular-support 최소 고유값은 `+0.0256830303955`
+  (경계13), `max(H²/(J*K))=0.899068388241`이며 비율 위반은0개다.
+- 재구성 `KMID_ON_J`와 replay의 `KMID_ON_J_SAVE` 최대 상대차는
+  `3.30084717237e-15`다. MOM 반환의 기존 보수적 최대비 `2.03754210644`도 재현했다.
+- 이는 위에 해시를 고정한 완료 capture/replay의 90점 배열 판독이다. native
+  `GET_MOMS_REL`을 새로 실행한 시험이나 새 수송·물질응답이 아니다. 이 target에서
+  **raw formal K의 중간점 보간만**이 위반을 만들었다는 설명은 지지되지 않는다.
+  다른 closure 제한·경계식·직전 주파수의 문제 또는 전체 물리 정확성을 배제하지 않는다.
+
 ### 다음 묶음: 직전 주파수 formal→MOM 연결 확인
 
 - **목표:** outer78, 직전 native 주파수 `9.39941245274896e15 Hz`에서 formal
