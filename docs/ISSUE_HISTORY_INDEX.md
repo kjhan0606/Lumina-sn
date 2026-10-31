@@ -218,6 +218,12 @@
   원본 checkout에 대한 기존 `tests/test_native_lazy_dz.py`도 5/5 통과했다
   (source identity, lifecycle/활성 consumer projection, 두 음성대조). 이는
   full-model peak memory 또는 실제 물리 동등성 검증이 아니다.
+  추가 source audit: `MOM_JREL_V9`는 100회 반복 시 `excessive iteration count`를
+  기록한 직후 `ACCURATE=.TRUE.`로 강제해 반복문을 끝낸다. 호출부
+  `comp_j_blank.f`는 상태코드 없이 subroutine을 호출하므로 일반 후속 계산을
+  계속한다. 실제 318.962 Å 재생이 이 경로를 밟는지는 미확인이고, 기존 490.873 Å
+  판독은 16회 반복이라 이 cap의 사례가 아니다. 반복한도 종료는 수렴 증거로
+  인정하지 않는다.
   같은 포획 sweep의 `MOM_J_ERRORS`는 `INIT`에서 rewind되며 음수 원시 J를 대체하기
   전에 기록한다. 해시 `00a8658790a83bdb87e10aa6461c015dc27a162261d746478926b348afd3acd4`인
   로그에는 38,565행/1,537주파수가 있다. 첫 기록은 node7, 298.404 Å,
