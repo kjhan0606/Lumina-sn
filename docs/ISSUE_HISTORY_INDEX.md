@@ -191,7 +191,10 @@
   선택 정지 계측의 추가만 보인다. 다만 source snapshot에 Git metadata가 없어 파일
   해시를 특정 CMFGEN commit에 연결하지 못했다. 진단 binary/링크 신원은 고정됐으나
   유효한 물리 기준해는 아니며, 최초 원인이나 Lumina 결함을 확정하지 않고 CMFGEN
-  source를 임의 변경하지 않는다.
+  source를 임의 변경하지 않는다. Slurm 영수증은 전용 `submit_cmfgen_moment_failure`
+  wrapper와 driver commit `38466bf9`를 가리키며, run 기록은 CPU16/OMP16·128GiB·
+  GPU0·13,680초·retry0 및 STOP96 진입포획으로 이를 확인한다. 기존 승인은 이 target
+  단회에 한정되고 298–319 Å snapshot은 없다.
   같은 포획 sweep의 `MOM_J_ERRORS`는 `INIT`에서 rewind되며 음수 원시 J를 대체하기
   전에 기록한다. 해시 `00a8658790a83bdb87e10aa6461c015dc27a162261d746478926b348afd3acd4`인
   로그에는 38,565행/1,537주파수가 있다. 첫 기록은 node7, 298.404 Å,

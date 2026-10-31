@@ -2,6 +2,7 @@
 """StageA59의 정확한 입력으로 최초60회 MOM 실패 호출만 한 번 포획한다."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import resource
@@ -20,6 +21,18 @@ BLUE_ENTRY_TARGET = dict(frequency_native=6.107497416899375, outer_iteration=78,
 FAILURE_SECONDS = 13680
 
 
+def capture_target_override(frequency=None, outer=None):
+    """선택 entry capture의 별도 주파수/outer를 완전한 쌍으로 고정한다."""
+    if frequency is None and outer is None:
+        return None
+    if (frequency is None or outer is None or isinstance(frequency, bool) or
+        not isinstance(frequency, (int, float)) or not math.isfinite(frequency) or
+        frequency <= 0 or type(outer) is not int or not 1 <= outer <= 2147483647):
+        raise ValueError('entry target은 양의 유한 주파수와 양의 정수 outer가 함께 필요')
+    return dict(frequency_native=float(frequency), outer_iteration=outer,
+                frequency_absolute_tolerance=5.e-9)
+
+
 def failure_profile(args,environment=None):
     """승인된 추가 단회만 허용한다. 일반 continuation 시간 범위는 바꾸지 않는다."""
     fields=[getattr(args,n,None) for n in ('capture_build','capture_build_sha256',
@@ -36,7 +49,7 @@ def failure_profile(args,environment=None):
     return True
 
 
-def failure_build(path,expected_sha,parent_sha,reference_sha):
+def failure_build(path,expected_sha,parent_sha,reference_sha,expected_target=None):
     path=Path(path).resolve();report=path/'capture-build.json'
     if not re.fullmatch('[0-9a-f]{64}',expected_sha or '') or sha(report)!=expected_sha:
         raise ValueError('포획 build 보고서 신원 불일치')
@@ -44,8 +57,13 @@ def failure_build(path,expected_sha,parent_sha,reference_sha):
     entry_only=data.get('entry_only',False)
     if type(entry_only) is not bool:
         raise ValueError('포획 진입 모드 형식 오류')
-    expected_target=BLUE_ENTRY_TARGET if entry_only else FAILURE_TARGET
-    if (data.get('capture_target')!=expected_target or data.get('first_repair') is not False or
+    target=BLUE_ENTRY_TARGET if entry_only else FAILURE_TARGET
+    if expected_target is not None:
+        target=capture_target_override(expected_target.get('frequency_native'),
+                                       expected_target.get('outer_iteration'))
+        if not entry_only:
+            raise ValueError('별도 target은 인구 갱신 전 진입 포획만 허용')
+    if (data.get('capture_target')!=target or data.get('first_repair') is not False or
         data.get('rebuilt_unmodified_sha256')!=parent_sha or sha(parent)!=data['parent_manifest_sha256']):
         raise ValueError('포획 주파수/반복/교정 부모 불일치')
     provenance=json.loads(parent.read_text())
@@ -60,7 +78,7 @@ def failure_build(path,expected_sha,parent_sha,reference_sha):
         raise ValueError('포획 실행파일/상태 목록 누락')
     return dict(directory=str(path),report_sha256=expected_sha,
         executable=str(executable),executable_sha256=data['output_sha256'][str(executable)],
-        inventory=str(inventory),target=expected_target,entry_only=entry_only,parent_executable_sha256=parent_sha)
+        inventory=str(inventory),target=target,entry_only=entry_only,parent_executable_sha256=parent_sha)
 
 
 def failure_inputs(path,expected_sha,args,identity,parent_sha):
@@ -81,12 +99,13 @@ def failure_evidence(root,context,returncode):
     """완전 snapshot/trace를 확인한다. 물리 수렴이나 전체모델 성공은 아니다."""
     from analyze_cmfgen_mom_capture import capture,trace,summary
     root=Path(root);snapshot=root/'MOM_CAPTURE.bin';history=root/'MOM_TRACE.bin'
+    target=context.get('target', BLUE_ENTRY_TARGET if context.get('entry_only',False)
+                       else FAILURE_TARGET)
     if context.get('entry_only',False):
         if returncode!=96 or not snapshot.is_file() or snapshot.stat().st_size>224*1024**2:
             raise ValueError('예상 STOP96 또는 이전 주파수 진입 snapshot이 없음')
-        header=capture_header(snapshot,expected_outer=78)
+        header=capture_header(snapshot,expected_outer=target['outer_iteration'])
         saved=capture(snapshot,json.loads(Path(context['inventory']).read_text()))
-        target=context['target']
         if abs(saved['args']['FREQ']-target['frequency_native'])>target['frequency_absolute_tolerance']:
             raise ValueError('이전 주파수 진입 snapshot 신원 불일치')
         return dict(phase=header,frequency_native=saved['args']['FREQ'],
@@ -95,11 +114,11 @@ def failure_evidence(root,context,returncode):
         raise ValueError('예상 STOP93 또는 실패 포획물이 없음')
     if snapshot.stat().st_size>224*1024**2 or history.stat().st_size>32*1024**2:
         raise ValueError('포획 snapshot/trace 크기 상한 초과')
-    header=capture_header(snapshot,expected_outer=78)
+    header=capture_header(snapshot,expected_outer=target['outer_iteration'])
     saved=capture(snapshot,json.loads(Path(context['inventory']).read_text()))
     calls=trace(history)
     if (not calls or tuple(saved['phase'])!=tuple(calls[-1]['phase']) or
-        abs(saved['args']['FREQ']-FAILURE_TARGET['frequency_native'])>5.e-9 or
+        abs(saved['args']['FREQ']-target['frequency_native'])>target['frequency_absolute_tolerance'] or
         calls[-1]['frequency']!=saved['args']['FREQ']):
         raise ValueError('포획과 trace의 주파수/호출 phase 불일치')
     rows=summary(calls[-1],saved['args']['INNER_BND_METH'])

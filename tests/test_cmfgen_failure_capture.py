@@ -72,6 +72,22 @@ def test_blue_entry_build_requires_its_own_exact_frequency_and_mode(tmp_path):
     with pytest.raises(ValueError):R.failure_build(build,sha(report),'d'*64,'c'*64)
 
 
+def test_custom_entry_target_is_paired_and_exactly_bound_to_build(tmp_path):
+    target=R.capture_target_override(9.39898883,78)
+    assert target==dict(frequency_native=9.39898883,outer_iteration=78,
+                        frequency_absolute_tolerance=5.e-9)
+    for frequency,outer in ((9.39898883,None),(None,78),(float('nan'),78),(0.,78),(9.3,0)):
+        with pytest.raises(ValueError):R.capture_target_override(frequency,outer)
+    build,_,report,data=build_fixture(tmp_path)
+    data.update(capture_target=target,entry_only=True)
+    report.write_text(json.dumps(data))
+    result=R.failure_build(build,sha(report),'d'*64,'c'*64,expected_target=target)
+    assert result['target']==target
+    with pytest.raises(ValueError):
+        R.failure_build(build,sha(report),'d'*64,'c'*64,
+                        expected_target=R.capture_target_override(9.39898884,78))
+
+
 @pytest.mark.parametrize('bad',['hash','parent','target','inventory'])
 def test_capture_build_wrong_provenance_or_scope_rejected(tmp_path,bad):
     build,source,report,data=build_fixture(tmp_path)
@@ -97,14 +113,14 @@ def test_original_failed_inputs_and_seed_identity_are_pinned(tmp_path):
     with pytest.raises(ValueError):R.failure_inputs(path,sha(path),a,dict(record=71),'b'*64)
 
 
-def evidence_fixture(tmp_path,monkeypatch):
+def evidence_fixture(tmp_path,monkeypatch,outer=78,frequency=6.10732968):
     import analyze_cmfgen_mom_capture as A
     p=tmp_path/'MOM_CAPTURE.bin'
-    p.write_bytes(b'LUMINAMOMCAPV1  '+struct.pack('=4i6i',8,64,32,32,78,123,2,0,1,90))
+    p.write_bytes(b'LUMINAMOMCAPV1  '+struct.pack('=4i6i',8,64,32,32,outer,123,2,0,1,90))
     (tmp_path/'MOM_TRACE.bin').write_bytes(b'fixture')
     inventory=tmp_path/'inventory.json';inventory.write_text('{}')
-    saved=dict(phase=(78,123,2,0,1),args=dict(FREQ=6.10732968,INNER_BND_METH='DIFFUSION'))
-    calls=[dict(phase=saved['phase'],frequency=6.10732968)]
+    saved=dict(phase=(outer,123,2,0,1),args=dict(FREQ=frequency,INNER_BND_METH='DIFFUSION'))
+    calls=[dict(phase=saved['phase'],frequency=frequency)]
     rows=[dict(iteration=i,MAX_ER=.589) for i in range(1,101)]
     # 완전한 Fortran 상태 I/O와 trace 산술은 기존 저장·재생 시험에서 검증한다.
     monkeypatch.setattr(A,'capture',lambda *a:saved)
@@ -132,6 +148,17 @@ def test_blue_entry_requires_stop96_and_exact_previous_frequency(tmp_path,monkey
     with pytest.raises(ValueError):R.failure_evidence(tmp_path,context,96)
 
 
+def test_custom_entry_capture_uses_its_requested_outer_and_frequency(tmp_path,monkeypatch):
+    target=R.capture_target_override(9.39898883,81)
+    context,_,_,_=evidence_fixture(tmp_path,monkeypatch,outer=81,frequency=9.398988832)
+    context.update(entry_only=True,target=target)
+    result=R.failure_evidence(tmp_path,context,96)
+    assert result['phase']['outer_iteration']==81
+    assert result['frequency_native']==9.398988832
+    context['target']=R.capture_target_override(9.39898884,81)
+    with pytest.raises(ValueError):R.failure_evidence(tmp_path,context,96)
+
+
 @pytest.mark.parametrize('bad',['returncode','phase','frequency','incomplete','converged'])
 def test_capture_cannot_be_claimed_without_complete_matching_failed_call(tmp_path,monkeypatch,bad):
     context,saved,calls,rows=evidence_fixture(tmp_path,monkeypatch)
@@ -151,3 +178,6 @@ def test_capture_submission_has_one_bounded_cpu_job_and_no_requeue():
         assert directive in text
     assert '--seconds 13680 --max-iterations 16' in text
     assert 'timeout 14000s' in text
+    assert '--target-frequency "$target_frequency" --target-outer "$target_outer"' in text
+    assert '--capture-target-frequency "$target_frequency" --capture-target-outer "$target_outer"' in text
+    assert 'python3 -m pytest tests/test_cmfgen_failure_capture.py tests/test_cmfgen_mom_capture.py -q' in text

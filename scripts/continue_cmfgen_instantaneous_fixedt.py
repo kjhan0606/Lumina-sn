@@ -82,8 +82,14 @@ def run(args):
     source_commit = args.source_commit
     if not re.fullmatch(r'[0-9a-f]{40}', source_commit):
         raise ValueError('source commit 형식 오류')
-    from run_cmfgen_mom_capture import failure_profile,failure_build,failure_inputs,failure_evidence
+    from run_cmfgen_mom_capture import (capture_target_override, failure_profile,
+        failure_build, failure_inputs, failure_evidence)
     capturing=failure_profile(args)
+    target_frequency=getattr(args,'capture_target_frequency',None)
+    target_outer=getattr(args,'capture_target_outer',None)
+    capture_target=capture_target_override(target_frequency,target_outer)
+    if not capturing and capture_target is not None:
+        raise ValueError('별도 MOM target은 진입 포획 모드에서만 허용')
     if not capturing:check_resources(args.memory_gib, seconds=args.seconds)
     if type(args.max_iterations) is not int or not 1 <= args.max_iterations <= 32:
         raise ValueError('추가 반복 상한은1~32회')
@@ -92,7 +98,8 @@ def run(args):
     manifest = json.loads((Path(args.build).resolve()/'result.json').read_text())
     variant=manifest['variants']['instantaneous_decay']
     context=(failure_build(args.capture_build,args.capture_build_sha256,
-             variant['executable_sha256'],args.build_report_sha256) if capturing else None)
+             variant['executable_sha256'],args.build_report_sha256,
+             expected_target=capture_target) if capturing else None)
     failed=(failure_inputs(args.capture_failure_inputs,args.capture_failure_inputs_sha256,
             args,identity,variant['executable_sha256']) if capturing else None)
     out = args.out.resolve()
@@ -138,8 +145,9 @@ def run(args):
     if capturing:
         record.update(capture_build=context,capture_failure_inputs=str(args.capture_failure_inputs.resolve()),
             capture_failure_inputs_sha256=args.capture_failure_inputs_sha256,
-            capture_stop_before_population_outer=78,
-            interpretation='74상태에서 기존 NUM_ITS16을 보존하되78에서 포획/인구 갱신 전 중단. 앵커 계산 아님')
+            capture_stop_before_population_outer=context['target']['outer_iteration'],
+            capture_target=context['target'],
+            interpretation='74상태에서 기존 NUM_ITS16을 보존하고 지정 outer/frequency에서 포획/인구 갱신 전 중단. 앵커 계산 아님')
         for name in ('run_cmfgen_mom_capture.py','analyze_cmfgen_mom_capture.py','prepare_cmfgen_mom_capture.py'):
             path=Path(__file__).with_name(name).resolve()
             record['driver_source_sha256'][str(path)]=sha(path)
@@ -198,7 +206,8 @@ def run(args):
                 sha(args.capture_failure_inputs)!=args.capture_failure_inputs_sha256):
                 raise ValueError('포획 실행 오류 또는 봉인 원본/제어/실행파일 변경')
             failure_build(args.capture_build,args.capture_build_sha256,
-                          variant['executable_sha256'],args.build_report_sha256)
+                          variant['executable_sha256'],args.build_report_sha256,
+                          expected_target=capture_target)
             record['capture']=failure_evidence(material,context,child.returncode)
             record['capture_complete']=True
             record['status']=('BLUE_ENTRY_NOT_PHYSICAL_CONVERGENCE' if context.get('entry_only',False)
@@ -225,4 +234,8 @@ if __name__=='__main__':
     p.add_argument('--capture-build-sha256')
     p.add_argument('--capture-failure-inputs',type=Path)
     p.add_argument('--capture-failure-inputs-sha256')
+    p.add_argument('--capture-target-frequency',type=float,
+                   help='별도 entry 포획 native 주파수; 외부 반복과 함께 지정')
+    p.add_argument('--capture-target-outer',type=int,
+                   help='별도 entry 포획 외부 반복; 주파수와 함께 지정')
     raise SystemExit(run(p.parse_args()))

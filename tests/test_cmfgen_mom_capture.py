@@ -136,6 +136,16 @@ def test_entry_capture_stops_before_selected_native_call_and_requires_target(tmp
         prepare(tmp_path/'parent',tmp_path/'native',tmp_path/'out',True,entry_only=True)
 
 
+def test_custom_entry_target_is_bound_to_frequency_and_outer_iteration():
+    target=capture_target(target_frequency=9.39898883,target_outer=78)
+    source=diagnostic_module(target_frequency=target['frequency_native'],
+                             target_outer=target['outer_iteration'])
+    exact=format(target['frequency_native'],'.17e')
+    assert (f"(LUMINA_OUTER==78 .AND. ABS(FREQ-{exact}_LDP)<5.0E-9_LDP)"
+            in source)
+    assert "IF(MODE=='CAPTURE' .AND. LUMINA_OUTER>=78)THEN" in source
+
+
 def test_flux_trace_brackets_native_limiter_and_requires_selected_replay(tmp_path):
     text=(NATIVE/"plane/mom_jrel_v9.f").read_text()
     split=re.search(r"(?im)^\s*END MODULE MOD_JREL_V9\s*$",text)
