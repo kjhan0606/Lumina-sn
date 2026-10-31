@@ -600,6 +600,30 @@ MOM H 갱신인지까지는 이 snapshot만으로 판정하지 않는다.
   시작되는지 분리한다. 그 전에는 `MAX_VAL`을 K-aware 제한으로 바꾸거나
   MOM 결과를 유효한 CMFGEN anchor로 채택하지 않는다.
 
+### 다음 묶음: 직전 주파수 formal→MOM 연결 확인
+
+- **목표:** outer78, 직전 native 주파수 `9.39941245274896e15 Hz`에서 formal
+  장과 closure가 가능한 모멘트인지, 동일 호출의 MOM 갱신이 raw/제한 H를
+  어떻게 바꾸는지 직접 대조한다. 현재 target 재구성만으로 남은 “formal
+  입력에서 이미 불일치했는지, 이전 MOM 반환에서 생겼는지”를 분리한다.
+- **범위/제외:** 같은 봉인 74상태와 78회 경로를 복제해 해당 주파수의 MOM
+  진입 전 STOP96 포획 후 같은 snapshot의 MOM만 재생한다. 인구 갱신, 새
+  복사장 수송, 물리 설정 변경, 반복 재시도는 하지 않는다. 고유 출력 루트를
+  쓰고 앞선 포획·재생 자료는 읽기 전용으로 보존한다.
+- **완료 기준:** outer78·요청 주파수와 입력/실행 신원이 맞는 진입 상태,
+  formal J/H/K/N 지지, 재생 raw J/H와 제한 후 상태, 원식 잔차 및 318.962 Å
+  호출의 저장 이전 H와의 배열 대조를 함께 얻는다. 계보·위치·재생이 맞지
+  않으면 실패 자료만 보존하며 이를 물리 판정으로 승격하지 않는다.
+- **자원/예상:** Grammar Slurm CPU16/OMP16·128 GiB·GPU0·최대4시간·retry0
+  (내부 계산 상한13,680초). 동일 74→78 경로의 직전 실측은 2:32:42이며,
+  새 실행의 예상 계산시간은 약2.5시간, 큐 대기는 별도·미정이다.
+- **재현/소유:** 운전자가 현재 `submit_cmfgen_moment_failure.slurm`의
+  target 주파수 선택과 기존 `capture()`/`trace()` 분석기를 사용한다. 원본
+  source·물리 산술은 읽기 전용이다. 실행 전 봉인 seed 결과·ion reference·
+  full build·기존 capture-input 해시와 모든 지정 경로의 존재를 대조했다.
+  제출 작업은 계산 전에 기존 `verify_seed`로 source70·74상태 계보를 다시
+  검사하며 실패하면 계산을 시작하지 않는다.
+
 재현은 전용 결과 루트 `lumina_mom78_first_significant_negative_20261101_retry2`의
 `run-parent/run/material/MOM_CAPTURE.bin`, `replay-traceflux/MOM_TRACE.bin`,
 `replay-traceflux/MOM_FINAL.bin`과 `capture-build-traceflux/state_inventory.json`을
