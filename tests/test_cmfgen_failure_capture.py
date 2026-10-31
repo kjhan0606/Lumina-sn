@@ -190,4 +190,7 @@ def test_capture_submission_has_one_bounded_cpu_job_and_no_requeue():
     assert 'timeout 14000s' in text
     assert '--target-frequency "$target_frequency" --target-outer "$target_outer"' in text
     assert '--capture-target-frequency "$target_frequency" --capture-target-outer "$target_outer"' in text
+    assert 'capture_native=${16:-}' in text
+    assert '--native "$capture_native" --out "$capture" --entry-only' in text
+    assert '--source70 "$source70" --seed-run "$seed_run" --native "$native"' in text
     assert 'python3 -m pytest tests/test_cmfgen_failure_capture.py -q' in text

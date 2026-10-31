@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # 승인된74→78 실패 상태 포획 단회. NUM_ITS16은 이전 경로 보존용이며78에서 종료.
-# NEW_PARENT COMMIT SOURCE70 SEED_RUN ION_REF BUILD BUILD_SHA NATIVE CAPTURE CAPTURE_SHA FAILED_INPUTS FAILED_SHA [TARGET_FREQ TARGET_OUTER CAPTURE_PARENT]
+# NEW_PARENT COMMIT SOURCE70 SEED_RUN ION_REF BUILD BUILD_SHA NATIVE CAPTURE CAPTURE_SHA FAILED_INPUTS FAILED_SHA [TARGET_FREQ TARGET_OUTER CAPTURE_PARENT CAPTURE_NATIVE]
 #SBATCH --job-name=lumina-mom78-capture
 #SBATCH --partition=normal
 #SBATCH --exclude=grammar072,grammar078,grammar080
@@ -14,7 +14,7 @@
 #SBATCH --chdir=/home/kjhan/BACKUP/Eunha.A1/Claude/Lumina-sn
 set -euo pipefail
 umask 027
-[[ $# -eq 12 || $# -eq 15 ]]
+[[ $# -eq 12 || $# -eq 16 ]]
 ulimit -s unlimited
 ulimit -c 0
 module purge
@@ -35,19 +35,21 @@ failure_sha=${12:?기존 실패 입력 SHA 필요}
 target_frequency=${13:-}
 target_outer=${14:-}
 capture_parent=${15:-}
+capture_native=${16:-}
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
 for digest in "$build_sha" "$failure_sha"; do
   [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
 done
 target_flags=()
-if [[ -n "$target_frequency" || -n "$target_outer" || -n "$capture_parent" ]]; then
-  [[ -n "$target_frequency" && -n "$target_outer" && -n "$capture_parent" ]]
+if [[ -n "$target_frequency" || -n "$target_outer" || -n "$capture_parent" || -n "$capture_native" ]]; then
+  [[ -n "$target_frequency" && -n "$target_outer" && -n "$capture_parent" && -n "$capture_native" ]]
   [[ "$capture_sha" = BUILD ]]
   [[ "$target_frequency" =~ ^[0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?$ ]]
   [[ "$target_outer" =~ ^[1-9][0-9]*$ ]]
   (( 10#$target_outer <= 2147483647 ))
   capture_parent=$(realpath "$capture_parent")
-  test -d "$capture_parent" && test ! -e "$capture"
+  capture_native=$(realpath "$capture_native")
+  test -d "$capture_parent" && test -d "$capture_native" && test ! -e "$capture"
 else
   [[ "$capture_sha" =~ ^[0-9a-f]{64}$ ]]
 fi
@@ -66,7 +68,7 @@ python3 -m unittest tests.test_cmfgen_instantaneous_fixedt -v
 python3 -m pytest tests/test_cmfgen_failure_capture.py -q
 if [[ -n "$target_frequency" ]]; then
   python3 scripts/prepare_cmfgen_mom_capture.py --parent "$capture_parent" \
-    --native "$native" --out "$capture" --entry-only \
+    --native "$capture_native" --out "$capture" --entry-only \
     --target-frequency "$target_frequency" --target-outer "$target_outer" >/dev/null
   capture_sha=$(sha256sum "$capture/capture-build.json" | awk '{print $1}')
   target_flags+=(--capture-target-frequency "$target_frequency" --capture-target-outer "$target_outer")
