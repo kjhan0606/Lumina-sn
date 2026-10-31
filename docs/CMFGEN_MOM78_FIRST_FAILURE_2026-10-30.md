@@ -695,3 +695,28 @@ H 프로파일과 그 생성 과정을 함께 읽는다.
 `solve_cmfgen_mom_kernel.previous_state_audit()`로 직전 완료 J/H/계수를
 재구성한다. 위 파일명·해시는 replay job `1252359`의 출력 및 원 capture
 job `1251793`의 결과와 대조한다.
+
+### 직전 주파수 포착 성공 후 단일 재생·판독 자동 연결
+
+11월1일 기존 승인 묶음의 단일 MOM 재생을 job **1252455**로 연결했다.
+Slurm 제출시각은 `04:07:30 KST`이고, 제출 후 실제 기록에서
+`PENDING/Dependency`, `afterok:1252379(unfulfilled)`, CPU1·4GiB·5분·requeue0을
+확인했다. 선행 포착 성공 뒤에만 실행하고 invalid dependency는 취소한다.
+재포착·새 수송·인구/온도 갱신·자동 재시도는0이다. CPU1 작업은 Grammar에서
+낮은 우선순위가 적용되므로 dependency 해제 직후의 시작은 보장하지 않는다.
+
+새 자료 루트는 `lumina_mom78_predecessor_frequency_20261101`이며, 위의
+318.962 Å 결과 루트와 구분한다. 같은 부모/소스에서 target
+`9.39941245274896`, outer78의 `capture-build-traceflux`를 별도로 준비했고,
+진입 포획 build와 `state_inventory.json`은 바이트 동일했다. build manifest SHA256은
+`3a0e0a659513808c246d91df0ec7c19e59506aba5c93d570c67230bdc380d5cd`,
+`replay_mom.exe` SHA256은
+`c8d380897760d3020497b2d5df8e2506ddd6d77a5426ec6214e1bf8f9d202be9`다.
+
+재생은 원 포착의 성공 receipt·STOP96·snapshot SHA·target/90점 phase와
+기존 build 검증을 확인한 뒤 새 `replay-traceflux` 디렉터리에서 한 번 실행한다.
+`LUMINA_MOM_CAPTURE_MODE=REPLAY`, OMP1이며 종료 후 기존
+`analyze_cmfgen_mom_capture.py --entry-only`로 같은 루트의
+`entry-replay-analysis.json`을 생성한다. 생성기·분석기·angular-support helper는
+운전자 commit `dcc846b5`의 파일 SHA를 실행 시 확인한다. 이 연결은 진단 산출물
+생성을 잇는 것이지 bundle 완료·유효 CMFGEN 기준해·물리 동질성 판정이 아니다.
