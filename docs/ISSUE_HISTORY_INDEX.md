@@ -413,6 +413,15 @@
   맞출 수 없다. 기존 Sobolev/MC ALI나 설계 전용 메모를 현재 full-SR ES 수리로
   바로 이식하지 않는다. 전모형 BF6/SE/수송 없이 CPU1·29.60초에 선택 photo
   적분으로 확인했으며 상세는 아래 인계의 `CMFGEN J로 Si III/S III bound율 직접 비교`다.
+- 전90점 확장(11월1일): 같은 정의를 Si II/III·S II/III의975경로·90점으로
+  확장했다. 보간의 전치 작용으로 fine 격자 구적을 그대로 원 CMFGEN 격자에
+  합산하는 비교기를 구현했고, 18시험 및 이전 직접 적분과 상대2.22e-16로 재현했다.
+  Lageunha CPU1·4GiB에서38.83초에360행을 얻었다. S III의 현재/참조율은
+  점34/50/61에서0.875/1.430/0.997로 부호·크기가 깊이에 따라 달라진다.
+  [전90점 bound photo 프로파일](CMFGEN_BOUND_PHOTO_PROFILES_2026-11-01.csv)은
+  고정B 인구의 photo율이며 이온분율·수용 판정은 아니다. 구현/재현은
+  `compare_cmfgen_bound_photo_profiles.py` 및 10월31일 인계의
+  `90점 bound photo 비교의 재사용 구현`을 참조한다.
 - generation15 새 계수/경계 job `1250253`은 완료됐지만 상태는
   `PREPARED_NEW_COEFFICIENT_BOUNDARY_NOT_RUN`이다. 원 주파수1,115,020에서 총소광
   음수표본7,985, signed line 소광 음수표본10,278,542이며 producer는 native zero
