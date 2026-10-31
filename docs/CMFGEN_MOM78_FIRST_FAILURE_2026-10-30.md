@@ -729,3 +729,82 @@ Slurm 제출시각은 `04:07:30 KST`이고, 제출 후 실제 기록에서
 `entry-replay-analysis.json`을 생성한다. 생성기·분석기·angular-support helper는
 운전자 commit `dcc846b5`의 파일 SHA를 실행 시 확인한다. 이 연결은 진단 산출물
 생성을 잇는 것이지 bundle 완료·유효 CMFGEN 기준해·물리 동질성 판정이 아니다.
+
+## 2026-11-01 결과 — 직전 주파수의 H 사후 제한이 공동 방정식을 깨뜨림
+
+### 포착·수동 재생·재현
+
+포착 `1252379`는 Slurm `COMPLETED`, elapsed `02:21:04`, exit0으로 끝났다.
+native96은 예정된 진입 포착/인구 갱신 전 정지다. 결과 receipt의
+`capture_complete`, source/control/executable 보존은 모두 참이다. phase는
+`(78,25634,0,0,1)`,90점, native 주파수 `9.39941245274896`이다.
+
+사용자 위치 변경에 따라 후속1252455는 미실행 취소 상태를 유지했다.
+Lageunha에서 공유 입력·라이브러리·build 신원과 load0.18을 확인한 뒤,
+`05:50:57–05:50:59 KST`에 같은 snapshot의 MOM만 한 번 수동 재생했다.
+실행 commit은 `0a3151bf`, CPU affinity1개·OMP1·가상메모리4GiB·전체 wall300초·
+재시도0이다. Bash `time`의 native 실측은 real0.014/user0.001/sys0.003초다.
+새 수송·물질응답·외부 반복은0회다. 입력 루트는 위의 predecessor 전용 루트다.
+
+| 자료 | SHA256 |
+| --- | --- |
+| MOM_CAPTURE.bin | `f2afdf39fc2d0a245185975fb9ec91cd54047c4224d3db2f4d922b2c0598ab17` |
+| MOM_FINAL.bin | `4bb7c73fbe44489e2bcea795bdff8ac8c6e88d4902b197300a1e3976f68ab454` |
+| MOM_TRACE.bin | `9ca19222d4dbbef26502e9aa66f553db7ae826f2dc0a95f1154ce158e691feeb` |
+| MOM_H_TRACE.bin | `f8a32f95f090106317a9491307160a14bf520ca5a8677fa82fcb175a9d2a6be2` |
+| entry-replay-analysis.json | `34a2ea64665487d24aca44ffa9974f7c6921289162ab40c67f35634b74468ae3` |
+| predecessor-link-analysis.json | `3ffa080cc08262d2497fecaa06ab8f16c66f41c9490da64bcad01d47d44b4acf` |
+| predecessor-coupled-moment-residual.json | `e14bdcaa0023a976536a223e67dc2bf8a0ee9e531ea465edb64639d5a0c812f5` |
+
+운전자 재현은 기존 `analyze_cmfgen_mom_capture.py --entry-only`에 같은
+run/material·replay-traceflux·capture-build-traceflux와 **새 output 경로**를
+전달해 수행했다. `entry-replay-analysis-operator-repro.json`은 원 보고서와
+byte-identical, SHA도 `34a2ea64…`다. native 재생을 추가로 하지 않았다.
+
+### J 단독 판독과 실제 저장 J/H 쌍은 다르다
+
+formal 4모멘트의 angular-support 최소 고유값은 노드 `+0.0231634`, 같은
+중간점 보간 뒤 `+0.0256878`이다. MOM은26회 뒤 `MAX_ER=2.91461e-9`로
+종료했고 전26회에 음수 J/대체 J가0개였다. 마지막 raw J 선형식 잔차는
+`1.62e-16`, 저장 계수 재조립 잔차는 `2.82e-16`, 기울기 재평가 잔차는
+`4.12e-10`이다. 그런데 반환 J/H/K는 경계1·2·4·6의 필요조건을 위반하며
+최대비는 `3.64774599793`다.
+
+경계1/2의 원식 H는 `−0.00313782921/−0.00432491137`인데 `MAX_VAL` 후
+저장 H는 `−0.000557622656/−0.00289591615`다. 이 두 경계만 제한되며,
+원식에 native `.9999*max(J_left,J_right)` 규칙을 적용하면 저장89개 H와
+원소별 정확히 일치한다. formal→MOM의 node1 J 비는 `0.0119208`이다.
+formal을 정답이라고 채택한 비교는 아니며 두 계산 경로의 큰 이동을 보여준다.
+
+작은 J 잔차만으로 실제 반환장의 방정식까지 맞았다고 읽으면 안 된다.
+H를 소거하기 전의 내부 zeroth moment 식은 다음과 같다.
+
+`DTAUONQ*(P_J-COH_VEC)*J + PSI*J + H_left-H_right = DTAUONQ*SOURCE*R² + PSIPREV*J_prev`
+
+위 식의 각 표시 항 절댓값 합으로 잔차를 정규화했다.88개 내부점에서
+제한 전 H의 최대 잔차는 `4.32309e-16`이지만 **제한 후 저장 H**를 넣으면
+node2 `0.229353803`, node3 `0.0789987172`다. H 원식 자체의 잔차도
+경계1/2에서 `0.0404167/0.131387`이다. 이 H 잔차는
+`|H_saved-H_raw|/(|H_saved|+H 원식 우변 각 항의 절댓값 합)`이다.
+`δH=H_saved-H_raw`에 대해
+zeroth 식의 잔차 증분이 `δH_left-δH_right`와 절대 `1.73e-18` 이내로
+일치한다. 따라서 J 대체가 전혀 없는 이 호출에서도 H 사후 제한은 두
+공동 모멘트 방정식을 깨뜨린다. `completed_operator()`는 제한 전 H를
+소거한 J 식을 검사하므로 작은 잔차가 이 위반을 가릴 수 있다.
+
+### 다음 주파수 입력과의 연결 및 판정 한계
+
+이 최종 상태와 기존318.962 Å entry의 같은 주파수 SAVE를 대조했다.
+최대 절대차/해당 배열 최대 크기의 차이는 J `3.19e-11`, H `1.11e-8`,
+K/J `8.40e-7`, 중간점 closure `6.68e-7`이다. H 원소별 최대 상대차는
+`2.08e-6`이다. 따라서 독립74→78 이력이 비트 동일하다고 주장하지 않는다.
+같은 phase/주파수의 외곽 위반 패턴과 H 제한 경로가 재현됐다는 범위다.
+
+이번 묶음의 포착·단일 재생·원식/반환 상태·다음 주파수 입력 대조는 얻었다.
+그러나 물리 수리는 미완료다. 제한 전 raw H도 실현 가능하다고 보장되지
+않으므로 **H 제한을 삭제하는 것만을 수리로 채택하지 않는다**. 이 private
+진단판본에는 앞서 기록한 affine 경계 수리가 없으며 새 회귀로 이름 붙이지 않는다.
+다음에는 기존 affine/formal-primary 수리 이력과 현재 소스 계약을 먼저 대조해,
+공동 방정식과 각도 실현성을 함께 유지하는 경로를 선택한다. 같은 근거의 추가
+인접 주파수 포착이나 전주파수 실행은 제출하지 않았다. valid released-T
+CMFGEN 기준해·Si/S 분포·물리량·스펙트럼의 최종 동질성은 여전히 미달이다.
