@@ -225,6 +225,15 @@
   `SRCE_CHK`·연속소광 하한의 새 J/열 영향은 판정하지 않는다. 수송은 0회이며
   물리 수용·CMFGEN 동등성을 뜻하지 않는다. 수치와 검증 범위는
   [10월30일 인계](HANDOVER_2026-10-30.md)의 generation15 귀속 절 참조.
+- Si II FL124→125의 Δm 의심은 이미 10월28일 원자료·Lumina 변환기·CMFGEN 경로와
+  허용 E1 superlevel 성분 합산을 대조했다. generation15의 두 importer 파일 SHA도
+  그때 기록한 SHA와 일치하고 현재 선 목록 `f=2.975`도 같다. 독립 hydrogenic 가중합
+  `f=2.974565825179`는 원행과 0.0146% 이내다. 이 한 묶음 전이에서 Lumina만
+  Δm/허용 성분을 누락했다는 증거는 없으므로 임의 필터를 되살리지 않는다. 이는
+  다전자 원자료 전체나 모든 Si 전이의 정확성 증명이 아니다. 정본:
+  [음수 소광·FL124→125 이력](LUMINA_NEGATIVE_NODAL_SOURCES_2026-10-27.md)의
+  `Si II FL124→125 Δm 선택규칙과 두 코드의 원자료 경로` 및
+  `FL124→125의 허용 성분 합산 추가 검증`.
 - 부호 있는 소광의 기존 처리(10월29일): Lumina production fullSR reader와 양의
   scaled-moment core는 signed `chi`/gain을 처리하므로 raw 음수 개수만으로 실행
   실패라 단정하거나 `chi=0`으로 clamp하지 않는다. 반면 원 CMFGEN
