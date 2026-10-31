@@ -185,8 +185,13 @@
   `FORM_VAL` 대체와 H 제한(`MAX_VAL`) 뒤 종료조건 `MAX_ER`는 수정된 J의 반복
   변화량만 검사하며, 원 삼중대각식 잔차나 J/H/K 공동 각도 실현성은 검사하지 않는다.
   이는 포획 재생의 `5.3231e-9` 반복변화와 `0.9273846` 원식 잔차가 함께 나온 것과
-  맞는다. source 정적 확인이며 capture binary의 정확한 링크 신원은 별도다. 최초
-  원인이나 Lumina 결함을 확정하지 않고 CMFGEN source를 임의 변경하지 않는다.
+  맞는다. 완료 job의 build manifest/build log 및 부모 identity 해시와 실제 실행파일
+  해시를 재대조해 진단 capture/replay binary와 링크 입력을 고정했다. manifest는
+  `entry_only=true`, `first_repair=false`; 소스 비교는 계산문 삭제 없이 trace·snapshot·
+  선택 정지 계측의 추가만 보인다. 다만 source snapshot에 Git metadata가 없어 파일
+  해시를 특정 CMFGEN commit에 연결하지 못했다. 진단 binary/링크 신원은 고정됐으나
+  유효한 물리 기준해는 아니며, 최초 원인이나 Lumina 결함을 확정하지 않고 CMFGEN
+  source를 임의 변경하지 않는다.
   같은 포획 sweep의 `MOM_J_ERRORS`는 `INIT`에서 rewind되며 음수 원시 J를 대체하기
   전에 기록한다. 해시 `00a8658790a83bdb87e10aa6461c015dc27a162261d746478926b348afd3acd4`인
   로그에는 38,565행/1,537주파수가 있다. 첫 기록은 node7, 298.404 Å,
