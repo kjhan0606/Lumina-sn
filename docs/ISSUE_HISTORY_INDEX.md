@@ -271,6 +271,14 @@
   공통 `InputField`가 동일 물질의 완료장 계보를 검사한다. 새 observer나 중복
   계보 검사를 만들기 전에 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `최종 스펙트럼 deliverable의 실제 경로`와 그 뒤의 바이너리/소스 대조를 읽는다.
+- 최종 formal metric 범위(10월31일 재확인): v2 수치 허용폭은 정해져 있지만
+  EW·특징속도의 line ID, 파장창, continuum 및 blend 규약은
+  [C 리뷰](CODEX_EQUIV_PLAN_C_REVIEW.md)의 acceptance 결함으로 남아 있다.
+  `plot_spectrum_vs_cmfgen.py`는 공개 StaNdaRT와의 정규화 진단 그림이고,
+  `compare_spectra_v2.py`는 TARDIS 비교다. SN 2011fe/HST 등 다른 모델·목표의
+  창을 matched-physics toy06 최종 acceptance에 그대로 승계하지 않는다.
+  수렴 released-T 기준과 해당 모델 identity가 고정된 뒤 실제 스펙트럼을 보기
+  전에 manifest를 확정해야 한다. v2 문턱은 변경하지 않았고 새 observer 실행도 없다.
 - 정본: [Si/S 묶음](BUNDLE_CMFGEN_SI_S_BF_CHANNELS_2026-10-19.md)의
   `실제71 완료`, `감쇠/복원 분기 종료`;
   [동등성 계획 v2](CODEX_CMFGEN_EQUIVALENCE_PLAN_v2.md),
