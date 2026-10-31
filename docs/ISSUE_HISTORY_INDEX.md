@@ -335,6 +335,13 @@
   잔차나 수렴 증거가 아니다.
 - 범위 구분: 주 비교는 matched-physics steady self-run이다. 공개 StaNdaRT의
   시간의존·비국소 침적·비열·다른 원자모형은 과학 교차검사로 구분한다.
+- 구형 `LUMINA_GPH_JTABLE` 경로는 CMFGEN 기준장 동등성이나 production 수리가
+  아니다. `run_common_cmfgen_field_response.py`는 고정장 Si/S 국소 응답 진단이며,
+  full transport·전 원소 물질·전자밀도 갱신을 수행하지 않는다. 그 실행기는 이전
+  `jnu4` CMFGEN 자료를 읽는다. `build_cmfgen_jtable.py`는 비양수 J 표본을 log 보간
+  결측으로 취급하고 한쪽 깊이 표본만으로 보간할 수 있으며, C 주입부는 양수 표만
+  덮어쓰고 나머지는 Lumina 장을 유지한다. 따라서 그 진단 결과를 공통 J의 증거나
+  released-T 기준해로 승격하지 않고, 현재 production 원인으로 재해석하지 않는다.
 - 기존 연결: `run_lumina_resident_observer.py`와 관측자 NPZ 비교기는 이미 있다.
   공통 `InputField`가 동일 물질의 완료장 계보를 검사한다. 새 observer나 중복
   계보 검사를 만들기 전에 [10월30일 인계](HANDOVER_2026-10-30.md)의
