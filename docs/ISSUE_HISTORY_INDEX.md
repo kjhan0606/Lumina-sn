@@ -179,6 +179,18 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- 과거 CMFGEN relT2/relT3 진단의 재사용: `MAXCH`는 실제 correction scaling 전
+  raw `STEQ`에서 산출되고, 감소 correction `c≥0.99999`는 `10^7%` sentinel로
+  치환된다. 그러므로 거대 `MAXCH`만으로 native factor cap 미작동이나 bulk 물리
+  발산을 판정하지 않는다. 반대로 독립 population-weighted 지표에는 감쇠하지 않는
+  진동/S drift가 있었고 full BA 뒤 광도도 약2.007배 이동해, 이력 전체가 단순한
+  계측 아티팩트였던 것도 아니다. relT2의 `MAX_LIN/MAX_LAM=10`은 단계당 최대
+  10배 변화까지 허용했다. relT3 설계 메모는 native trust-radius를 더 좁히는 방안을
+  제안했지만, 그 설계만으로 실행·수렴이나 released-T 앵커를 입증하지 않는다.
+  재사용 전 현재 CMFGEN 소스·입력·실행 계보를 확인한다. 정본:
+  [relT3 trust-radius 설계](CODEX_RELT3_TRUSTREGION_DESIGN.md),
+  [relT3 사후분석](CODEX_RELT3_ANALYSIS.md),
+  [2026-08-01 보고](MORNING_REPORT_2026-08-01.md).
 - 10월31일 새 J 고정장 응답 generation15의 Si/S 사후 비교를 read-only helper로
   재현했다(result/response/balance SHA는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `저장 응답 이온 비교의 후처리 재현` 참조). 온도변화0, 최대 ne변화0.974%이며,
