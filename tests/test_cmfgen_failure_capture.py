@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from prepare_cmfgen_mom_capture import capture_target, diagnostic_module
 import run_cmfgen_mom_capture as R
 from run_cmfgen_lambda_probe import sha
 
@@ -86,6 +87,15 @@ def test_custom_entry_target_is_paired_and_exactly_bound_to_build(tmp_path):
     with pytest.raises(ValueError):
         R.failure_build(build,sha(report),'d'*64,'c'*64,
                         expected_target=R.capture_target_override(9.39898884,78))
+
+
+def test_custom_entry_target_binds_frequency_and_outer_in_generated_selector():
+    target=capture_target(target_frequency=9.39898883,target_outer=78)
+    source=diagnostic_module(target_frequency=target['frequency_native'],
+                             target_outer=target['outer_iteration'])
+    exact=format(target['frequency_native'],'.17e')
+    assert f"(LUMINA_OUTER==78 .AND. ABS(FREQ-{exact}_LDP)<5.0E-9_LDP)" in source
+    assert "IF(MODE=='CAPTURE' .AND. LUMINA_OUTER>=78)THEN" in source
 
 
 @pytest.mark.parametrize('bad',['hash','parent','target','inventory'])
@@ -180,4 +190,4 @@ def test_capture_submission_has_one_bounded_cpu_job_and_no_requeue():
     assert 'timeout 14000s' in text
     assert '--target-frequency "$target_frequency" --target-outer "$target_outer"' in text
     assert '--capture-target-frequency "$target_frequency" --capture-target-outer "$target_outer"' in text
-    assert 'python3 -m pytest tests/test_cmfgen_failure_capture.py tests/test_cmfgen_mom_capture.py -q' in text
+    assert 'python3 -m pytest tests/test_cmfgen_failure_capture.py -q' in text

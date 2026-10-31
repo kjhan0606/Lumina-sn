@@ -63,7 +63,7 @@ export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH="$project/scripts"
 cd "$project"
 python3 -m unittest tests.test_cmfgen_instantaneous_fixedt -v
-python3 -m pytest tests/test_cmfgen_failure_capture.py tests/test_cmfgen_mom_capture.py -q
+python3 -m pytest tests/test_cmfgen_failure_capture.py -q
 if [[ -n "$target_frequency" ]]; then
   python3 scripts/prepare_cmfgen_mom_capture.py --parent "$capture_parent" \
     --native "$native" --out "$capture" --entry-only \
