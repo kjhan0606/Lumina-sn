@@ -244,6 +244,19 @@
   CMFGEN parity도 아니다. 정본: [10월29일 인계](HANDOVER_2026-10-29.md)의
   `후속 조사 범위 — 부호 있는 소멸계수와 native 교체 규칙` 및
   `실제 읽기 결과와 판단`; [현재 plan](CURRENT_PLAN.md)의 deterministic fine producer.
+- 10월31일 배선 확인: generation15 producer `1244ca46`와 현재 `HEAD` 양쪽에서
+  full-spectrum 경로(`scripts/lumina_fullsr_sc.py` → `cmf_fullsr_sc.cpp`)는
+  aggregate `chi, eta`를 읽어 signed `chi`로 수송한다. 이 경로는
+  `line_net_sobolev_material`을 호출하지 않는다. 반면 그 helper는
+  `lumina_cmfgen.c`/`lumina_plasma.c`의 선별 Sobolev 경로에서 개별
+  `tau_sobolev`에 적용되며, `tau < -0.5`일 때만 `SRCE_CHK` 유효값으로 바꾼다.
+  따라서 CMFGEN 규칙을 구현한 별도 선별 경로가 있다는 사실은 generation15의
+  full-spectrum J가 같은 규칙을 적용했다는 증거가 아니다. 합산 `chi<0` 표본수로
+  개별 선의 `tau<-0.5` 적용 수를 추론할 수도 없다. 이것만으로 어느 경로가 물리적으로
+  틀렸다고 단정하지는 않지만, generation15 F는 현 signed-opacity 경로의 진단이지
+  CMFGEN과 opacity-contract가 맞은 J가 아니다. 최종 동질성 주장 전에는 선별
+  `tau` 정책과 연속소광 하한이 full-spectrum 계수 조립에 어떻게 대응하는지 확인해야
+  한다. 임의의 합산 `chi` clamp는 하지 않는다.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
   입력·출력 배열 SHA와 상세 의미는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `F2 입력장과 새 F1 수송장의 변화` 참조. 단일 수송 변화이지 외부 고정점
