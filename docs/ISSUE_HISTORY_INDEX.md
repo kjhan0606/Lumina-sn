@@ -255,30 +255,35 @@
   790,493×90 쌍 중 `tau<0`은5,572,747개지만 `tau<-0.5`는0개이며, 최솟값은
   Si II FL124→125/node54의`−0.1562763`이다. 따라서 표준 Sobolev `tau`가 native
   trigger라는 전제하에 **개별 Sobolev helper**의 치환은 이 generation에서 발동하지
-  않는다. 이는 CMFGEN native 전체 소광 aggregate `SRCE_CHK`나 continuum floor가
-  비활성이라는 뜻이 아니다. FL 수와 부호 있는 총 `chi` 음수표본은 `tau<-0.5` 수를
-  대신하지 않는다. 코드 경로 차이가 미래 상태에 중요할 수 있음을 지우지 않고,
+  않는다. 이는 CMFGEN native 전체 소광 aggregate `SRCE_CHK`의 발동 여부를 판단하지
+  않는다. committed `comp_opac.f`에서는 continuum χ floor가 확인되지 않았다. FL 수와
+  부호 있는 총 `chi` 음수표본은 `tau<-0.5` 수를 대신하지 않는다. 코드 경로 차이가
+  미래 상태에 중요할 수 있음을 지우지 않고,
   현재 line helper 결과를 aggregate native 정책으로 일반화하지 않는다. 새 계수공간
   반사실 분석은 다음 census를 참조한다. 전체 CMFGEN parity는 미해결이며 aggregate
   `chi`를 production에서 clamp하지 않는다.
   재현 결과/범위와 F 계보 구분은 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `generation15 물질 전달과 C full 일치` 절 참조.
-- 10월31일 generation15 aggregate opacity census: 완료 계수 90×1,115,020 표본에
-  CMFGEN `comp_opac.f`의 연속 흡수 하한을 반사실 적용하면 27,888,567개(27.80%)가
-  하한 아래다. Native `cmfgen_sub.f` 전체 소광 source/scattering `SRCE_CHK` branch는
-  16,764/359개, raw Lumina 총소광과 native 반사실이 달라지는 표본은27,895,915개다.
-  600–750 Å에서는 연속 하한189,819/1,782,450(10.65%), aggregate 교체0개다.
-  읽기 전용 분석기는 생산 계수 SHA·MODEL의 `SRCE_CHK` 선택을 검사하고 파일을
-  변경하지 않았다. 후속 source trace(commit `dd1660af`)에서는 aggregate branch의
-  `NEG_OPAC_FAC=0`이 `DO_VAR_CONT`의 line extinction/stimulated-opacity J/H 응답
-  도함수 및 T 미분에 곱해짐을 확인했다. 반면 직접 `ZNET_SIM`/SE line rate에는
-  unmodified `CHIL_MAT/ETAL_MAT`이 쓰이며, line emissivity tangent에는 같은 mask가
-  적용되지 않는다. 따라서 이것은 원자전이·직접 line rate 제거가 아니라 BA의
-  line-coupled radiation-response mask다. aggregate `CHI` 교체와 continuum floor는
-  별도로 유효 수송 소광을 변경한다. 두 효과의 J/수렴해/이온분포 영향은 아직
-  측정하지 않았다. native floor나 mask를 production에 임의 적용하지 않고,
-  준비된 F는 현재 정책 차이를 가진 staging 수송으로만 해석한다.
-  정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
+- 10월31일 generation15 소광 counterfactual 정정 및 재계산: 이전 census는 CMFGEN source
+  commit `dd1660af`의 committed `comp_opac.f`가 아니라 uncommitted working-tree의
+  `LUMINA neg-opacity floor` 변경을 반영했다. committed file에는 continuum χ floor가
+  없고 ETA 하한만 있다. 수정한 분석기로 committed-stock 정책을 재계산한 결과,
+  raw 총소광 음수는 7,985개이며 source/scattering branch는 8,659/381개, 총 변경은
+  9,040개다.
+  600–750 Å 변경은0개이고 최대 `|Δχ|=4.16249e-14 cm^-1`이다. 반면
+  27,888,567개 floor 표본, patched continuum 아래서 계산한 16,764/359개 branch 및
+  600–750 Å의189,819개는 local patch counterfactual이지 stock CMFGEN 수치가 아니다.
+  이전 `generation15-native-opacity-policy.json`은 stock 판정에 사용하지 않는다.
+  재계산은 `generation15-opacity-policy-variants.json`에 기록했고, producer `sources.npz`
+  SHA256은 `a6828fc343e59b910e77c8ad9a619885a1de5db1f08c43e5ba907116bbae8793`이다.
+  해당 source diff는 이 운전자가 수정하지 않았고 작성자나 실제 CMFGEN binary 적용 여부는
+  미확인이다. 한편 같은
+  committed `cmfgen_sub.f`에서 확인한 native `NEG_OPAC_FAC=0`의 downstream 의미는
+  유효하다: `DO_VAR_CONT`의 line extinction/stimulated-opacity J/H 응답 도함수와 T
+  미분에 곱해지지만, direct `ZNET_SIM`/SE line rate와 line emissivity tangent에는
+  적용되지 않는다. 즉 BA radiation-response mask이지 원자전이 제거가 아니다.
+  aggregate χ 교체는 별도로 수송 opacity를 바꾼다. J/수렴해/이온분포 영향은 아직
+  측정하지 않았다. 정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
   `generation15 CMFGEN 전체 소광 정책의 계수공간 대조`.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
   입력·출력 배열 SHA와 상세 의미는 [10월30일 인계](HANDOVER_2026-10-30.md)의
