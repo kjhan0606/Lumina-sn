@@ -204,14 +204,17 @@
   wrapper와 driver commit `38466bf9`를 가리키며, run 기록은 CPU16/OMP16·128GiB·
   GPU0·13,680초·retry0 및 STOP96 진입포획으로 이를 확인한다. 기존 승인은 이 target
   단회에 한정되고 298–319 Å snapshot은 없다.
-  후속 계보 대조(2026-11-01)는 490.873 Å 진단본의 `cmfgen_sub.f`와
-  `dd1660af` 기준 파일 사이 차이를 세 개의 이미 알려진 로컬 패치로 좁혔다:
-  BA 초기화(`build_cmfgen_instantaneous_reference.py`), 실제 주파수 `EMHNUKT`
-  갱신(`prepare_cmfgen_fixedj_exponent.py`), dZ 행 초기화의 lazy 경로
-  (`prepare_cmfgen_lazy_dz.py`). 이 파일에서 미설명된 소스 차이는 확인되지
-  않았으나, snapshot 자체에 Git metadata가 없으므로 이를 stock/released CMFGEN
-  또는 수렴 물리 기준해로 승격하지 않는다. 이 패치 계보는 판본 구분에만 쓰며
-  물리적 동질성의 증거가 아니다.
+  후속 계보 대조(2026-11-01): parent build report가 가리키는 CMFGEN
+  `dd1660af039e10f8f8c61d892c4e226e1cd6438c`와 포획 native의 직접 입력 6개 중
+  5개(`mom_jrel_v9.f`, `mod_ray_mom_store.f`, `comp_j_blank.f`, `GET_J_CHI.INC`,
+  `set_kind_module.f`)는 바이트 동일했다. 여섯째 `cmfgen_sub.f`는 기준 SHA256
+  `092f8526…`에서 포획 SHA256 `a9b2544b…`로 달랐지만 기준본에 실제 주파수
+  `EMHNUKT` 갱신(`prepare_cmfgen_fixedj_exponent.py`), BA 초기화
+  (`build_cmfgen_instantaneous_reference.py`), dZ lazy 행 초기화
+  (`prepare_cmfgen_lazy_dz.py`)를 생성기 순서대로 적용하면 포획본과 바이트
+  동일했다. 따라서 이 여섯 파일에는 미설명된 소스 차이가 없다. snapshot에
+  Git metadata가 없고 이 private patched 진단본은 stock/released CMFGEN이나
+  수렴 물리 기준해가 아니다. 이 계보 확인은 물리적 동질성을 증명하지 않는다.
   같은 포획 sweep의 `MOM_J_ERRORS`는 `INIT`에서 rewind되며 음수 원시 J를 대체하기
   전에 기록한다. 해시 `00a8658790a83bdb87e10aa6461c015dc27a162261d746478926b348afd3acd4`인
   로그에는 38,565행/1,537주파수가 있다. 첫 기록은 node7, 298.404 Å,
