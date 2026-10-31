@@ -617,6 +617,9 @@ MOM H 갱신인지까지는 이 snapshot만으로 판정하지 않는다.
 - **자원/예상:** Grammar Slurm CPU16/OMP16·128 GiB·GPU0·최대4시간·retry0
   (내부 계산 상한13,680초). 동일 74→78 경로의 직전 실측은 2:32:42이며,
   새 실행의 예상 계산시간은 약2.5시간, 큐 대기는 별도·미정이다.
+- **실행 영수증:** job `1252379`가 target `9.39941245274896e15 Hz`, outer78로
+  제출되어 Grammar `grammar036`에서 `RUNNING`을 확인했다. 조회 시 경과는
+  6초였고 4시간·GPU0 요청이 반영됐다. 완료 결과는 아직 없다.
 - **재현/소유:** 운전자가 현재 `submit_cmfgen_moment_failure.slurm`의
   target 주파수 선택과 기존 `capture()`/`trace()` 분석기를 사용한다. 원본
   source·물리 산술은 읽기 전용이다. 실행 전 봉인 seed 결과·ion reference·
