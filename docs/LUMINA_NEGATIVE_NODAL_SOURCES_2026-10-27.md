@@ -338,6 +338,17 @@ caller SHA256 `092f8526661b1f9a5eaeb7a875f07f55623f427ad07c383f2659f2fb67143374`
 `49961a053b9c` / `c96901099b2e`이다. 두 입력의 네 이온 oscillator 경로와
 MODEL_SPEC 활성 개수 및 선 선택 제어가 같고, 동일 selector 재생산 결과도 같다.
 
+현 저장소 재검증(2026-11-01): 현재 `scripts/cmfgen_model_sources.py` SHA256은
+`0f838d4f7411a9574eb3dd02ba5ec82fd49585e7c29b632ac03515f90be13b3f`이고,
+`scripts/expand_atomic_data_cmfgen.py`는 당시 기록한
+`51aa0f893589f70409dacd216d1eb98a4d623c508105a4c2585e5d41dca4e065`와 동일하다.
+선택기 파일의 최신 변경 commit은 `5f3142c3`이며, `71adb795..5f3142c3` diff는
+FF 정책·출력공간 처리 변경만 보이고 `gf_selection` 본문은 바꾸지 않았다.
+현재 `tests/test_cmfgen_model_sources.py`는 **44 passed in 4.62s**다. 따라서
+10월28일 selector 결론은 현 선택기에도 재사용 가능하다. 다만 증거는 해당
+GENOSC_V9 선택 구현과 앞서 다룬 FL124→125 한 전이에 한정되며, 다전자 원자료
+전체나 모든 Si II/III 전이의 정확성·새 물리 동등성을 증명하지 않는다.
+
 | 이온 | 활성 full-level 전이 | GF cutoff 후 | IR roster 후 |
 |---|---:|---:|---:|
 | Si II | 1840 | 1467 | 1419 |
