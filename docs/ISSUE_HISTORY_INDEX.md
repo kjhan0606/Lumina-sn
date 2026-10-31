@@ -193,6 +193,13 @@
   `J=-2.4755e-6`(±2점 이웃 양의 최댓값 대비 `7.71e-4`); 318.962 Å에는 처음으로
   그 비가 1을 넘어 `2.62`가 된다. 따라서 490.873 Å 포획점은 음수 J 기록의 시작이
   아니라 뒤쪽 사례다. 최초 음수의 미소 크기만으로 최초 물리 실패를 정하지 않는다.
+  음수 기록 중심은 전부 바깥쪽 node1–10/90에 한정된다. 318.962 Å의 node1/2에서
+  원시 J는 약`−1.84e-3`, node3은 `+7.03e-4`; node1의 `ETA`, `CHI`, `ESEC`, `K/J`는
+  모두 양수다. 포획 인수는 `OUTER_BND_METH=HONJ`, `J_CHK=FORM_VAL`,
+  `H_CHK=MAX_VAL`, `XM_CHK=NONE`을 확인한다. target node1의 `PSIPREV×J_PREV`도
+  `+4.2803e5`여서 음수 이전주파수 RHS 하나만으로 설명되지 않는다. outer-row
+  operator/closure spectral coupling이 선도 후보지만 319 Å의 전체 계수가 없어
+  인과는 미확정이다.
   정본: [2026-10-31 인계](HANDOVER_2026-10-31.md).
   정본: [formal/MOM 연결](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md),
   [첫 MOM 실패](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md).
