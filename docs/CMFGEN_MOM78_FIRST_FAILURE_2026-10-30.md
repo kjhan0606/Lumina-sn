@@ -509,3 +509,98 @@ CPU16·OMP16·128GiB·GPU0·Slurm 최대4시간·재시도0이다. 같은74 출�
 snapshot을 `LUMINA_MOM_CAPTURE_MODE=REPLAY_FIRST replay_mom.exe SNAPSHOT`에
 넘긴다. 새 결과만 있는 디렉터리에서 `solve_cmfgen_mom_kernel.py
 --first-repair --original REPLAY --build BUILD --output NEW_JSON`으로 판독한다.
+
+## 2026-11-01: 318.962 Å 음수 J의 이전 H 결합 추적
+
+### 실행과 신원
+
+같은 74상태에서 외부 반복78·주파수 index25635·90점의 MOM 진입 상태를
+저장한 job `1251793`은 2:32:42 뒤 예정된 STOP96 capture로 끝났다. 이어
+job `1252359`가 그 snapshot에 MOM만 재생해 정상 종료했다. 둘 다 물질 갱신,
+새 수송 또는 수렴 계산은 하지 않았다. 재생 주파수는
+`9.398988825093099e15 Hz`(약318.962458 Å)다.
+
+| 자료 | SHA256 |
+| --- | --- |
+| `MOM_CAPTURE.bin` | `a1d87a12faaebe9034b00619593c5e2f8129111340fe88604e439c091c0d58ff` |
+| `MOM_TRACE.bin` | `6c170723eab25abb1dbc5dbbf10d770a6e6e3d139f45341ac110d1a5f75a8456` |
+| `MOM_H_TRACE.bin` | `fd5cae010935d5ed87c166248f951a3f111b4540b1e229804a376aa63dd8904b` |
+| `MOM_FINAL.bin` | `3961a968794a243ba40b930748d869597484df0fcdf3247cdaf59c7c7532cd21` |
+| trace-flux build manifest | `4254e94a426c1aea7d1d897fafebf101fd50eda850baa1c8939fd920098f07c3` |
+| replayed `mom_jrel_v9.f` | `49b6b3d4f8d4609caf928c3fb7d99fcb13c32707e6dfee4db5622a166fe533d8` |
+| `analyze_cmfgen_mom_capture.py` | `1031c4c5dc0a2298fb923f8a44ac4c47660b202cce33c93897df06d5dc35facc` |
+| `solve_cmfgen_mom_kernel.py` | `5abf6ab425e5f0dd893ec514ad2f186db8ec6217e30c03459faf63dd4b02739c` |
+
+### 음수 J를 직접 만드는 우변 항
+
+14번째 native 반복에서 raw J의 외곽 node1/node2는 각각
+`−1.8478304e−3`, `−1.8503734e−3`다. raw 선형계 잔차는 `1.17e−16`이고
+`MAX_ER=5.5247e−9`로 J 변화 기준은 통과했다. 그러나 음수 두 점을
+`FORM_VAL`로 바꾼 뒤 원 삼중대각식 잔차는 `0.82942`다. 같은 target의 formal
+각도 지지행렬은 최소 고유값 `+0.02317`로 양수이므로, 이 사례의 입력 formal
+광선 자체가 비실현 가능하다는 설명은 지지되지 않는다.
+
+원본 `MOM_JREL_V9`의 interior row2 우변은 국소 방출, 이전 H/J, 이전 주파수
+스펙트럼 항으로 재조립된다. 저장 계수·상태로 각 항을 계산하면 다음과 같고,
+합은 기록된 row2 우변과 `4.4e−19` 이내에서 일치한다.
+
+| row2 우변 항 | 기여 |
+| --- | ---: |
+| 국소 방출 | `+7.92270e−7` |
+| 이전 H의 공간 결합 | `−2.33782953e−3` |
+| 이전 J | `+1.89352847e−4` |
+| 이전 스펙트럼 하측 | `−2.82077431e−5` |
+| 이전 스펙트럼 상측 | `+8.75807635e−5` |
+| 합 = 저장 우변 | `−2.08831140e−3` |
+
+따라서 이 target에서 **이전 H 결합이 row2 우변의 음수 부호를 만든 직접
+항**이다. 이 항을 단순히 0으로 둔 선형대수 반사실에서는 같은 행렬의 node1/2
+해가 각각 `+1.31848e−3`, `+1.31931e−3`으로 바뀐다. 이는 인과 민감도
+계산이지 물리적 대체해가 아니다.
+
+### 이전 주파수 H 제한과 closure의 불일치
+
+직전 주파수 `9.39941245274896e15 Hz`의 완료 상태를 현재 entry snapshot에
+저장된 계수로 재구성했다. 이전 J는 원 저장 J와 정확히 같고 저장 선형식
+잔차는 `3.92e−16`, 비선형 계수 재평가 잔차는 `3.93e−10`이다. H 원식에서
+재구성한 node 경계1/2의 제한 전 H는 `−3.13782921e−3` / `−4.32491137e−3`다.
+native `H_CHK=MAX_VAL`은 이를 각각 인접 J 최대값의 `−0.9999`배인
+`−5.57622647e−4` / `−2.89591610e−3`로 바꾸며, 재구성 제한값은 저장 H와
+두 경계 모두 정확히 일치한다. 단, 이것은 **entry snapshot의 보존 계수가
+직전 완료 MOM 호출의 계수라는 조건부 재구성**이며 직전 호출의 독립 trace는
+아니다.
+
+이 제한은 K closure를 함께 검사하지 않는다. 보존된 closure에서
+`K_mid = KMID_ON_J × (J_left+J_right)`로 놓았을 때 보수적 필요조건
+`H² ≤ max(J_left,J_right) K_mid`의 좌변/우변 비는 두 경계에서 `2.1811`,
+`3.6477`이다. 즉 제한 후 저장된 J/H/K 조합도 비음수 각강도로 실현될 수
+없다. 같은 snapshot의 그보다 한 단계 앞선 H도 두 경계에서 이 비가 `1.2994`,
+`2.5579`로 이미 필요조건을 어겼다. 비실현 가능한 H가 주파수 sweep에서
+반복 전달되는 경로가 강하게 드러났지만, 그 최초 생성이 formal→closure인지
+MOM H 갱신인지까지는 이 snapshot만으로 판정하지 않는다.
+
+### 무엇이 입증되고 무엇이 남았나
+
+- 직접 입증: 직전 H 결합은 node2의 음수 우변을 부호상 결정한다. `MAX_VAL`은
+  K와의 실현성을 보장하지 않으며, 현재 상태의 반환 J/H/K가 각도 불가능한
+  조합임을 보인다.
+- 제한: 이전 H를 위 보수적 필요조건의 경계까지 낮추는 반사실에서도 row2
+  우변은 `−8.88943e−4`, node1/2 해는 `−2.23427e−4` / `−2.24244e−4`로
+  남는다. 그러므로 `MAX_VAL`의 초과만이 음수 J의 유일한 원인이라고 할 수
+  없다. H 공간 구배와 전체 moment operator/closure 결합의 추가 원인이 남아
+  있다.
+- 판정: 이것은 318.962 Å의 특정 비수렴 CMFGEN MOM 경로에 대한 진단이다.
+  CMFGEN의 유효 기준해, Lumina의 전반적 결함, 또는 최종 Si/S·스펙트럼
+  동질성을 판정하지 않는다. 소스 산술과 물리 입력은 변경하지 않았다.
+- 다음 조사: 이웃 주파수의 formal 모멘트와 raw/제한 H를 같은 상태에서
+  대조해 불일치가 formal closure 생성 시점인지 MOM의 H 재귀·제한에서
+  시작되는지 분리한다. 그 전에는 `MAX_VAL`을 K-aware 제한으로 바꾸거나
+  MOM 결과를 유효한 CMFGEN anchor로 채택하지 않는다.
+
+재현은 전용 결과 루트 `lumina_mom78_first_significant_negative_20261101_retry2`의
+`run-parent/run/material/MOM_CAPTURE.bin`, `replay-traceflux/MOM_TRACE.bin`,
+`replay-traceflux/MOM_FINAL.bin`과 `capture-build-traceflux/state_inventory.json`을
+사용한다. `analyze_cmfgen_mom_capture.capture()`와 `.trace()`로 읽고,
+`solve_cmfgen_mom_kernel.previous_state_audit()`로 직전 완료 J/H/계수를
+재구성한다. 위 파일명·해시는 replay job `1252359`의 출력 및 원 capture
+job `1251793`의 결과와 대조한다.
