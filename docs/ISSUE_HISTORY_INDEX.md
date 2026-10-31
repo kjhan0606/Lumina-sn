@@ -253,14 +253,27 @@
   코드 배선 차이만으로 현재 물질의 line-opacity 차이를 판정하지 않도록
   1250253의 동일 C-full 인구·선 목록·팽창시간에서 line `tau`를 재구성했다.
   790,493×90 쌍 중 `tau<0`은5,572,747개지만 `tau<-0.5`는0개이며, 최솟값은
-  Si II FL124→125/node54의`−0.1562763`이다. 따라서 이 generation에서는
-  native `SRCE_CHK` 치환 규칙이 발동하지 않는다(재구성한 Sobolev `tau`가 native
-  trigger와 같다는 전제). FL 수와 부호 있는 총 `chi` 음수표본은 `tau<-0.5` 수를
-  대신하지 않는다. 이는 코드 경로 차이가 미래 상태에 중요할 수 있음을 지우지 않고,
-  현재 generation에 실제 line 치환 차이가 있었다고 과장하지 않는다. 연속소광
-  하한과 전체 CMFGEN parity는 계속 미해결이며 aggregate `chi`를 clamp하지 않는다.
+  Si II FL124→125/node54의`−0.1562763`이다. 따라서 표준 Sobolev `tau`가 native
+  trigger라는 전제하에 **개별 Sobolev helper**의 치환은 이 generation에서 발동하지
+  않는다. 이는 CMFGEN native 전체 소광 aggregate `SRCE_CHK`나 continuum floor가
+  비활성이라는 뜻이 아니다. FL 수와 부호 있는 총 `chi` 음수표본은 `tau<-0.5` 수를
+  대신하지 않는다. 코드 경로 차이가 미래 상태에 중요할 수 있음을 지우지 않고,
+  현재 line helper 결과를 aggregate native 정책으로 일반화하지 않는다. 새 계수공간
+  반사실 분석은 다음 census를 참조한다. 전체 CMFGEN parity는 미해결이며 aggregate
+  `chi`를 production에서 clamp하지 않는다.
   재현 결과/범위와 F 계보 구분은 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `generation15 물질 전달과 C full 일치` 절 참조.
+- 10월31일 generation15 aggregate opacity census: 완료 계수 90×1,115,020 표본에
+  CMFGEN `comp_opac.f`의 연속 흡수 하한을 반사실 적용하면 27,888,567개(27.80%)가
+  하한 아래다. Native `cmfgen_sub.f` 전체 소광 source/scattering `SRCE_CHK` branch는
+  16,764/359개, raw Lumina 총소광과 native 반사실이 달라지는 표본은27,895,915개다.
+  600–750 Å에서는 연속 하한189,819/1,782,450(10.65%), aggregate 교체0개다.
+  읽기 전용 분석기는 생산 계수 SHA·MODEL의 `SRCE_CHK` 선택을 검사하고 파일을
+  변경하지 않았다. 이는 계수공간 census일 뿐 새 J·`NEG_OPAC_FAC` 선률 피드백·열·
+  물질 응답 또는 parity를 입증하지 않는다. 그러므로 native floor를 production에
+  임의 적용하지 않고, 준비된 F는 현재 정책 차이를 가진 staging 수송으로만 해석한다.
+  정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
+  `generation15 CMFGEN 전체 소광 정책의 계수공간 대조`.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
   입력·출력 배열 SHA와 상세 의미는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `F2 입력장과 새 F1 수송장의 변화` 참조. 단일 수송 변화이지 외부 고정점
