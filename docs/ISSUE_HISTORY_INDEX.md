@@ -277,7 +277,10 @@
   재계산은 `generation15-opacity-policy-variants.json`에 기록했고, producer `sources.npz`
   SHA256은 `a6828fc343e59b910e77c8ad9a619885a1de5db1f08c43e5ba907116bbae8793`이다.
   해당 source diff는 이 운전자가 수정하지 않았고 작성자나 실제 CMFGEN binary 적용 여부는
-  미확인이다. 한편 같은
+  미확인이다. 10월29일 보존 검토에는 기존 native `libsubs.a`의 `comp_opac.o`에서
+  `1e-3`/`1e-280` 상수를 확인한 기록이 있으나, 이 archive가 CMFGEN70 또는 job1244808의
+  실행파일에 링크됐다는 연결 증거는 없다. 그러므로 실제 비교 실행 정책은 미확정이며,
+  stock-source census와 patch 반사실을 모두 별도 후보로 보존한다. 한편 같은
   committed `cmfgen_sub.f`에서 확인한 native `NEG_OPAC_FAC=0`의 downstream 의미는
   유효하다: `DO_VAR_CONT`의 line extinction/stimulated-opacity J/H 응답 도함수와 T
   미분에 곱해지지만, direct `ZNET_SIM`/SE line rate와 line emissivity tangent에는
