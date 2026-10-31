@@ -29,7 +29,8 @@ def _states(h_return=(0.0, 0.0, 0.0), formal_j=(1.0, 1.0, 1.0)):
         KMID_ON_J_SAVE=_array((1.0/6.0,)*3),
     )
     entry = dict(phase=PHASE,
-        args=dict(FREQ=TARGET["frequency_native"], INNER_BND_METH="DIFFUSION"),
+        args=dict(FREQ=TARGET["frequency_native"], INNER_BND_METH="DIFFUSION",
+                  INCL_ADVEC_TERMS=True),
         modules=dict(ray=formal))
     final = dict(phase=PHASE,
         modules=dict(
@@ -49,6 +50,41 @@ def _call():
     return dict(phase=PHASE, frequency=TARGET["frequency_native"],
         iterations={1: dict(ND=3, TRI0=tri, RAW0=raw,
                             ERR0=(1e-9, (raw.copy(), raw.copy(), raw.copy())))})
+
+
+def _iteration_rows(count, max_error):
+    return [dict(iteration=i, MAX_ER=max_error) for i in range(1, count+1)]
+
+
+def test_native_iteration_outcome_distinguishes_cap_from_convergence():
+    forced = analysis.native_iteration_outcome(
+        {"INCL_ADVEC_TERMS": True}, _iteration_rows(100, 2e-8))
+    assert forced["classification"] == "ITERATION_LIMIT_FORCED_NONCONVERGED_EXIT"
+    assert forced["iteration_limit_reached"] is True
+    assert forced["change_criterion_met"] is False
+
+    met_on_limit = analysis.native_iteration_outcome(
+        {"INCL_ADVEC_TERMS": True}, _iteration_rows(100, 5e-9))
+    assert met_on_limit["classification"] == "CHANGE_TOLERANCE_MET_ON_ITERATION_LIMIT"
+    assert met_on_limit["change_criterion_met"] is True
+
+    met_early = analysis.native_iteration_outcome(
+        {"INCL_ADVEC_TERMS": True}, _iteration_rows(16, 5e-9))
+    assert met_early["classification"] == "CHANGE_TOLERANCE_MET"
+
+
+def test_native_iteration_outcome_does_not_call_noniterative_path_converged():
+    result = analysis.native_iteration_outcome(
+        {"INCL_ADVEC_TERMS": False}, _iteration_rows(1, 0.5))
+    assert result["classification"] == "ADVECTION_DISABLED_NONITERATIVE"
+    assert result["change_criterion_met"] is None
+    assert result["relative_change_tolerance"] is None
+
+
+def test_native_iteration_outcome_rejects_trace_without_native_stop_condition():
+    result = analysis.native_iteration_outcome(
+        {"INCL_ADVEC_TERMS": True}, _iteration_rows(7, 2e-8))
+    assert result["classification"] == "TRACE_ENDED_WITHOUT_STOP_CRITERION"
 
 
 def _trace_flux_build(build, *, trace_flux=True, entry_only=False):
@@ -120,6 +156,7 @@ def test_entry_only_file_analysis_accepts_missing_pre_call_trace(tmp_path, monke
 
     assert report["entry_trace_absent"] is True
     assert report["formal_angular_support"]["available"] is True
+    assert report["native_iteration_outcome"]["classification"] == "CHANGE_TOLERANCE_MET"
     assert json.loads(output.read_text())["final_goal"] == "NOT_JUDGED"
 
 

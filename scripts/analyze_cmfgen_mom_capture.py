@@ -11,6 +11,9 @@ import numpy as np
 
 from prepare_cmfgen_mom_capture import ARGUMENTS, sha
 
+MOM_ITERATION_LIMIT = 100
+MOM_CHANGE_TOLERANCE = 1.0e-8
+
 
 class Reader:
     def __init__(self, raw):
@@ -116,7 +119,7 @@ def trace(path):
         if not calls or tag not in (b"TRI0",b"RAW0",b"ERR0"):
             raise ValueError("MOM trace 순서/태그 불일치")
         iteration,n=r.integers(2)
-        if not 1<=iteration<=100 or not 2<=n<=2000000:
+        if not 1<=iteration<=MOM_ITERATION_LIMIT or not 2<=n<=2000000:
             raise ValueError("MOM trace 차원/반복 불일치")
         current=calls[-1]["iterations"].setdefault(iteration,dict(ND=n))
         if current["ND"]!=n or tag.decode() in current:
@@ -171,6 +174,35 @@ def summary(call,inner):
     return result
 
 
+def native_iteration_outcome(args,rows):
+    """Classify the native loop using its actual advection/change/cap branches."""
+    if not rows:
+        raise ValueError("native MOM 반복 결과가 비어 있음")
+    count=len(rows)
+    limit_reached=count==MOM_ITERATION_LIMIT
+    advection=bool(args.get("INCL_ADVEC_TERMS",False))
+    max_error=None
+    change_met=None
+    if not advection:
+        classification="ADVECTION_DISABLED_NONITERATIVE"
+    else:
+        max_error=float(rows[-1]["MAX_ER"])
+        change_met=math.isfinite(max_error) and max_error<MOM_CHANGE_TOLERANCE
+        if change_met and limit_reached:
+            classification="CHANGE_TOLERANCE_MET_ON_ITERATION_LIMIT"
+        elif change_met:
+            classification="CHANGE_TOLERANCE_MET"
+        elif limit_reached:
+            classification="ITERATION_LIMIT_FORCED_NONCONVERGED_EXIT"
+        else:
+            classification="TRACE_ENDED_WITHOUT_STOP_CRITERION"
+    return dict(advection_terms_enabled=advection,iteration_count=count,
+        iteration_limit=MOM_ITERATION_LIMIT,iteration_limit_reached=limit_reached,
+        final_MAX_ER=(number(max_error) if max_error is not None else None),
+        relative_change_tolerance=(MOM_CHANGE_TOLERANCE if advection else None),
+        change_criterion_met=change_met,classification=classification)
+
+
 def _state_value(group,name):
     value=group[name]
     if isinstance(value,dict):
@@ -195,6 +227,7 @@ def entry_replay_summary(entry,final,call,target):
     rows=summary(call,entry["args"]["INNER_BND_METH"])
     if not rows:
         raise ValueError("entry replay의 native MOM 반복 기록이 비어 있음")
+    iteration_outcome=native_iteration_outcome(entry["args"],rows)
 
     ray0=entry["modules"]["ray"]
     ray1=final["modules"]["ray"]
@@ -245,7 +278,8 @@ def entry_replay_summary(entry,final,call,target):
     formal_preserved={name:bool(np.array_equal(
         _state_value(ray0,name),_state_value(ray1,name))) for name in formal_names}
     return dict(phase=phase,frequency_native_units=frequency,target=target,
-        replay_iterations=rows,formal_angular_support=formal_support,
+        replay_iterations=rows,native_iteration_outcome=iteration_outcome,
+        formal_angular_support=formal_support,
         returned_mom_conservative_support=returned_support,
         formal_JHKN_preserved=formal_preserved,
         final_goal="NOT_JUDGED")
@@ -347,8 +381,10 @@ def analyze(run,replay,build,output):
         raise ValueError("capture/trace 호출 정체성 불일치")
     rows=summary(a,inp["args"]["INNER_BND_METH"])
     again=summary(b,inp["args"]["INNER_BND_METH"])
-    failure=bool(len(rows)==100 and float(rows[-1]["MAX_ER"])>=1e-8)
-    replay_failure=bool(len(again)==100 and float(again[-1]["MAX_ER"])>=1e-8)
+    original_outcome=native_iteration_outcome(inp["args"],rows)
+    replay_outcome=native_iteration_outcome(inp["args"],again)
+    failure=original_outcome["classification"]=="ITERATION_LIMIT_FORCED_NONCONVERGED_EXIT"
+    replay_failure=replay_outcome["classification"]=="ITERATION_LIMIT_FORCED_NONCONVERGED_EXIT"
     files=[run/"MOM_CAPTURE.bin",run/"MOM_TRACE.bin",replay/"MOM_CAPTURE.bin",replay/"MOM_TRACE.bin",
            build/"capture-build.json",build/"state_inventory.json",Path(__file__)]
     controls={name:inp["args"][name] for name in ("INIT","COHERENT","INCL_ADVEC_TERMS","INCL_REL_TERMS",
@@ -356,6 +392,8 @@ def analyze(run,replay,build,output):
     report=dict(scope="동일 native MOM 한 호출의 실패 재현/선형계 잔차; 최종 물리 동질성 아님",
         phase=inp["phase"],frequency_native_units=a["frequency"],previous_frequency_native_units=a["previous_frequency"],
         controls=controls,capture_failure=failure,replay_failure=replay_failure,
+        capture_native_iteration_outcome=original_outcome,
+        replay_native_iteration_outcome=replay_outcome,
         input_snapshot_byte_equal=sha(run/"MOM_CAPTURE.bin")==sha(replay/"MOM_CAPTURE.bin"),
         failing_call_trace_byte_equal=a["records"]==b["records"],original_target_call_count=len(original),
         iterations=rows,replay_iterations=again,
