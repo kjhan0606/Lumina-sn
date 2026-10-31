@@ -1,7 +1,7 @@
 #!/bin/bash
 # 새 계수가 실제 완성된 뒤에만 제출한다. 같은 할당에서 최대2F·합계12GPUh.
 #SBATCH --job-name=lumina-accepted-field
-#SBATCH --partition=h100,h200,a100,a100_pcie
+#SBATCH --partition=a100_pcie,h100,h200,a100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
