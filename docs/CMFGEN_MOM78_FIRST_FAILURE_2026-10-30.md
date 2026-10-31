@@ -620,6 +620,15 @@ MOM H 갱신인지까지는 이 snapshot만으로 판정하지 않는다.
 - **실행 영수증:** job `1252379`가 target `9.39941245274896e15 Hz`, outer78로
   제출되어 Grammar `grammar036`에서 `RUNNING`을 확인했다. 조회 시 경과는
   6초였고 4시간·GPU0 요청이 반영됐다. 완료 결과는 아직 없다.
+- **동일 capture-build의 추가 정적 추적(11월1일):** `comp_j_blank.f`는
+  `FG_J_CMF_V13` 뒤 `MOM_JREL_V9`를 호출한다. MOM은 recurrence 전에
+  `GET_MOMS_REL`을 한 번 호출하고, 반복 중 `K_ON_J`/`KMID_ON_J` closure를
+  다시 계산하지 않은 채 종료 시 해당 배열을 SAVE한다. 따라서 한 MOM 호출 안에서
+  closure는 고정되고 J/H는 갱신될 수 있다. 이는 무작위 배열 복사 오류를 입증하지
+  않으며, 갱신 결과가 closure와 각도 실현성 면에서 불일치할 수 있는 알고리즘 경로를
+  확인한 것이다. outer 반복이 이를 닫았는지는 현재 증거로 모른다. 1252379의
+  predecessor capture로 formal 입력과 MOM 반환을 분리하기 전에는 결함·수리로
+  판정하거나 closure 산술을 바꾸지 않는다.
 - **재현/소유:** 운전자가 현재 `submit_cmfgen_moment_failure.slurm`의
   target 주파수 선택과 기존 `capture()`/`trace()` 분석기를 사용한다. 원본
   source·물리 산술은 읽기 전용이다. 실행 전 봉인 seed 결과·ion reference·

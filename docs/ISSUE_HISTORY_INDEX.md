@@ -292,6 +292,12 @@
   특정 비수렴 CMFGEN 경로의 증거이지 valid CMFGEN anchor나 Lumina의 전반적
   결함 판정이 아니다. 상세 수치·해시·재현 범위는 [첫 MOM 실패](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md)의
   `2026-11-01: 318.962 Å 음수 J의 이전 H 결합 추적`을 참조한다.
+  같은 capture-build의 호출부/루틴 정적 추적(11월1일)은 formal 뒤 MOM 호출,
+  MOM 진입 시 `GET_MOMS_REL` 1회, recurrence 중 closure 재계산 없음, 종료 시
+  closure SAVE 순서를 확인했다. 즉 고정 closure 아래에서 J/H를 갱신하는 경로이며,
+  이것만으로 구현 결함이나 충분한 outer 수렴을 판정하지 않는다. 직전 주파수
+  포획 `1252379`가 formal 입력과 반환 상태를 가른다. 상세 범위는 위 정본의
+  `직전 주파수 formal→MOM 연결 확인`을 참조한다.
   정본: [2026-10-31 인계](HANDOVER_2026-10-31.md).
   정본: [formal/MOM 연결](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md),
   [첫 MOM 실패](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md).
