@@ -269,9 +269,15 @@
   16,764/359개, raw Lumina 총소광과 native 반사실이 달라지는 표본은27,895,915개다.
   600–750 Å에서는 연속 하한189,819/1,782,450(10.65%), aggregate 교체0개다.
   읽기 전용 분석기는 생산 계수 SHA·MODEL의 `SRCE_CHK` 선택을 검사하고 파일을
-  변경하지 않았다. 이는 계수공간 census일 뿐 새 J·`NEG_OPAC_FAC` 선률 피드백·열·
-  물질 응답 또는 parity를 입증하지 않는다. 그러므로 native floor를 production에
-  임의 적용하지 않고, 준비된 F는 현재 정책 차이를 가진 staging 수송으로만 해석한다.
+  변경하지 않았다. 후속 source trace(commit `dd1660af`)에서는 aggregate branch의
+  `NEG_OPAC_FAC=0`이 `DO_VAR_CONT`의 line extinction/stimulated-opacity J/H 응답
+  도함수 및 T 미분에 곱해짐을 확인했다. 반면 직접 `ZNET_SIM`/SE line rate에는
+  unmodified `CHIL_MAT/ETAL_MAT`이 쓰이며, line emissivity tangent에는 같은 mask가
+  적용되지 않는다. 따라서 이것은 원자전이·직접 line rate 제거가 아니라 BA의
+  line-coupled radiation-response mask다. aggregate `CHI` 교체와 continuum floor는
+  별도로 유효 수송 소광을 변경한다. 두 효과의 J/수렴해/이온분포 영향은 아직
+  측정하지 않았다. native floor나 mask를 production에 임의 적용하지 않고,
+  준비된 F는 현재 정책 차이를 가진 staging 수송으로만 해석한다.
   정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
   `generation15 CMFGEN 전체 소광 정책의 계수공간 대조`.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
