@@ -250,13 +250,17 @@
   `line_net_sobolev_material`을 호출하지 않는다. 반면 그 helper는
   `lumina_cmfgen.c`/`lumina_plasma.c`의 선별 Sobolev 경로에서 개별
   `tau_sobolev`에 적용되며, `tau < -0.5`일 때만 `SRCE_CHK` 유효값으로 바꾼다.
-  따라서 CMFGEN 규칙을 구현한 별도 선별 경로가 있다는 사실은 generation15의
-  full-spectrum J가 같은 규칙을 적용했다는 증거가 아니다. 합산 `chi<0` 표본수로
-  개별 선의 `tau<-0.5` 적용 수를 추론할 수도 없다. 이것만으로 어느 경로가 물리적으로
-  틀렸다고 단정하지는 않지만, generation15 F는 현 signed-opacity 경로의 진단이지
-  CMFGEN과 opacity-contract가 맞은 J가 아니다. 최종 동질성 주장 전에는 선별
-  `tau` 정책과 연속소광 하한이 full-spectrum 계수 조립에 어떻게 대응하는지 확인해야
-  한다. 임의의 합산 `chi` clamp는 하지 않는다.
+  코드 배선 차이만으로 현재 물질의 line-opacity 차이를 판정하지 않도록
+  1250253의 동일 C-full 인구·선 목록·팽창시간에서 line `tau`를 재구성했다.
+  790,493×90 쌍 중 `tau<0`은5,572,747개지만 `tau<-0.5`는0개이며, 최솟값은
+  Si II FL124→125/node54의`−0.1562763`이다. 따라서 이 generation에서는
+  native `SRCE_CHK` 치환 규칙이 발동하지 않는다(재구성한 Sobolev `tau`가 native
+  trigger와 같다는 전제). FL 수와 부호 있는 총 `chi` 음수표본은 `tau<-0.5` 수를
+  대신하지 않는다. 이는 코드 경로 차이가 미래 상태에 중요할 수 있음을 지우지 않고,
+  현재 generation에 실제 line 치환 차이가 있었다고 과장하지 않는다. 연속소광
+  하한과 전체 CMFGEN parity는 계속 미해결이며 aggregate `chi`를 clamp하지 않는다.
+  재현 결과/범위와 F 계보 구분은 [10월30일 인계](HANDOVER_2026-10-30.md)의
+  `generation15 물질 전달과 C full 일치` 절 참조.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
   입력·출력 배열 SHA와 상세 의미는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `F2 입력장과 새 F1 수송장의 변화` 참조. 단일 수송 변화이지 외부 고정점
