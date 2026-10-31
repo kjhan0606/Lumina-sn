@@ -191,6 +191,14 @@
   [relT3 trust-radius 설계](CODEX_RELT3_TRUSTREGION_DESIGN.md),
   [relT3 사후분석](CODEX_RELT3_ANALYSIS.md),
   [2026-08-01 보고](MORNING_REPORT_2026-08-01.md).
+- 후속 실행 확인: job `1244808`의 고정T LAMBDA 5회는 정상 종료했지만,
+  iteration59→60에서 Si III·S III 최대 분율 변화가 각각 `2.789e-3`,
+  `1.316e-3`였고 correction p95도 컸다. T는 계속 고정됐으므로 이는
+  수렴 released-T 기준해가 아니다. `CODEX_RELT_RECIPE.md`의 10월18일
+  판정은 source/config/restart 신원과 고정T 안정성·rollback 조건을 갖추기 전
+  실행 No-Go다. 완료코드 0 또는 A/B/C 후보를 실행·앵커 승인으로 해석하지 않는다.
+  결과 정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
+  `CMFGEN 고정T 감쇠 진단 5회 완료 — 수렴 미달`.
 - 10월31일 새 J 고정장 응답 generation15의 Si/S 사후 비교를 read-only helper로
   재현했다(result/response/balance SHA는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `저장 응답 이온 비교의 후처리 재현` 참조). 온도변화0, 최대 ne변화0.974%이며,
