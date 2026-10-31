@@ -92,6 +92,11 @@
   음수화를 악화시키지만 단독 원인은 아니다. 이는 고정 행렬 반사실이지 새 물리 재생이
   아니다. 해당 포획/replay는 entry SHA `a1d87a12…` 및 trace/final SHA가 고정되고,
   운전자 재생 JSON이 기존 `entry-replay-analysis.json`과 byte-identical이다.
+- 추가 항 분해에서 row2 RHS의 직전-H 기여는 `+5.5751e−4`와 `−2.8953e−3`으로
+  순 `−2.3378e−3`이며, source·직전 J·frequency-coupling의 순 양수 기여는 약
+  `+2.4954e−4`다. entry coefficient와 trace RHS 사이 차는 절대 `2e−8` 이내다.
+  따라서 row2 음수 RHS는 직전 H 전달항이 지배하지만, raw-H 국소 반사실에서도 RHS와
+  J가 음수라 H 제한 하나만으로 설명되지는 않는다.
 - 현재 원인 판정은 **MOM 갱신 단계의 비실현 가능 결과가 직접 확인됐으나 그 원식 항의
   근본 원인은 미해결**이다. `1252379`의 직전 주파수 formal→MOM capture가 끝나기 전에
   경계 제한이나 source/closure 수정을 가정하지 않는다.
