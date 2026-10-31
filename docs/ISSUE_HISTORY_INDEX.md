@@ -274,8 +274,9 @@
   27,888,567개 floor 표본, patched continuum 아래서 계산한 16,764/359개 branch 및
   600–750 Å의189,819개는 local patch counterfactual이지 stock CMFGEN 수치가 아니다.
   이전 `generation15-native-opacity-policy.json`은 stock 판정에 사용하지 않는다.
-  재계산은 `generation15-opacity-policy-variants.json`에 기록했고, producer `sources.npz`
-  SHA256은 `a6828fc343e59b910e77c8ad9a619885a1de5db1f08c43e5ba907116bbae8793`이다.
+  재계산은 `generation15-opacity-policy-variants.json`에 기록했다(보고서 SHA256
+  `14c9c955465071d5dae35ed3ff3b14fb7c1fe7393c5a7dcfef72009a630a947b`). producer
+  `sources.npz` SHA256은 `a6828fc343e59b910e77c8ad9a619885a1de5db1f08c43e5ba907116bbae8793`이다.
   해당 source diff는 이 운전자가 수정하지 않았고 작성자나 실제 CMFGEN binary 적용 여부는
   미확인이다. 추가 대조로 job1244808 manifest의 실행파일 SHA
   `f2b9afcc…`가 현재 설치 binary와 일치함을 확인했다. 같은 설치의 `libsubs.a`
