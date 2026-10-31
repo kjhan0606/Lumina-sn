@@ -185,6 +185,13 @@
   ground-only 경로까지 같은 변경이 적용됐다고 간주하지 않는다.
 - 재사용: 현재 정/역율 producer와 J/Jbar/Jblue 소비자, 유효성·세대·단위가
   실제로 같은지 관련 부분만 확인한다. 과거와 다른 알고리즘이면 적용 범위를 기록한다.
+- 11월1일 현 전원소 응답 경로를 정적으로 추적했다. `ModelResponse`는 새 J의
+  6성분 point BF율과 같은 Jbar의 BB율을 `MaterialBridge`에 전달하고,
+  `nlte_model_element_bf_assemble`은 `point_bf_rates`를 소비한다. 열 장부는 같은
+  trial/율/Jbar와 새 J의 FF를 사용한다. 옛 BF-bin→canonical-bin 번호 오용 경로와
+  구별되며, 현재 이 경로에서 옛 J 혼용이 확인된 것은 아니다. Lageunha CPU1·
+  4GiB·300초 내 관련 기존13시험 통과(21.23초). 실제90점 해·모든 과정·외부
+  공동수렴 증거는 아니며, 자세한 범위는 10월31일 인계의 `공통장 소비 경로 추적` 참조.
 - 정본: [Si/S 묶음](BUNDLE_CMFGEN_SI_S_BF_CHANNELS_2026-10-19.md)의
   `운전자 구현·직접시험 기록` 중 `REC_SPINGATE`, `bf_rate_view_jnu`.
 
