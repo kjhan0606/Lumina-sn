@@ -215,6 +215,9 @@
   동일했다. 따라서 이 여섯 파일에는 미설명된 소스 차이가 없다. snapshot에
   Git metadata가 없고 이 private patched 진단본은 stock/released CMFGEN이나
   수렴 물리 기준해가 아니다. 이 계보 확인은 물리적 동질성을 증명하지 않는다.
+  원본 checkout에 대한 기존 `tests/test_native_lazy_dz.py`도 5/5 통과했다
+  (source identity, lifecycle/활성 consumer projection, 두 음성대조). 이는
+  full-model peak memory 또는 실제 물리 동등성 검증이 아니다.
   같은 포획 sweep의 `MOM_J_ERRORS`는 `INIT`에서 rewind되며 음수 원시 J를 대체하기
   전에 기록한다. 해시 `00a8658790a83bdb87e10aa6461c015dc27a162261d746478926b348afd3acd4`인
   로그에는 38,565행/1,537주파수가 있다. 첫 기록은 node7, 298.404 Å,
