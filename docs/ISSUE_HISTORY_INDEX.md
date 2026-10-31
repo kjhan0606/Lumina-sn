@@ -179,6 +179,16 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- 10월31일 현재 CMFGEN source `dd1660af`의 정적 추적: `comp_j_blank.f`는 formal
+  `FG_J_CMF_V13` 다음 `MOM_JREL_V9`를 호출한다. MOM은 앞서 `GET_MOMS_REL`에서
+  얻은 closure 배열을 사용·저장하면서 MOM 갱신 J/H도 별도로 저장한다. 음수 J의
+  `FORM_VAL` 대체와 H 제한(`MAX_VAL`) 뒤 종료조건 `MAX_ER`는 수정된 J의 반복
+  변화량만 검사하며, 원 삼중대각식 잔차나 J/H/K 공동 각도 실현성은 검사하지 않는다.
+  이는 포획 재생의 `5.3231e-9` 반복변화와 `0.9273846` 원식 잔차가 함께 나온 것과
+  맞는다. source 정적 확인이며 capture binary의 정확한 링크 신원은 별도다. 최초
+  원인이나 Lumina 결함을 확정하지 않고 CMFGEN source를 임의 변경하지 않는다.
+  정본: [formal/MOM 연결](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md),
+  [첫 MOM 실패](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md).
 - 과거 CMFGEN relT2/relT3 진단의 재사용: `MAXCH`는 실제 correction scaling 전
   raw `STEQ`에서 산출되고, 감소 correction `c≥0.99999`는 `10^7%` sentinel로
   치환된다. 그러므로 거대 `MAXCH`만으로 native factor cap 미작동이나 bulk 물리
