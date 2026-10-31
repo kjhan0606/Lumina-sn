@@ -61,7 +61,7 @@ def validate(candidate, columns, physical, population, rows, models):
 
 def thermal_selection(report):
     """전역 물질 보정의 실제 마지막 수용 후보를 찾는다. 거부 후보는 전달하지 않는다."""
-    block = report['temperature_block']; order = report['thermal_evaluation_order']
+    block = report['temperature_block']; order = report.get('thermal_evaluation_order', [])
     history = block['history']
     if (len(history) != len(order) or block['evaluations_used'] != len(history) or
             any(entry['evaluation'] != i for i, entry in enumerate(history, 1)) or

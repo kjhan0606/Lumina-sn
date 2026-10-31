@@ -353,6 +353,18 @@ def test_already_converged_thermal_base_can_be_forwarded_without_a_fake_accepted
     assert not exported['joint_convergence_certified']
 
 
+def test_converged_base_without_thermal_callback_order_can_be_forwarded(tmp_path,monkeypatch):
+    result,seed,run,*_=fixture(tmp_path,monkeypatch)
+    report,_=thermal_report(result,converged_base=True,converged_net=5.e-4)
+    del report['thermal_evaluation_order']
+    result.write_text(json.dumps(report))
+    exported=E.prepare(result,E.B.sha(result),seed,run,tmp_path/'converged-no-order-export')
+    assert exported['source_kind']=='FINITE_NEW_FIELD_TNE_CONVERGED_BASE'
+    assert exported['accepted_evaluation']==0 and exported['checks']['fixed_field_numerical_converged']
+    assert not exported['joint_convergence_certified']
+    assert exported['new_transport']==exported['new_SE_solves']==exported['new_BF_BB_integrals']==0
+
+
 @pytest.mark.parametrize('name,value',[('charge_tolerance',1.e-9),('thermal_tolerance',1.e-2)])
 def test_converged_base_rejects_tolerances_looser_than_v2_contract(tmp_path,monkeypatch,name,value):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
