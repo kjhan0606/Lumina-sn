@@ -171,6 +171,168 @@ def summary(call,inner):
     return result
 
 
+def _state_value(group,name):
+    value=group[name]
+    if isinstance(value,dict):
+        if value.get("values") is None:
+            raise ValueError("MOM 분석 배열 미할당: "+name)
+        return np.asarray(value["values"])
+    return np.asarray(value)
+
+
+def entry_replay_summary(entry,final,call,target):
+    """Summarize one replay of an entry-only snapshot; it is not a captured failure."""
+    phase=entry["phase"]
+    frequency=float(call["frequency"])
+    if (len(phase)!=5 or phase!=call["phase"] or final["phase"]!=phase or
+        int(phase[0])!=int(target["outer_iteration"]) or
+        abs(frequency-float(target["frequency_native"]))>
+            float(target["frequency_absolute_tolerance"]) or
+        float(entry["args"]["FREQ"])!=frequency or
+        float(_state_value(final["modules"]["jrel"],"FREQ_SAVE"))!=frequency):
+        raise ValueError("entry/replay MOM phase 또는 주파수 불일치")
+
+    rows=summary(call,entry["args"]["INNER_BND_METH"])
+    if not rows:
+        raise ValueError("entry replay의 native MOM 반복 기록이 비어 있음")
+
+    ray0=entry["modules"]["ray"]
+    ray1=final["modules"]["ray"]
+    jrel1=final["modules"]["jrel"]
+    formal_names=("JNU_STORE","HNU_STORE","KNU_STORE","NNU_STORE")
+    formal=[_state_value(ray0,name).astype(float,copy=False) for name in formal_names]
+    if any(a.ndim!=1 or a.size!=formal[0].size for a in formal):
+        raise ValueError("formal J/H/K/N 차원 불일치")
+    if (int(_state_value(ray0,"HN_DEF_ON_NODES"))!=1 or
+        int(_state_value(ray0,"ND_STORE"))!=formal[0].size):
+        formal_support={"available":False,"reason":"formal H/N 노드 배치 불일치"}
+    elif (not all(np.all(np.isfinite(a)) for a in formal) or
+          np.any(formal[0]<=0.0)):
+        formal_support={"available":False,"reason":"formal 모멘트가 비유한 또는 J<=0"}
+    else:
+        from analyze_cmfgen_initial_closure import angular_support
+        formal_support={"available":True,**angular_support(*formal)}
+
+    returned_j=_state_value(jrel1,"GAM_RSQJNU_SAVE").astype(float,copy=False)
+    returned_h_all=_state_value(jrel1,"GAM_RSQHNU_SAVE").astype(float,copy=False)
+    kmid_all=_state_value(ray1,"KMID_ON_J_SAVE").astype(float,copy=False)
+    if returned_j.ndim!=1 or returned_j.size<2:
+        raise ValueError("반환 MOM J 차원 불일치")
+    n=returned_j.size
+    if returned_h_all.shape!=(n,) or kmid_all.shape!=(n,):
+        raise ValueError("반환 MOM J/H/K 경계 차원 불일치")
+    returned_h=returned_h_all[:-1]
+    kmid=kmid_all[:-1]
+    returned_k=kmid*(returned_j[:-1]+returned_j[1:])
+    denom=np.maximum(returned_j[:-1],returned_j[1:])*returned_k
+    ratio=np.full(n-1,np.inf)
+    good=np.isfinite(denom)&np.isfinite(returned_h)&(denom>0.0)
+    np.divide(returned_h*returned_h,denom,out=ratio,where=good)
+    ratio[(denom==0.0)&(returned_h==0.0)]=0.0
+    invalid=(~np.isfinite(denom)|~np.isfinite(returned_h)|
+             (returned_j[:-1]<0.0)|(returned_j[1:]<0.0)|(returned_k<0.0))
+    violations=invalid|(ratio>1.0)
+    last_iteration=max(call["iterations"])
+    trace_final_j=np.asarray(call["iterations"][last_iteration]["ERR0"][1][1],dtype=float)
+    if trace_final_j.shape!=returned_j.shape:
+        raise ValueError("trace와 최종 MOM J 차원 불일치")
+    returned_support=dict(
+        condition="H^2 <= max(J_left,J_right)*K; conservative necessary condition",
+        edge_count=n-1,max_ratio=number(np.max(ratio)),
+        violating_edges_1based=(np.flatnonzero(violations)+1).tolist(),
+        invalid_edges_1based=(np.flatnonzero(invalid)+1).tolist(),
+        final_J_matches_last_trace=bool(np.array_equal(returned_j,trace_final_j)))
+    formal_preserved={name:bool(np.array_equal(
+        _state_value(ray0,name),_state_value(ray1,name))) for name in formal_names}
+    return dict(phase=phase,frequency_native_units=frequency,target=target,
+        replay_iterations=rows,formal_angular_support=formal_support,
+        returned_mom_conservative_support=returned_support,
+        formal_JHKN_preserved=formal_preserved,
+        final_goal="NOT_JUDGED")
+
+
+def verify_entry_replay_build(build):
+    """Verify the targeted trace-flux replay build without the legacy runner gate."""
+    build=Path(build).resolve()
+    manifest=build/"capture-build.json"
+    record=json.loads(manifest.read_text())
+    target=record.get("capture_target")
+    if (not isinstance(target,dict) or record.get("trace_flux") is not True or
+        record.get("entry_only") is not False or record.get("first_repair") is not False):
+        raise ValueError("반환 상태 저장용 target trace-flux build 필요")
+    try:
+        frequency=float(target["frequency_native"])
+        outer=target["outer_iteration"]
+        tolerance=float(target["frequency_absolute_tolerance"])
+    except (KeyError,TypeError,ValueError) as error:
+        raise ValueError("trace-flux build target 형식 오류") from error
+    if (not math.isfinite(frequency) or frequency<=0 or type(outer) is not int or outer<1 or
+        not math.isfinite(tolerance) or tolerance<=0):
+        raise ValueError("trace-flux build target 범위 오류")
+
+    for group in ("input_sha256","output_sha256"):
+        files=record.get(group)
+        if not isinstance(files,dict) or not files:
+            raise ValueError("trace-flux build 해시 목록 누락: "+group)
+        for name,expected in files.items():
+            path=Path(name)
+            if not path.is_file() or sha(path)!=expected:
+                raise ValueError("trace-flux build 파일/해시 불일치: "+name)
+
+    parent_manifest=Path(record["parent"])/"parent-build-identity.json"
+    if sha(parent_manifest)!=record.get("parent_manifest_sha256"):
+        raise ValueError("trace-flux 부모 build identity 불일치")
+    generator=Path(__file__).with_name("prepare_cmfgen_mom_capture.py")
+    if sha(generator)!=record.get("generator_sha256"):
+        raise ValueError("trace-flux build 생성기 신원 불일치")
+    outputs={str(Path(name).resolve()) for name in record["output_sha256"]}
+    required={str((build/name).resolve()) for name in ("replay_mom.exe","state_inventory.json")}
+    if not required.issubset(outputs):
+        raise ValueError("trace-flux replay 실행파일/상태 목록 누락")
+    return record
+
+
+def analyze_entry_only(run,replay,build,output):
+    """Analyze a pre-MOM entry capture with exactly one instrumented replay."""
+    if output.exists():
+        raise ValueError("기존 entry replay 분석 보존")
+    build=Path(build).resolve()
+    build_record=verify_entry_replay_build(build)
+    target=build_record["capture_target"]
+    entry_path=run/"MOM_CAPTURE.bin"
+    run_trace=run/"MOM_TRACE.bin"
+    trace_path=replay/"MOM_TRACE.bin"
+    final_path=replay/"MOM_FINAL.bin"
+    h_trace=replay/"MOM_H_TRACE.bin"
+    if run_trace.exists() and run_trace.stat().st_size:
+        raise ValueError("entry-only 원 실행이 MOM 호출까지 진행함")
+    if not final_path.is_file() or not h_trace.is_file() or h_trace.stat().st_size==0:
+        raise ValueError("trace-flux replay의 H trace/final snapshot 누락; REPLAY mode 환경 확인")
+    inventory_path=build/"state_inventory.json"
+    inventory=json.loads(inventory_path.read_text())
+    entry=capture(entry_path,inventory)
+    final=capture(final_path,inventory)
+    calls=trace(trace_path)
+    if len(calls)!=1:
+        raise ValueError("entry replay는 정확히 MOM 호출 한 건이어야 함")
+    result=entry_replay_summary(entry,final,calls[0],target)
+    parent_manifest=Path(build_record["parent"])/"parent-build-identity.json"
+    files=[entry_path,trace_path,final_path,h_trace,build/"capture-build.json",
+           inventory_path,build/"replay_mom.exe",parent_manifest,
+           Path(__file__),Path(__file__).with_name("prepare_cmfgen_mom_capture.py")]
+    report=dict(scope="entry-only capture -> 단일 MOM replay; 물리 수렴/CMFGEN 동질성 아님",
+        entry_trace_absent=not run_trace.exists() or run_trace.stat().st_size==0,
+        entry_capture_sha256=sha(entry_path),
+        replay_evidence_sha256={str(p):sha(p) for p in files if p!=entry_path},
+        **result)
+    with output.open("x") as stream:
+        json.dump(report,stream,ensure_ascii=False,indent=2,allow_nan=False);stream.write("\n")
+    print(json.dumps({k:v for k,v in report.items() if k!="replay_iterations"},ensure_ascii=False))
+    print(json.dumps(dict(first=result["replay_iterations"][0],
+                          last=result["replay_iterations"][-1]),ensure_ascii=False))
+    return report
+
+
 def analyze(run,replay,build,output):
     if output.exists():
         raise ValueError("기존 MOM 분석 보존")
@@ -208,5 +370,10 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ("run","replay","build","output"):
         parser.add_argument("--"+name,type=Path,required=True)
+    parser.add_argument("--entry-only",action="store_true",
+                        help="MOM 호출 전 포획 + 단일 trace-flux replay를 분석")
     args=parser.parse_args()
-    analyze(args.run,args.replay,args.build,args.output)
+    if args.entry_only:
+        analyze_entry_only(args.run,args.replay,args.build,args.output)
+    else:
+        analyze(args.run,args.replay,args.build,args.output)

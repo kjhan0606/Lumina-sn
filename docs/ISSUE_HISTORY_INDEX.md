@@ -67,6 +67,15 @@
 - 현재 판정: 원 MOM 계열의 물리 수리는 미완료다. 10월30일 판독에서 노드/경계
   구분, formal closure 비율, PREV/SAVE의 복사는 확인했다. 단순한 주파수
   주소 혼동으로 설명되지 않으며 작은 내부 변화량을 물리 수렴으로 쓰지 않는다.
+- 분석 경로 보완: `entry-only` 포획은 native MOM 호출 전에 의도적으로 멈춰 원 실행
+  `MOM_TRACE.bin`을 만들지 않지만, 기존 분석기는 그 trace를 필수로 읽었다. 새
+  `analyze_cmfgen_mom_capture.py --entry-only`는 trace-flux 재생 한 건과 `MOM_FINAL`
+  을 받아 phase/주파수 및 최종 J/마지막 trace J를 대조하고, 원식 잔차와 formal
+  4모멘트 지지행렬·반환 경계 필요조건을 기록한다. 재생 실행에는 반드시
+  `LUMINA_MOM_CAPTURE_MODE=REPLAY`가 필요하다. 일반 runner 검증기는 target 지정 build를
+  거부하므로, 이 분석 경로는 trace-flux build의 모드·부모 identity·생성기와 입력/출력
+  해시를 별도로 확인한다. 직접시험10개 통과. 이는 분석 경로 수정이며 물리 수렴이나
+  CMFGEN 동질성 판정은 아니다.
 - 정본: [78회 실패 재현](CMFGEN_MOM78_FIRST_FAILURE_2026-10-30.md),
   [동일 주파수 대조](CMFGEN_FORMAL_MOM_LINK_2026-10-30.md).
 
