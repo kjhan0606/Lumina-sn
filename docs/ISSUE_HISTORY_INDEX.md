@@ -214,12 +214,17 @@
 - generation15 새 계수/경계 job `1250253`은 완료됐지만 상태는
   `PREPARED_NEW_COEFFICIENT_BOUNDARY_NOT_RUN`이다. 원 주파수1,115,020에서 총소광
   음수표본7,985, signed line 소광 음수표본10,278,542이며 producer는 native zero
-  replacement/`SRCE_CHK`를 적용하지 않았다고 기록한다. 10월27일 이전 generation의
-  유사 총소광 음수표본은8,275였고, 가장 음수인 한 표본의 주기여자는 원래도
-  역전된 Si II 선이었다. 그 한 표본을 전체 원인으로 일반화하지 말고, 새 물질의
-  저장 소광을 기존 귀속 도구로 확인한다. 진단 job `1250462`는 제출됐으며 완료 전
-  물리 수용/거부를 선언하지 않는다. 결과 SHA와 증거 범위는 인수인계서의 job
-  `1250253` 기록에 있다.
+  replacement/`SRCE_CHK`를 적용하지 않았다. 10월27일 이전 generation의 유사 총소광
+  음수표본은8,275였으며, raw 개수 비교만으로 새 회귀를 판정하지 않는다. 귀속 job
+  `1250462` 결과는 SHA256
+  `60b0cc6482f45c0c8daae70e06748c85826a63a9d68ad91a9d8619183b4498a1`; 표본 수는
+  producer와 per-node 합계가 일치하고 46점에 분포한다. 가장 음수인 12개 대표점
+  전부에서 Si II FL124→125가 최대 음수 선 기여자였고, 같은 반경의 original70
+  재구성 C-full에서도 역전 상태로 표기됐다. 이는 최대 사례의 역전이 generation15에
+  새로 생긴 것만은 아님을 보이지만, 나머지 7,973개 표본의 개별 원인이나 native
+  `SRCE_CHK`·연속소광 하한의 새 J/열 영향은 판정하지 않는다. 수송은 0회이며
+  물리 수용·CMFGEN 동등성을 뜻하지 않는다. 수치와 검증 범위는
+  [10월30일 인계](HANDOVER_2026-10-30.md)의 generation15 귀속 절 참조.
 - 부호 있는 소광의 기존 처리(10월29일): Lumina production fullSR reader와 양의
   scaled-moment core는 signed `chi`/gain을 처리하므로 raw 음수 개수만으로 실행
   실패라 단정하거나 `chi=0`으로 clamp하지 않는다. 반면 원 CMFGEN
