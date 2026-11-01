@@ -545,6 +545,18 @@
   aggregate χ 교체는 별도로 수송 opacity를 바꾼다. J/수렴해/이온분포 영향은 아직
   측정하지 않았다. 정본: [10월30일 인계](HANDOVER_2026-10-30.md)의
   `generation15 CMFGEN 전체 소광 정책의 계수공간 대조`.
+- 11월1일 J71 실행파일을 특정한 후속 확인: 원429062 runtime→입력→빌드 manifest→
+  실제 executable81397292→보존 libsubs.e4d5ec0d를 연결했다. 이 archive의
+  `comp_opac.o`는43872288이며 현재 설치 archive의afc5464e와 다르다.
+  기준 객체2함수와 호출부8함수의 relocation 제외 코드, 해석되는 named 주소,
+  참조 수치 상수가 실제 executable과 일치했다. 기준 객체에는1e-280이 있으나
+  1e-3은 없고 현재 설치 primary 함수는 크기/코드 음성대조에서 거부됐다.
+  따라서 현재 설치된 continuum-floor patch 객체를 J71에 귀속하지 않는다.
+  J71의 저장 MODEL/VADAT는 NEG_OPAC_OPT=SRCE_CHK이며 봉인 호출부도 확인했다.
+  다른 binary인 job1244808의 링크 불명 이력은 그대로 유지한다. 모든 보정 부재나
+  완전 stock/released 실행을 인증한 것은 아니며, generation15 census를 물질70
+  J71의 실제 발동 개수로 바꾸지 않는다. 소스/계수 clamp·새 물리 실행은0회다.
+  [J71 binary 정본](CMFGEN_J71_OPACITY_BINARY_IDENTITY_2026-11-01.json) 참조.
 - 같은 묶음의 F2→F1 저장장 비교에서 `max|ΔJ|/max(J_F1)=0.127354`였다.
   입력·출력 배열 SHA와 상세 의미는 [10월30일 인계](HANDOVER_2026-10-30.md)의
   `F2 입력장과 새 F1 수송장의 변화` 참조. 단일 수송 변화이지 외부 고정점

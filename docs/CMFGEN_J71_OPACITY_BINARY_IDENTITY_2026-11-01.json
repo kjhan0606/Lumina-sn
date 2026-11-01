@@ -1,0 +1,222 @@
+{
+  "schema": "lumina-reference-opacity-elf-identity-v1",
+  "runtime_sha256": "25c57cdcf49cb3e2becdae97747b4e89d90f59c44d4c9f00d03cb9c29f4f68d5",
+  "inputs_sha256": "0e3db47752837ab24e6889a67de4a783d77c859e42e4caa6009db55cc352e411",
+  "build_manifest_sha256": "5210f73a0fdb7b16195dbb02b5fffdc8619055f2f49dbbff3d70d0c38b5dfc5f",
+  "binary_sha256": "81397292cb9a5a23abd62051e7abefb5e4e22aa7fcd225a0138417747502947b",
+  "archive_sha256": "e4d5ec0df548d9e98e50b1d3ebfc17e35f5e6bc582c1ce12ab7da97f8d49c4f7",
+  "object_sha256": "43872288d211048f3e38f467a35dab6f88dcfe0e8757829a8c58a39fa5537c0f",
+  "current_native_object_sha256": "afc5464efedf2c8976410694c43c14bf72da27f293fc0a9a962f1b24fdd1ac08",
+  "reference_functions": [
+    {
+      "function": "comp_opac_",
+      "object_size": 6655,
+      "linked_size": 6655,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 282,
+        "4": 38,
+        "10": 28,
+        "11": 10
+      },
+      "resolved_named_bindings": 286,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 34,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "comp_opac_._omp_fn.0",
+      "object_size": 1307,
+      "linked_size": 1307,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 40,
+        "4": 14,
+        "10": 4,
+        "11": 14
+      },
+      "resolved_named_bindings": 54,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    }
+  ],
+  "current_object_negative_control": [
+    {
+      "function": "comp_opac_",
+      "object_size": 6777,
+      "linked_size": 6655,
+      "masked_code_equal": false
+    },
+    {
+      "function": "comp_opac_._omp_fn.0",
+      "object_size": 1307,
+      "linked_size": 1307,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 40,
+        "4": 14,
+        "10": 4,
+        "11": 14
+      },
+      "resolved_named_bindings": 54,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    }
+  ],
+  "reference_object_double_1e3_present": false,
+  "reference_object_double_1e280_present": true,
+  "current_object_double_1e3_present": true,
+  "analysis_script_sha256": "cb9656c1d64ec9b1d405d6d3027c79746b15bb856617aacd592cc99f17bb42e4",
+  "new_material_evaluations": 0,
+  "new_BF_integrations": 0,
+  "new_transport": 0,
+  "final_goal": "NOT_MET",
+  "caller_object_sha256": "07abcf9d52a752903ccd226c610b6f6770a168588254d622e34188354ab58889",
+  "caller_source_sha256": "84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c",
+  "caller_functions": [
+    {
+      "function": "cmfgen_sub_",
+      "object_size": 133588,
+      "linked_size": 133588,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 2777,
+        "4": 1878,
+        "10": 1124,
+        "11": 1253
+      },
+      "resolved_named_bindings": 3850,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 186,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.0",
+      "object_size": 1301,
+      "linked_size": 1301,
+      "masked_code_equal": true,
+      "relocations": {
+        "4": 2,
+        "10": 1,
+        "11": 34
+      },
+      "resolved_named_bindings": 35,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.1",
+      "object_size": 521,
+      "linked_size": 521,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 2,
+        "4": 4,
+        "11": 11
+      },
+      "resolved_named_bindings": 14,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.2",
+      "object_size": 305,
+      "linked_size": 305,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 1,
+        "4": 4,
+        "11": 4
+      },
+      "resolved_named_bindings": 5,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 1,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.3",
+      "object_size": 395,
+      "linked_size": 395,
+      "masked_code_equal": true,
+      "relocations": {
+        "4": 4,
+        "11": 1
+      },
+      "resolved_named_bindings": 2,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.4",
+      "object_size": 271,
+      "linked_size": 271,
+      "masked_code_equal": true,
+      "relocations": {
+        "4": 4,
+        "11": 2
+      },
+      "resolved_named_bindings": 3,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.5",
+      "object_size": 778,
+      "linked_size": 778,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 25,
+        "4": 6,
+        "10": 3
+      },
+      "resolved_named_bindings": 28,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    },
+    {
+      "function": "cmfgen_sub_._omp_fn.6",
+      "object_size": 778,
+      "linked_size": 778,
+      "masked_code_equal": true,
+      "relocations": {
+        "2": 25,
+        "4": 6,
+        "10": 3
+      },
+      "resolved_named_bindings": 28,
+      "named_bindings_equal": true,
+      "referenced_numeric_literals": 0,
+      "numeric_literals_equal": true
+    }
+  ],
+  "driver_script_sha256": "e041551f99d3917dcd7ebc44f335ebf87da771a844fc2d3765673db3917b3cbd",
+  "operator_interpretation": {
+    "conclusion": "J71 기준 빌드에 링크된 comp_opac 객체는 현재 설치된 1e-3*ESEC continuum-floor 객체와 다르다. 현재 설치 객체의 정책을 J71에 귀속하지 않는다. J71의 aggregate SRCE_CHK 호출부와 해당 명시 제어값은 확인했다.",
+    "evidence": "기준 comp_opac의 두 함수와 cmfgen_sub의8개 함수에서 relocation을 제외한 코드 바이트가 모두 일치했다. 주소가 해석되는 named binding과 참조 수치 상수도 대조했다. 현재 설치 객체의 primary comp_opac 함수는 크기/코드가 달라 음성대조에서 거부됐다.",
+    "floor_scope": "보존 객체에는 double 1e-280이 있고 double 1e-3은 없으며 현재 설치 객체에는 둘 다 있다. 이는 문서화된 현재 floor-patch 객체를 J71가 사용했다는 가설을 배제하는 근거다. 임의의 모든 floor/보정 부재 또는 완전한 stock/released 실행을 증명한 것은 아니다.",
+    "source_scope": "J71는 물질70의 fixed-T private formal 장이다. 전체 기준해 수렴·E/S 동등성·스펙트럼을 인증하지 않는다. 기존 job1244808/설치 cmfgen_dev.exe의 링크 정책 불명 결론은 다른 실행파일에 대한 이력으로 유지한다.",
+    "impact": "미커밋 floor 반사실의600–750 Å 변경189819개를 현재 J71의 실제 보정 표본으로 사용하지 않는다. generation15의 stock aggregate9040개/해당 대역0개도 다른 물질의 반사실이지 J71의 실제 발동 개수는 아니다. Lumina raw signed 수송과 native aggregate 치환의 차이는 남아 있다.",
+    "next": "이 ELF 분석은 실물 실행 권한을 추가하지 않는다. 이후 사용자가 별도로 승인한 현재 J 온도방향4평가를 범위 안에서 준비한다. 현재 증거를 이유로 Lumina χ를 clamp하거나 열행·수용기준을 바꾸지 않는다."
+  },
+  "reference_controls": {
+    "NEG_OPAC_OPT": "SRCE_CHK",
+    "MODEL_sha256": "eef42832e37e8a773cc470e80395a21631a61a7e813c0e3b56f17f548e8d9308",
+    "VADAT_sha256": "91890719cfb3bea5149f95b015d3550c13325553aba7b6a853ad97caaa95f796"
+  },
+  "reproduction": {
+    "executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+    "analysis_root": "$LUMINA_RUNS_ROOT/lumina_reference_opacity_identity_20261101-ocCLDlzq",
+    "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B \"$IDENTITY_ROOT/compare_linked_opacity_with_caller.py\" \"$LUMINA_RUNS_ROOT\"",
+    "inputs_preserved": true,
+    "source_or_binary_changes": 0,
+    "mechanism": "ELF64 section/symbol/relocation별 비교이며 링크로 변경되는 필드만 mask한다. 알려진 주소 binding과 참조 수치 literal은 별도로 비교한다. 현재 설치 primary 함수는 크기부터 다르므로 일치로 판정하지 않는다.",
+    "field_hash_scope": "J71의 해시는 고정 runtime 생산자 기록에 연결했다. 거대 field 파일을 이번 ELF 조사에서 다시 전체 해시하지 않았다. 앞선 bound photo 비교는 해당 파일의 고정 해시를 실제 검증했다."
+  }
+}
