@@ -28,6 +28,28 @@
       "현재 수송 kernel 결함 또는 CMFGEN70의 인증 기준해 지위"
     ],
     "next_action": "진행 중인1253439의 같은 J 물질/열 응답을 먼저 판독한다. 선택 열행의 물리 계약 확인과 같은 J의 온도 근 탐색 필요성을 하나의 후속 판단으로 묶으며, 자문만으로 문턱·계수·자원 한도를 변경하지 않는다.",
+    "native_weight_source_followup": {
+      "reviewer": "운전자",
+      "method": "기준 J71 빌드 manifest와 봉인 cmfgen_sub.f 및 현행 Lumina 소스의 읽기 전용 대조",
+      "reference_build": "lumina_coupling71_build_20261020-ThfBHm/build/feedback-build.json -> lumina_mom_capture_build_20261019-RbUeST/formal_primary_v11/formal-primary-build.json",
+      "reference_cmfgen_sub_sha256": "84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c",
+      "reference_cmfgen_sub_sections": ["887-906: AVE_LEVEL_ENERGY 호출과 깊이 독립 SL 에너지 정의", "2467-2481: 선 RE 가중, fallback, POP_ATOM 고밀도 해제 및 STEQ_T 누적"],
+      "lumina_energy_sha256": "5e91ac2b91022fbb8509812fdc0733dd0807a771d4532756f0e13042f8baf70c",
+      "matching_formula": "s=(AVE_ENERGY(lower)-AVE_ENERGY(upper))/nu; SCL_LN=false 또는 abs(s-1)>SCL_LN_FAC이면 1; POP_ATOM>=SCL_DEN_LIM이면 1",
+      "reference_model_sha256_at_read": "eef42832e37e8a773cc470e80395a21631a61a7e813c0e3b56f17f548e8d9308",
+      "reference_vadat_sha256_at_read": "91890719cfb3bea5149f95b015d3550c13325553aba7b6a853ad97caaa95f796",
+      "reference_explicit_controls": {"SCL_LN": true, "SCL_LN_FAC": 0.5},
+      "supplementary_current_native_sources": {
+        "newsubs/ave_level_energy.f": "5fa6e110229606d49180ba007e6608ebd549997591e4b27607244957c487b0c8",
+        "new_main/mod_subs/rd_control_variables.f": "1f065997994a61681abc8e34426aa4f4cb95f5aaaaa8ec4518f27a9bbedc8e88",
+        "new_main/subs/update_ba_for_line.f": "be4f1cf9de954c91f7f004e0cc1727dacce6639b3bc7de8d2f7a181cb0913a2a"
+      },
+      "supplementary_findings": "현재 native AVE_LEVEL_ENERGY는 온도/인구 아닌 sum(g*EDGE)/sum(g)이며 Lumina mean_edge 정의와 같다. 현재 제어 reader의 기본값은 SCL_DEN_LIM=1e30, SCL_SL_OPAC=false, USE_EHB=false다. 실제 reference MODEL/VADAT에 이 세 선택의 명시값은 없었다.",
+      "scope_limit": "봉인 cmfgen_sub.f의 가중식은 manifest SHA와 일치한다. 보조 native 소스의 현 파일 SHA는 기록했지만 reference 실행파일에 링크된 해당 객체/기본값의 동일성까지 입증한 것은 아니다. 전체 열행, 주파수 적분, 모든 열원 및 실제 native EHB와의 수치 parity는 미입증이다.",
+      "decision": "선별 열가중치와 fallback이 Lumina에만 존재한다는 가설은 봉인 호출부 대조에서 지지되지 않는다. 가중치를 없애거나 SE/수송에 일괄 곱하는 수정은 하지 않는다. 현재 물질응답을 판독한 뒤 동일 J의 온도 근 탐색 목적과 선택 열행 전체를 함께 판단한다.",
+      "new_calculations": 0,
+      "physical_code_changes": 0
+    },
     "current_execution_unchanged": true,
     "additional_runs_launched": 0
   }
