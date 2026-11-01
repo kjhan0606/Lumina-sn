@@ -24,6 +24,7 @@ def setup(tmp_path, monkeypatch):
     c = dict(schema='lumina-accepted-bundle-dispatch-v1', control_sha256={},
         coefficient_result=str(result), coefficient_commit='a'*40, gpu_root=str(gpu),
         gpu_prepared_sha256=D.sha(gpu/'prepared.json'), response_parent=str(tmp_path/'response'), response_commit='b'*40,
+        submission_host_addresses=dict(grammar='192.0.2.20'),
         limits=dict(maximum_F=1))
     config = control/'config.json'; config.write_text(json.dumps(c)); calls = []
     def submit(*args, **kwargs):
@@ -39,6 +40,20 @@ def test_field_submitted_once_with_bounded_script(setup):
     assert '--no-requeue' in calls[0][-1] and 'submit_lumina_accepted_feedback.slurm' in calls[0][-1]
     with pytest.raises(FileExistsError): D.dispatch(config, D.sha(config), 'field')
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize('addresses', [None, {}, {'syntax': '192.0.2.10'}])
+def test_missing_callback_route_is_rejected_before_GPU_submission(setup, addresses):
+    config, c, calls = setup
+    if addresses is None:
+        c.pop('submission_host_addresses')
+    else:
+        c['submission_host_addresses'] = addresses
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError, match='grammar 수치 주소'):
+        D.dispatch(config, D.sha(config), 'field')
+    assert not calls and not Path(c['response_parent']).exists()
+    assert not (config.parent/'field-submission.json').exists()
 
 
 def test_uncertain_submission_is_preserved_and_never_retried(setup, monkeypatch):
@@ -200,7 +215,8 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     monkeypatch.setattr(P.subprocess,'run',git_show)
     prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'new-coeff/result.json',
         tmp_path/'response','c'*40,max_sweeps=1,input_j=tmp_path/'old/J.npy',input_j_sha256='a'*64,
-        initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64,thermal_response=True)
+        initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64,thermal_response=True,
+        submission_host_addresses={'grammar':'192.0.2.20','syntax':'192.0.2.10'})
     config=json.loads(Path(prepared['config']).read_text())
     assert config['coefficient_commit']=='c'*40 and config['response_commit']=='b'*40
     assert config['limits']['maximum_F']==1 and config['limits']['GPU_hours']==12
@@ -209,6 +225,8 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     assert config['limits']['response_thermal_policy']=='native_instantaneous_scenario'
     assert config['initial_field']['J']['path']==str(tmp_path/'old/J.npy')
     assert prepared['jobs_submitted']==0
+    assert config['submission_host_addresses']=={'grammar':'192.0.2.20','syntax':'192.0.2.10'}
+    assert 'HostName=192.0.2.20' in D.require_callback_route(config)
 
 
 def test_control_preparation_defaults_to_one_transport_sweep(tmp_path,monkeypatch):
@@ -217,7 +235,7 @@ def test_control_preparation_defaults_to_one_transport_sweep(tmp_path,monkeypatc
     (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*40)))
     monkeypatch.setattr(P.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(stdout=b'# sealed control\n'))
     prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'coeff/result.json',
-        tmp_path/'response','c'*40)
+        tmp_path/'response','c'*40,submission_host_addresses={'grammar':'192.0.2.20'})
     config=json.loads(Path(prepared['config']).read_text())
     assert config['limits']['maximum_F']==1
 
@@ -241,10 +259,23 @@ def test_control_preparation_resolves_short_prepared_source_commit(tmp_path,monk
         return SimpleNamespace(stdout=b'# sealed control\n')
     monkeypatch.setattr(P.subprocess,'run',git_run)
     prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'coeff/result.json',
-        tmp_path/'response','c'*40,max_sweeps=1,thermal_response=True)
+        tmp_path/'response','c'*40,max_sweeps=1,thermal_response=True,
+        submission_host_addresses={'grammar':'192.0.2.20'})
     config=json.loads(Path(prepared['config']).read_text())
     assert config['response_commit']=='b'*40
     assert config['gpu_prepared_sha256']==D.sha(gpu/'prepared.json')
+
+
+@pytest.mark.parametrize('addresses', [None, {}, {'syntax':'192.0.2.10'},
+                                     {'grammar':'grammar'}, {'grammar':True}])
+def test_preparation_cannot_drop_or_guess_callback_route(tmp_path, monkeypatch, addresses):
+    import prepare_lumina_bundle_dispatch as P
+    monkeypatch.setattr(P.subprocess, 'run', lambda *a, **k: pytest.fail('주소 확인 전 git/제출 금지'))
+    out=tmp_path/'control'
+    with pytest.raises(ValueError):
+        P.prepare(tmp_path,out,'b'*40,tmp_path/'gpu',tmp_path/'coeff/result.json',
+                  tmp_path/'response','c'*40,submission_host_addresses=addresses)
+    assert not out.exists()
 
 
 @pytest.mark.parametrize('control',[False,True])

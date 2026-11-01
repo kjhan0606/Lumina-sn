@@ -41,6 +41,17 @@ def submission_ssh(config, host):
     return command+[host]
 
 
+def require_callback_route(config):
+    """GPU 실행 전에 계산 노드→grammar의 명시 경로 누락을 막는다.
+
+    주소는 이미 검증한 값을 받는다. DNS 탐색/키 검사 해제/재시도는 하지 않는다.
+    """
+    command = submission_ssh(config, 'grammar')
+    if 'grammar' not in config.get('submission_host_addresses', {}):
+        raise ValueError('GPU 후속 CPU 제출에는 검증한 grammar 수치 주소가 필요하다')
+    return command
+
+
 def dispatch(config, digest, step):
     config = Path(config).resolve()
     if sha(config) != digest: raise ValueError('묶음 제출 구성 변경')
@@ -49,6 +60,8 @@ def dispatch(config, digest, step):
         raise ValueError('묶음 제출 범위 오류')
     host = 'syntax' if step=='field' else 'grammar'
     ssh = submission_ssh(c,host)
+    if step == 'field':
+        require_callback_route(c)
     for name, expected in c['control_sha256'].items():
         if sha(control/name) != expected: raise ValueError('봉인 제출 코드 변경')
     result_path = Path(c['coefficient_result']); coefficient = json.loads(result_path.read_text())

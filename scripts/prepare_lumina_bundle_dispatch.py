@@ -6,13 +6,16 @@ from pathlib import Path
 import re
 import subprocess
 
-from lumina_bundle_dispatch import sha
+from lumina_bundle_dispatch import sha, require_callback_route
 
 
 def prepare(project, out, commit, gpu_root, coefficient_result, response_parent, coefficient_commit,
             max_sweeps=1, input_j=None, input_j_sha256=None,
-            initial_preparation=None, initial_preparation_sha256=None, thermal_response=False):
+            initial_preparation=None, initial_preparation_sha256=None, thermal_response=False,
+            submission_host_addresses=None):
     project, out, gpu_root = map(lambda p: Path(p).resolve(), (project, out, gpu_root))
+    routing = dict(submission_host_addresses=submission_host_addresses or {})
+    require_callback_route(routing)
     if (not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (commit, coefficient_commit)) or
             type(max_sweeps) is not int or max_sweeps != 1):
         raise ValueError('실제 계수/후속 소스 commit과 왕복당 F 1회 한도 필요')
@@ -43,6 +46,7 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
         coefficient_result=str(Path(coefficient_result).resolve()), gpu_root=str(gpu_root),
         gpu_prepared_sha256=sha(gpu_root/'prepared.json'), response_parent=str(Path(response_parent).resolve()),
         control_sha256={name: sha(out/name) for name in names},
+        submission_host_addresses=dict(routing['submission_host_addresses']),
         limits=dict(GPU_allocations=1, GPU_hours=12, maximum_F=max_sweeps,
                     response_allocations=1, response_CPU=16, response_GiB=32,
                     response_hours=30 if thermal_response else 4,
@@ -70,4 +74,12 @@ if __name__ == '__main__':
     p.add_argument('--initial-preparation-sha256')
     p.add_argument('--thermal-response', action='store_true',
         help='반환 J에 대한 T/ne 열보정을 최대12평가·30시간 단회로 이어 실행')
-    print(json.dumps(prepare(**vars(p.parse_args())), indent=2))
+    p.add_argument('--grammar-address', required=True,
+        help='계산 노드에서 도달 검증한 grammar 수치 IP; 원 SSH alias/호스트키 유지')
+    p.add_argument('--syntax-address', help='필요한 경우 검증한 syntax 수치 IP')
+    options = vars(p.parse_args())
+    addresses = dict(grammar=options.pop('grammar_address'))
+    syntax = options.pop('syntax_address')
+    if syntax is not None:
+        addresses['syntax'] = syntax
+    print(json.dumps(prepare(**options, submission_host_addresses=addresses), indent=2))
