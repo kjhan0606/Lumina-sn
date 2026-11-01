@@ -1,0 +1,367 @@
+{
+  "schema": "lumina-return2-physical-diagnostics-v1",
+  "result_sha256": "83432c28ece8cc8c5344307e37d212a8823b06020891a287ec8af6411d5b75bf",
+  "selected_response_sha256": "461e50de884d66db0273a057e50f5c897a228aa99b9a7e9402b3da33f9705c9d",
+  "balance_sha256": "ff0e5fdd09b5cbe48651677e5d89f71bc8e6eaf8bf89f17113e7efd8abe12183",
+  "temperature_bit_identical_to_transport_input": true,
+  "max_relative_ne_change_from_transport_input": 0.0052297095720015285,
+  "selected_generation": 14,
+  "thermal_block": {
+    "history": [],
+    "accepted_iterations": 0,
+    "fixed_field_numerical_converged": true,
+    "charge_scaled_max": 8.924971420740237e-11,
+    "thermal_scaled_max": 0.000002904621533795181,
+    "charge_physical_scaled_max": 8.924971420740237e-11,
+    "thermal_physical_scaled_max": 0.000002904621533795181,
+    "charge_tolerance": 1e-10,
+    "thermal_tolerance": 0.001,
+    "charge_relative": 8.924971420740237e-11,
+    "evaluations_used": 0,
+    "fresh_evaluations_used": 0,
+    "replayed_evaluations": 0,
+    "charge_projected_trials": true,
+    "secant_after_accept": true,
+    "new_transport": 0,
+    "joint_convergence": false
+  },
+  "physical_comparison": {
+    "temperature_vs_CMFGEN70": {
+      "max_relative_difference": 0.32967995396435945,
+      "median_relative_difference": 0.012446293804891706
+    },
+    "ne_vs_CMFGEN70": {
+      "max_relative_difference": 0.018844208592363465,
+      "median_relative_difference": 0.00047477264028178423
+    }
+  },
+  "ions": [
+    {
+      "Z": 14,
+      "charge": 1,
+      "previous_max_abs_fraction_gap": 0.000009367000178837448,
+      "current_max_abs_fraction_gap": 0.000009641577953395318,
+      "current_worst_point_1based": 53,
+      "current_active_max_log10_dex": 0.1235037874013395
+    },
+    {
+      "Z": 14,
+      "charge": 2,
+      "previous_max_abs_fraction_gap": 0.04109852868619113,
+      "current_max_abs_fraction_gap": 0.031077300993472723,
+      "current_worst_point_1based": 34,
+      "current_active_max_log10_dex": 0.06393302502975683
+    },
+    {
+      "Z": 14,
+      "charge": 3,
+      "previous_max_abs_fraction_gap": 0.06970950430911127,
+      "current_max_abs_fraction_gap": 0.09700929722318963,
+      "current_worst_point_1based": 12,
+      "current_active_max_log10_dex": 0.11583476768640655
+    },
+    {
+      "Z": 14,
+      "charge": 4,
+      "previous_max_abs_fraction_gap": 0.06971064410868127,
+      "current_max_abs_fraction_gap": 0.09700996471414197,
+      "current_worst_point_1based": 12,
+      "current_active_max_log10_dex": 0.19069113667148882
+    },
+    {
+      "Z": 16,
+      "charge": 1,
+      "previous_max_abs_fraction_gap": 0.0019758174851757203,
+      "current_max_abs_fraction_gap": 0.0020804134480151143,
+      "current_worst_point_1based": 53,
+      "current_active_max_log10_dex": 0.12129124533537872
+    },
+    {
+      "Z": 16,
+      "charge": 2,
+      "previous_max_abs_fraction_gap": 0.025480865976055644,
+      "current_max_abs_fraction_gap": 0.019262588127448466,
+      "current_worst_point_1based": 34,
+      "current_active_max_log10_dex": 0.10963753283334837
+    },
+    {
+      "Z": 16,
+      "charge": 3,
+      "previous_max_abs_fraction_gap": 0.03803952729607152,
+      "current_max_abs_fraction_gap": 0.033326469238481704,
+      "current_worst_point_1based": 4,
+      "current_active_max_log10_dex": 0.1561936110690964
+    },
+    {
+      "Z": 16,
+      "charge": 4,
+      "previous_max_abs_fraction_gap": 0.03805313658443832,
+      "current_max_abs_fraction_gap": 0.03333829419455425,
+      "current_worst_point_1based": 4,
+      "current_active_max_log10_dex": 0.1016637001847852
+    }
+  ],
+  "points": [
+    {
+      "point_1based": 4,
+      "temperature_K": 11031.473581795597,
+      "SiIII": {
+        "CMFGEN70_fraction": 4.825144790764214e-7,
+        "previous_fraction": 5.304792887523511e-7,
+        "current_fraction": 5.590406329539322e-7,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.1738730413298448,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.1246945337524812
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.0000411824167557896,
+        "previous_fraction": 0.00005479341055593077,
+        "current_fraction": 0.00005300896956043747,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9787422328856852,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9947045404333494
+      }
+    },
+    {
+      "point_1based": 12,
+      "temperature_K": 12951.779028258576,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.000006839861169200555,
+        "previous_fraction": 0.000005700061599349804,
+        "current_fraction": 0.0000061723702170129565,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.1649065938593917,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.1171823924272255
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.0001019863226314846,
+        "previous_fraction": 0.00012798815858560805,
+        "current_fraction": 0.00012405377067085406,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.967786150623881,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9863484010582001
+      }
+    },
+    {
+      "point_1based": 21,
+      "temperature_K": 10025.147523907563,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.0008405686628866176,
+        "previous_fraction": 0.0007130178468569432,
+        "current_fraction": 0.0008187582675889579,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.1751392751634715,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.1327589644211689
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.003072640373658073,
+        "previous_fraction": 0.002962177480459932,
+        "current_fraction": 0.0028423506002331757,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9507399424556816,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9710622773740752
+      }
+    },
+    {
+      "point_1based": 34,
+      "temperature_K": 10208.79288008727,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.7059529214680474,
+        "previous_fraction": 0.6648543927818563,
+        "current_fraction": 0.6748756204745747,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.1774700962494564,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.1328049364388646
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.48199246284902525,
+        "previous_fraction": 0.5074733288250809,
+        "current_fraction": 0.5012550509764737,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.8746968275677157,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.8835954156252915
+      }
+    },
+    {
+      "point_1based": 42,
+      "temperature_K": 9806.528100258809,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.9699482169278199,
+        "previous_fraction": 0.9662595297120169,
+        "current_fraction": 0.96701075565875,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.1543761605371459,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.134704402144308
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.9947870497771872,
+        "previous_fraction": 0.9948307095810358,
+        "current_fraction": 0.994709703071302,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9315176498240303,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9452379452461084
+      }
+    },
+    {
+      "point_1based": 50,
+      "temperature_K": 10312.796192031836,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.9947612150085845,
+        "previous_fraction": 0.9948349045222904,
+        "current_fraction": 0.9948502551808787,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.0590949894773893,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.065017631944712
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.9965467572779123,
+        "previous_fraction": 0.9963127238112419,
+        "current_fraction": 0.9963384882048815,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.426525188593666,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.4348187613443963
+      }
+    },
+    {
+      "point_1based": 53,
+      "temperature_K": 10125.438799498444,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.9993639725896539,
+        "previous_fraction": 0.999461497742493,
+        "current_fraction": 0.9994674332288529,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.8885893652040923,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.8831581935170776
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.9789168688958054,
+        "previous_fraction": 0.976947686017656,
+        "current_fraction": 0.9768435650516298,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9164633342418512,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9082667759844566
+      }
+    },
+    {
+      "point_1based": 61,
+      "temperature_K": 14677.565328429966,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.0729697859570936,
+        "previous_fraction": 0.07506019267774662,
+        "current_fraction": 0.07510070568770687,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 1.000139255476154,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 1.0007936582646948
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.41420405744798167,
+        "previous_fraction": 0.41644214213236586,
+        "current_fraction": 0.41630600997821504,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9969399104213316,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9975488837360272
+      }
+    },
+    {
+      "point_1based": 75,
+      "temperature_K": 21613.641814931852,
+      "SiIII": {
+        "CMFGEN70_fraction": 0.0000025166138947838176,
+        "previous_fraction": 0.0000027152114158244547,
+        "current_fraction": 0.0000026575038946333578,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9948746348229051,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9969077072337929
+      },
+      "SIII": {
+        "CMFGEN70_fraction": 0.00007825174196305695,
+        "previous_fraction": 0.0000805351878716268,
+        "current_fraction": 0.0000799408591731948,
+        "frozen_input_population_old_Gamma_over_CMFGEN_J": 0.9946512536876975,
+        "frozen_input_population_new_Gamma_over_CMFGEN_J": 0.9961227432568219
+      }
+    }
+  ],
+  "heat_previous_current": [
+    {
+      "max_abs_net_erg_cm3_s": 0.004449335259902352,
+      "max_abs_net_point_1based": 90,
+      "max_physical_RE": 0.0000028996283289005,
+      "point34_net_erg_cm3_s": 0.0000017567857246727334,
+      "point34_RE": 7.424173709326709e-7
+    },
+    {
+      "max_abs_net_erg_cm3_s": 0.004598102792655288,
+      "max_abs_net_point_1based": 90,
+      "max_physical_RE": 0.000002904621533795181,
+      "point34_net_erg_cm3_s": 0.0000017252606130234916,
+      "point34_RE": 7.304636430544823e-7
+    }
+  ],
+  "point34_ion_rates": {
+    "SiIII": [
+      {
+        "Gamma_s": 0.00009062340935349956,
+        "effective_alpha_cm3_s": 9.526655505303391e-12,
+        "ne_cm3": 18870920.39406505
+      },
+      {
+        "Gamma_s": 0.00008646397401460565,
+        "effective_alpha_cm3_s": 9.526487866928132e-12,
+        "ne_cm3": 18839818.601839796
+      }
+    ],
+    "SIII": [
+      {
+        "Gamma_s": 0.00027575488230432147,
+        "effective_alpha_cm3_s": 1.505628286590064e-11,
+        "ne_cm3": 18870920.39406505
+      },
+      {
+        "Gamma_s": 0.00028223411058655935,
+        "effective_alpha_cm3_s": 1.5056255899749672e-11,
+        "ne_cm3": 18839818.601839796
+      }
+    ]
+  },
+  "photo_comparison_population_sha256": "2e41e8093f8b9a2c8b03e662a686b592065db4ab3efd2fb34b2a3f9723ab2916",
+  "photo_scope": "same transport-input population; bound-only pure radiation-field change",
+  "final_goal": "NOT_MET",
+  "new_SE": 0,
+  "new_transport": 0,
+  "scope": "완료된 새 복사장-물질응답 묶음의 운전자 판독; 인증 CMFGEN 기준해·스펙트럼·공동수렴 판정 아님",
+  "slurm": {
+    "job_id": 1253439,
+    "state": "COMPLETED",
+    "exit_code": "0:0",
+    "start_KST": "2026-11-01T09:44:37+09:00",
+    "end_KST": "2026-11-01T12:06:39+09:00",
+    "elapsed": "02:22:02",
+    "CPUs": 16,
+    "memory_limit_GiB": 32,
+    "max_RSS_KiB": 5407784
+  },
+  "provenance": {
+    "old_result": {
+      "path": "$LUMINA_RUNS_ROOT/lumina_feedback_close_current_20261030-f0dy8F/response-thermal22/run/result.json",
+      "sha256": "aa292a0c486c23dc421ffd6516d381da2356d77c94fe657f00d47065905bba43"
+    },
+    "new_result": {
+      "path": "$LUMINA_RUNS_ROOT/lumina_f1_generation15_sources_20261031/dispatch_bundle_a100pcie.ZrU1ai/response/run/result.json",
+      "sha256": "83432c28ece8cc8c5344307e37d212a8823b06020891a287ec8af6411d5b75bf"
+    },
+    "population_response": {
+      "path": "$LUMINA_RUNS_ROOT/lumina_feedback_close_current_20261030-f0dy8F/response-thermal22/run/evaluation-5/response.npz",
+      "sha256": "2e41e8093f8b9a2c8b03e662a686b592065db4ab3efd2fb34b2a3f9723ab2916"
+    },
+    "reference_field": {
+      "path": "$LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429062/field/FORMAL_PRIMARY_FIELDS.bin",
+      "sha256": "d9073ac830d8a70beffc731dc919140b2b97ccff7e8d960060d42a7f7ca60563"
+    },
+    "profile_config_sha256": "6e3ca2c7803b58e0be9f5c27114b65d2b30d1a9e96177e85cb441dd86b1fa43a",
+    "profile_runtime_root": "$LUMINA_RUNS_ROOT/lumina_bound_photo_return2_20261101-MDKQcygs",
+    "profile_original_CSV_sha256": "936462c1ecaa492c26c7e6a29498a95c62f019b23ce181e05b17b3c394013f0d",
+    "profile_seconds": 37.28087322495412,
+    "profile_executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+    "new_J_sha256": "7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841"
+  },
+  "reproduction": {
+    "photo_command": "PYTHONPATH=scripts OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B scripts/compare_cmfgen_bound_photo_profiles.py --config \"$RETURN2_PROFILE_ROOT/config.json\" --config-sha256 6e3ca2c7803b58e0be9f5c27114b65d2b30d1a9e96177e85cb441dd86b1fa43a --out \"$NEW_UNUSED_OUTPUT\"",
+    "preservation": "Lageunha에서 원 config/입력 SHA를 대조하고 새로운 미사용 out을 지정한다. 이 명령은 SE/RE/수송을 호출하지 않는다.",
+    "ion_fractions": "원 result의 selected_response를 따라간다. Si-S-comparison.csv의 node는0기반이며 point_1based=node+1. 각 이온 분율은 같은 원소 전체 SL/terminal 인구 합을 분모로 사용한다.",
+    "thermal": "선택 balance의 net 및 gross에서 max(abs(net)/(.5*(gross+abs(net))))를 계산한다. charge는 선택 ne로 정규화한다.",
+    "ion_rates": "bf_ion_number_flows의 photo를 해당 stage 수밀도로 나누어 Gamma를 얻는다. (spontaneous+stimulated)/(ne*다음 stage 수밀도)는 BF 유효 재결합계수이며 충돌 등 모든 과정의 총율은 아니다.",
+    "csv_preservation": "저장 CSV는 런타임 CRLF를 LF로 정규화했으며 360개 record의 모든 문자열 필드를 대조한다."
+  },
+  "operator_assessment": {
+    "bundle_physics_outcome": "REWORK_FINAL_GOAL_NOT_MET",
+    "fixed_J_status": "기존 전하/RE 허용 기준은 통과했으나 온도 보정0회이며 정확한 온도 근과 공동수렴은 미입증",
+    "supported": "같은 입력C 인구에서 point34의 Si III bound photo/CMFGEN J 비는1.17747->1.13280, S III는0.874697->0.883595다. 이 대역에서는 장 갱신이 차이를 줄였지만 모든 반경·이온에서 단조 개선한 것은 아니다.",
+    "not_supported": "T 불변만으로 T가 틀린 근이라고 확정하거나, Si III/S III 두 분율의 개선만으로 전체 원소·온도·스펙트럼 동질성을 선언하지 않는다. CMFGEN70은 fixed-T 비수렴 진단 기준이다.",
+    "next": "새 전체 수송 반복 전에 현재 J에서 열 근 탐색 필요성을 판정한다. 정확한 열행 계약과 유한 온도 응답을 함께 다루고 허용 문턱을 맞춤값으로 바꾸지 않는다. 이번 단회가 종료됐으므로 추가 비싼 물질평가/새 Slurm 단회는 별도 실행 권한 확인 후 진행한다.",
+    "automatic_new_GPU_or_response_submissions": 0
+  }
+}
