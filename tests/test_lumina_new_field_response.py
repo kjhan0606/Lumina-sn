@@ -122,6 +122,69 @@ def test_temperature_mode_rejects_bad_budget_before_creating_output(manual_resou
         N.run(SimpleNamespace(seconds=13800, temperature_evaluations=limit))
 
 
+@pytest.mark.parametrize('fault',['budget','resume','hash','replay','prefix','projection','secant','duration'])
+def test_direction_request_refuses_mixed_modes_before_output(fault):
+    from types import SimpleNamespace
+    values=dict(seconds=42600,temperature_evaluations=4,temperature_direction_only=True,
+        resume_result='completed',resume_result_sha='pinned')
+    if fault=='budget':values['temperature_evaluations']=5
+    elif fault=='resume':values['resume_result']=None
+    elif fault=='hash':values['resume_result_sha']=None
+    elif fault=='replay':values['resume_thermal_result']='old-trials'
+    elif fault=='prefix':values['thermal_replay_prefix']=1
+    elif fault=='projection':values['charge_projection']=True
+    elif fault=='secant':values['secant_after_accept']=True
+    else:values['seconds']=42601
+    with pytest.raises(ValueError,match='온도방향 전용'):
+        N.run(SimpleNamespace(**values))
+
+
+@pytest.mark.parametrize('mode,seconds',[('manual-lageunha',0),('slurm',108000)])
+def test_direction_request_does_not_expand_executor_or_allocation(monkeypatch,mode,seconds):
+    from types import SimpleNamespace
+    monkeypatch.setattr(N,'execution_resources',lambda *a:dict(executor=mode,allocated_seconds=seconds))
+    with pytest.raises(ValueError,match='grammar Slurm'):
+        N.run(SimpleNamespace(seconds=42600,temperature_evaluations=4,temperature_direction_only=True,
+                              resume_result='completed',resume_result_sha='pinned'))
+
+
+def test_direction_output_cannot_be_published_as_accepted_material(tmp_path):
+    from prepare_lumina_accepted_material import prepare
+    path=tmp_path/'result.json'; out=tmp_path/'must-not-exist'
+    path.write_text(json.dumps(dict(
+        state='COMPLETE_CURRENT_FIELD_THERMAL_DIRECTION_NOT_ACCEPTED_MATERIAL',
+        thermal_energy_policy='physical_stored',material_published=False)))
+    with pytest.raises(ValueError):
+        prepare(path,N.B.sha(path),tmp_path/'seed',tmp_path/'material',out)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize('direction,allocation,accepted',[
+    (True,'12:00:00',True),(True,'1-06:00:00',False),(True,'11:00:00',False),
+    (False,'1-06:00:00',True),(False,'12:00:00',False)])
+def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tmp_path,direction,allocation,accepted):
+    import os
+    import subprocess
+    script=Path(N.__file__).with_name('submit_lumina_new_field_response.slurm')
+    binaries=tmp_path/'bin'; binaries.mkdir(); parent=tmp_path/'parent'; parent.mkdir()
+    control=binaries/'scontrol'
+    control.write_text('#!/bin/bash\nprintf "%s\\n" "JobId=123 TimeLimit='+allocation+'"\n')
+    control.chmod(0o700)
+    archive=binaries/'git'
+    archive.write_text('#!/bin/bash\nprintf "%s\\n" REACHED_ARCHIVE >&2\nexit 97\n')
+    archive.chmod(0o700)
+    startup=tmp_path/'shell-env'; startup.write_text('module() { :; }\n')
+    environment={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],
+        'BASH_ENV':str(startup),'SLURM_JOB_ID':'123','LUMINA_RESPONSE_EXECUTOR':'slurm',
+        'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':'42600' if direction else '106200'}
+    arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations','4' if direction else '12']
+    if direction:arguments.append('--temperature-direction-only')
+    result=subprocess.run(arguments,env=environment,capture_output=True,text=True,timeout=10)
+    assert result.returncode!=0 # 승인된 경우에도 mock archive에서 멈추며 실제 빌드/물리0회다.
+    assert ('REACHED_ARCHIVE' in result.stderr) is accepted
+    assert (parent/'source').exists() is accepted
+
+
 @pytest.mark.parametrize('path,digest,limit', [('result.json', None, 5),
     (None, 'sha', 5), ('result.json', 'sha', 0)])
 def test_resume_requires_pin_pair_and_explicit_temperature_mode(manual_resources, path, digest, limit):

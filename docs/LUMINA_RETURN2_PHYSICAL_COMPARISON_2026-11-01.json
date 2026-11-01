@@ -356,6 +356,56 @@
     "ion_rates": "bf_ion_number_flows의 photo를 해당 stage 수밀도로 나누어 Gamma를 얻는다. (spontaneous+stimulated)/(ne*다음 stage 수밀도)는 BF 유효 재결합계수이며 충돌 등 모든 과정의 총율은 아니다.",
     "csv_preservation": "저장 CSV는 런타임 CRLF를 LF로 정규화했으며 360개 record의 모든 문자열 필드를 대조한다."
   },
+  "temperature_direction_preparation": {
+    "state": "PREPARED_NOT_SUBMITTED_AWAITING_EXPLICIT_RUN_AUTHORIZATION",
+    "scope": "같은 현재 J에서 온도방향만 계산하는 실행 준비이며 물리 결과/수렴 판정 아님",
+    "implementation_sha256": {
+      "scripts/lumina_completed_field_seed.py": "096ec5e59c5a5d9fbdfebd94c468ed580b4436620885df090100c0c7abf1c5b2",
+      "scripts/lumina_fixed_field_thermal.py": "bb685463401ed387f14092dbb8b22d5316145ecdf9a8b3699dbc580788b8547d",
+      "scripts/lumina_new_field_response.py": "0be12d6f2cfab4f2a27337bf92f5ee948e0206a1c2ce6070121fee769152b684",
+      "scripts/submit_lumina_new_field_response.slurm": "e4e7de2573331db87ad8e36860c7f221e4e23e2cd67536657a5ad6b80b7eeaf7"
+    },
+    "resource_proposal": {
+      "executor": "grammar Slurm",
+      "CPUs": 16,
+      "memory_GiB": 32,
+      "wall_seconds_max": 43200,
+      "driver_seconds": 42600,
+      "material_callbacks_max": 4,
+      "new_temperature_full_BF_tables_max": 2,
+      "new_GPU": 0,
+      "new_transport": 0,
+      "accepted_materials": 0,
+      "retries": 0
+    },
+    "tests": {
+      "executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+      "passed": 283,
+      "seconds": 4.93,
+      "log": "/tmp/lumina-direction-final.EOBgIsqd/pytest.log",
+      "log_sha256": "c515e2aaf8b357d92aebcedea652b1b22c0427ce96c5f56e266a425fed290811",
+      "command": "PYTHONPATH=scripts OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B -m pytest -q -p no:cacheprovider tests/test_lumina_new_field_response.py tests/test_lumina_fixed_field_thermal.py tests/test_lumina_completed_field_seed.py tests/test_lumina_coupled_material.py tests/test_prepare_lumina_accepted_material.py tests/test_lumina_thermal_replay.py tests/test_lumina_temperature_response_cache.py",
+      "scope": "합성 수치/계약/보존/실제 shell wrapper의 모의 scontrol·모의 archive 분기. 실제 Slurm/SE/RE/수송은 실행하지 않음"
+    },
+    "readonly_completed_base_check": {
+      "state": "READONLY_COMPLETED_BASE_RESTORED_NO_MATERIAL_CALLBACKS",
+      "result_sha256": "83432c28ece8cc8c5344307e37d212a8823b06020891a287ec8af6411d5b75bf",
+      "base_response_sha256": "461e50de884d66db0273a057e50f5c897a228aa99b9a7e9402b3da33f9705c9d",
+      "base_balance_sha256": "ff0e5fdd09b5cbe48651677e5d89f71bc8e6eaf8bf89f17113e7efd8abe12183",
+      "points": 90,
+      "temperature_matches_input": true,
+      "max_relative_charge": 8.924971420740237e-11,
+      "thermal_producers_verified": 9,
+      "saved_heat_reused": true,
+      "default_path_still_rejects_TNE": true,
+      "new_material_evaluations": 0,
+      "new_BF_integrations": 0,
+      "new_transport": 0,
+      "wall_seconds": 1.9293909550178796
+    },
+    "preservation": "기존 수용 기준과 물질을 변경하지 않는다. 정상 경로의 완료 TNE 재사용 금지는 유지하고, 명시한 방향 전용에만 같은 T/ne/J/물리 구현과 SHA를 확인한 기준을 복원한다.",
+    "test_limit": "작은 합성/읽기 전용 준비 통과는 실제90점 온도방향 또는 CMFGEN 동질성 증거가 아니다."
+  },
   "operator_assessment": {
     "bundle_physics_outcome": "REWORK_FINAL_GOAL_NOT_MET",
     "fixed_J_status": "기존 전하/RE 허용 기준은 통과했으나 온도 보정0회이며 정확한 온도 근과 공동수렴은 미입증",

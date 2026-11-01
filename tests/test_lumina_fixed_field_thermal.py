@@ -66,6 +66,63 @@ def test_v2_residual_tolerances_accept_base_without_new_material_callbacks():
     assert result['new_transport']==0 and not result['joint_convergence']
 
 
+def test_direction_only_resolves_temperature_sensitivity_inside_gross_tolerance():
+    first=case(np.array([2.,3.])*1.2,[5.,7.]); saved=first[0]['temperature'].copy()
+    first[1]['physical_stored_gross'][:]=1.e12
+    calls=[]; directions=[]; phases=[]
+    def evaluate(t,ne):
+        calls.append(1); value=case(t,ne,len(calls))
+        value[1]['physical_stored_gross'][:]=1.e12
+        return value
+    accepted=T.solve(evaluate,first,adiabatic,policy='physical_stored',max_evaluations=5,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3)
+    assert accepted['fixed_field_numerical_converged'] and not calls
+    result=T.linearize(evaluate,first,adiabatic,policy='physical_stored',
+        on_evaluation=lambda value,entry:phases.append(entry['phase']),
+        on_direction=lambda *args:directions.append(args))
+    assert phases==['T+','T-','ne+','ne-'] and len(calls)==4
+    assert result['evaluations_used']==result['fresh_evaluations_used']==4
+    assert result['accepted_iterations']==0 and not result['material_published']
+    assert 'selected' not in result and 'fixed_field_numerical_converged' not in result
+    np.testing.assert_allclose(directions[0][3][:2],-np.log(1.2),rtol=1.e-10)
+    np.testing.assert_array_equal(first[0]['temperature'],saved)
+    assert result['linear_relative_residual']<1.e-12
+    assert not result['joint_convergence'] and result['new_transport']==0
+
+
+@pytest.mark.parametrize('limit',[0,3,5,True])
+def test_direction_only_rejects_budget_before_material_callbacks(limit):
+    first=case([2.,3.],[5.,7.])
+    with pytest.raises(ValueError,match='실제평가4회'):
+        T.linearize(lambda *a:pytest.fail('신규 평가 금지'),first,adiabatic,
+                    policy='physical_stored',max_evaluations=limit)
+
+
+def test_direction_only_requires_closed_charge_and_matching_probe_state():
+    first=case([2.,3.],[5.,7.]); first[0]['charge_residual'][:]=1.
+    with pytest.raises(ValueError,match='전하가 닫힌'):
+        T.linearize(lambda *a:pytest.fail('신규 평가 금지'),first,adiabatic,policy='physical_stored')
+    first=case([2.,3.],[5.,7.])
+    def bad(t,ne):
+        value=case(t,ne); value[0]['temperature'][0]*=1.01
+        return value
+    with pytest.raises(ValueError,match='요청 T/ne'):
+        T.linearize(bad,first,adiabatic,policy='physical_stored')
+
+
+def test_direction_only_preserves_base_and_never_publishes_after_probe_failure():
+    first=case([2.,3.],[5.,7.]); before=first[0]['temperature'].copy(); calls=[]; published=[]
+    def evaluate(t,ne):
+        calls.append(1)
+        if len(calls)==3:raise RuntimeError('합성 세 번째 응답 실패')
+        return case(t,ne)
+    with pytest.raises(RuntimeError,match='세 번째'):
+        T.linearize(evaluate,first,adiabatic,policy='physical_stored',
+            on_direction=lambda *a:published.append(a))
+    assert len(calls)==3 and not published
+    np.testing.assert_array_equal(first[0]['temperature'],before)
+
+
 def test_already_converged_base_does_not_require_replaying_old_perturbations():
     first=case(np.array([2.,3.]),[5.,7.]);replayed=[]
     result=T.solve(lambda *args:pytest.fail('수렴된 기준에서 새 평가 불필요'),

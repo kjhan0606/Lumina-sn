@@ -1,4 +1,4 @@
-"""같은 장·수용 물질의 완료 계수만 읽는다. 열장부/정상해는 재평가한다."""
+"""같은 장·수용 물질의 완료 계수를 읽는다. 방향 전용만 검증된 열 기준을 복원한다."""
 import ast
 import hashlib
 import json
@@ -28,6 +28,12 @@ PRODUCERS = ('cmfgen_model_continuum.py', 'cmfgen_model_sources.py',
              'lumina_model_point_rates.py', 'lumina_model_linear_lines.py',
              'lumina_model_freefree.py')
 
+THERMAL_PRODUCERS = ('lumina_coupled_material.py', 'lumina_model_response.py',
+    'lumina_model_response_balance.py', 'lumina_model_collision_source.py',
+    'lumina_model_material_bridge.py', 'lumina_model_energy.py',
+    'lumina_model_balance.py', 'lumina_native_heat_sources.py',
+    'run_lumina_fixed_state_balance.py')
+
 
 def cache_source_signature(path):
     """새 계수 게시 함수만 제외하고 캐시의 수치 helper·전역 바인딩을 고정한다.
@@ -53,18 +59,28 @@ def cache_source_signature(path):
 
 
 def load(path, digest, *, field, source_identity, state, inputs, library,
-         line_library, routes, lines):
+         line_library, routes, lines, reuse_thermal_base=False, thermal_policy=None):
     """봉인 보고서·원 입력·생산자·배열을 검사하고 ne 시작값과 계수를 반환한다.
 
     저장된 최종 ne는 시작 추정값일 뿐이다. 원 수용 ne의 bound율을 최종
     ne의 total율로 해석하거나 저장된 열장부를 현재 후보에 대입하지 않는다.
+    명시한 방향 전용에서는 동일 T/ne/J·물리 구현의 완료 기준점만 복원한다.
+    이를 새로 평가한 후보나 수용된 온도 수정으로 표시하지 않는다.
     """
     path = Path(path).resolve(); root = path.parent
     if B.sha(path) != digest:
         raise ValueError('완료 응답 보고서 변경')
     report = json.loads(path.read_text())
-    if (report.get('state') != 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE' or
-            report.get('fixed_accepted_temperature') is not True or
+    fixed = (report.get('state') == 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE'
+             and report.get('fixed_accepted_temperature') is True)
+    block = report.get('temperature_block', {})
+    unmoved_thermal = (type(reuse_thermal_base) is bool and reuse_thermal_base and
+        report.get('state') == 'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' and
+        report.get('temperature_updated') is False and
+        block.get('evaluations_used') == 0 and block.get('accepted_iterations') == 0 and
+        block.get('history') == [] and not report.get('thermal_evaluation_order') and
+        report.get('selected_response') == report.get('thermal_initial_response'))
+    if (type(reuse_thermal_base) is not bool or not (fixed or unmoved_thermal) or
             report.get('charge_converged') is not True or
             report.get('full_BF_integrations') != 1):
         raise ValueError('완료 고정온도·전하 응답만 계수 재사용 가능')
@@ -122,6 +138,7 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
                 charge.shape != ne.shape or not np.isfinite(charge).all() or
                 np.max(abs(charge/ne)) > 1.e-10):
             raise ValueError('완료 응답의 T/ne/원자주소/핵수/전하 오류')
+        restored = {k: data[k] for k in data.files} if reuse_thermal_base else None
     ns = len(ne)
     for name, shape in (('bound-rates.npy', (routes, ns, 6)), ('jbar.npy', (lines, ns)),
                         ('line-status.npy', (lines,))):
@@ -150,10 +167,30 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
                 any(ff[k].shape != shape or not np.isfinite(ff[k]).all() or np.any(ff[k] < 0)
                     for k in ('heating', 'cooling'))):
             raise ValueError('완료 FF의 온도/형상/값 오류')
+    thermal_base = None
+    if reuse_thermal_base:
+        if (thermal_policy is None or report.get('thermal_energy_policy') != thermal_policy):
+            raise ValueError('완료 기준 열장부의 정책 불일치')
+        for name in THERMAL_PRODUCERS:
+            current = Path(__file__).with_name(name); digest_now = B.sha(current)
+            if report.get('thermal_implementation_sha256', {}).get(name) != digest_now:
+                raise ValueError('완료 기준 열장부의 물리 구현 변경: '+name)
+            consumed[str(current)] = digest_now
+        heat = Path(entry['root'])/'balance.npz'
+        if B.sha(heat) != entry.get('balance_sha256'):
+            raise ValueError('완료 기준 열장부 변경')
+        consumed[str(heat)] = entry['balance_sha256']
+        with np.load(heat, allow_pickle=False) as data:
+            thermal_base = restored, {k: data[k] for k in data.files}, entry
     inputs.update(consumed)
-    return dict(report=report, paths=paths, ne=ne,
+    result = dict(report=report, paths=paths, ne=ne,
                 provenance=dict(result_sha256=digest, result=str(path),
                     producer_verification=source_verification,
                     original_full_BF_seconds=report['full_BF_seconds'],
                     reused_coefficients=list(names),
                     saved_heat_reused=False, saved_ne_role='initial guess; current SE/heat re-evaluated'))
+    if thermal_base is not None:
+        result['thermal_base'] = thermal_base
+        result['provenance'].update(saved_heat_reused=True,
+            saved_ne_role='pinned same T/ne/J and physical heat implementation; direction-only base')
+    return result

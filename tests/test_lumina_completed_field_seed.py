@@ -58,6 +58,49 @@ def change_npz(path, **updates):
     np.savez(path, **{**data, **updates})
 
 
+@pytest.fixture
+def thermal_archive(archive):
+    root,report,args=archive; entry=report['selected_response']
+    heat=Path(entry['root'])/'balance.npz'
+    np.savez(heat,physical_adiabatic=np.zeros(2),physical_internal_energy=np.ones(2),
+             physical_stored_net=np.zeros(2),physical_stored_gross=np.ones(2))
+    entry['balance_sha256']=C.B.sha(heat)
+    report.update(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+        fixed_accepted_temperature=False,temperature_updated=False,
+        thermal_initial_response=entry.copy(),thermal_energy_policy='physical_stored',
+        temperature_block=dict(evaluations_used=0,accepted_iterations=0,history=[]),
+        thermal_implementation_sha256={name:C.B.sha(Path(C.__file__).with_name(name))
+                                      for name in C.THERMAL_PRODUCERS})
+    args.update(reuse_thermal_base=True,thermal_policy='physical_stored')
+    return archive
+
+
+def test_direction_base_reuses_only_pinned_unchanged_thermal_state(thermal_archive):
+    root,report,args=thermal_archive
+    seed=load(thermal_archive); data,heat,entry=seed['thermal_base']
+    assert seed['provenance']['saved_heat_reused'] is True
+    np.testing.assert_array_equal(data['ne'],seed['ne'])
+    np.testing.assert_array_equal(heat['physical_stored_net'],0.)
+    assert entry==report['selected_response']
+    args.pop('reuse_thermal_base')
+    with pytest.raises(ValueError,match='고정온도'):
+        load(thermal_archive)
+
+
+@pytest.mark.parametrize('fault',['temperature_updated','evaluations','history','selected',
+                                 'producer','policy','heat'])
+def test_direction_base_refuses_changed_physics_or_material(thermal_archive,fault):
+    root,report,args=thermal_archive
+    if fault=='temperature_updated':report['temperature_updated']=True
+    elif fault=='evaluations':report['temperature_block']['evaluations_used']=1
+    elif fault=='history':report['temperature_block']['history']=[dict(accepted=True)]
+    elif fault=='selected':report['thermal_initial_response']={}
+    elif fault=='producer':report['thermal_implementation_sha256'][C.THERMAL_PRODUCERS[0]]='changed'
+    elif fault=='policy':args['thermal_policy']='native_stored'
+    else:(Path(report['selected_response']['root'])/'balance.npz').write_bytes(b'changed')
+    with pytest.raises(ValueError):load(thermal_archive)
+
+
 def test_completed_coefficients_are_read_only_and_ne_is_only_a_starting_guess(archive):
     root, report, args = archive
     before = {name:(root/name).read_bytes() for name in C.COEFFICIENTS}

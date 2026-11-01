@@ -2,6 +2,7 @@
 # 기본 새 J 고정 T 물질응답은 CPU16/32GiB/4h.
 # 장시간 열보정은 별도 승인된 단회에만 sbatch --time=1-06:00:00 및
 # LUMINA_RESPONSE_LONG_THERMAL=1, LUMINA_RESPONSE_SECONDS=106200을 사용한다.
+# 별도 승인된 방향 전용4평가는 --time=12:00:00, seconds=42600으로 제한한다.
 #SBATCH --job-name=lumina-new-J-response
 #SBATCH --partition=normal
 #SBATCH --exclude=grammar072,grammar078,grammar080
@@ -18,6 +19,14 @@ ulimit -c 0
 response_seconds=${LUMINA_RESPONSE_SECONDS:-13800}
 [[ "$response_seconds" =~ ^[0-9]+$ ]]
 max_seconds=13800
+direction_only=0
+for response_argument in "$@"; do
+    if [[ "$response_argument" = --temperature-direction-only ]]; then direction_only=1; fi
+done
+if (( direction_only )); then
+    [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]
+    [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
+fi
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = manual-lageunha ]]; then max_seconds=42600; fi
 if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
@@ -25,7 +34,12 @@ if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     [[ " $* " = *" --temperature-evaluations "* ]]
     # 이 Slurm 배포는 SLURM_TIMELIMIT를 export하지 않는다. 실제 작업 기록을 읽는다.
     allocation=$(scontrol show job "${SLURM_JOB_ID:?}" -o)
-    [[ " $allocation " == *" TimeLimit=1-06:00:00 "* ]]
+    if (( direction_only )); then
+        max_seconds=42600
+        [[ " $allocation " == *" TimeLimit=12:00:00 "* ]]
+    else
+        [[ " $allocation " == *" TimeLimit=1-06:00:00 "* ]]
+    fi
 fi
 (( response_seconds >= 600 && response_seconds <= max_seconds ))
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]; then

@@ -4,9 +4,51 @@
 """
 import numpy as np
 
-from lumina_coupled_material import packet, solve_coupled, residual
+from lumina_coupled_material import packet, solve_coupled, residual, jacobian, newton_direction
 import lumina_charge_projection as charge_projection
 from lumina_common_charge import solve as solve_charge
+
+
+def linearize(evaluate, first, adiabatic, *, policy, max_evaluations=4,
+              on_evaluation=None, on_direction=None):
+    """같은 J의 centered 네 응답만 소비한다. 근 탐색/후보 수용은 하지 않는다.
+
+    기존 RE 허용값을 바꾸거나 수렴 판정을 우회하지 않는다. 허용 영역 안의
+    기준점에서도 선형 온도방향을 별도로 추정하며 실제 물질을 게시하지 않는다.
+    """
+    if type(max_evaluations) is not int or max_evaluations != 4:
+        raise ValueError('온도방향 진단은 centered 실제평가4회 필요')
+    step = 1.e-4
+    base = packet(*first[:2], policy)
+    if float(np.max(abs(base.charge/base.ne))) > 1.e-10:
+        raise ValueError('같은 J의 전하가 닫힌 기준 물질 필요')
+    t, ne = base.temperature, base.ne
+    history = []; probes = []
+    for phase, temperature, density in (
+            ('T+', t*np.exp(step), ne.copy()), ('T-', t*np.exp(-step), ne.copy()),
+            ('ne+', t.copy(), ne*np.exp(step)), ('ne-', t.copy(), ne*np.exp(-step))):
+        value = evaluate(temperature, density)
+        probe = packet(*value[:2], policy)
+        if (not np.array_equal(probe.temperature, temperature) or
+                not np.array_equal(probe.ne, density)):
+            raise ValueError('온도방향 진단이 요청 T/ne를 소비하지 않음')
+        entry = dict(evaluation=len(probes)+1, phase=phase, purpose='CENTERED_LINEARIZATION_ONLY')
+        probes.append(probe); history.append(entry)
+        if on_evaluation is not None: on_evaluation(value, entry)
+    c, h = base.ne.copy(), base.thermal_scale.copy()
+    f = residual(base, adiabatic, c, h)
+    matrix = jacobian(base, *probes, step, adiabatic, charge_scale=c, thermal_scale=h)
+    direction = newton_direction(matrix, f)
+    if on_direction is not None: on_direction(first, matrix, f, direction, c, h)
+    n = len(t); norm = float(abs(f).max())
+    error = float(abs(matrix@direction+f).max())
+    return dict(state='CENTERED_DIRECTION_NOT_ROOT_OR_ACCEPTED_MATERIAL', history=history,
+        evaluations_used=4, fresh_evaluations_used=4, centered_log_step=float(step),
+        max_abs_log_temperature_direction=float(abs(direction[:n]).max()),
+        max_abs_log_ne_direction=float(abs(direction[n:]).max()),
+        linear_relative_residual=error/norm if norm else 0.,
+        accepted_iterations=0, material_published=False, new_transport=0,
+        joint_convergence=False)
 
 
 def project(evaluate, first, saved_trial, adiabatic, basis, alpha, lower, upper, *,

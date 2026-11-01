@@ -244,11 +244,25 @@ def continued_energy_policy(manifest, requested, *, required=False):
 
 def run(args):
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
+    direction_only = getattr(args, 'temperature_direction_only', False)
+    if (type(direction_only) is not bool or (direction_only and (
+            type(temperature_evaluations) is not int or temperature_evaluations != 4 or
+            not getattr(args, 'resume_result', None) or not getattr(args, 'resume_result_sha', None) or
+            getattr(args, 'resume_thermal_result', None) or getattr(args, 'thermal_replay_prefix', None) is not None or
+            getattr(args, 'charge_projection', False) or getattr(args, 'secant_after_accept', False) or
+            args.seconds > 42600))):
+        raise ValueError('온도방향 전용은 완료 계수/기준 재사용·신규4평가·12시간 이내이며 수용/재생 모드와 혼합 금지')
     execution = execution_resources(args.seconds, temperature_evaluations)
+    if direction_only and (execution['executor'] != 'slurm' or
+            not execution.get('long_thermal') or
+            not execution.get('hostname', '').split('.')[0].startswith('grammar') or
+            not args.seconds+300 <= execution.get('allocated_seconds', 0) <= 43200):
+        raise ValueError('온도방향 실물 진단은 grammar Slurm·최대12시간 필요')
     replay_path = getattr(args, 'resume_thermal_result', None)
     replay_sha = getattr(args, 'resume_thermal_result_sha', None)
     minimum = 1 if replay_path else 5
-    if type(temperature_evaluations) is not int or (temperature_evaluations != 0 and not minimum <= temperature_evaluations <= 12):
+    if type(temperature_evaluations) is not int or (not direction_only and
+            temperature_evaluations != 0 and not minimum <= temperature_evaluations <= 12):
         raise ValueError('온도 보정은 비활성0, 신규5~12회 또는 보존평가 재개1~12회 필요')
     resume = getattr(args, 'resume_result', None)
     resume_sha = getattr(args, 'resume_result_sha', None)
@@ -276,8 +290,10 @@ def run(args):
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
-        charge_projection=projecting, fresh_temperature_full_BF_integrations_max=0 if projecting else None,
+        charge_projection=projecting,
+        fresh_temperature_full_BF_integrations_max=2 if direction_only else (0 if projecting else None),
         secant_after_accept=secant_after_accept,
+        temperature_direction_only=direction_only,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
@@ -334,16 +350,13 @@ def run(args):
                 seed = completed_seed.load(resume, resume_sha, field=last,
                     source_identity=source.identity, state=state, inputs=inputs,
                     library=args.library, line_library=args.line_library,
-                    routes=len(routes), lines=len(lines['lower']))
+                    routes=len(routes), lines=len(lines['lower']),
+                    reuse_thermal_base=direction_only, thermal_policy=thermal_policy)
                 result['baseline_reuse'] = seed['provenance']
                 for name in completed_seed.coefficient_names(seed['report']):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
             if temperature_evaluations:
-                thermal_code = ('lumina_coupled_material.py', 'lumina_model_response.py',
-                    'lumina_model_response_balance.py', 'lumina_model_collision_source.py',
-                    'lumina_model_material_bridge.py', 'lumina_model_energy.py',
-                    'lumina_model_balance.py', 'lumina_native_heat_sources.py',
-                    'run_lumina_fixed_state_balance.py')
+                thermal_code = completed_seed.THERMAL_PRODUCERS
                 result['thermal_implementation_sha256'] = {
                     name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
                 for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
@@ -456,7 +469,13 @@ def run(args):
                 for z in response.species:
                     select = state['columns'][:, 0] == z; n = state['superlevel'][select].sum(axis=0)
                     lower += state['columns'][select, 1].min()*n; upper += state['columns'][select, 1].max()*n
-                if replay_path:
+                if direction_only:
+                    final, energy, metadata = seed['thermal_base']
+                    candidates[id(final)] = metadata; evaluation_energy[id(final)] = energy
+                    replay_ids.add(id(final))
+                    result['restored_direction_base'] = metadata
+                    solved = dict(history=[])
+                elif replay_path:
                     replay_source = thermal_replay.load(replay_path, replay_sha,
                         field=last, source_identity=source.identity,
                         implementation=result['thermal_implementation_sha256'], state=state,
@@ -505,7 +524,22 @@ def run(args):
                             charge_tolerance=1.e-10, thermal_tolerance=1.e-3))
                         save()
                     first_value = (final, evaluation_energy[id(final)], candidates[id(final)])
-                    if projecting:
+                    if direction_only:
+                        result['temperature_linearization'] = thermal_block.linearize(
+                            evaluate_temperature, first_value, full_ad, policy=thermal_policy,
+                            max_evaluations=temperature_evaluations,
+                            on_evaluation=thermal_decision, on_direction=thermal_direction)
+                        check()
+                        if any(B.sha(Path(p)) != h for p, h in inputs.items()):
+                            raise ValueError('같은 장 온도방향 계산 중 입력 변경')
+                        direction_root = Path(result['thermal_directions'][-1]['root'])
+                        result.update(state='COMPLETE_CURRENT_FIELD_THERMAL_DIRECTION_NOT_ACCEPTED_MATERIAL',
+                            material_published=False, temperature_updated=False,
+                            output_sha256={str(p.relative_to(out)): B.sha(p) for p in
+                                (direction_root/'linearization.npz', direction_root/'result.json')})
+                        save()
+                        return result
+                    elif projecting:
                         projection = replay_source['projection']
                         result['thermal_projection_basis'] = projection['identity']
                         cached_response.require_completed(projection['trial'][0]['temperature'])
@@ -571,7 +605,9 @@ if __name__ == '__main__':
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--seconds', type=int, default=6600)
     parser.add_argument('--temperature-evaluations', type=int, default=0,
-        help='신규 실제평가 한도: 새 보정5~12, 보존평가 재개1~12. 실행 승인을 대신하지 않음')
+        help='신규 실제평가 한도: 새 보정5~12, 보존평가 재개1~12, 방향 전용4. 실행 승인을 대신하지 않음')
+    parser.add_argument('--temperature-direction-only', action='store_true',
+        help='동일 T/ne/J·열구현의 완료 기준을 복원해 centered4응답의 방향만 저장. 후보 수용/수렴 선언 없음')
     parser.add_argument('--resume-result', type=Path,
         help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
     parser.add_argument('--resume-result-sha')
@@ -589,4 +625,5 @@ if __name__ == '__main__':
     result = run(parser.parse_args())
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if result['state'] in ('COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE',
-        'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE') else 1)
+        'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+        'COMPLETE_CURRENT_FIELD_THERMAL_DIRECTION_NOT_ACCEPTED_MATERIAL') else 1)
