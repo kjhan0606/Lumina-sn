@@ -541,5 +541,88 @@
     },
     "scope": "저장 물질·열장부와 같은 C 단열을 재합성한 사후 분석이다. 추가 BF/SE/수송/물질 callback은0회이며 수렴 판정이 아니다."
   },
+  "temperature_refinement_preparation": {
+    "state": "IMPLEMENTED_TESTED_REAL_SAVED_DIRECTION_REPRODUCED_NOT_EXECUTED",
+    "as_of_KST": "2026-11-01T22:35:48+09:00",
+    "authorization": "후속 실물 보정은 미승인이다. 완료1254013의 응답4회 권한은 소진됐으며 재사용하지 않는다.",
+    "objective": "기존 RE 허용 영역에 있는 상태에서도 명시한 유한 온도 근 탐색을 수행하고, 저장 네 응답을 재사용해 실제 후보의 전하/열 개선을 함께 확인한다.",
+    "changes": [
+      "--refine-temperature-direction을 명시한 경로만 추가한다. 기본 조기 반환·재개·전하 투영 동작은 유지한다.",
+      "동일 J·기점·네 응답·선형계·원자자료·바이너리·9개 물리 producer SHA를 확인한다. 선형계는 실제 저장 응답과 C 단열로 재조립해 대조한다.",
+      "전하 제거 Schur 열행을 행 최대계수로 정규화해 box 제한 선형 최소제곱으로 제안한다. log-step0.1은 제안 보폭이며 실제 물리량을 clamp하지 않는다.",
+      "최대 두 T 제안과 같은 T에서의 전하 보정을 연결한다. 실제 수용 한 번에 종료하고 새 수송은 하지 않는다."
+    ],
+    "acceptance": [
+      "실제 후보 전하 상대잔차<=1e-10, SE 잔차<=1e-8, 후보 자신의 척도 RE<=1e-3을 모두 요구한다.",
+      "기점 척도의 실제 열잔차도 Armijo 조건으로 감소해야 한다. RE 문턱 통과 자체로 새 수정 후보를 수용하지 않는다.",
+      "기점 SE·네 섭동은 다시 계산하지 않는다. 실패/한도 소진이면 원 기점을 보존하며 새 물질 수용은0회다.",
+      "기존 Si/S·T/ne 비교 및 전달기에 실제 평가된 후보만 연결한다. 온도 근·공동수렴·최종 CMFGEN 동등성은 선언하지 않는다."
+    ],
+    "physics": "native_instantaneous_scenario·물리 producer9개·물리 허용값은 그대로다. native 전체 열행 독립 parity와 released-T 기준해는 미완료다. 추가 외부 자문은 없다.",
+    "direct_tests": {
+      "executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+      "result": "334 passed in 8.32s",
+      "log": "/tmp/lumina-refinement-final.aqVq0Vid/pytest.log",
+      "log_sha256": "f9fde1eab48ffe5222b48bf9e88afa54a77c6a3a619718adde7e7c7fd1a4a3ab",
+      "command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 taskset -c 0 timeout 300s python3 -B -m pytest -q -p no:cacheprovider tests/test_lumina_new_field_response.py tests/test_lumina_fixed_field_thermal.py tests/test_lumina_completed_field_seed.py tests/test_lumina_coupled_material.py tests/test_prepare_lumina_accepted_material.py tests/test_lumina_thermal_replay.py tests/test_lumina_temperature_response_cache.py tests/test_lumina_thermal_refinement.py tests/test_lumina_thermal_refinement_reuse.py"
+    },
+    "read_only_real_proof": {
+      "state": "READ_ONLY_REAL_90_POINT_REUSE_AND_PROPOSAL_REPRODUCED",
+      "source_result_sha256": "4bf31171e1c41c70f09e12b9df4102edf41a19d5534b2ccc2d4a4d747c4d40ec",
+      "points": 90,
+      "saved_probes": 4,
+      "physical_producers": 9,
+      "max_abs_log_T_step": 0.1,
+      "max_abs_log_ne_step": 0.003440615347171655,
+      "predicted_heat_max_relative_to_initial": 0.5239309714575348,
+      "predicted_charge_max": 4.481939208625066e-19,
+      "point4_log_T_step": -0.1,
+      "point34_log_T_step": 0.1,
+      "point42_log_T_step": 0.1,
+      "box_iterations": 3,
+      "source_implementation_sha256": {
+        "lumina_thermal_refinement.py": "8f0b3adf8de9c82431c3e28889756f43874234c3726018c810e0a4cb6f02259e",
+        "lumina_thermal_replay.py": "f30e8dbfccf37a8ea23552727079e8a37cb0edea33efd3c41331b284628aaf6a",
+        "lumina_new_field_response.py": "eb73e340312f4fc1508696c5357413fc9f0a292cd729fb96d8d9858fbdb320a5"
+      },
+      "new_material_callbacks": 0,
+      "new_BF_integrations": 0,
+      "new_SE": 0,
+      "new_transport": 0,
+      "accepted_materials": 0,
+      "temperature_root_certified": false,
+      "final_goal": "NOT_MET"
+    },
+    "read_only_reproduction": {
+      "executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+      "setup": "저장소 root에서 실행한다. LUMINA_RUNS_ROOT는 실제 계산 저장소 root로 지정한다. 원 입력·출력에는 쓰지 않는다.",
+      "command": "PYTHONPATH=scripts OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 taskset -c 0 timeout 300s python3 -B -",
+      "stdin_python": "import hashlib,json,os\nfrom pathlib import Path\nimport numpy as np\nimport lumina_thermal_replay as replay\nimport lumina_completed_field_seed as seed\nfrom lumina_thermal_refinement import bounded_direction\nfrom run_lumina_fixed_state_balance import adiabatic\nroot=Path(os.environ['LUMINA_RUNS_ROOT'])/'lumina_currentJ_Tdirection4_20261101-Hj5lRddO'\npath=root/'run/result.json'\ndigest=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()\nassert digest(path)=='4bf31171e1c41c70f09e12b9df4102edf41a19d5534b2ccc2d4a4d747c4d40ec'\nreport=json.loads(path.read_text())\nbase_path=Path(report['baseline_reuse']['result'])\nassert digest(base_path)==report['baseline_reuse']['result_sha256']\nparent=json.loads(base_path.read_text())\nassert report['thermal_initial_response']==parent['selected_response']\nentry=parent['selected_response']\nwith np.load(Path(entry['root'])/'response.npz',allow_pickle=False) as z:\n    state=dict(columns=z['columns'],superlevel=z['population'])\ninputs={}\nimplementation={name:digest(Path('scripts')/name) for name in seed.THERMAL_PRODUCERS}\nloaded=replay.load(path,digest(path),field=parent['field'],source_identity=parent['source_identity'],\n    implementation=implementation,state=state,library=root/'build/bridge.so',line_library=root/'build/lines.so',\n    inputs=inputs,policy=report['thermal_energy_policy'],direction_source=True)\nprofile=base_path.parent/'physical-profiles.npz'\nassert digest(profile)==parent['output_sha256']['physical-profiles.npz']\nwith np.load(profile,allow_pickle=False) as z:radius=z['radius_cm']\nfull_ad=lambda t,ne,ni,u:adiabatic(root/'build/bridge.so',radius,report['source_identity']['epoch_seconds'],t,ne,ni,u)['signed_total']\nmodel=bounded_direction(loaded['first'],loaded['replay'],full_ad,loaded['direction_basis'],policy=report['thermal_energy_policy'])\nn=90\nresult=dict(state='READ_ONLY_REAL_90_POINT_REUSE_AND_PROPOSAL_REPRODUCED',source_result_sha256=digest(path),\n    points=n,saved_probes=len(loaded['replay']),physical_producers=len(implementation),\n    max_abs_log_T_step=float(abs(model['direction'][:n]).max()),\n    max_abs_log_ne_step=float(abs(model['direction'][n:]).max()),\n    predicted_heat_max_relative_to_initial=model['predicted_heat_max']/float(abs(model['residual'][n:]).max()),\n    predicted_charge_max=model['predicted_charge_max'],\n    point4_log_T_step=float(model['direction'][3]),point34_log_T_step=float(model['direction'][33]),\n    point42_log_T_step=float(model['direction'][41]),box_iterations=model['box_iterations'],\n    source_implementation_sha256={name:digest(Path('scripts')/name) for name in ('lumina_thermal_refinement.py','lumina_thermal_replay.py','lumina_new_field_response.py')},\n    new_material_callbacks=0,new_BF_integrations=0,new_SE=0,new_transport=0,accepted_materials=0,\n    temperature_root_certified=False,final_goal='NOT_MET')\nprint(json.dumps(result,ensure_ascii=False,allow_nan=False))\n"
+    },
+    "proposed_single_run_not_authorized": {
+      "executor": "grammar Slurm",
+      "CPUs": 16,
+      "memory_GiB": 32,
+      "time_limit_hours": 12,
+      "material_callbacks_max": 12,
+      "new_temperature_full_BF_max": 2,
+      "temperature_proposals_max": 2,
+      "accepted_material_steps_max": 1,
+      "GPU": 0,
+      "new_transport": 0,
+      "automatic_retries": 0,
+      "estimated_hours": [
+        3,
+        6
+      ],
+      "estimate_basis": "실측 full BF 약2.07시간/T, 같은 T의 ne 평가 약4분/회다. 두 후보에도 여유를 두어 최대12시간을 제안한다."
+    },
+    "new_material_callbacks": 0,
+    "new_BF_integrations": 0,
+    "new_SE": 0,
+    "new_transport": 0,
+    "accepted_materials": 0,
+    "final_goal": "NOT_MET"
+  },
   "final_goal": "NOT_MET"
 }

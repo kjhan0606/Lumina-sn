@@ -39,7 +39,8 @@ def stopped_prefix(report, prefix):
 
 
 def load(path, digest, *, field, source_identity, implementation, state,
-         library, line_library, inputs, policy='physical_stored', prefix=None, project_charge=False):
+         library, line_library, inputs, policy='physical_stored', prefix=None, project_charge=False,
+         direction_source=False):
     path = Path(path).resolve()
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
@@ -48,13 +49,21 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if type(projected_trials) is not bool:
         raise ValueError('보존 열평가의 정상 전하보정 호출 방식 오류')
     previous_policy = energy_policy(report, default='physical_stored')
+    if type(direction_source) is not bool or (direction_source and (
+            prefix is not None or project_charge or previous_policy != policy or
+            report.get('state') != 'COMPLETE_CURRENT_FIELD_THERMAL_DIRECTION_NOT_ACCEPTED_MATERIAL' or
+            report.get('temperature_direction_only') is not True or
+            report.get('material_published') is not False or report.get('temperature_updated') is not False or
+            report.get('temperature_linearization', {}).get('evaluations_used') != 4 or
+            report.get('temperature_linearization', {}).get('accepted_iterations') != 0)):
+        raise ValueError('온도수정 재사용은 같은 정책의 완료 방향 전용4응답만 가능')
     if prefix is not None and (type(prefix) is not int or not 1 <= prefix <= 4):
         raise ValueError('다른 열정책 미분에는 초기 섭동1~4개만 명시적으로 재사용 가능')
     if (policy not in ENERGY_POLICIES or previous_policy not in ENERGY_POLICIES or
             (previous_policy != policy and prefix is None)):
         raise ValueError('보존 열평가의 열방정식 정책 불일치; 다른 정책의 방향 후보를 재생하지 않음')
     stopped = report.get('state') == 'STARTED' and stopped_prefix(report, prefix)
-    if not stopped and report.get('state') not in ('INCOMPLETE_PRESERVED',
+    if not direction_source and not stopped and report.get('state') not in ('INCOMPLETE_PRESERVED',
             'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE'):
         raise ValueError('종료된 물질 실행의 보존 평가만 재개 가능')
     if (report.get('field') != field or report.get('source_identity') != source_identity or
@@ -108,6 +117,26 @@ def load(path, digest, *, field, source_identity, implementation, state,
         replay.append(read(entry))
     if not replay:
         raise ValueError('재사용할 완료 열평가 없음')
+    direction_basis = None
+    if direction_source:
+        directions = report.get('thermal_directions', [])
+        if len(replay) != 4 or len(directions) != 1:
+            raise ValueError('온도수정 재사용의 centered 네 응답/원 방향 개수 오류')
+        direction = directions[0]; root = Path(direction['root'])
+        record, matrix = root/'result.json', root/'linearization.npz'
+        if (root != path.parent/'thermal-direction-1' or
+                json.loads(record.read_text()) != direction or
+                B.sha(record) != report.get('output_sha256', {}).get('thermal-direction-1/result.json') or
+                B.sha(matrix) != direction['linearization_sha256'] or
+                B.sha(matrix) != report.get('output_sha256', {}).get('thermal-direction-1/linearization.npz') or
+                direction.get('linearization_kind') != 'centered' or direction.get('centered_log_step') != 1.e-4 or
+                direction.get('energy_policy') != policy or direction.get('field') != field or
+                direction.get('source_identity') != source_identity or
+                direction.get('base_response') != first[2] or direction.get('probes') != order):
+            raise ValueError('온도수정 재사용의 원 선형계/기점/네 응답 신원 불일치')
+        with np.load(matrix, allow_pickle=False) as values:
+            direction_basis = {k: values[k] for k in values.files}
+        consumed.update({str(record): B.sha(record), str(matrix): direction['linearization_sha256']})
     if previous_policy != policy:
         for name in ('stored_decay', 'instantaneous_scenario'):
             reference = first[1][name]
@@ -141,13 +170,14 @@ def load(path, digest, *, field, source_identity, implementation, state,
                           source_trial=replay[-1][2], original_alpha=history[-1]['alpha']))
     inputs.update(consumed)
     return dict(first=first, replay=replay, charge_history=report.get('charge_history', []),
-                projection=projection, charge_projected_trials=projected_trials,
+                projection=projection, direction_basis=direction_basis,
+                charge_projected_trials=projected_trials,
                 bound_temperature_tables=report.get('temperature_bound_cache', {}).get('completed_bound_tables', []),
                 provenance=dict(result=str(path), result_sha256=digest,
                     source_report_state=report['state'], source_process_missing=stopped,
                     source_completion_certified=False,
                     previous_energy_policy=previous_policy, energy_policy=policy,
                     initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=bool(project_charge),
-                    previous_acceptance_reused=False,
+                    previous_acceptance_reused=False, centered_direction_source=direction_source,
                     saved_evaluations=len(replay),
                     new_material_evaluations=0, new_transport=0))

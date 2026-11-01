@@ -2,7 +2,7 @@
 # 기본 새 J 고정 T 물질응답은 CPU16/32GiB/4h.
 # 장시간 열보정은 별도 승인된 단회에만 sbatch --time=1-06:00:00 및
 # LUMINA_RESPONSE_LONG_THERMAL=1, LUMINA_RESPONSE_SECONDS=106200을 사용한다.
-# 별도 승인된 방향 전용4평가는 --time=12:00:00, seconds=42600으로 제한한다.
+# 별도 승인된 방향 전용4평가/유한 온도수정은 --time=12:00:00, seconds=42600으로 제한한다.
 #SBATCH --job-name=lumina-new-J-response
 #SBATCH --partition=normal
 #SBATCH --exclude=grammar072,grammar078,grammar080
@@ -21,7 +21,7 @@ response_seconds=${LUMINA_RESPONSE_SECONDS:-13800}
 max_seconds=13800
 direction_only=0
 for response_argument in "$@"; do
-    if [[ "$response_argument" = --temperature-direction-only ]]; then direction_only=1; fi
+    if [[ "$response_argument" = --temperature-direction-only || "$response_argument" = --refine-temperature-direction ]]; then direction_only=1; fi
 done
 if (( direction_only )); then
     [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]

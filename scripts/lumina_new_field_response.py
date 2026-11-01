@@ -39,6 +39,7 @@ import lumina_fixed_field_thermal as thermal_block
 from run_lumina_fixed_state_balance import adiabatic
 import lumina_completed_field_seed as completed_seed
 import lumina_thermal_replay as thermal_replay
+import lumina_thermal_refinement as thermal_refinement
 from lumina_temperature_response_cache import TemperatureResponseCache, extra_memory_reserve
 
 
@@ -245,6 +246,17 @@ def continued_energy_policy(manifest, requested, *, required=False):
 def run(args):
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
     direction_only = getattr(args, 'temperature_direction_only', False)
+    refining = getattr(args, 'refine_temperature_direction', False)
+    if type(refining) is not bool or (refining and (
+            direction_only or not getattr(args, 'resume_result', None) or
+            not getattr(args, 'resume_result_sha', None) or
+            not getattr(args, 'resume_thermal_result', None) or
+            not getattr(args, 'resume_thermal_result_sha', None) or
+            getattr(args, 'thermal_replay_prefix', None) is not None or
+            getattr(args, 'charge_projection', False) or getattr(args, 'secant_after_accept', False) or
+            type(temperature_evaluations) is not int or not 2 <= temperature_evaluations <= 12 or
+            args.seconds > 42600)):
+        raise ValueError('유한 온도수정은 완료 기점/방향 해시쌍·신규2~12평가·12시간 필요; 혼합 모드 금지')
     if (type(direction_only) is not bool or (direction_only and (
             type(temperature_evaluations) is not int or temperature_evaluations != 4 or
             not getattr(args, 'resume_result', None) or not getattr(args, 'resume_result_sha', None) or
@@ -253,11 +265,11 @@ def run(args):
             args.seconds > 42600))):
         raise ValueError('온도방향 전용은 완료 계수/기준 재사용·신규4평가·12시간 이내이며 수용/재생 모드와 혼합 금지')
     execution = execution_resources(args.seconds, temperature_evaluations)
-    if direction_only and (execution['executor'] != 'slurm' or
+    if (direction_only or refining) and (execution['executor'] != 'slurm' or
             not execution.get('long_thermal') or
             not execution.get('hostname', '').split('.')[0].startswith('grammar') or
             not args.seconds+300 <= execution.get('allocated_seconds', 0) <= 43200):
-        raise ValueError('온도방향 실물 진단은 grammar Slurm·최대12시간 필요')
+        raise ValueError('온도방향 진단/수정은 grammar Slurm·최대12시간 필요')
     replay_path = getattr(args, 'resume_thermal_result', None)
     replay_sha = getattr(args, 'resume_thermal_result_sha', None)
     minimum = 1 if replay_path else 5
@@ -291,9 +303,10 @@ def run(args):
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
         charge_projection=projecting,
-        fresh_temperature_full_BF_integrations_max=2 if direction_only else (0 if projecting else None),
+        fresh_temperature_full_BF_integrations_max=2 if direction_only or refining else (0 if projecting else None),
         secant_after_accept=secant_after_accept,
         temperature_direction_only=direction_only,
+        refine_temperature_direction=refining,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
         comparison_baseline='CMFGEN70 fixed-T nonconverged reference, not released-T anchor',
@@ -351,7 +364,7 @@ def run(args):
                     source_identity=source.identity, state=state, inputs=inputs,
                     library=args.library, line_library=args.line_library,
                     routes=len(routes), lines=len(lines['lower']),
-                    reuse_thermal_base=direction_only, thermal_policy=thermal_policy)
+                    reuse_thermal_base=direction_only or refining, thermal_policy=thermal_policy)
                 result['baseline_reuse'] = seed['provenance']
                 for name in completed_seed.coefficient_names(seed['report']):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
@@ -362,6 +375,7 @@ def run(args):
                 for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
                              'lumina_charge_projection.py',
                              'lumina_completed_field_seed.py', 'lumina_thermal_replay.py',
+                             'lumina_thermal_refinement.py',
                              'lumina_temperature_response_cache.py'):
                     path = Path(__file__).with_name(name)
                     inputs[str(path)] = B.sha(path)
@@ -480,7 +494,8 @@ def run(args):
                         field=last, source_identity=source.identity,
                         implementation=result['thermal_implementation_sha256'], state=state,
                         library=args.library, line_library=args.line_library, inputs=inputs,
-                        policy=thermal_policy, prefix=replay_prefix, project_charge=projecting)
+                        policy=thermal_policy, prefix=replay_prefix, project_charge=projecting,
+                        direction_source=refining)
                     result['thermal_replay'] = replay_source['provenance']
                     cached_response.register(replay_source['bound_temperature_tables'], inputs=inputs)
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
@@ -539,6 +554,14 @@ def run(args):
                                 (direction_root/'linearization.npz', direction_root/'result.json')})
                         save()
                         return result
+                    elif refining:
+                        def refinement_proposal(entry):
+                            result.setdefault('temperature_refinement_proposal_events', []).append(entry)
+                            save()
+                        block = thermal_refinement.refine(evaluate_temperature, first_value,
+                            replay_source['replay'], full_ad, replay_source['direction_basis'], lower, upper,
+                            policy=thermal_policy, max_evaluations=temperature_evaluations,
+                            on_evaluation=thermal_decision, on_proposal=refinement_proposal)
                     elif projecting:
                         projection = replay_source['projection']
                         result['thermal_projection_basis'] = projection['identity']
@@ -608,6 +631,8 @@ if __name__ == '__main__':
         help='신규 실제평가 한도: 새 보정5~12, 보존평가 재개1~12, 방향 전용4. 실행 승인을 대신하지 않음')
     parser.add_argument('--temperature-direction-only', action='store_true',
         help='동일 T/ne/J·열구현의 완료 기준을 복원해 centered4응답의 방향만 저장. 후보 수용/수렴 선언 없음')
+    parser.add_argument('--refine-temperature-direction', action='store_true',
+        help='완료 방향 전용4응답을 재사용해 최대 두 제한 온도 제안의 실제 전하/열 개선을 평가. 실행 승인을 대신하지 않음')
     parser.add_argument('--resume-result', type=Path,
         help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
     parser.add_argument('--resume-result-sha')

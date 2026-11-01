@@ -1,4 +1,4 @@
-"""같은 장·수용 물질의 완료 계수를 읽는다. 방향 전용만 검증된 열 기준을 복원한다."""
+"""같은 장·수용 물질의 완료 계수와 명시적 방향 조사/수정의 열 기준을 읽는다."""
 import ast
 import hashlib
 import json
@@ -64,7 +64,7 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
 
     저장된 최종 ne는 시작 추정값일 뿐이다. 원 수용 ne의 bound율을 최종
     ne의 total율로 해석하거나 저장된 열장부를 현재 후보에 대입하지 않는다.
-    명시한 방향 전용에서는 동일 T/ne/J·물리 구현의 완료 기준점만 복원한다.
+    명시한 방향 조사/유한 수정에서는 동일 T/ne/J·물리 구현의 완료 기준점만 복원한다.
     이를 새로 평가한 후보나 수용된 온도 수정으로 표시하지 않는다.
     """
     path = Path(path).resolve(); root = path.parent
@@ -192,5 +192,5 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
     if thermal_base is not None:
         result['thermal_base'] = thermal_base
         result['provenance'].update(saved_heat_reused=True,
-            saved_ne_role='pinned same T/ne/J and physical heat implementation; direction-only base')
+            saved_ne_role='pinned same T/ne/J and physical heat implementation; explicit direction/refinement base')
     return result
