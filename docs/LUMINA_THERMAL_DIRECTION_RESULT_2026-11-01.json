@@ -1,0 +1,545 @@
+{
+  "schema": "lumina-completed-temperature-direction-evidence-v1",
+  "job": {
+    "id": 1254013,
+    "state": "COMPLETED",
+    "exit_code": "0:0",
+    "start_KST": "2026-11-01T12:59:07+09:00",
+    "end_KST": "2026-11-01T17:19:35+09:00",
+    "elapsed": "04:20:28",
+    "max_RSS_KiB": 6393060,
+    "source_commit": "9e6c90cbd0d55f7a3556bebd1266404b202e846e"
+  },
+  "source_result_sha256": "4bf31171e1c41c70f09e12b9df4102edf41a19d5534b2ccc2d4a4d747c4d40ec",
+  "linearization": {
+    "state": "CENTERED_DIRECTION_NOT_ROOT_OR_ACCEPTED_MATERIAL",
+    "history": [
+      {
+        "evaluation": 1,
+        "phase": "T+",
+        "purpose": "CENTERED_LINEARIZATION_ONLY",
+        "charge_relative": 0.000008584750133277676
+      },
+      {
+        "evaluation": 2,
+        "phase": "T-",
+        "purpose": "CENTERED_LINEARIZATION_ONLY",
+        "charge_relative": 0.00000858451916629421
+      },
+      {
+        "evaluation": 3,
+        "phase": "ne+",
+        "purpose": "CENTERED_LINEARIZATION_ONLY",
+        "charge_relative": 0.00010906808510717115
+      },
+      {
+        "evaluation": 4,
+        "phase": "ne-",
+        "purpose": "CENTERED_LINEARIZATION_ONLY",
+        "charge_relative": 0.00010908007187745386
+      }
+    ],
+    "evaluations_used": 4,
+    "fresh_evaluations_used": 4,
+    "centered_log_step": 0.0001,
+    "max_abs_log_temperature_direction": 1.711643273830971,
+    "max_abs_log_ne_direction": 0.0320662561974432,
+    "linear_relative_residual": 1.416385929610068e-12,
+    "accepted_iterations": 0,
+    "material_published": false,
+    "new_transport": 0,
+    "joint_convergence": false
+  },
+  "basis_sha256": "8db97b6bc6c7230fc47b22cac1802bd1ac79c2d1b01e16ba69899bdf0a3d72e8",
+  "model_callback_timings": [
+    {
+      "generation": 11,
+      "BF_seconds": 7501.011663095094,
+      "wall_seconds": 7549.780979280011,
+      "full_BF_reintegration": true,
+      "response_sha256": "55cf89a61c0e95f2cbc779650cf5c7b261f8d206dca2139e7cd8f15a28245b97",
+      "balance_sha256": "ce31528f8bcfe7f6b7bc7fcb2390e8dcf0ba39b6d8e557a7d834aae90bfc4069"
+    },
+    {
+      "generation": 12,
+      "BF_seconds": 7427.207977548009,
+      "wall_seconds": 7448.69811549806,
+      "full_BF_reintegration": true,
+      "response_sha256": "e32095b5bb49ad00734025152565b6cc576dec050968fdd6e5dcad81858dc20d",
+      "balance_sha256": "fe7ce56f59b40608afca2a5c0b7b6841dedd141df0b2dafee5dea9b93a2485e7"
+    },
+    {
+      "generation": 13,
+      "BF_seconds": 208.96343696501572,
+      "wall_seconds": 230.73548705608118,
+      "full_BF_reintegration": false,
+      "response_sha256": "3f92c1babaff3b9c06814e73c9cb4c426b66c68f2bf056bdc3ec993f9265e76a",
+      "balance_sha256": "0299e80845f8f69c1a81e8473cc313e30cd413852c968100e595d0ec2000eea8"
+    },
+    {
+      "generation": 14,
+      "BF_seconds": 209.54454442008864,
+      "wall_seconds": 231.21026789105963,
+      "full_BF_reintegration": false,
+      "response_sha256": "19234a9ba07cb9cc2c9394752f9f58c9b285bac6007013b4685cf913631f1355",
+      "balance_sha256": "f70972177112f0fba301d6004d543a68e4e2491256f6caca9c8e014fe039574b"
+    }
+  ],
+  "full_BF_integrations": 2,
+  "temperature_cache": {
+    "evaluations": 4,
+    "cache_hits": 2,
+    "new_temperature_tables": 2,
+    "retained_temperatures": 3,
+    "capacity": 4,
+    "resident_array_bytes": 373042641,
+    "completed_bound_tables": [
+      {
+        "path": "$LUMINA_RUNS_ROOT/lumina_currentJ_Tdirection4_20261101-Hj5lRddO/run/temperature-bound-cache/bound-temperature-1.json",
+        "sha256": "c3ea712647e0657b3441dab70f527713595ec3554cb76e91bf1fbd1ad4035be0"
+      },
+      {
+        "path": "$LUMINA_RUNS_ROOT/lumina_currentJ_Tdirection4_20261101-Hj5lRddO/run/temperature-bound-cache/bound-temperature-2.json",
+        "sha256": "18bd7036382aa65dd610988db2bfdcc1b87e33f8d36ebf1c772c80a9f9c95696"
+      }
+    ],
+    "restored_temperature_tables": 0,
+    "bound_publication_errors": []
+  },
+  "reproduction": {
+    "schema": "lumina-thermal-direction-reproduction-v1",
+    "source_result_sha256": "4bf31171e1c41c70f09e12b9df4102edf41a19d5534b2ccc2d4a4d747c4d40ec",
+    "basis_sha256": "8db97b6bc6c7230fc47b22cac1802bd1ac79c2d1b01e16ba69899bdf0a3d72e8",
+    "policy": "native_instantaneous_scenario",
+    "centered_log_step": 0.0001,
+    "points": 90,
+    "operator_reproduction": {
+      "matrix_max_absolute_difference": 0,
+      "matrix_relative_max_difference": 0,
+      "residual_max_absolute_difference": 0,
+      "direction_relative_max_difference": 0,
+      "schur_direction_relative_max_difference": 5.189039289198498e-16,
+      "linear_relative_residual": 1.416385929610068e-12,
+      "normwise_backward_error": 2.0791547632828467e-18
+    },
+    "scaled_full_matrix_condition_2": 1580857259.554451,
+    "row_normalized_schur_condition_2": 7.288792451291881,
+    "largest_temperature_direction": {
+      "point_1based": 4,
+      "radius_cm": 6050820457239415,
+      "temperature_K": 11031.473581795597,
+      "CMFGEN70_temperature_K": 16457.024740699846,
+      "ne_cm3": 195721.28165955588,
+      "net_erg_cm3_s": -3.3991699151210605e-10,
+      "physical_RE": 2.0830718696632624e-9,
+      "delta_log_temperature": -1.711643273830971,
+      "delta_log_ne": -0.0320662561974432,
+      "first_order_delta_temperature_K": -18881.947556724484,
+      "bounded_hypothetical_temperature_K": 9981.690072883826
+    },
+    "max_abs_log_temperature_direction": 1.711643273830971,
+    "median_abs_log_temperature_direction": 0.037689417252378066,
+    "temperature_direction_sign_counts": {
+      "positive": 57,
+      "negative": 33
+    },
+    "max_abs_log_ne_direction": 0.0320662561974432,
+    "bounded_step_alpha": 0.05842338852311305,
+    "bounded_hypothetical_profile_evaluated": false,
+    "selected_points": [
+      {
+        "point_1based": 1,
+        "radius_cm": 6054900000000000,
+        "temperature_K": 11527.880342249928,
+        "CMFGEN70_temperature_K": 16497.6392,
+        "ne_cm3": 192348.70634564222,
+        "net_erg_cm3_s": -1.4854981250146658e-10,
+        "physical_RE": 1.0746014511877201e-9,
+        "delta_log_temperature": -1.528802103066959,
+        "delta_log_ne": -0.030094684037000975,
+        "first_order_delta_temperature_K": -17623.847711135943,
+        "bounded_hypothetical_temperature_K": 10542.879252311226
+      },
+      {
+        "point_1based": 4,
+        "radius_cm": 6050820457239415,
+        "temperature_K": 11031.473581795597,
+        "CMFGEN70_temperature_K": 16457.024740699846,
+        "ne_cm3": 195721.28165955588,
+        "net_erg_cm3_s": -3.3991699151210605e-10,
+        "physical_RE": 2.0830718696632624e-9,
+        "delta_log_temperature": -1.711643273830971,
+        "delta_log_ne": -0.0320662561974432,
+        "first_order_delta_temperature_K": -18881.947556724484,
+        "bounded_hypothetical_temperature_K": 9981.690072883826
+      },
+      {
+        "point_1based": 12,
+        "radius_cm": 5816431888392550,
+        "temperature_K": 12951.779028258576,
+        "CMFGEN70_temperature_K": 14306.906569895638,
+        "ne_cm3": 288383.553484583,
+        "net_erg_cm3_s": -1.3631397655517102e-10,
+        "physical_RE": 4.022190693382187e-10,
+        "delta_log_temperature": -0.4582560262903264,
+        "delta_log_ne": -0.013509559723442177,
+        "first_order_delta_temperature_K": -5935.23079088016,
+        "bounded_hypothetical_temperature_K": 12609.62341510915
+      },
+      {
+        "point_1based": 21,
+        "radius_cm": 4934083181473092,
+        "temperature_K": 10025.147523907563,
+        "CMFGEN70_temperature_K": 10261.25595243698,
+        "ne_cm3": 1588463.4134289203,
+        "net_erg_cm3_s": -1.5758301108373405e-10,
+        "physical_RE": 3.894541614008407e-10,
+        "delta_log_temperature": -0.07500324803962723,
+        "delta_log_ne": -0.000027751641745652667,
+        "first_order_delta_temperature_K": -751.9186263694936,
+        "bounded_hypothetical_temperature_K": 9981.313998025955
+      },
+      {
+        "point_1based": 34,
+        "radius_cm": 3624307265899275.5,
+        "temperature_K": 10208.79288008727,
+        "CMFGEN70_temperature_K": 9243.826741708363,
+        "ne_cm3": 18839818.601839796,
+        "net_erg_cm3_s": 0.0000017252606130234916,
+        "physical_RE": 7.304636430544823e-7,
+        "delta_log_temperature": 0.20079827794304714,
+        "delta_log_ne": 0.0069086963752932684,
+        "first_order_delta_temperature_K": 2049.9080301987647,
+        "bounded_hypothetical_temperature_K": 10329.260694761748
+      },
+      {
+        "point_1based": 42,
+        "radius_cm": 2840232201449713.5,
+        "temperature_K": 9806.528100258809,
+        "CMFGEN70_temperature_K": 9062.006200705771,
+        "ne_cm3": 80741670.1060566,
+        "net_erg_cm3_s": 0.000038522182771877014,
+        "physical_RE": 0.000002904621533795181,
+        "delta_log_temperature": 0.1881027638812631,
+        "delta_log_ne": 0.0008470215394064543,
+        "first_order_delta_temperature_K": 1844.6350397379542,
+        "bounded_hypothetical_temperature_K": 9914.892278798472
+      },
+      {
+        "point_1based": 50,
+        "radius_cm": 2082979299728738,
+        "temperature_K": 10312.796192031836,
+        "CMFGEN70_temperature_K": 10286.507423751686,
+        "ne_cm3": 378511876.7508502,
+        "net_erg_cm3_s": 0.00003199923368395971,
+        "physical_RE": 2.2705313688028236e-7,
+        "delta_log_temperature": 0.006953784564124303,
+        "delta_log_ne": 0.000008819617186093905,
+        "first_order_delta_temperature_K": 71.71296297311088,
+        "bounded_hypothetical_temperature_K": 10316.986757509347
+      },
+      {
+        "point_1based": 53,
+        "radius_cm": 1801975049205711,
+        "temperature_K": 10125.438799498444,
+        "CMFGEN70_temperature_K": 10117.947180760018,
+        "ne_cm3": 637250319.4035037,
+        "net_erg_cm3_s": 0.00002213035381510725,
+        "physical_RE": 1.195058092767345e-7,
+        "delta_log_temperature": 0.0020412267769995833,
+        "delta_log_ne": 0.000007655878388909263,
+        "first_order_delta_temperature_K": 20.66831680640674,
+        "bounded_hypothetical_temperature_K": 10126.646384605425
+      },
+      {
+        "point_1based": 61,
+        "radius_cm": 1121595306051343.5,
+        "temperature_K": 14677.565328429966,
+        "CMFGEN70_temperature_K": 14644.652733022156,
+        "ne_cm3": 2103803603.0196936,
+        "net_erg_cm3_s": 0.0003170740614763161,
+        "physical_RE": 0.0000013858477136067298,
+        "delta_log_temperature": 0.007005146438855326,
+        "delta_log_ne": 0.00020692153794032016,
+        "first_order_delta_temperature_K": 102.81849449151757,
+        "bounded_hypothetical_temperature_K": 14683.573562675308
+      },
+      {
+        "point_1based": 75,
+        "radius_cm": 418575259340193.4,
+        "temperature_K": 21613.641814931852,
+        "CMFGEN70_temperature_K": 21613.092670009533,
+        "ne_cm3": 10166364346.113136,
+        "net_erg_cm3_s": 0.00000503427574731456,
+        "physical_RE": 1.2032308618380843e-9,
+        "delta_log_temperature": 0.0000030817314749162988,
+        "delta_log_ne": 2.2037750657468954e-7,
+        "first_order_delta_temperature_K": 0.06660744026864253,
+        "bounded_hypothetical_temperature_K": 21613.64570636456
+      },
+      {
+        "point_1based": 90,
+        "radius_cm": 172510000000000,
+        "temperature_K": 23030.01104168947,
+        "CMFGEN70_temperature_K": 23020.999999999996,
+        "ne_cm3": 18689624094.87385,
+        "net_erg_cm3_s": 0.004598102792655288,
+        "physical_RE": 5.204486644684645e-7,
+        "delta_log_temperature": 0.0012904978062250212,
+        "delta_log_ne": 0.00009092626450423822,
+        "first_order_delta_temperature_K": 29.720178726638277,
+        "bounded_hypothetical_temperature_K": 23031.74746069625
+      }
+    ],
+    "profile_csv_sha256": "2051c37c3699ff3b7e674ea2941794f55e46ea9defb3ea16a2ede227d636ea08",
+    "new_material_callbacks": 0,
+    "new_BF_integrations": 0,
+    "new_SE": 0,
+    "new_transport": 0,
+    "analysis_script_sha256": "94e5317a6a46c0d1b2cd3d092946344254f9c69f57c42ad9d0b3b2a5d0579d3e",
+    "final_goal": "NOT_MET"
+  },
+  "policy_and_bound_analysis": {
+    "schema": "lumina-saved-direction-policy-and-bound-analysis-v1",
+    "source_result_sha256": "4bf31171e1c41c70f09e12b9df4102edf41a19d5534b2ccc2d4a4d747c4d40ec",
+    "basis_sha256": "8db97b6bc6c7230fc47b22cac1802bd1ac79c2d1b01e16ba69899bdf0a3d72e8",
+    "energy_policy_counterfactuals": {
+      "native_stored": {
+        "max_abs_log_T_direction": 1.7116433840228436,
+        "worst_point_1based": 4,
+        "worst_signed_log_T_direction": -1.7116433840228436,
+        "median_abs_log_T_direction": 0.03768942921732536,
+        "point4_log_T_direction": -1.7116433840228436,
+        "point34_log_T_direction": 0.2007982777283345,
+        "point42_log_T_direction": 0.18810276383621344,
+        "point90_log_T_direction": 2.2653743528482867e-7,
+        "point34_net_erg_cm3_s": 0.0000017252606111782858
+      },
+      "native_instantaneous_scenario": {
+        "max_abs_log_T_direction": 1.711643273830971,
+        "worst_point_1based": 4,
+        "worst_signed_log_T_direction": -1.711643273830971,
+        "median_abs_log_T_direction": 0.037689417252378066,
+        "point4_log_T_direction": -1.711643273830971,
+        "point34_log_T_direction": 0.20079827794304714,
+        "point42_log_T_direction": 0.1881027638812631,
+        "point90_log_T_direction": 0.0012904978062250212,
+        "point34_net_erg_cm3_s": 0.0000017252606130234916
+      },
+      "physical_stored": {
+        "max_abs_log_T_direction": 0.12219125065214216,
+        "worst_point_1based": 42,
+        "worst_signed_log_T_direction": 0.12219125065214216,
+        "median_abs_log_T_direction": 0.0020960777491482972,
+        "point4_log_T_direction": -0.008340802076782602,
+        "point34_log_T_direction": 0.01750417217811927,
+        "point42_log_T_direction": 0.12219125065214216,
+        "point90_log_T_direction": 0.000008391345731971153,
+        "point34_net_erg_cm3_s": 0.000001698061939513617
+      },
+      "physical_instantaneous_scenario": {
+        "max_abs_log_T_direction": 0.12219125068254867,
+        "worst_point_1based": 42,
+        "worst_signed_log_T_direction": 0.12219125068254867,
+        "median_abs_log_T_direction": 0.0012479332676436621,
+        "point4_log_T_direction": -0.008340802075971456,
+        "point34_log_T_direction": 0.01750417219713999,
+        "point42_log_T_direction": 0.12219125068254867,
+        "point90_log_T_direction": 0.00009437040157086519,
+        "point34_net_erg_cm3_s": 0.0000016980619413588228
+      }
+    },
+    "saved_probe_uniform_direction_checks": {
+      "uniform_logT": {
+        "charge_relative_max": 1.616584557638746e-16,
+        "heat_relative_max": 1.430496037371751e-15
+      },
+      "uniform_logne": {
+        "charge_relative_max": 2.0357229518152205e-16,
+        "heat_relative_max": 2.939333854345266e-13
+      }
+    },
+    "limited_direction_models": {
+      "existing_global_damped_newton": {
+        "max_abs_log_T_step": 0.1,
+        "max_abs_log_ne_step": 0.001873419344304906,
+        "predicted_heat_max_relative_to_initial": 0.941576611476887,
+        "predicted_charge_max": 8.403544356887351e-11,
+        "point4_log_T_step": -0.1,
+        "point34_log_T_step": 0.011731315807038685,
+        "point42_log_T_step": 0.01098960085650643,
+        "point75_log_T_step": 1.8004519528294115e-7,
+        "evaluated": false,
+        "accepted": false
+      },
+      "offline_box_bounded_least_squares": {
+        "max_abs_log_T_step": 0.1,
+        "max_abs_log_ne_step": 0.003440615347171655,
+        "predicted_heat_max_relative_to_initial": 0.5239309714575348,
+        "predicted_charge_max": 4.481939208625066e-19,
+        "point4_log_T_step": -0.1,
+        "point34_log_T_step": 0.1,
+        "point42_log_T_step": 0.1,
+        "point75_log_T_step": 0.0000030817314749201235,
+        "evaluated": false,
+        "accepted": false
+      },
+      "global_alpha": 0.05842338852311305,
+      "box_solver_iterations": 3,
+      "box_optimality": 1.7916165614615103e-16,
+      "box_solver_success": true,
+      "method_scope": "기존0.1 log-step 범위에서 저장 선형모형만 비교. production 변경/후보 평가/물질 수용 없음"
+    },
+    "scipy_version": "1.18.0",
+    "point34_instantaneous_deposition_erg_cm3_s": 1.845205857335367e-15,
+    "point4_instantaneous_deposition_erg_cm3_s": 1.2678117010213761e-17,
+    "scope": "같은 J/T/ne/인구와 네 물질응답의 사후 분석. 비선형 근·실제 새 T 상태·CMFGEN 일치 예측 아님",
+    "policy_changed_in_production": false,
+    "new_material_callbacks": 0,
+    "new_BF_integrations": 0,
+    "new_SE": 0,
+    "new_transport": 0,
+    "analysis_script_sha256": "c6c78fe1d2e0140b3a31c9ce8f0557b066b8ec8a69eb910293ef6f716a2e1a36",
+    "final_goal": "NOT_MET"
+  },
+  "heat_channel_analysis": {
+    "schema": "lumina-stored-heat-closed-charge-sensitivity-v1",
+    "units": "erg cm^-3 s^-1 per logT; charge eliminated to first order at fixed J",
+    "results": {
+      "native_instantaneous_scenario": [
+        {
+          "point_1based": 4,
+          "closure_dlogne_dlogT": 0.01873419344476626,
+          "BF": -5.122053364764556e-13,
+          "BB": -1.436311774930255e-10,
+          "FF": -1.4099547627467039e-14,
+          "minus_adiabatic": -8.410022182830216e-10,
+          "total_from_Schur": -9.851597006599564e-10,
+          "sum_named_channels": -9.85159700660151e-10,
+          "unassigned": 1.9459423910309976e-22
+        },
+        {
+          "point_1based": 34,
+          "closure_dlogne_dlogT": 0.034406153546404264,
+          "BF": -1.3807836732336658e-9,
+          "BB": -0.0000085916372231152,
+          "FF": -9.788681849822322e-11,
+          "minus_adiabatic": -2.052413541334817e-9,
+          "total_from_Schur": -0.000008595168307148368,
+          "sum_named_channels": -0.000008595168307148268,
+          "unassigned": -9.994988777600744e-20
+        },
+        {
+          "point_1based": 42,
+          "closure_dlogne_dlogT": 0.004502972321774035,
+          "BF": -1.5841740375273322e-8,
+          "BB": -0.00020477464900979793,
+          "FF": -1.3923469935390665e-9,
+          "minus_adiabatic": -5.0016750947028476e-9,
+          "total_from_Schur": -0.0002047968847722361,
+          "sum_named_channels": -0.00020479688477226146,
+          "unassigned": 2.5370330836160804e-17
+        },
+        {
+          "point_1based": 90,
+          "closure_dlogne_dlogT": 0.07045828676668982,
+          "BF": -0.00488674931446879,
+          "BB": -3.5576982659312546,
+          "FF": -0.00047539139343462974,
+          "minus_adiabatic": 0.000030184397847568713,
+          "total_from_Schur": -3.5630302222413084,
+          "sum_named_channels": -3.5630302222413106,
+          "unassigned": 2.220446049250313e-15
+        }
+      ],
+      "physical_instantaneous_scenario": [
+        {
+          "point_1based": 4,
+          "closure_dlogne_dlogT": 0.01873419344476626,
+          "BF": -5.122053364764556e-13,
+          "BB": -0.000015631362992887972,
+          "FF": -1.409954762748311e-14,
+          "minus_adiabatic": -8.412735564881792e-10,
+          "total_from_Schur": -0.00001563220479274936,
+          "sum_named_channels": -0.000015632204792749343,
+          "unassigned": -1.6940658945086007e-20
+        },
+        {
+          "point_1based": 34,
+          "closure_dlogne_dlogT": 0.034406153546404264,
+          "BF": -1.3807836732336658e-9,
+          "BB": -0.0000970079026206244,
+          "FF": -9.788682629712453e-11,
+          "minus_adiabatic": -2.053266174374222e-9,
+          "total_from_Schur": -0.0000970114345572982,
+          "sum_named_channels": -0.0000970114345572983,
+          "unassigned": 1.0842021724855044e-19
+        },
+        {
+          "point_1based": 42,
+          "closure_dlogne_dlogT": 0.004502972321774035,
+          "BF": -1.5841740375273322e-8,
+          "BB": -0.00030339874802016206,
+          "FF": -1.3923608752452868e-9,
+          "minus_adiabatic": -5.0023866644599764e-9,
+          "total_from_Schur": -0.00030342098450807613,
+          "sum_named_channels": -0.00030342098450807705,
+          "unassigned": 9.215718466126788e-19
+        },
+        {
+          "point_1based": 90,
+          "closure_dlogne_dlogT": 0.07045828676668982,
+          "BF": -0.00488674931446879,
+          "BB": -53.46480556239076,
+          "FF": -0.0004753913934346679,
+          "minus_adiabatic": 0.000030192718394985133,
+          "total_from_Schur": -53.470137510380255,
+          "sum_named_channels": -53.47013751038027,
+          "unassigned": 1.4210854715202004e-14
+        }
+      ]
+    },
+    "new_material_callbacks": 0,
+    "new_BF_integrations": 0,
+    "new_SE": 0,
+    "new_transport": 0,
+    "analysis_script_sha256": "a798f8e418b9c0f82d1fb65bb84834a81d221b57c68e89acded5f11a31def366",
+    "parent_script_sha256": "c6c78fe1d2e0140b3a31c9ce8f0557b066b8ec8a69eb910293ef6f716a2e1a36"
+  },
+  "operator_assessment": {
+    "confirmed": [
+      "기존 RE 허용조건 통과와 작은 온도방향은 동치가 아니다. 실제 같은 J에서 큰 방향이 남고 기준 온도는 갱신되지 않았다.",
+      "Jacobian·잔차·방향을 저장 네 응답/C 단열로 비트 동일 재현했다. 독립 Schur 풀이도 상대5.19e-16 이내다.",
+      "큰 방향을 선형계 풀이의 역오차나 단순 특이행렬로 설명하지 않는다. 원 행 scaling 조건수와 row 정규화 Schur 조건수는 구분한다.",
+      "native/physical 열행의 기울기 차이는 주로 BB 항이며, stored/instantaneous 외부열 변경만으로 점4/34의 큰 방향이 사라지지 않는다."
+    ],
+    "not_proven": [
+      "선형 온도방향이 실제 비선형 근의 위치나 필요한 온도 변화량이라는 결론",
+      "native 열행이 잘못 구현됐다는 결론 또는 physical 장부로 바꾸면 CMFGEN 동등성이 달성된다는 결론",
+      "제한 선형모형의 잔차 감소 예측이 실제 물질응답에서 성립한다는 결론",
+      "현재 CMFGEN70이 released-T 기준해 또는 전체 S-동등이란 결론"
+    ],
+    "next": "열 정책을 임의로 바꾸지 않고 실제 온도 수정과 전하 보정을 연결하는 경로를 준비한다. 계산한 네 섭동은 재사용한다. 물리 허용값에 들어왔다고 온도 근 탐색을 자동 종료하거나, 평가하지 않은 제한 방향을 수용하지 않는다. 추가 실물 실행은 별도 자원 승인을 따른다.",
+    "scope": "실물 응답4회와 온도방향 분석은 완료했다. 실제 T 수정/물질 수용/새 수송은0회이며 최종 목표는 미달이다."
+  },
+  "analysis_reproduction": {
+    "executor": "Lageunha CPU1/OpenMP1/4GiB/wall300s",
+    "root": "$LUMINA_RUNS_ROOT/lumina_currentJ_Tdirection4_20261101-Hj5lRddO/control",
+    "commands": [
+      "PYTHONPATH=\"$THERMAL_RUN/source/scripts\" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B \"$THERMAL_RUN/control/analyze_completed_direction_reusable.py\" \"$THERMAL_RUN\" \"$NEW_UNUSED_PROFILE_CSV\"",
+      "PYTHONPATH=\"$THERMAL_RUN/source/scripts\" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B \"$THERMAL_RUN/control/analyze_saved_policies_and_bounds.py\" \"$THERMAL_RUN\"",
+      "PYTHONPATH=\"$THERMAL_RUN/source/scripts\" OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 taskset -c 0 timeout 300s python3 -B \"$THERMAL_RUN/control/analyze_heat_sensitivity_channels.py\" \"$THERMAL_RUN\""
+    ],
+    "preservation": "THERMAL_RUN은 위 완료 작업 root로 지정한다. NEW_UNUSED_PROFILE_CSV는 아직 존재하지 않는 별도 절대 경로로 지정한다. 원 분석기는 고정 CSV를 x 모드로 만들며, 재현용 판본은 출력 경로만 인자로 받는다. 원 완료 run·입력·CSV는 보존한다.",
+    "repeat_verification": {
+      "original_script_sha256": "94e5317a6a46c0d1b2cd3d092946344254f9c69f57c42ad9d0b3b2a5d0579d3e",
+      "reusable_script_sha256": "20a2bb72cb07f3175b57d0211c25da33ce4267840fd8b7b9247ee4b5e894472e",
+      "report_identical_except_script_identity": true,
+      "profile_records_identical": 90,
+      "repository_profile_sha256": "aff5c78e6b12fdb04bc042c4add8a55193edf07fd2565c85cc50077b88385b03",
+      "repository_profile_note": "원 runtime CSV의 CRLF를 LF로 정규화했다. 원·재현·저장소 CSV의 90행 필드 값은 일치한다."
+    },
+    "scope": "저장 물질·열장부와 같은 C 단열을 재합성한 사후 분석이다. 추가 BF/SE/수송/물질 callback은0회이며 수렴 판정이 아니다."
+  },
+  "final_goal": "NOT_MET"
+}

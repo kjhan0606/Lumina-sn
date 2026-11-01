@@ -357,7 +357,8 @@
     "csv_preservation": "저장 CSV는 런타임 CRLF를 LF로 정규화했으며 360개 record의 모든 문자열 필드를 대조한다."
   },
   "temperature_direction_preparation": {
-    "state": "SUBMITTED_ONCE_1254013_STARTUP_VERIFIED",
+    "state": "COMPLETED_1254013_FOUR_RESPONSES_NO_MATERIAL_ACCEPTED",
+    "result_evidence": "docs/LUMINA_THERMAL_DIRECTION_RESULT_2026-11-01.json",
     "run_record": "docs/LUMINA_THERMAL_DIRECTION_RUN_2026-11-01.json",
     "authorization": "2026-11-01 12:54 KST 사용자: 이 범위로 단회 승인",
     "scope": "같은 현재 J에서 온도방향만 계산하는 실행 준비이며 물리 결과/수렴 판정 아님",
