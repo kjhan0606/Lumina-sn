@@ -2,7 +2,8 @@
 # 기본 새 J 고정 T 물질응답은 CPU16/32GiB/4h.
 # 장시간 열보정은 별도 승인된 단회에만 sbatch --time=1-06:00:00 및
 # LUMINA_RESPONSE_LONG_THERMAL=1, LUMINA_RESPONSE_SECONDS=106200을 사용한다.
-# 별도 승인된 방향 전용4평가/유한 온도수정은 --time=12:00:00, seconds=42600으로 제한한다.
+# 별도 승인된 방향 전용4평가는 최대6시간/5시간50분, 유한 수정은 최대3시간/2시간50분으로 제한한다.
+# 과거 단회는 방향 전용·유한 수정 모두 최대12시간/11시간50분 설정을 보존한다.
 #SBATCH --job-name=lumina-new-J-response
 #SBATCH --partition=normal
 #SBATCH --exclude=grammar072,grammar078,grammar080
@@ -30,16 +31,27 @@ fi
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = manual-lageunha ]]; then max_seconds=42600; fi
 if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
+    expected_limit='1-06:00:00'
     max_seconds=106200
     [[ " $* " = *" --temperature-evaluations "* ]]
     # 이 Slurm 배포는 SLURM_TIMELIMIT를 export하지 않는다. 실제 작업 기록을 읽는다.
     allocation=$(scontrol show job "${SLURM_JOB_ID:?}" -o)
-    if (( direction_only )); then
-        max_seconds=42600
-        [[ " $allocation " == *" TimeLimit=12:00:00 "* ]]
+    if [[ " $* " == *" --temperature-direction-only "* ]]; then
+        case "$response_seconds" in
+            21000) max_seconds=21000; expected_limit='06:00:00' ;;
+            42600) max_seconds=42600; expected_limit='12:00:00' ;;
+            *) echo '온도 방향 전용 시간 한도 오류' >&2; exit 2 ;;
+        esac
+    elif [[ " $* " == *" --refine-temperature-direction "* ]]; then
+        case "$response_seconds" in
+            10200) max_seconds=10200; expected_limit='03:00:00' ;;
+            42600) max_seconds=42600; expected_limit='12:00:00' ;;
+            *) echo '유한 온도수정 시간 한도 오류' >&2; exit 2 ;;
+        esac
     else
-        [[ " $allocation " == *" TimeLimit=1-06:00:00 "* ]]
+        [[ "$response_seconds" = 106200 ]]
     fi
+    [[ " $allocation " == *" TimeLimit=$expected_limit "* ]]
 fi
 (( response_seconds >= 600 && response_seconds <= max_seconds ))
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]; then

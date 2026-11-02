@@ -159,11 +159,12 @@ def test_direction_output_cannot_be_published_as_accepted_material(tmp_path):
     assert not out.exists()
 
 
-@pytest.mark.parametrize('direction,allocation,accepted',[
-    (True,'12:00:00',True),(True,'1-06:00:00',False),(True,'11:00:00',False),
-    (False,'1-06:00:00',True),(False,'12:00:00',False)])
-@pytest.mark.parametrize('short_flag', ['--temperature-direction-only', '--refine-temperature-direction'])
-def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tmp_path,direction,allocation,accepted,short_flag):
+@pytest.mark.parametrize('mode,seconds,allocation,accepted',[
+    ('direction',21000,'06:00:00',True),('direction',42600,'12:00:00',True),
+    ('direction',21000,'12:00:00',False),('direction',21000,'05:59:00',False),
+    ('refine',10200,'03:00:00',True),('refine',42600,'12:00:00',True),
+    ('refine',10200,'12:00:00',False),('refine',10200,'02:59:00',False)])
+def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tmp_path,mode,seconds,allocation,accepted):
     import os
     import subprocess
     script=Path(N.__file__).with_name('submit_lumina_new_field_response.slurm')
@@ -177,9 +178,9 @@ def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tm
     startup=tmp_path/'shell-env'; startup.write_text('module() { :; }\n')
     environment={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],
         'BASH_ENV':str(startup),'SLURM_JOB_ID':'123','LUMINA_RESPONSE_EXECUTOR':'slurm',
-        'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':'42600' if direction else '106200'}
-    arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations','4' if direction else '12']
-    if direction:arguments.append(short_flag)
+        'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':str(seconds)}
+    arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations','4' if mode=='direction' else '12']
+    arguments.append('--temperature-direction-only' if mode=='direction' else '--refine-temperature-direction')
     result=subprocess.run(arguments,env=environment,capture_output=True,text=True,timeout=10)
     assert result.returncode!=0 # 승인된 경우에도 mock archive에서 멈추며 실제 빌드/물리0회다.
     assert ('REACHED_ARCHIVE' in result.stderr) is accepted
