@@ -39,6 +39,11 @@ FINISH_POINT = "\tCALL TUNE(IONE,'SOLVE_FOR_POPS')\n"
 FINISH = ('\tCALL LUMINA_FIXEDJ_HEAT_FINISH(POPS,R,V,SIGMA,T,ED,\n'
           '\t1   POP_ATOM,CLUMP_FAC,STEQ_T,STEQ_ED,NT,ND,NCF,\n'
           '\t1   MAIN_COUNTER,NUM_OF_WEAK_LINES)\n')
+FULL_POINT = ('! This routine not only evaluates the LTE populations of both model atoms, but\n'
+              '! it also evaluates the dln(LTE Super level Pop)/dT.\n'
+              '!\n'
+              '\tCALL EVAL_LTE_V5(DO_LEV_DISSOLUTION,ND)\n')
+FULL_CAPTURE = '\tCALL LUMINA_FIXEDJ_FULL_CAPTURE(POPS,R,NT,ND,MAIN_COUNTER)\n'
 VECTOR_NAMES = ('radius_native', 'velocity_native', 'sigma', 'temperature_native',
                 'ne', 'atoms', 'clump', 'steq_t_native', 'steq_ed_native')
 
@@ -47,6 +52,7 @@ def patched(source):
     """관찰 대상은 최종 적분 RE이며 EHB/GENCOOL/dummy H 출력이 아니다."""
     source = once(source, FIXED_SKIP, COMP_OPAC)
     source = once(source, GUARD_POINT, GUARD_POINT + GUARD)
+    source = once(source, FULL_POINT, FULL_POINT + FULL_CAPTURE)
     return once(source, FINISH_POINT, FINISH + FINISH_POINT)
 
 
@@ -213,13 +219,14 @@ def prepare(parent, out, *, instantaneous_decay=False):
         for path in modules:
             inputs[path] = sha(path)
     observer = Path(__file__).with_name('cmfgen_fixedj_heat.f90').resolve()
+    full_observer = Path(__file__).with_name('cmfgen_fixedj_full.f90').resolve()
     reader = native/'new_main/mod_subs/rd_cont_j.f'
     if sha(reader) != 'ce9f5a5809c90692a66dec784729905c2aaaf9e0c6b6e47779762a37ce3c3213':
         raise ValueError('검토한 원 native 고정-J reader가 아님')
     include = native/'new_main/GET_J_CHI.INC'
     if sha(include) != 'aa44ca3bfa346f4d79f2efe21337d8bb0a1249268ca0f78938b164b9cc460775':
         raise ValueError('봉인 GET_J_CHI include 변경')
-    for path in (source, include, observer, reader, Path(__file__).resolve(), manifest_path):
+    for path in (source, include, observer, full_observer, reader, Path(__file__).resolve(), manifest_path):
         inputs[path] = sha(path)
     decay = None
     if instantaneous_decay:
@@ -237,11 +244,14 @@ def prepare(parent, out, *, instantaneous_decay=False):
     (out/'cmfgen_sub.f').write_text(modified)
     shutil.copy2(include, out/'GET_J_CHI.INC')
     shutil.copy2(observer, out/observer.name)
+    shutil.copy2(full_observer, out/full_observer.name)
     shutil.copy2(reader, out/reader.name)
     options = ['-I.', *['-I'+str(p) for p in includes]]
     command(['gfortran', *FLAGS, *options, '-c', 'cmfgen_sub.f'], out)
     command(['gfortran', '-O', '-fopenmp', '-ffree-line-length-none', *options,
              '-c', observer.name], out)
+    command(['gfortran', '-O', '-fopenmp', '-ffree-line-length-none', *options,
+             '-c', full_observer.name], out)
     command(['gfortran', *FLAGS, *options, '-c', reader.name], out)
     extra_objects = [out/'rd_cont_j.o']
     if decay is not None:
@@ -249,7 +259,7 @@ def prepare(parent, out, *, instantaneous_decay=False):
         command(['gfortran', *FLAGS, *options, '-c', 'do_species_decays_v2.f'], out)
         extra_objects.append(out/'do_species_decays_v2.o')
     command(['gfortran', '-fopenmp', '-m64', *objects, out/'cmfgen_sub.o',
-             out/'cmfgen_fixedj_heat.o', *extra_objects, archives[0],
+             out/'cmfgen_fixedj_heat.o', out/'cmfgen_fixedj_full.o', *extra_objects, archives[0],
              *[p for p in inputs if p.name in ('libpgplt.a', 'libmod.a',
                                               'libmy_lapack.a', 'libmy_blas.a')],
              '-Wl,-Map='+str(out/'link.map'), '-Wl,--trace-symbol=do_species_decays_v2_',
@@ -268,6 +278,7 @@ def prepare(parent, out, *, instantaneous_decay=False):
                   instantaneous_decay_source_sha256=hashlib.sha256(decay).hexdigest() if decay else None,
                   actual_fixed_J_consumption='NOT_YET_VERIFIED',
                   same_full_level_state='NOT_YET_VERIFIED',
+                  full_state_snapshot='after current EVAL_LTE before rates; LMATFL01 matrices and atomic index',
                   heat_equivalence='NOT_YET_EVALUATED', final_goal='NOT_MET')
     (out/'fixedj-heat-build.json').write_text(
         json.dumps(report, ensure_ascii=False, indent=2)+'\n')

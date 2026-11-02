@@ -336,6 +336,18 @@
   native 적분 격자/가중치와 Lumina fine 격자가 같다는 뜻은 아니며, 실제 열행
   차이의 해석에서 이를 분리해야 한다. 위 인계의18:30 준비 및 완료 JSON의
   `native_current_field_preparation` 참조. 설치본/옛 앵커를 새 수리판으로 바꾸지 않았다.
+- 11월2일 full-level 동일 상태 비교 준비: `EVAL_LTE_V5` 직후 native FL 인구·LTE
+  분율·점유확률·주소 및 실제 주입 상태를 저장하는 private observer와 비교기를
+  추가했다. MODEL_SPEC 27개 이온/24542 FL이 C `levels.csv`와 일대일 대응하고,
+  C 점유 배열은 수용 응답과 정확히 같다. 동일 입력 바이트 및 같은 평가번호의
+  열행을 확인한 뒤 `(Z, stage, FL)`로 정렬해 C full과 비교하도록 했다. 비교 신원도
+  보강해 실행파일을 private build manifest와, 실행 출력의 EDD 두 파일을 field
+  manifest와 대조하며, 유일한 J 입력을 generation15의 고정 SHA256에 묶는다. 관련
+  시험은76개 통과·1개 건너뜀이고 private 링크 빌드는 통과했지만 실제 native
+  평가/물리 비교/Slurm은0회다. 합성 end-to-end 및 신원 불일치 거부 시험도 통과했다.
+  새 물리 평가 권한이나 합격선을 뜻하지 않는다.
+  [11월2일 인계](HANDOVER_2026-11-02.md)의 20:54 `same-state full-level 비교 준비`와 완료 JSON의
+  `native_full_comparison_preparation` 참조. 최종 목적은 계속 **NOT_MET**다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 

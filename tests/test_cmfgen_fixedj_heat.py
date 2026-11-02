@@ -14,26 +14,29 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0, str(SCRIPTS))
 from prepare_cmfgen_fixedj_heat import (COMP_OPAC, FINISH, FINISH_POINT, FIXED_SKIP,
-                                      GUARD, GUARD_POINT, patched, read_heat_row, native_state, prepare_state)
+                                      FULL_CAPTURE, FULL_POINT, GUARD, GUARD_POINT,
+                                      patched, read_heat_row, native_state, prepare_state)
 
 
 def test_private_patch_restores_actual_coefficients_before_re_and_preserves_rest():
-    original = ('start\n'+GUARD_POINT+'frequency start\n'+FIXED_SKIP+
+    original = ('start\n'+GUARD_POINT+'frequency start\n'+FIXED_SKIP+FULL_POINT+
                 'continuum_RE\nadiabatic\nweak_line_RE\n'+FINISH_POINT+'solver\n')
     changed = patched(original)
-    assert changed == ('start\n'+GUARD_POINT+GUARD+'frequency start\n'+COMP_OPAC+
+    assert changed == ('start\n'+GUARD_POINT+GUARD+'frequency start\n'+COMP_OPAC+FULL_POINT+FULL_CAPTURE+
                        'continuum_RE\nadiabatic\nweak_line_RE\n'+FINISH+FINISH_POINT+'solver\n')
     assert changed.count('CALL COMP_OPAC') == 1
+    assert changed.count('CALL LUMINA_FIXEDJ_FULL_CAPTURE') == 1
     assert 'EMHNUKT' not in changed  # COMP_OPAC 자체가 actual-nu 지수를 매번 평가한다.
+    assert changed.index('CALL EVAL_LTE_V5') < changed.index('CALL LUMINA_FIXEDJ_FULL_CAPTURE')
     assert changed.index('weak_line_RE') < changed.index('CALL LUMINA_FIXEDJ_HEAT_FINISH')
     assert changed.index('CALL LUMINA_FIXEDJ_HEAT_FINISH') < changed.index(FINISH_POINT)
     with pytest.raises(ValueError):
         patched(changed)
 
 
-@pytest.mark.parametrize('marker', [FIXED_SKIP, GUARD_POINT, FINISH_POINT])
+@pytest.mark.parametrize('marker', [FIXED_SKIP, GUARD_POINT, FULL_POINT, FINISH_POINT])
 def test_patch_rejects_missing_or_duplicate_insertions(marker):
-    original = GUARD_POINT+FIXED_SKIP+FINISH_POINT
+    original = GUARD_POINT+FIXED_SKIP+FULL_POINT+FINISH_POINT
     for source in (original.replace(marker, ''), original+marker):
         with pytest.raises(ValueError):
             patched(source)
