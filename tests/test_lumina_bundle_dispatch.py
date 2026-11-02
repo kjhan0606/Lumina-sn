@@ -25,7 +25,11 @@ def setup(tmp_path, monkeypatch):
         coefficient_result=str(result), coefficient_commit='a'*40, gpu_root=str(gpu),
         gpu_prepared_sha256=D.sha(gpu/'prepared.json'), response_parent=str(tmp_path/'response'), response_commit='b'*40,
         submission_host_addresses=dict(grammar='192.0.2.20'),
-        limits=dict(maximum_F=1))
+        limits=dict(GPU_allocations=1, GPU_CPU=1, GPU_GiB=16, GPU_hours=10,
+                    maximum_F=1, automatic_retries=0,
+                    response_allocations=1, response_CPU=16, response_GiB=32,
+                    response_hours=3, response_temperature_evaluations=0,
+                    response_thermal_policy=None))
     config = control/'config.json'; config.write_text(json.dumps(c)); calls = []
     def submit(*args, **kwargs):
         calls.append(args[0]); return SimpleNamespace(returncode=0, stdout='12345\n', stderr='')
@@ -38,6 +42,8 @@ def test_field_submitted_once_with_bounded_script(setup):
     result = D.dispatch(config, D.sha(config), 'field')
     assert result['job_id'] == 12345 and len(calls) == 1 and calls[0][-2] == 'syntax'
     assert '--no-requeue' in calls[0][-1] and 'submit_lumina_accepted_feedback.slurm' in calls[0][-1]
+    command=shlex.split(calls[0][-1])
+    assert '--time=10:00:00' in command
     with pytest.raises(FileExistsError): D.dispatch(config, D.sha(config), 'field')
     assert len(calls) == 1
 
@@ -106,7 +112,10 @@ def test_response_requires_completed_new_field(setup, complete):
     if complete:
         result = D.dispatch(config, D.sha(config), 'response')
         assert result['job_id'] == 12345 and calls[0][-2] == 'grammar'
-        assert '--feedback-sha' in calls[0][-1] and '--preparation-sha' in calls[0][-1]
+        command=shlex.split(calls[0][-1])
+        assert '--feedback-sha' in command and '--preparation-sha' in command
+        assert '--time=03:00:00' in command
+        assert 'LUMINA_RESPONSE_SECONDS=10200' in next(x for x in command if x.startswith('--export='))
     else:
         with pytest.raises(ValueError): D.dispatch(config, D.sha(config), 'response')
         assert not calls and not Path(c['response_parent']).exists()
@@ -210,7 +219,8 @@ def test_incomplete_coefficients_never_submit_GPU(setup):
 
 def test_one_sweep_and_previous_material_trial_reach_the_submission_argv(setup):
     config,c,calls=setup
-    c['limits']=dict(maximum_F=1)
+    c['limits']=dict(GPU_allocations=1,GPU_CPU=1,GPU_GiB=16,GPU_hours=10,
+        maximum_F=1,automatic_retries=0)
     c['initial_field']=dict(J=dict(path='/old material/J.npy',sha256='a'*64),
         preparation=dict(path='/old material/preparation.json',sha256='b'*64))
     config.write_text(json.dumps(c))
@@ -267,6 +277,9 @@ def test_control_preparation_defaults_to_one_transport_sweep(tmp_path,monkeypatc
         tmp_path/'response','c'*40,submission_host_addresses={'grammar':'192.0.2.20'})
     config=json.loads(Path(prepared['config']).read_text())
     assert config['limits']['maximum_F']==1
+    assert config['limits']['GPU_hours']==10
+    assert config['limits']['GPU_CPU']==1 and config['limits']['GPU_GiB']==16
+    assert config['limits']['response_hours']==3
 
 
 @pytest.mark.parametrize('limits',[{},dict(maximum_F=2)])
@@ -317,6 +330,7 @@ python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").wri
     args=[str(gpu),'new P.json','prep-sha'];options=['--max-sweeps','2']
     if control:
         folder=tmp_path/'control';folder.mkdir();config=folder/'config.json'
+        config.write_text(json.dumps({'limits':{'GPU_hours':10}}))
         (folder/'lumina_bundle_dispatch.py').write_text(
             'import json,sys\nfrom pathlib import Path\np=Path.cwd()/"events.json"\nv=json.loads(p.read_text()) if p.exists() else []\nv.append(sys.argv[3])\np.write_text(json.dumps(v))\nif sys.argv[3]=="response": Path(__file__).with_name("response-args.json").write_text(json.dumps(sys.argv[1:]))\n')
         options=['--max-sweeps','1','--input-j','old J.npy','--input-j-sha256','j-sha',
@@ -325,6 +339,7 @@ python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").wri
     script=Path(__file__).resolve().parents[1]/'scripts/submit_lumina_accepted_feedback.slurm'
     subprocess.run(['bash',str(script),*args],check=True,capture_output=True,text=True)
     forwarded=json.loads((gpu/'field-args.json').read_text())
+    assert forwarded[1]==('35940' if control else '43200')
     assert forwarded[forwarded.index('--max-sweeps'):]==options
     if control:
         assert json.loads((folder/'response-args.json').read_text())==[str(config),'config-sha','response']

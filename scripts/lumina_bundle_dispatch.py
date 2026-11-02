@@ -101,9 +101,16 @@ def dispatch(config, digest, step):
     if marker.exists(): raise FileExistsError('제출 시도 이력 있음; 중복 제출/자동 재시도 금지')
     common = ['sbatch', '--parsable', '--no-requeue']
     if step == 'field':
-        maximum_F = c.get('limits', {}).get('maximum_F')
+        limits = c.get('limits', {})
+        maximum_F = limits.get('maximum_F')
         if type(maximum_F) is not int or maximum_F != 1:
             raise ValueError('외부 물질-장 왕복당 F 1회 설정이 필요')
+        thermal_response = limits.get('response_temperature_evaluations') == 12
+        expected_gpu = dict(GPU_allocations=1, GPU_CPU=1, GPU_GiB=16,
+            GPU_hours=12 if thermal_response else 10, automatic_retries=0)
+        if any(limits.get(key) != value for key, value in expected_gpu.items()):
+            raise ValueError('GPU 수송 자원 한도 불일치')
+        common += ['--time='+str(expected_gpu['GPU_hours'])+':00:00']
         options = ['--max-sweeps', str(maximum_F)]
         initial = c.get('initial_field')
         if initial is not None:
@@ -142,6 +149,13 @@ def dispatch(config, digest, step):
                 '--export=ALL,LUMINA_RESPONSE_LONG_THERMAL=1,LUMINA_RESPONSE_SECONDS=106200']
             response_options += ['--temperature-evaluations', str(temperature_evaluations),
                 '--thermal-policy', policy, '--secant-after-accept']
+        else:
+            expected_limits = dict(response_allocations=1, response_CPU=16,
+                response_GiB=32, response_hours=3, automatic_retries=0)
+            if any(limits.get(key) != value for key, value in expected_limits.items()):
+                raise ValueError('고정장 반환장 응답 자원 한도 불일치')
+            common += ['--time=03:00:00',
+                '--export=ALL,LUMINA_RESPONSE_SECONDS=10200']
         parent = Path(c['response_parent'])
         parent.mkdir(exist_ok=False)
         command = common+['--output='+str(parent/'slurm-%j.out'), '--error='+str(parent/'slurm-%j.err'),

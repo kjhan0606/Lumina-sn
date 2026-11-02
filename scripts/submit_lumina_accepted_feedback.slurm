@@ -15,6 +15,7 @@ lumina_preparation=${2:?완성 새 경계 기록 필요}
 lumina_preparation_sha=${3:?완성 새 경계 SHA 필요}
 lumina_control_config=''
 lumina_control_sha=''
+lumina_field_seconds=43200
 if [[ $# -ge 5 ]]; then
     lumina_control_config=$4
     lumina_control_sha=$5
@@ -31,9 +32,18 @@ if [[ -n "$lumina_control_config" ]]; then
     # 실제 Syntax 계산 노드에서 Grammar SSH/호스트키를 확인한 뒤에만 장시간 F를 시작한다.
     python3 "$(dirname "$lumina_control_config")/lumina_bundle_dispatch.py" \
         "$lumina_control_config" "$lumina_control_sha" preflight
+    lumina_field_seconds=$(python3 - "$lumina_control_config" <<'PY'
+import json, sys
+limits = json.load(open(sys.argv[1], encoding='utf-8'))['limits']
+hours = limits.get('GPU_hours')
+if type(hours) is not int or hours not in (10, 12):
+    raise SystemExit('GPU 시간 한도 구성 오류')
+print(hours * 3600 - 60)
+PY
+    )
 fi
 lumina_field_status=0
-bash code/scripts/run_lumina_resident_field.sh "$PWD" 43200 --feedback \
+bash code/scripts/run_lumina_resident_field.sh "$PWD" "$lumina_field_seconds" --feedback \
     --cache /gpfs/kjhan/cmfgen_runs/lumina_phase_prepare_20261026-8fMV0m/run/cache \
     --accepted-input "$lumina_preparation" --accepted-input-sha256 "$lumina_preparation_sha" "$@" || lumina_field_status=$?
 if [[ -n "$lumina_control_config" ]]; then
