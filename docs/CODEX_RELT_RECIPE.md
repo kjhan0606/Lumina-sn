@@ -8,6 +8,20 @@ iteration59→60에서 Si III 깊이27은 `0.557555→0.560344`, S III 깊이34�
 변화 최대 `3.45594e-3`; 미적용 STEQ 보정도 큰 상태였다. 따라서 이 실행은
 staging 진단이지 fixed-T 안정화나 released-T 기준해가 아니다.
 
+11월2일 Grammar에서 이 실행의 sidecar를 다시 읽어 실행 정체성을 확인했다.
+`input-manifest.json` SHA256은
+`2acd3cdb9e118e15e331b5f074c44b5cbcf530038f7c831ed8663c3264c60efc`이고,
+driver commit은 `116ed1240485518c0199a8f3b5f1a93cefb30829`, CMFGEN 실행파일 SHA256은
+`f2b9afcc064037a413bf206047a6b7c813882dc40f894436e5de704a32b232f1`이다. iteration55
+seed에서 60까지 5회만 수행했다. 실제 제어값은 `FIX_T=T`, `SCALE_OPT=MAJOR`,
+`MAX_LIN=1.05`, `MAX_LAM=1.01`, `DO_LAM_IT=T`, `DO_LAM_AUTO=F`, `DO_T_AUTO=F`이며,
+seed의 `MAX_LAM=1.10`에서 `1.01`로 낮춘 고정T LAMBDA 진단이다. released-T 단계는
+시도하지 않았다. iteration60의 독립 전체 population correction 진단은 p95
+`99.889%`, 최대 `2977.3%`였고 native 반환 `MAXCH=10^7%` sentinel도 유지됐다.
+이온분율 `>10^-8`만 고른 별도 부분집합도 p95 `91.887%`였으나, 기여도 활성 과정
+전체를 포함한 acceptance 척도는 아니다. 이 수치는 실행이 완료됐다는 사실과
+수렴 여부를 구분하기 위한 이력이며, 과거 A/B/C 후보를 검증하거나 갱신하지 않는다.
+
 아래 A/B/C는 10월18일 상태를 바탕으로 작성된 **미실행 과거 후보**다. 특히
 A안의 iteration40 modern checkpoint와 이를 토대로 한 추천을 현재 실행계획으로
 승계하지 않는다. 새 기준해 작업은 실제 사용 source·binary·원자자료·설정·restart
