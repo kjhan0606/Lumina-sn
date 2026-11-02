@@ -1,8 +1,10 @@
 {
   "schema": "lumina-approved-finite-temperature-refinement-run-v1",
-  "state": "PENDING",
-  "reason": "Priority",
-  "observed_KST": "2026-11-02T14:05:42+09:00",
+  "state": "RUNNING",
+  "reason": null,
+  "observed_KST": "2026-11-02T14:11:00+09:00",
+  "node": "grammar068",
+  "restarts": 0,
   "authorization": {
     "date_KST": "2026-11-02",
     "reply": "이 범위의 단회 실행 승인",
@@ -83,7 +85,15 @@
   ],
   "scheduler_start_estimate_KST": "2026-11-02T18:16:46+09:00",
   "scheduler_estimate_observed_KST": "2026-11-02T14:02:49+09:00",
-  "start_time_actual": null,
+  "start_time_actual": "2026-11-02T14:09:36+09:00",
+  "phase_at_startup": "FIXED_NEW_FIELD_T_NE_CORRECTION",
+  "material_phase_at_startup": "DYNAMIC_MATERIAL_BF_BEGIN",
+  "centered_direction_source_restored": true,
+  "saved_probes_reused": 4,
+  "material_callbacks_in_flight_at_startup": 1,
+  "completion_counter_scope": "기동 시0은 완료 카운터다. 첫 새 T BF 실행 중인 것을 미시작으로 해석하지 않는다.",
+  "first_result_check_KST": "2026-11-02T17:15:00+09:00",
+  "unfinished_check_interval_minutes": 10,
   "estimated_compute_hours": [
     3,
     6
@@ -93,9 +103,9 @@
   "new_BF_integrations_observed": 0,
   "new_transport": 0,
   "accepted_materials_observed": 0,
-  "provisional": "계산 결과 보고서가 아직 없다. 실제 수용·수렴·CMFGEN 일치는 미판정이다.",
+  "provisional": "실제 새 T의 첫 full BF 응답이 진행 중이다. 실제 수용·수렴·CMFGEN 일치는 미판정이다.",
   "access": "Codex는 Lageunha에서 수행하고 syntax를 SSH 경유해 grammar에 제출했다. Lageunha에서 grammar 단축 이름의 직접 DNS 조회는 실패했으며, syntax에서 grammar 해석과 접속은 정상이다.",
-  "duplicate_check": "syntax의 Lumina Slurm 작업0개, grammar의 Lumina Slurm 작업은1257134 단일 PENDING이다. 제출 시도1회·재시도0회.",
+  "duplicate_check": "제출 당시 syntax의 Lumina Slurm 작업0개, grammar의 Lumina 작업은1257134 하나였다. 현재 같은 job이 RUNNING이며 Restarts=0이다. 제출 시도1회·재시도0회.",
   "preservation": "원 기점·네 응답·J·계수는 보존한다. 새 root 단회만 사용하며 실패/통신 오류 시 자동 재제출하지 않는다.",
   "final_goal": "NOT_MET"
 }
