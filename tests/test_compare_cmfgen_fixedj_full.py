@@ -62,17 +62,29 @@ def test_scaled_relative_metrics_handle_shared_zero_and_report_worst_location():
     assert (result['worst_row'],result['worst_point'])==(0,2)
 
 
-def test_native_heat_row_is_compared_to_pinned_lumina_net_without_acceptance_gate(tmp_path):
+def test_native_heat_row_normalizes_cmfgen_cooling_sign_against_lumina_heating(tmp_path):
     balance=tmp_path/'balance.npz'
     np.savez(balance,native_instantaneous_scenario_net=np.array([2.,-1.,0.]),
              native_instantaneous_scenario_gross=np.array([4.,2.,0.]))
-    heat=dict(steq_t_native=np.array([1.,-2.,0.]),frequencies=1115020)
+    heat=dict(steq_t_native=np.array([-2.,1.,0.]),frequencies=1115020)
     result=compare_module.compare_heat_row(heat,balance,compare_module.sha(balance))
-    assert result['max_absolute_difference']==1.
-    assert result['worst_point_1based']==2
-    assert result['max_scaled_absolute_difference']==0.5
+    assert result['max_absolute_difference']==0.
+    assert result['max_scaled_absolute_difference']==0.
+    assert result['native_steq_t_sign_convention']=='positive=cooling, negative=heating'
+    assert result['comparison_sign_convention']=='positive=heating'
+    assert result['points'][0]['native_steq_t_raw']==-2.
+    assert result['points'][0]['native_heat_positive']==2.
+    assert result['points'][0]['lumina_heat_positive_net']==2.
+    assert result['points'][0]['difference_heat_positive']==0.
     assert len(result['points'])==3
     assert result['interpretation'].startswith('No pass threshold')
+
+    mismatched=compare_module.compare_heat_row(
+        dict(steq_t_native=np.array([-1.,2.,0.]),frequencies=1115020),
+        balance,compare_module.sha(balance))
+    assert mismatched['max_absolute_difference']==1.
+    assert mismatched['worst_point_1based']==2
+    assert mismatched['max_scaled_absolute_difference']==0.5
     with pytest.raises(ValueError,match='봉인 해시'):
         compare_module.compare_heat_row(heat,balance,'0'*64)
 
@@ -145,8 +157,9 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
         writer.writerow([1,14,2,1,1,'SkII',1.0,4])
     (root/'NATIVE_FULL_PHASE.txt').write_text(
         'AFTER_CURRENT_STATE_EVAL_LTE_BEFORE_RATE_AND_HEAT_EVALUATION\n7 5 90 2 1\n')
+    native_steq_t=np.linspace(-1.,1.,nd)
     vectors=np.vstack((radius,np.zeros(nd),np.zeros(nd),np.ones(nd),np.full(nd,2.),
-                       np.ones(nd),np.ones(nd),np.zeros(nd),np.zeros(nd)))
+                       np.ones(nd),np.ones(nd),native_steq_t,np.zeros(nd)))
     heat=b'NATIVEHEATROWV1 '+struct.pack('<8i',1,64,nt,nd,100,7,9,0)
     heat+=vectors.astype('<f8').tobytes()+pops.astype('<f8').tobytes(order='F')
     (root/'NATIVE_HEAT_ROW.bin').write_bytes(heat)
@@ -166,7 +179,7 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     np.savez(response,fraction=np.vstack((fraction[1],fraction[0])),
              occupation=np.vstack((occupation[1],occupation[0])))
     balance=tmp_path/'balance.npz'
-    np.savez(balance,native_instantaneous_scenario_net=np.zeros(nd),
+    np.savez(balance,native_instantaneous_scenario_net=-native_steq_t,
              native_instantaneous_scenario_gross=np.ones(nd))
     field_root=tmp_path/'field';field_root.mkdir()
     (field_root/'EDDFACTOR').write_bytes(b'fixed-J field fixture')
@@ -196,11 +209,13 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
         expected_lumina_balance_sha256=compare_module.sha(balance),levels=level_path,
         model_spec=model_spec,atomic_links=links)
     result=compare_module.compare(args)
+    assert result['schema']=='lumina-cmfgen-fixedj-full-comparison-v2'
     assert result['exact_injected_state'] and result['heat_row_same_state']
     assert result['fixed_J_source_sha256']=='7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841'
     assert result['comparisons']['native_full_vs_C_imported_full']['max_absolute']==0.
     assert result['comparisons']['native_LTE_fraction_vs_Lumina_fraction']['max_absolute']==0.
     assert result['native_heat_comparison']['max_absolute_difference']==0.
+    assert result['native_heat_comparison']['points'][0]['difference_heat_positive']==0.
     assert len(result['native_heat_comparison']['points'])==nd
     assert result['physical_equivalence']=='DIAGNOSTIC_ONLY_NO_PREDECLARED_THRESHOLD'
     assert result['final_goal']=='NOT_MET'

@@ -359,10 +359,14 @@
   [11월2일 인계](HANDOVER_2026-11-02.md)의 20:54 `same-state full-level 비교 준비`와 완료 JSON의
   `native_full_comparison_preparation` 참조. 최종 목적은 계속 **NOT_MET**다.
 - 같은 실행에서 native `STEQ_T` 수치와 Lumina `native_instantaneous_scenario_net`을
-  직접 비교하도록 후처리를 보강했다. 선택 balance의 해시를 고정하고 90점별 절대·
-  RMS·Lumina gross 기준 차이를 기록하지만, 사전 합격선은 없다. native/Lumina의
-  주파수 quadrature 차이는 해석에 남는다. 관련 소형 시험9개 통과, 실제 native
-  실행·열행 parity는 여전히 미실행/미평가다.
+  비교하도록 후처리를 보강했다. 선택 balance의 해시를 고정하고 90점별 절대·
+  RMS·Lumina gross 기준 차이를 기록하며, 사전 합격선은 없다. 최초 구현은
+  `STEQ_T`의 양수=냉각 부호와 Lumina balance의 양수=가열 부호를 정규화하지
+  않고 빼는 결함이 있었다. 이를 정적 대조로 찾아 native 원값은 보존하고
+  비교용으로만 native 부호를 뒤집도록 고쳤다. 합성시험에서 열/냉각 부호가
+  물리적으로 대응하면 오차0, 불일치면 오차가 남음을 확인했다. 실제 native
+  실행·열행 parity는 여전히 미실행/미평가이며, native/Lumina 주파수 quadrature
+  차이도 해석에 남는다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
