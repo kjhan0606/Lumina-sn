@@ -982,14 +982,14 @@
   },
   "native_full_comparison_preparation": {
     "observed_at_kst": "2026-11-02T20:54:00+09:00",
-    "scope": "현재 주입 상태의 native full-level 인구·LTE 분율·점유확률을 동일 주소의 Lumina/C 출력과 진단 비교할 준비. 실제 native 물리 평가는 실행하지 않았다.",
+    "scope": "현재 주입 상태의 native full-level 재구성·LTE 분율·점유확률 및 실제 native STEQ_T를 같은 상태의 Lumina/C 출력과 진단 비교한다. 실제 native 물리 평가는 아직 실행하지 않았다.",
     "source_sha256": {
       "scripts/prepare_cmfgen_fixedj_heat.py": "e87e9e01b191372c4fe5952e01a399ea42e1ae769458a7ea11bacb039b5330ad",
       "scripts/cmfgen_fixedj_full.f90": "13dc53be32cc69aa4e3c04001ab4a62d4f3b70966b2edf642a78a9b754c04766",
-    "scripts/compare_cmfgen_fixedj_full.py": "c94ca5f81c39204f5d16e233ecfc4ebaa347825ae50da204059d3e7778fdda78",
+    "scripts/compare_cmfgen_fixedj_full.py": "5ebf5bbfd0bb53ca2d17a92dec0fbd1b66f64d19eab6cf03b9a7ec35d60a018f",
       "tests/test_cmfgen_fixedj_heat.py": "bc95a7efe1babe96486ce7eb14c2631136390ad98067bd793afabf7b74b1e463",
       "tests/test_cmfgen_fixedj_full.py": "1e32eaa455c957422556c140502c240ae530068a633e7c96380a3650b3817e26",
-    "tests/test_compare_cmfgen_fixedj_full.py": "2e4edcfa1c5ebe18a4ccf12cd9ce84708837d5e0f60fd0a012a706179ecce636"
+    "tests/test_compare_cmfgen_fixedj_full.py": "187ffe7ec3e8308266c13264e4a9ef12bd81aa2b6632f5b0476d03ecf51639b7"
     },
     "private_build": {
       "root": "/tmp/lumina-native-full-capture-nU7Pqb/build",
@@ -1017,7 +1017,10 @@
       "same_evaluation": "full-capture counter, native heat-row counter, radius, and POPS must match exactly",
     "run_artifact_identity": "provided executable hash must match private build manifest; run-root EDDFACTOR and EDDFACTOR_INFO hashes must match fixed-field manifest; its unique J.npy/J.bin input hash must equal the pinned generation15 J SHA256 7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841",
     "fixed_J_control_identity": "run-root VADAT SHA256 is pinned; current VADAT has USE_FIXED_J=T and GLOBAL_LINE=BLANK, selecting RD_CONT_J in the continuum branch",
-      "reported_metrics": ["native full population vs C-imported full", "native LTE fraction vs accepted Lumina fraction", "native occupation vs accepted Lumina occupation", "C material occupation vs accepted Lumina occupation"],
+      "reported_metrics": ["native full population vs C-imported full", "native LTE fraction vs accepted Lumina fraction", "native occupation vs accepted Lumina occupation", "C material occupation vs accepted Lumina occupation", "native raw STEQ_T vs pinned Lumina native_instantaneous_scenario_net at all 90 points"],
+      "heat_row_comparison": "selected response and balance SHA256 are pinned; report absolute/RMS/gross-scaled differences per original point, without pass threshold; native and Lumina frequency quadratures may differ",
+      "heat_difference_scale": "max(Lumina native gross, abs(native STEQ_T), abs(Lumina native net)); reporting scale only, not a pass threshold",
+      "population_interpretation": "capture is after EVAL_LTE_V5 and before rates/heat; it tests full-level reconstruction of injected Lumina superlevel populations, not an independent CMFGEN NLTE solution",
       "acceptance_threshold": "none added; diagnostic only"
     },
   "fixed_J_control_path_preflight": {
@@ -1032,7 +1035,7 @@
     "reproduction": {
       "private_build_command": "python3 -B scripts/prepare_cmfgen_fixedj_heat.py --parent $LUMINA_RUNS_ROOT/lumina_coupling71_build_20261020-ThfBHm/build --out $NEW_PRIVATE_BUILD --instantaneous-decay",
       "direct_test_environment": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts CMFGEN_SOURCE_ROOT=$CMFGEN_SOURCE_ROOT; taskset -c 0 timeout 300s python3 -B -m pytest -q -p no:cacheprovider",
-    "comparison_command_template": "python3 -B scripts/compare_cmfgen_fixedj_full.py --native-root $NATIVE_OUTPUT_ROOT --build-manifest $PRIVATE_BUILD/fixedj-heat-build.json --executable $PRIVATE_BUILD/cmfgen_fixedj_heat.exe --field-manifest $FIXED_FIELD/fixedj-field-input.json --field-root $NATIVE_OUTPUT_ROOT --expected-j-sha256 7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841 --expected-vadat-sha256 80e080036c989a3f8260d339ffdc21432f494a36590752fa7436ad2616d144ec --expected-state $STATE_ROOT/NATIVE_HEAT_INPUT.bin --c-full $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/C-imported-full.bin --c-occupation $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/occupation.bin --response $LUMINA_RUNS_ROOT/lumina_currentJ_Trefine_20261102-J8IR4mOt/run/evaluation-4/response.npz --levels $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/atomic/levels.csv --model-spec $LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429038/material/MODEL_SPEC --atomic-links $LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429038/material/atomic_links.txt --out $NEW_COMPARISON_JSON",
+    "comparison_command_template": "python3 -B scripts/compare_cmfgen_fixedj_full.py --native-root $NATIVE_OUTPUT_ROOT --build-manifest $PRIVATE_BUILD/fixedj-heat-build.json --executable $PRIVATE_BUILD/cmfgen_fixedj_heat.exe --field-manifest $FIXED_FIELD/fixedj-field-input.json --field-root $NATIVE_OUTPUT_ROOT --expected-j-sha256 7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841 --expected-vadat-sha256 80e080036c989a3f8260d339ffdc21432f494a36590752fa7436ad2616d144ec --expected-state $STATE_ROOT/NATIVE_HEAT_INPUT.bin --c-full $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/C-imported-full.bin --c-occupation $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/occupation.bin --response $LUMINA_RUNS_ROOT/lumina_currentJ_Trefine_20261102-J8IR4mOt/run/evaluation-4/response.npz --expected-response-sha256 3c56cd84ad385d2bc28d9b19ba96cc9d9d3f390d186cbbfc145aa9633cc098bb --lumina-balance $LUMINA_RUNS_ROOT/lumina_currentJ_Trefine_20261102-J8IR4mOt/run/evaluation-4/balance.npz --expected-lumina-balance-sha256 ca17a38da7570a73d2fe3ec42a073f202ae5534df94a1bb41242fdd981da66f7 --levels $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/atomic/levels.csv --model-spec $LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429038/material/MODEL_SPEC --atomic-links $LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429038/material/atomic_links.txt --out $NEW_COMPARISON_JSON",
       "historical_runtime_basis": {
         "slurm_job": "428866",
         "scope": "native fixed-J, four material updates",
@@ -1046,7 +1049,18 @@
     "direct_tests": {
       "command": "python3 -B -m pytest -q -p no:cacheprovider tests/test_cmfgen_fixedj_field.py tests/test_cmfgen_fixedj_heat.py tests/test_cmfgen_fixedj_exponent_patch.py tests/test_cmfgen_native_se_witness.py tests/test_cmfgen_fixedj_full.py tests/test_compare_cmfgen_fixedj_full.py",
     "result": "76 passed, 1 skipped in 62.21s",
-      "limits": "LagEunha CPU1/OpenMP1/BLAS1/4GiB/300s"
+      "limits": "LagEunha CPU1/OpenMP1/BLAS1/4GiB/300s",
+      "latest_comparator_tests": "9 passed in 1.28s; heat row vs pinned Lumina net and CLI SHA type included"
+    },
+    "comparison_update": {
+      "observed_at_kst": "2026-11-02T21:21:55+09:00",
+      "native_heat_comparator_sha256": "5ebf5bbfd0bb53ca2d17a92dec0fbd1b66f64d19eab6cf03b9a7ec35d60a018f",
+      "test_sha256": "187ffe7ec3e8308266c13264e4a9ef12bd81aa2b6632f5b0476d03ecf51639b7",
+      "selected_response_sha256_verified": "3c56cd84ad385d2bc28d9b19ba96cc9d9d3f390d186cbbfc145aa9633cc098bb",
+      "selected_balance_sha256_verified": "ca17a38da7570a73d2fe3ec42a073f202ae5534df94a1bb41242fdd981da66f7",
+      "prepared_private_executable_field_state_and_C_full_hashes_match": true,
+      "native_evaluation_created": false,
+      "slurm_submissions": 0
     },
     "new_native_physics_evaluations": 0,
     "new_BF_SE_or_transport": 0,

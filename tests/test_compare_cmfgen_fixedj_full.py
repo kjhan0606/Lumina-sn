@@ -14,6 +14,12 @@ import compare_cmfgen_fixedj_full as compare_module
 from compare_cmfgen_fixedj_full import align_native, error_metrics, level_layout
 
 
+def test_cli_treats_all_expected_sha256_values_as_text():
+    for name in compare_module.SHA256_ARGUMENTS:
+        assert compare_module.argument_type(name) is str
+    assert compare_module.argument_type('response') is Path
+
+
 def test_native_full_rows_align_by_atomic_charge_and_level_with_alias():
     levels=[
         dict(atomic_number='14',ion_number='1',level_number='0',super_level='0'),
@@ -54,6 +60,21 @@ def test_scaled_relative_metrics_handle_shared_zero_and_report_worst_location():
     assert result['max_absolute']==2.
     assert result['max_scaled_relative']==0.5
     assert (result['worst_row'],result['worst_point'])==(0,2)
+
+
+def test_native_heat_row_is_compared_to_pinned_lumina_net_without_acceptance_gate(tmp_path):
+    balance=tmp_path/'balance.npz'
+    np.savez(balance,native_instantaneous_scenario_net=np.array([2.,-1.,0.]),
+             native_instantaneous_scenario_gross=np.array([4.,2.,0.]))
+    heat=dict(steq_t_native=np.array([1.,-2.,0.]),frequencies=1115020)
+    result=compare_module.compare_heat_row(heat,balance,compare_module.sha(balance))
+    assert result['max_absolute_difference']==1.
+    assert result['worst_point_1based']==2
+    assert result['max_scaled_absolute_difference']==0.5
+    assert len(result['points'])==3
+    assert result['interpretation'].startswith('No pass threshold')
+    with pytest.raises(ValueError,match='봉인 해시'):
+        compare_module.compare_heat_row(heat,balance,'0'*64)
 
 
 def test_run_identity_rejects_field_artifact_not_matching_sealed_manifest(tmp_path):
@@ -144,6 +165,9 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     response=tmp_path/'response.npz'
     np.savez(response,fraction=np.vstack((fraction[1],fraction[0])),
              occupation=np.vstack((occupation[1],occupation[0])))
+    balance=tmp_path/'balance.npz'
+    np.savez(balance,native_instantaneous_scenario_net=np.zeros(nd),
+             native_instantaneous_scenario_gross=np.ones(nd))
     field_root=tmp_path/'field';field_root.mkdir()
     (field_root/'EDDFACTOR').write_bytes(b'fixed-J field fixture')
     (field_root/'EDDFACTOR_INFO').write_bytes(b'fixed-J field metadata fixture')
@@ -166,13 +190,18 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
         expected_vadat_sha256=compare_module.sha(root/'VADAT'),
         expected_j_sha256='7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841',
         expected_state=tmp_path/'expected-state.bin',c_full=tmp_path/'C-imported-full.bin',
-        c_occupation=c_occupation,response=response,levels=level_path,
+        c_occupation=c_occupation,response=response,
+        expected_response_sha256=compare_module.sha(response),
+        lumina_balance=balance,
+        expected_lumina_balance_sha256=compare_module.sha(balance),levels=level_path,
         model_spec=model_spec,atomic_links=links)
     result=compare_module.compare(args)
     assert result['exact_injected_state'] and result['heat_row_same_state']
     assert result['fixed_J_source_sha256']=='7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841'
     assert result['comparisons']['native_full_vs_C_imported_full']['max_absolute']==0.
     assert result['comparisons']['native_LTE_fraction_vs_Lumina_fraction']['max_absolute']==0.
+    assert result['native_heat_comparison']['max_absolute_difference']==0.
+    assert len(result['native_heat_comparison']['points'])==nd
     assert result['physical_equivalence']=='DIAGNOSTIC_ONLY_NO_PREDECLARED_THRESHOLD'
     assert result['final_goal']=='NOT_MET'
     saved=json.loads(args.out.read_text())

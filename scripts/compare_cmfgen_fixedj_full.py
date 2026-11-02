@@ -18,6 +18,9 @@ from prepare_cmfgen_fixedj_heat import read_heat_row
 
 
 PHASE = 'AFTER_CURRENT_STATE_EVAL_LTE_BEFORE_RATE_AND_HEAT_EVALUATION'
+SHA256_ARGUMENTS = {
+    'expected-j-sha256','expected-vadat-sha256','expected-response-sha256',
+    'expected-lumina-balance-sha256'}
 
 
 def sha(path):
@@ -26,6 +29,10 @@ def sha(path):
         for block in iter(lambda:stream.read(1024*1024),b''):
             h.update(block)
     return h.hexdigest()
+
+
+def argument_type(name):
+    return str if name in SHA256_ARGUMENTS else Path
 
 
 def identity(path):
@@ -203,6 +210,48 @@ def error_metrics(left,right):
         worst_left=float(left[row,point]),worst_right=float(right[row,point]))
 
 
+def compare_heat_row(native_row,balance_path,expected_balance_sha256):
+    """Compare the captured native RE row with the selected Lumina native ledger.
+
+    This is a raw, same-state diagnostic. The native and Lumina frequency
+    quadratures are not assumed identical, and no acceptance threshold is added.
+    """
+    balance_path=Path(balance_path)
+    expected=expected_balance_sha256.lower()
+    if len(expected)!=64 or any(ch not in '0123456789abcdef' for ch in expected):
+        raise ValueError('기대 Lumina balance SHA256 형식 오류')
+    if sha(balance_path)!=expected:
+        raise ValueError('Lumina balance가 선택 물질의 봉인 해시와 불일치')
+    with np.load(balance_path,allow_pickle=False) as archive:
+        required=('native_instantaneous_scenario_net','native_instantaneous_scenario_gross')
+        if any(name not in archive.files for name in required):
+            raise ValueError('Lumina balance에 native 순간 열정책 net/gross가 없음')
+        lumina=np.asarray(archive[required[0]],dtype=np.float64)
+        gross=np.asarray(archive[required[1]],dtype=np.float64)
+    native=np.asarray(native_row['steq_t_native'],dtype=np.float64)
+    if (native.ndim!=1 or lumina.shape!=native.shape or gross.shape!=native.shape or
+            not np.isfinite([native,lumina,gross]).all() or np.any(gross<0)):
+        raise ValueError('native/Lumina 실제 열행의 형상·유한성·부호 오류')
+    delta=native-lumina
+    scale=np.maximum.reduce((gross,np.abs(native),np.abs(lumina)))
+    scaled=np.divide(np.abs(delta),scale,out=np.zeros_like(delta),where=scale>0)
+    worst=int(np.argmax(scaled))
+    points=[dict(point_1based=i+1,native_steq_t=float(native[i]),
+                  lumina_native_net=float(lumina[i]),difference=float(delta[i]),
+                  lumina_native_gross=float(gross[i]),scaled_absolute_difference=float(scaled[i]))
+            for i in range(len(native))]
+    return dict(scope='same-state raw native STEQ_T vs Lumina native_instantaneous_scenario_net; diagnostic only',
+        native_frequency_count=int(native_row['frequencies']),
+        lumina_balance_sha256=expected,
+        max_absolute_difference=float(np.max(np.abs(delta))),
+        rms_difference=float(np.sqrt(np.mean(delta*delta))),
+        max_scaled_absolute_difference=float(scaled[worst]),
+        median_scaled_absolute_difference=float(np.median(scaled)),
+        p95_scaled_absolute_difference=float(np.quantile(scaled,0.95)),
+        worst_point_1based=worst+1,points=points,
+        interpretation='No pass threshold; native and Lumina frequency quadratures may differ.')
+
+
 def read_index(path,nfull):
     with Path(path).open(newline='') as stream:
         reader=csv.DictReader(stream)
@@ -248,6 +297,13 @@ def compare(args):
             not np.array_equal(heat['radius_native'],captured['radius']) or
             not np.array_equal(heat['pops'],captured['pops'])):
         raise ValueError('full snapshot과 열행이 같은 native 상태/평가가 아님')
+    expected_response=args.expected_response_sha256.lower()
+    if len(expected_response)!=64 or any(ch not in '0123456789abcdef' for ch in expected_response):
+        raise ValueError('기대 수용 Lumina response SHA256 형식 오류')
+    if sha(args.response)!=expected_response:
+        raise ValueError('수용 Lumina response가 봉인된 선택 응답과 불일치')
+    native_heat_comparison=compare_heat_row(
+        heat,args.lumina_balance,args.expected_lumina_balance_sha256)
 
     with Path(args.levels).open(newline='') as stream:
         level_rows=list(csv.DictReader(stream))
@@ -316,6 +372,7 @@ def compare(args):
         'C_imported_full':Path(args.c_full),
         'C_material_occupation':Path(args.c_occupation),
         'accepted_Lumina_response':Path(args.response),
+        'selected_Lumina_balance':Path(args.lumina_balance),
         'atomic_levels':Path(args.levels),
         'MODEL_SPEC':Path(args.model_spec),
         'atomic_links':Path(args.atomic_links),
@@ -326,7 +383,8 @@ def compare(args):
         fixed_J_source_name=run_identity['fixed_J_source_name'],
         fixed_J_source_sha256=run_identity['fixed_J_source_sha256'],
         exact_injected_state=True,heat_row_same_state=True,
-        comparisons=comparisons,full_population_by_ion=by_ion,
+        comparisons=comparisons,native_heat_comparison=native_heat_comparison,
+        full_population_by_ion=by_ion,
         largest_full_population_differences=worst,
         physical_equivalence='DIAGNOSTIC_ONLY_NO_PREDECLARED_THRESHOLD',
         final_goal='NOT_MET',input_sha256={key:identity(path) for key,path in input_paths.items()})
@@ -341,14 +399,17 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('native-root','build-manifest','executable','field-manifest',
                  'field-root','expected-j-sha256','expected-vadat-sha256',
-                 'expected-state','c-full','c-occupation','response',
+                 'expected-state','c-full','c-occupation','response','expected-response-sha256',
+                 'lumina-balance','expected-lumina-balance-sha256',
                  'levels','model-spec','atomic-links','out'):
         parser.add_argument('--'+name,required=True,
-            type=Path if name!='expected-j-sha256' else str)
+            type=argument_type(name))
     arguments=parser.parse_args()
     result=compare(arguments)
     print(json.dumps({'full_levels':result['full_levels'],'points':result['points'],
         'exact_injected_state':result['exact_injected_state'],
         'heat_row_same_state':result['heat_row_same_state'],
-        'comparisons':result['comparisons'],'physical_equivalence':result['physical_equivalence'],
+        'comparisons':result['comparisons'],
+        'native_heat_comparison':result['native_heat_comparison'],
+        'physical_equivalence':result['physical_equivalence'],
         'final_goal':result['final_goal']},ensure_ascii=False,indent=2))

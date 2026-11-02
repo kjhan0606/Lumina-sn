@@ -346,6 +346,10 @@
   시험은76개 통과·1개 건너뜀이고 private 링크 빌드는 통과했지만 실제 native
   평가/물리 비교/Slurm은0회다. 합성 end-to-end 및 신원 불일치 거부 시험도 통과했다.
   새 물리 평가 권한이나 합격선을 뜻하지 않는다.
+  capture는 `EVAL_LTE_V5` 뒤, 원자율/열 계산 전이다. 따라서 이 비교는 수용된
+  Lumina superlevel 인구의 full-level 재구성 진단이며, CMFGEN이 독립적으로 푼
+  NLTE 이온분포가 아니다. full-level 대응이 맞아도 자기일관 해나 최종 동질성은
+  입증되지 않는다.
   추가 정적 추적에서 native `COMP_J_BLANK`는 `SECTION='CONTINUUM'`일 때
   `CONT_VEL`을 참으로 설정하고 `USE_FIXED_J`도 참이면 `RD_CONT_J`로 EDDFACTOR J를
   읽는다. 현재 VADAT의 `USE_FIXED_J=T`, `GLOBAL_LINE=BLANK`는 이 분기에 맞는다.
@@ -354,6 +358,11 @@
   실제 실행의 J 소비 증거는 아니다. 아직 물리 평가·Slurm 0회다.
   [11월2일 인계](HANDOVER_2026-11-02.md)의 20:54 `same-state full-level 비교 준비`와 완료 JSON의
   `native_full_comparison_preparation` 참조. 최종 목적은 계속 **NOT_MET**다.
+- 같은 실행에서 native `STEQ_T` 수치와 Lumina `native_instantaneous_scenario_net`을
+  직접 비교하도록 후처리를 보강했다. 선택 balance의 해시를 고정하고 90점별 절대·
+  RMS·Lumina gross 기준 차이를 기록하지만, 사전 합격선은 없다. native/Lumina의
+  주파수 quadrature 차이는 해석에 남는다. 관련 소형 시험9개 통과, 실제 native
+  실행·열행 parity는 여전히 미실행/미평가다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
