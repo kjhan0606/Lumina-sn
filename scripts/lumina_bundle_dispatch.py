@@ -52,6 +52,30 @@ def require_callback_route(config):
     return command
 
 
+def preflight_callback(config, digest):
+    """할당된 GPU 노드에서 실제 grammar SSH 경로를 F 계산 전에 확인한다."""
+    config=Path(config).resolve()
+    if sha(config)!=digest:
+        raise ValueError('묶음 제출 구성 변경')
+    c=json.loads(config.read_text())
+    if c.get('schema')!='lumina-accepted-bundle-dispatch-v1':
+        raise ValueError('묶음 제출 구성 schema 오류')
+    expected=c.get('control_sha256',{}).get('lumina_bundle_dispatch.py')
+    if (not isinstance(expected,str) or not re.fullmatch(r'[0-9a-f]{64}',expected) or
+            sha(Path(__file__))!=expected):
+        raise ValueError('GPU callback 사전 확인기의 봉인 해시 불일치')
+    command=require_callback_route(c)+['hostname','-s']
+    try:
+        result=subprocess.run(command,capture_output=True,text=True,timeout=15)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        raise RuntimeError('GPU 노드에서 grammar callback SSH 사전 확인 실패') from error
+    remote_host=result.stdout.strip()
+    if result.returncode!=0 or not remote_host:
+        raise RuntimeError('GPU 노드에서 grammar callback SSH 사전 확인 실패')
+    return dict(state='CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD',host='grammar',
+                remote_hostname=remote_host,automatic_retries=0)
+
+
 def dispatch(config, digest, step):
     config = Path(config).resolve()
     if sha(config) != digest: raise ValueError('묶음 제출 구성 변경')
@@ -143,5 +167,10 @@ def dispatch(config, digest, step):
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('config', type=Path); p.add_argument('digest'); p.add_argument('step', choices=('field', 'response'))
-    print(json.dumps(dispatch(**vars(p.parse_args())), indent=2))
+    p.add_argument('config', type=Path); p.add_argument('digest')
+    p.add_argument('step', choices=('field', 'response', 'preflight'))
+    args=vars(p.parse_args())
+    if args['step']=='preflight':
+        print(json.dumps(preflight_callback(args['config'],args['digest']),indent=2))
+    else:
+        print(json.dumps(dispatch(**args),indent=2))

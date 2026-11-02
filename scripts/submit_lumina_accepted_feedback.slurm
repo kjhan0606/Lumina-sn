@@ -27,6 +27,11 @@ else
 fi
 if [[ $# == 0 ]]; then set -- --max-sweeps 2; fi
 cd "$lumina_stage"
+if [[ -n "$lumina_control_config" ]]; then
+    # 실제 Syntax 계산 노드에서 Grammar SSH/호스트키를 확인한 뒤에만 장시간 F를 시작한다.
+    python3 "$(dirname "$lumina_control_config")/lumina_bundle_dispatch.py" \
+        "$lumina_control_config" "$lumina_control_sha" preflight
+fi
 lumina_field_status=0
 bash code/scripts/run_lumina_resident_field.sh "$PWD" 43200 --feedback \
     --cache /gpfs/kjhan/cmfgen_runs/lumina_phase_prepare_20261026-8fMV0m/run/cache \

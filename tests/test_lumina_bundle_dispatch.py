@@ -42,6 +42,35 @@ def test_field_submitted_once_with_bounded_script(setup):
     assert len(calls) == 1
 
 
+def test_compute_node_preflight_uses_pinned_grammar_alias_and_strict_host_key(setup,monkeypatch):
+    config,c,_=setup
+    c['control_sha256']={'lumina_bundle_dispatch.py':D.sha(Path(D.__file__))}
+    config.write_text(json.dumps(c))
+    calls=[]
+    monkeypatch.setattr(D.subprocess,'run',lambda command,**kwargs:
+        (calls.append((command,kwargs)) or SimpleNamespace(returncode=0,stdout='grammar\n',stderr='')))
+    result=D.preflight_callback(config,D.sha(config))
+    command,kwargs=calls[0]
+    assert command[-3:]==['grammar','hostname','-s']
+    assert 'HostName=192.0.2.20' in command
+    assert 'HostKeyAlias=grammar' in command
+    assert 'StrictHostKeyChecking=yes' in command
+    assert 'UpdateHostKeys=no' in command
+    assert kwargs['timeout']==15 and kwargs['capture_output'] and kwargs['text']
+    assert result==dict(state='CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD',host='grammar',
+                        remote_hostname='grammar',automatic_retries=0)
+
+
+def test_compute_node_preflight_fails_closed_on_unreachable_callback(setup,monkeypatch):
+    config,c,_=setup
+    c['control_sha256']={'lumina_bundle_dispatch.py':D.sha(Path(D.__file__))}
+    config.write_text(json.dumps(c))
+    monkeypatch.setattr(D.subprocess,'run',lambda *_args,**_kwargs:
+        SimpleNamespace(returncode=255,stdout='',stderr='unreachable'))
+    with pytest.raises(RuntimeError,match='callback SSH 사전 확인 실패'):
+        D.preflight_callback(config,D.sha(config))
+
+
 @pytest.mark.parametrize('addresses', [None, {}, {'syntax': '192.0.2.10'}])
 def test_missing_callback_route_is_rejected_before_GPU_submission(setup, addresses):
     config, c, calls = setup
@@ -283,13 +312,13 @@ def test_real_batch_wrapper_forwards_bounded_feedback_options_and_response(tmp_p
     gpu=tmp_path/'gpu';(gpu/'code/scripts').mkdir(parents=True)
     runner=gpu/'code/scripts/run_lumina_resident_field.sh'
     runner.write_text("""#!/bin/bash
-python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").write_text(json.dumps(sys.argv[1:]))' "$@"
+python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").write_text(json.dumps(sys.argv[1:]));p=Path("events.json");v=json.loads(p.read_text()) if p.exists() else [];v.append("field");p.write_text(json.dumps(v))' "$@"
 """)
     args=[str(gpu),'new P.json','prep-sha'];options=['--max-sweeps','2']
     if control:
         folder=tmp_path/'control';folder.mkdir();config=folder/'config.json'
         (folder/'lumina_bundle_dispatch.py').write_text(
-            'import json,sys\nfrom pathlib import Path\nPath(__file__).with_name("response-args.json").write_text(json.dumps(sys.argv[1:]))\n')
+            'import json,sys\nfrom pathlib import Path\np=Path.cwd()/"events.json"\nv=json.loads(p.read_text()) if p.exists() else []\nv.append(sys.argv[3])\np.write_text(json.dumps(v))\nif sys.argv[3]=="response": Path(__file__).with_name("response-args.json").write_text(json.dumps(sys.argv[1:]))\n')
         options=['--max-sweeps','1','--input-j','old J.npy','--input-j-sha256','j-sha',
                  '--initial-preparation','old P.json','--initial-preparation-sha256','old-sha']
         args += [str(config),'config-sha',*options]
@@ -299,3 +328,20 @@ python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").wri
     assert forwarded[forwarded.index('--max-sweeps'):]==options
     if control:
         assert json.loads((folder/'response-args.json').read_text())==[str(config),'config-sha','response']
+        assert json.loads((gpu/'events.json').read_text())==['preflight','field','response']
+
+
+def test_feedback_batch_stops_before_field_when_compute_node_preflight_fails(tmp_path):
+    gpu=tmp_path/'gpu';(gpu/'code/scripts').mkdir(parents=True)
+    runner=gpu/'code/scripts/run_lumina_resident_field.sh'
+    runner.write_text('#!/bin/bash\ntouch field-started\n')
+    folder=tmp_path/'control';folder.mkdir();config=folder/'config.json'
+    (folder/'lumina_bundle_dispatch.py').write_text(
+        'import sys\nif sys.argv[3]=="preflight": sys.exit(7)\n')
+    script=Path(__file__).resolve().parents[1]/'scripts/submit_lumina_accepted_feedback.slurm'
+    result=subprocess.run(['bash',str(script),str(gpu),'new P.json','prep-sha',
+                           str(config),'config-sha','--max-sweeps','1'],
+                          check=False,capture_output=True,text=True)
+    assert result.returncode==7
+    assert not (gpu/'field-started').exists()
+    assert not (folder/'response-args.json').exists()
