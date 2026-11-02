@@ -57,6 +57,8 @@ def test_scaled_relative_metrics_handle_shared_zero_and_report_worst_location():
 
 
 def test_run_identity_rejects_field_artifact_not_matching_sealed_manifest(tmp_path):
+    native_root=tmp_path/'run';native_root.mkdir()
+    (native_root/'VADAT').write_bytes(b'fixed J continuum control fixture')
     field_root=tmp_path/'field';field_root.mkdir()
     (field_root/'EDDFACTOR').write_bytes(b'prepared-field')
     (field_root/'EDDFACTOR_INFO').write_bytes(b'prepared-info')
@@ -71,9 +73,19 @@ def test_run_identity_rejects_field_artifact_not_matching_sealed_manifest(tmp_pa
     build_manifest.write_text(json.dumps({'output_sha256':{
         'cmfgen_fixedj_heat.exe':compare_module.sha(exe)}}))
     args=SimpleNamespace(build_manifest=build_manifest,executable=exe,
-        field_manifest=manifest,field_root=field_root,expected_j_sha256='2'*64)
+        field_manifest=manifest,field_root=field_root,native_root=native_root,
+        expected_j_sha256='2'*64,
+        expected_vadat_sha256=compare_module.sha(native_root/'VADAT'))
     with pytest.raises(ValueError,match='기준 J'):
         compare_module.verify_run_identity(args)
+    manifest.write_text(json.dumps({'output_sha256':{
+        'EDDFACTOR':compare_module.sha(field_root/'EDDFACTOR'),
+        'EDDFACTOR_INFO':compare_module.sha(field_root/'EDDFACTOR_INFO')},
+        'input_sha256':{'generation15/J.npy':'2'*64}}))
+    args.expected_vadat_sha256='0'*64
+    with pytest.raises(ValueError,match='VADAT'):
+        compare_module.verify_run_identity(args)
+    args.expected_vadat_sha256=compare_module.sha(native_root/'VADAT')
     manifest.write_text(json.dumps({'output_sha256':{
         'EDDFACTOR':'0'*64,'EDDFACTOR_INFO':compare_module.sha(field_root/'EDDFACTOR_INFO')},
         'input_sha256':{'generation15/J.npy':'2'*64}}))
@@ -90,6 +102,7 @@ def write_lmat(path,array):
 def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,monkeypatch):
     root=tmp_path/'native';root.mkdir()
     nd=90;nt=5
+    (root/'VADAT').write_bytes(b'fixed J continuum control fixture')
     radius=np.arange(nd,0,-1,dtype=np.float64)
     pops=np.zeros((nt,nd),dtype=np.float64)
     pops[-2]=2.;pops[-1]=1.
@@ -150,6 +163,7 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     args=SimpleNamespace(native_root=root,out=tmp_path/'comparison.json',
         build_manifest=build_manifest,executable=executable,
         field_manifest=field_manifest,field_root=field_root,
+        expected_vadat_sha256=compare_module.sha(root/'VADAT'),
         expected_j_sha256='7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841',
         expected_state=tmp_path/'expected-state.bin',c_full=tmp_path/'C-imported-full.bin',
         c_occupation=c_occupation,response=response,levels=level_path,
@@ -163,3 +177,4 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     assert result['final_goal']=='NOT_MET'
     saved=json.loads(args.out.read_text())
     assert saved['input_sha256']['native_full_population']['sha256']
+    assert saved['input_sha256']['native_VADAT']['sha256']==compare_module.sha(root/'VADAT')

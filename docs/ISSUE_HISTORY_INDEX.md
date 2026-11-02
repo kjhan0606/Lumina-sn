@@ -346,6 +346,12 @@
   시험은76개 통과·1개 건너뜀이고 private 링크 빌드는 통과했지만 실제 native
   평가/물리 비교/Slurm은0회다. 합성 end-to-end 및 신원 불일치 거부 시험도 통과했다.
   새 물리 평가 권한이나 합격선을 뜻하지 않는다.
+  추가 정적 추적에서 native `COMP_J_BLANK`는 `SECTION='CONTINUUM'`일 때
+  `CONT_VEL`을 참으로 설정하고 `USE_FIXED_J`도 참이면 `RD_CONT_J`로 EDDFACTOR J를
+  읽는다. 현재 VADAT의 `USE_FIXED_J=T`, `GLOBAL_LINE=BLANK`는 이 분기에 맞는다.
+  그런데 VADAT가 기존 상태-input 해시에 포함되지 않았으므로, 비교기가 실제 run-root
+  VADAT SHA를 고정값 `80e08003…6d144ec`와 대조하도록 보강했다. 이는 예정 경로 확인이며
+  실제 실행의 J 소비 증거는 아니다. 아직 물리 평가·Slurm 0회다.
   [11월2일 인계](HANDOVER_2026-11-02.md)의 20:54 `same-state full-level 비교 준비`와 완료 JSON의
   `native_full_comparison_preparation` 참조. 최종 목적은 계속 **NOT_MET**다.
 

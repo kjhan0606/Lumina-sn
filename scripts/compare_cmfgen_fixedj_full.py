@@ -62,10 +62,17 @@ def verify_run_identity(args):
         raise ValueError('기대 J SHA256 형식 오류')
     if j_inputs[0][1].lower()!=expected_j:
         raise ValueError('field manifest의 고정 J가 지정된 기준 J와 불일치')
+    vadat=Path(args.native_root)/'VADAT'
+    expected_vadat=args.expected_vadat_sha256.lower()
+    if len(expected_vadat)!=64 or any(ch not in '0123456789abcdef' for ch in expected_vadat):
+        raise ValueError('기대 VADAT SHA256 형식 오류')
+    if sha(vadat)!=expected_vadat:
+        raise ValueError('실제 native run의 VADAT가 준비한 제어 입력과 불일치')
     return dict(build_manifest=Path(args.build_manifest),
         executable=Path(args.executable),field_manifest=field_manifest,
         field_factor=Path(args.field_root)/'EDDFACTOR',
         field_info=Path(args.field_root)/'EDDFACTOR_INFO',
+        native_vadat=vadat,
         fixed_J_source_name=Path(j_inputs[0][0]).name,
         fixed_J_source_sha256=j_inputs[0][1])
 
@@ -304,6 +311,7 @@ def compare(args):
         'fixed_J_field_manifest':run_identity['field_manifest'],
         'fixed_J_field_factor':run_identity['field_factor'],
         'fixed_J_field_info':run_identity['field_info'],
+        'native_VADAT':run_identity['native_vadat'],
         'expected_state':Path(args.expected_state),
         'C_imported_full':Path(args.c_full),
         'C_material_occupation':Path(args.c_occupation),
@@ -332,7 +340,8 @@ def compare(args):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('native-root','build-manifest','executable','field-manifest',
-                 'field-root','expected-j-sha256','expected-state','c-full','c-occupation','response',
+                 'field-root','expected-j-sha256','expected-vadat-sha256',
+                 'expected-state','c-full','c-occupation','response',
                  'levels','model-spec','atomic-links','out'):
         parser.add_argument('--'+name,required=True,
             type=Path if name!='expected-j-sha256' else str)
