@@ -922,5 +922,63 @@
     "slurm_submissions": 0,
     "goal_achieved": false
   },
+  "native_current_field_preparation": {
+    "observed_at_kst": "2026-11-02T18:30:00+09:00",
+    "scope": "현재 완료 J 전체를 native EDD 입력에 보존하고 기존 순간 붕괴 수리를 private 비교 빌드에서 재사용한다. 실제 native 열행/인구/수송 평가는 없다.",
+    "J_sha256": "7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841",
+    "grid_sha256": "c03b9fb565a215fd11ec70ab2574c70af7f09eab74669214638177c2bbfc0a6d",
+    "source_sha256": {
+      "scripts/prepare_cmfgen_fixedj_field.py": "b517c7455e97f5db0aa998374f2f0095626a09f35766002fb77b0260d5ce280f",
+      "scripts/prepare_cmfgen_fixedj_heat.py": "c20809dd14da42164e732becf6a366b399474317c33f3c714470566ef9f1dd65",
+      "tests/test_cmfgen_fixedj_field.py": "6a457f72d725283ee451f45afcb3db810b24a231ff16ab4e94459c542e63681d"
+    },
+    "field_input": {
+      "root": "/tmp/lumina-native-current-field-54so8pdh/field",
+      "manifest_sha256": "bd36f131f077ab39b58d95fdedb59e4a5fac014f392af4d79c79051fe7902335",
+      "EDDFACTOR_sha256": "bf57e4aac552d0aad9afe3e535cb4284067c4c8eb6e2f683cf3a92d2f5f15577",
+      "depths": 90,
+      "frequencies": 1115020,
+      "values": 100351800,
+      "record_bytes": 728,
+      "data_first_record": 15,
+      "preparation_seconds": 56.544,
+      "limits": "LagEunha CPU1/OpenMP1/BLAS1/4GiB/300s",
+      "independent_all_J_value_equality": true,
+      "independent_all_frequency_record_equality": true,
+      "native_frequency_Hz_roundtrip_relative_max": 2.220446049250313e-16,
+      "frequency_Hz_min": 3498970000000.0,
+      "frequency_Hz_max": 1e18,
+      "quadrature_equal": false,
+      "quadrature_scope": "원 native가 생성하는 별도 격자/가중치와 외부 J의 보존된 fine 격자를 구분한다. 외부 record 수를 NCF_MAX로 자르지 않았다.",
+      "inspection": "EDD를 (1115034,91) little-endian double로 읽고 첫14record 뒤의 전J와 native-nu를 원 J.npy/격자 역순에 블록별 전수 대조했다. actual J 값 비교는 정확 일치하며 주파수 단위 왕복은 위 상대오차를 별도 기록한다."
+    },
+    "direct_tests": {
+      "command": "CMFGEN_SOURCE_ROOT=$CMFGEN_SOURCE_ROOT python3 -B -m pytest -q -p no:cacheprovider tests/test_cmfgen_fixedj_field.py tests/test_cmfgen_fixedj_heat.py tests/test_cmfgen_fixedj_exponent_patch.py tests/test_cmfgen_native_se_witness.py",
+      "result": "69 passed in 24.09s",
+      "log": "/tmp/lumina-native-field-tests-6VZI2YdB/pytest.log",
+      "log_sha256": "e33fb4f83a23c0a9090919d0b236736c70b3403a1e42663be6c69e078cb80694",
+      "reader_source_sha256": "ce9f5a5809c90692a66dec784729905c2aaaf9e0c6b6e47779762a37ce3c3213",
+      "reader_scope": "원 RD_CONT_J 소스를 수정 없이 소형 배열 저장소와 컴파일해 knots와 선형 중간점의 실제 소비값을 대조했다. 전체 native 모델/physics 평가는 아니다."
+    },
+    "matched_private_build": {
+      "root": "/tmp/lumina-native-fixedj-matched-rq4c8vqy/build",
+      "manifest_sha256": "8ffa2b84e5df058b04497db8f93457ceb087c79b637412a7b173b5eb443288c9",
+      "executable_sha256": "aa249cf6c503bf812149f9c89d00f257c2b195299857700b3687cc99a145baa6",
+      "build_seconds": 7.256,
+      "reference_archive_sha256": "e4d5ec0df548d9e98e50b1d3ebfc17e35f5e6bc582c1ce12ab7da97f8d49c4f7",
+      "corrected_decay_source_sha256": "26764c62d0a2418871a5ff58629acfb609748307172ab84daef87c38dbd64b04",
+      "reuse": "LUMINA_NATIVE_DECAY_FIX_2026-10-27.json의 기존 수리를 재사용했다.",
+      "linker_trace_confirmed_explicit_objects": ["rd_cont_j.o: rd_cont_j_", "do_species_decays_v2.o: do_species_decays_v2_"],
+      "activation": "prepare_cmfgen_fixedj_heat.py --parent PINNED_J71_BUILD --out NEW_UNUSED_BUILD --instantaneous-decay",
+      "installed_in_original_native": false,
+      "heat_policy_numerically_matched": false
+    },
+    "new_BF_SE_or_thermal_evaluations": 0,
+    "new_transport": 0,
+    "slurm_submissions": 0,
+    "full_level_population_parity": "NOT_YET_EVALUATED",
+    "actual_native_heat_parity": "NOT_YET_EVALUATED",
+    "goal_achieved": false
+  },
   "final_goal": "NOT_MET"
 }

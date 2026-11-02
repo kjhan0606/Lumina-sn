@@ -177,7 +177,7 @@ def prepare_state(material, material_sha, native_run, out):
     return report
 
 
-def prepare(parent, out):
+def prepare(parent, out, *, instantaneous_decay=False):
     """원 J71의 실제 객체/라이브러리를 사용한다. 설치 native archive로 바꾸지 않는다."""
     parent, out = Path(parent).resolve(), Path(out).resolve()
     if out.exists():
@@ -213,11 +213,23 @@ def prepare(parent, out):
         for path in modules:
             inputs[path] = sha(path)
     observer = Path(__file__).with_name('cmfgen_fixedj_heat.f90').resolve()
+    reader = native/'new_main/mod_subs/rd_cont_j.f'
+    if sha(reader) != 'ce9f5a5809c90692a66dec784729905c2aaaf9e0c6b6e47779762a37ce3c3213':
+        raise ValueError('검토한 원 native 고정-J reader가 아님')
     include = native/'new_main/GET_J_CHI.INC'
     if sha(include) != 'aa44ca3bfa346f4d79f2efe21337d8bb0a1249268ca0f78938b164b9cc460775':
         raise ValueError('봉인 GET_J_CHI include 변경')
-    for path in (source, include, observer, Path(__file__).resolve(), manifest_path):
+    for path in (source, include, observer, reader, Path(__file__).resolve(), manifest_path):
         inputs[path] = sha(path)
+    decay = None
+    if instantaneous_decay:
+        from prepare_cmfgen_instantaneous_decay import corrected_source
+        decay_source = native/'new_main/subs/do_species_decays_v2.f'
+        decay = corrected_source(decay_source.read_bytes())
+        if hashlib.sha256(decay).hexdigest() != '26764c62d0a2418871a5ff58629acfb609748307172ab84daef87c38dbd64b04':
+            raise ValueError('검증한 순간 붕괴 수리와 다름')
+        for path in (decay_source, Path(__file__).with_name('prepare_cmfgen_instantaneous_decay.py')):
+            inputs[path] = sha(path)
     if any(sha(path) != digest for path, digest in inputs.items()):
         raise ValueError('봉인 J71 native 링크 입력 변경')
     modified = patched(source.read_text())
@@ -225,14 +237,23 @@ def prepare(parent, out):
     (out/'cmfgen_sub.f').write_text(modified)
     shutil.copy2(include, out/'GET_J_CHI.INC')
     shutil.copy2(observer, out/observer.name)
+    shutil.copy2(reader, out/reader.name)
     options = ['-I.', *['-I'+str(p) for p in includes]]
     command(['gfortran', *FLAGS, *options, '-c', 'cmfgen_sub.f'], out)
     command(['gfortran', '-O', '-fopenmp', '-ffree-line-length-none', *options,
              '-c', observer.name], out)
+    command(['gfortran', *FLAGS, *options, '-c', reader.name], out)
+    extra_objects = [out/'rd_cont_j.o']
+    if decay is not None:
+        (out/'do_species_decays_v2.f').write_bytes(decay)
+        command(['gfortran', *FLAGS, *options, '-c', 'do_species_decays_v2.f'], out)
+        extra_objects.append(out/'do_species_decays_v2.o')
     command(['gfortran', '-fopenmp', '-m64', *objects, out/'cmfgen_sub.o',
-             out/'cmfgen_fixedj_heat.o', archives[0],
+             out/'cmfgen_fixedj_heat.o', *extra_objects, archives[0],
              *[p for p in inputs if p.name in ('libpgplt.a', 'libmod.a',
                                               'libmy_lapack.a', 'libmy_blas.a')],
+             '-Wl,-Map='+str(out/'link.map'), '-Wl,--trace-symbol=do_species_decays_v2_',
+             '-Wl,--trace-symbol=rd_cont_j_',
              '-o', out/'cmfgen_fixedj_heat.exe'], out)
     if any(sha(path) != digest for path, digest in inputs.items()):
         raise ValueError('빌드 중 원본 native 링크 입력 변경')
@@ -242,7 +263,9 @@ def prepare(parent, out):
                   activation='LUMINA_FIXEDJ_HEAT_ONLY=1; incompatible controls STOP94',
                   terminal='STOP96 before original population solver; no material update',
                   actual_native_evaluation=False, common_state_injection='EXPLICIT_INPUT_REQUIRED_BEFORE_POPTOION',
-                  decay_implementation='UNCHANGED_J71_ARCHIVE; not an instantaneous-decay-patch build',
+                  decay_implementation=('EXPLICIT_VERIFIED_INSTANTANEOUS_DT0_OBJECT' if instantaneous_decay
+                                        else 'UNCHANGED_J71_ARCHIVE; not an instantaneous-decay-patch build'),
+                  instantaneous_decay_source_sha256=hashlib.sha256(decay).hexdigest() if decay else None,
                   actual_fixed_J_consumption='NOT_YET_VERIFIED',
                   same_full_level_state='NOT_YET_VERIFIED',
                   heat_equivalence='NOT_YET_EVALUATED', final_goal='NOT_MET')
@@ -257,13 +280,14 @@ if __name__ == '__main__':
     parser.add_argument('--state-material', type=Path)
     parser.add_argument('--state-material-sha')
     parser.add_argument('--native-run', type=Path)
+    parser.add_argument('--instantaneous-decay', action='store_true')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     if any((args.state_material, args.state_material_sha, args.native_run)):
-        if args.parent or not all((args.state_material, args.state_material_sha, args.native_run)):
+        if args.parent or args.instantaneous_decay or not all((args.state_material, args.state_material_sha, args.native_run)):
             parser.error('상태 준비는 --state-material/--state-material-sha/--native-run만 함께 지정')
         prepare_state(args.state_material, args.state_material_sha, args.native_run, args.out)
     elif args.parent:
-        prepare(args.parent, args.out)
+        prepare(args.parent, args.out, instantaneous_decay=args.instantaneous_decay)
     else:
         parser.error('--parent 빌드 또는 명시한 수용 상태 준비가 필요')

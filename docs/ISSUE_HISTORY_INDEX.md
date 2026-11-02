@@ -329,6 +329,13 @@
   붕괴 구현과 `native_instantaneous_scenario`의 차이를 먼저 명시하며 기존 순간
   붕괴 수리를 재사용한다. 같은 인계의 `수용 상태의 native 입력 연결` 및
   완료 JSON의 `native_state_preparation` 참조. 새 물리 실행은0회다.
+- 현재 J의1115020주파수/90점을 native EDD로 전수 보존했다. 원 RD_CONT_J
+  선형 보간 시험을 포함해69시험을 확인했고,10월27일의 검증된 순간 붕괴 수리를
+  private 명시 object로 재사용하는 옵션을 추가했다. 실제 물리 평가는0회다.
+  NCF_MAX800000은 외부 장 record 수가 아니라 native 자체 격자의 용량이다.
+  native 적분 격자/가중치와 Lumina fine 격자가 같다는 뜻은 아니며, 실제 열행
+  차이의 해석에서 이를 분리해야 한다. 위 인계의18:30 준비 및 완료 JSON의
+  `native_current_field_preparation` 참조. 설치본/옛 앵커를 새 수리판으로 바꾸지 않았다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
