@@ -810,5 +810,54 @@
     "new_analysis_SE": 0,
     "new_transport": 0
   },
+  "native_integral_re_preparation": {
+    "observed_at_kst": "2026-11-02T17:54:00+09:00",
+    "purpose": "같은 수용 상태/J에서 실제 CMFGEN 적분 RE 행과 선택 열행의 수치 대조를 준비한다. 실물 평가는 실행하지 않았다.",
+    "reference_caller_sha256": "84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c",
+    "reference_archive_sha256": "e4d5ec0df548d9e98e50b1d3ebfc17e35f5e6bc582c1ce12ab7da97f8d49c4f7",
+    "reference_manifest_sha256": "5210f73a0fdb7b16195dbb02b5fffdc8619055f2f49dbbff3d70d0c38b5dfc5f",
+    "source_findings": [
+      "기존 USE_FIXED_J continuum 분기는 COMP_OPAC을 건너뛴다. 같은 J의 SE 응답이 실제 continuum RE 계수 갱신까지 증명하지 않는다.",
+      "STEQ_T는 continuum J·진흡수/방출과 선 기여를 합산한다. dummy H를 사용하는 flux/광도와 구별하되 기존 fixed-J RE 출력도 그대로 인증하지 않는다.",
+      "최종 RE 행은 선 기여 및 단열/붕괴/인공열을 포함해 원래 SOLVE_FOR_POPS 직전에 포착한다. 지원 BLANK 설정에서는 뒤쪽 별도 LINE LOOP를 건너뛰며 선 기여는 continuum loop에서 처리한다. GENCOOL이나 EHB proxy가 아니다."
+    ],
+    "historical_scope": "과거 fixed-J heat/flux 출력 제외의 이유를 구체화했다. 과거 검사 소실이나 새 production 회귀로 처리하지 않는다.",
+    "implementation": {
+      "scripts/prepare_cmfgen_fixedj_heat.py": "120c434f728bfb4617366847a54b8b945f94fd3bad199634b145448862a5c6b0",
+      "scripts/cmfgen_fixedj_heat.f90": "139a99ffb12f435e15933271c01382e23113f365979ad37a4ac2ec2711e5384d",
+      "tests/test_cmfgen_fixedj_heat.py": "10901601f54497e624bdc453d0b50f893d3ca75c24f147d662201e18f3f619bf"
+    },
+    "direct_tests": {
+      "host": "LagEunha",
+      "limits": "CPU1/OpenMP1/BLAS1/4GiB/300s",
+      "command": "python3 -B -m pytest -q -p no:cacheprovider tests/test_cmfgen_fixedj_heat.py tests/test_cmfgen_fixedj_exponent_patch.py tests/test_cmfgen_native_se_witness.py",
+      "result": "36 passed in 28.62s",
+      "log": "/tmp/lumina-native-heat-tests-9phPZw7G/pytest.log",
+      "log_sha256": "e5b3c75282e091cbf8c5c339e035223bdb5f5158dca30ac91ad97f205741b748",
+      "scope": "정확한 세 삽입점·원 식 보존, signed 최종 열행/T/ne/SL 직렬화, 설정·형식 오류 거부, 갱신 전 STOP96을 소형 native 모형에서 확인. 실제 원자모형 열행 일치 시험이 아니다."
+    },
+    "actual_build": {
+      "root": "/tmp/lumina-native-heat-final-ttnenxm6/build",
+      "elapsed_seconds": 6.719,
+      "limits": "LagEunha CPU1/OpenMP1/BLAS1/4GiB/300s",
+      "manifest_sha256": "e7879d671508e88fb0bc4a892b6c4935cb6b1d7fdb94fbe47c73f3da0253deef",
+      "executable_sha256": "789773df7ab6f4714899760bb6e725a6d0c1d5d30c522cad98afc6bb75cef41f",
+      "modified_caller_sha256": "7c1489eaa250edacbd1c0d0590add3ec69375d42ec6650ee6c6bfa01ad0abbae",
+      "command": "python3 -B scripts/prepare_cmfgen_fixedj_heat.py --parent $LUMINA_RUNS_ROOT/lumina_coupling71_build_20261020-ThfBHm/build --out $NEW_UNUSED_PRIVATE_BUILD",
+      "native_original_changed": false,
+      "actual_native_evaluation": false
+    },
+    "remaining": [
+      "수용 T/ne/SL의 native 입력 직접 주입과 갱신 전 실제 상태 대조",
+      "같은 full-level 인구/원자모형/열 정책과 실제 J 및 선별 소비의 신원 확인",
+      "별도 승인 범위에서 실제 native 열행을 계산하고 Lumina 선택 열행과 항별 수치 비교"
+    ],
+    "new_material_responses": 0,
+    "new_native_physics_evaluations": 0,
+    "new_transport": 0,
+    "slurm_submissions": 0,
+    "physical_equivalence": "NOT_YET_EVALUATED",
+    "goal_achieved": false
+  },
   "final_goal": "NOT_MET"
 }

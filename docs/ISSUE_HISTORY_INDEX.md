@@ -312,6 +312,16 @@
   EHB interior의 host INT_EN 혼재는 당시 이미 구분했다. 이 진단 출력 차이를
   새 Lumina 회귀로 처리하거나 GENCOOL 단열 출력만으로 주 열행을 인증하지 않는다.
   현재 native 호환 내부에너지 영점/SL 정의는 위10월27일 기록이 우선한다.
+- 11월2일 실제 RE 비교 준비: 기존 fixed-J native의 열 출력 제외는 유지한다.
+  봉인 J71 caller에서 `USE_FIXED_J`가 continuum COMP_OPAC을 건너뛰므로,
+  기존 STEQ_T를 바로 같은 상태의 열행으로 쓰지 않는다. private 전용 경로는
+  COMP_OPAC을 평가하고 최종 STEQ_T/입력 상태를 물질 갱신 직전에 저장한 뒤
+  종료한다. 지원 BLANK 설정의 선 기여는 continuum loop 안에서 처리하며
+  뒤의 별도 LINE LOOP를 건너뛴다. J71 실제 archive/객체로 빌드와 관련36시험을
+  확인했지만 실제 열평가·상태 주입·열행 일치는 아직 없다. 기존의 출력 한계를
+  구체화한 것이며 새 production 회귀나 에너지 정책 수용으로 부르지 않는다.
+  [11월2일 인계](HANDOVER_2026-11-02.md)의 `후속 준비`와 기존 완료 JSON의
+  `native_integral_re_preparation`을 재사용한다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
