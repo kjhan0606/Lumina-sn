@@ -660,6 +660,15 @@
   `실제71 완료`, `감쇠/복원 분기 종료`;
   [동등성 계획 v2](CODEX_CMFGEN_EQUIVALENCE_PLAN_v2.md),
   [공개 모델 차이](PUBLIC_TOY06_COMPARISON_2026-10-30.md).
+- 11월2일 실행시간 정정: 처음의 약10:07 직렬 추정은 새 J에서 필요한 centered
+  T/ne 방향 네 응답을 빠뜨렸다. 1254013의 네 응답은 실제4:20:28이고,
+  `lumina_thermal_replay.load()`가 저장 방향의 field 신원을 현재 복사장과
+  일치시킨다. 한 새 물질→계수/경계→F→응답→새 방향→T/ne 수정 iteration은
+  관측 유사 단계 합 약14:27:45이며 큐 대기·추가 수렴 iteration·matched steady
+  CMFGEN 기준해·observer spectrum은 별도다. 444706은 F worker 완주 뒤 dispatcher
+  DNS로 FAILED였으므로 해당 H200 시간은 성공 bundle이 아닌 worker 처리량이다.
+  상세 산술과 권한 경계는 [11월2일 인계](HANDOVER_2026-11-02.md)의
+  `후속 실행시간 정정`을 따른다. 새 실행은 아직 승인되지 않았다.
 
 ## O01 장시간 git add와 대형 미추적 계산 출력
 
