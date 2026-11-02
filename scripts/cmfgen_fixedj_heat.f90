@@ -18,6 +18,36 @@ if(.not.fixedj.or.impurity.or..not.coherent.or.ehb.or.check_ehb.or.ddt.or.flux.o
    ndietot/=0.or.gamma_mode=='RAD_TRANS') stop 94
 end subroutine
 
+subroutine lumina_fixedj_heat_load(pops,r,nt,nd)
+use iso_fortran_env,only:int32,int64
+use ieee_arithmetic,only:ieee_is_finite
+use set_kind_module,only:ldp
+implicit none
+integer,intent(in)::nt,nd
+real(ldp),intent(inout)::pops(nt,nd)
+real(ldp),intent(in)::r(nd)
+real(ldp)::input_r(nd),input_pops(nt,nd)
+integer(int32)::header(4)
+integer(int64)::bytes
+integer::lu,ios
+character(16)::tag
+open(newunit=lu,file='NATIVE_HEAT_INPUT.bin',status='old',action='read', &
+     access='stream',form='unformatted',iostat=ios)
+if(ios/=0) stop 94
+read(lu,iostat=ios)tag,header
+if(ios/=0) stop 94
+if(tag/='NATIVEHEATINPV1 '.or.any(header/=int([1,64,nt,nd],int32))) stop 94
+inquire(unit=lu,size=bytes)
+if(bytes/=32_int64+8_int64*nd*(nt+1_int64)) stop 94
+read(lu,iostat=ios)input_r,input_pops
+close(lu)
+if(ios/=0) stop 94
+if(any(input_r/=r).or.any(.not.ieee_is_finite(input_pops)).or.any(input_pops<0).or. &
+   any(input_pops(nt-1:nt,:)<=0)) stop 94
+! 전체 배열 검증 뒤 한 번만 주입한다. 뒤의 원래 POPTOION/SUP_TO_FULL이 이 상태를 읽는다.
+pops=input_pops
+end subroutine
+
 subroutine lumina_fixedj_heat_finish(pops,r,v,sigma,t,ed,atoms,clump,heat,charge, &
                                    nt,nd,ncf,counter,weak_lines)
 use iso_fortran_env,only:int32

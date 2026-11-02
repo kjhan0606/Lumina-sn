@@ -322,6 +322,13 @@
   구체화한 것이며 새 production 회귀나 에너지 정책 수용으로 부르지 않는다.
   [11월2일 인계](HANDOVER_2026-11-02.md)의 `후속 준비`와 기존 완료 JSON의
   `native_integral_re_preparation`을 재사용한다.
+- 이어서 수용90점·1800변수의 native 입력을 만들고 실제 Fortran 로더의
+  162000개 double 전달을 바이트 동일 재현했다(관련58시험). 입력은 원래
+  POPTOION/SUP_TO_FULL 전에 주입하며 누락/오류 시 예전 상태로 실행하지 않는다.
+  아직 native full 인구 복원·J 소비·실제 열행은 미평가다. J71 archive 그대로인
+  붕괴 구현과 `native_instantaneous_scenario`의 차이를 먼저 명시하며 기존 순간
+  붕괴 수리를 재사용한다. 같은 인계의 `수용 상태의 native 입력 연결` 및
+  완료 JSON의 `native_state_preparation` 참조. 새 물리 실행은0회다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 

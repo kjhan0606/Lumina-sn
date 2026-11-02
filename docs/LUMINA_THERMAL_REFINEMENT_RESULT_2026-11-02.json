@@ -859,5 +859,68 @@
     "physical_equivalence": "NOT_YET_EVALUATED",
     "goal_achieved": false
   },
+  "native_state_preparation": {
+    "observed_at_kst": "2026-11-02T18:08:00+09:00",
+    "scope": "수용 상태를 native 변수 주소로 대응하고 원래 POPTOION/SUP_TO_FULL 전에 주입하는 배열 전달 경로. 실제 full-level 복원/열행/수송은 실행하지 않음.",
+    "root": "/tmp/lumina-native-heat-state-ed3sn_uy",
+    "accepted_material_manifest": "$LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/accepted-material.json",
+    "accepted_material_manifest_sha256": "91f23b39abb33ce243d07e98b618b070f40c4afaea6e72e395da1e2741882367",
+    "accepted_nodes_sha256": "4552aecc967f69a704f923a903e982b5aa7cb9799932dff2566132943e421701",
+    "points": 90,
+    "native_variables": 1800,
+    "SL_terminal_columns": 1798,
+    "full_level_catalog_rows": 24542,
+    "state_input_sha256": "b75ef1482cd2f5ab3fffa2bbebf89439ec23ad77f7220ffe5b209ad74566ed1b",
+    "state_manifest_sha256": "7a75fed6a442855ab3b30f219ba496a7e67b35dec9618071c9533da781af5031",
+    "state_preparation_seconds": 0.514,
+    "radius_byte_region": {
+      "offset": 0,
+      "bytes": 720,
+      "sha256": "d67f86b7f6037991a6bf0294df61721a2210e1f30cf14ec92cfcf2a027747890"
+    },
+    "native_SL_variable_map_sha256": "7689a8b1cf6f0db0d6c0c9fc8dc99983318987f6a137785ac5a81eca25455b84",
+    "source_sha256": {
+      "scripts/cmfgen_fixedj_heat.f90": "488401c9ef4adfcc54c9b480b0a30d5d68766473a381254a3a705f6687fd388a",
+      "scripts/prepare_cmfgen_fixedj_heat.py": "a2ef18d5815ce290128c2d2b2b36c6c1131e5857d42185dfd6b9be12ca7c4ff8",
+      "tests/test_cmfgen_fixedj_heat.py": "945b45fa7b0c146e99b8f844bf3a1f845a74eaf976287cebabb10eb0c523ecbf"
+    },
+    "direct_tests": {
+      "limits": "LagEunha CPU1/OpenMP1/BLAS1/4GiB/300s",
+      "command": "python3 -B -m pytest -q -p no:cacheprovider tests/test_cmfgen_fixedj_heat.py tests/test_cmfgen_fixedj_exponent_patch.py tests/test_cmfgen_native_se_witness.py",
+      "result": "58 passed in 40.75s",
+      "log": "/tmp/lumina-native-state-finaltests-eqCN0ZpU/pytest.log",
+      "log_sha256": "d9e703dfbb7598b1adcac33abfe91ab24cd847b7ba950227faba9f42cf46bb1a"
+    },
+    "actual_build": {
+      "elapsed_seconds": 6.251,
+      "manifest_sha256": "1f49579fe8ecea3730558998f0181fdaa0f61443659f7d5773f776328e449dc1",
+      "executable_sha256": "215927d5acb45c83034403d1e022b0c22ffdb7d3d45ad58b25e24fa392dab4c4",
+      "decay_implementation": "UNCHANGED_J71_ARCHIVE; not instantaneous-decay-patch build",
+      "actual_native_physics_evaluation": false
+    },
+    "actual_array_roundtrip": {
+      "values": 162000,
+      "byte_identical": true,
+      "payload_offset": 752,
+      "input_payload_and_output_sha256": "ca589b3afe5701d08be20b2345963714edd3d5fb8855de1fa562752ca096fc9c",
+      "driver_source": "/tmp/lumina-native-heat-state-ed3sn_uy/loader_check.f90",
+      "driver_source_sha256": "cd5a538bc62ec7cf290d3861931d368ff7cbfbf86b6a6df0dc0f28149516b34d",
+      "driver_executable_sha256": "a5991cf2d5b3c81a9d89dca8381080513a6234fe4dc5cf6feaa9194dfaa761c4",
+      "method": "원 native kind module로 빌드한 실제 로더만 사용했다. SE/RE/opacity/수송은 호출하지 않았다.",
+      "reproduction": "새 빈 디렉터리에 NATIVE_HEAT_INPUT.bin만 복사한 뒤 보존된 loader_check를 실행한다. tail -c +753 NATIVE_HEAT_INPUT.bin의 SHA256과 NATIVE_STATE_ROUNDTRIP.bin의 SHA256을 비교한다. 기존 출력은 덮어쓰지 않는다."
+    },
+    "state_preparation_command": "python3 -B scripts/prepare_cmfgen_fixedj_heat.py --state-material $LUMINA_RUNS_ROOT/lumina_refinement_cfull_20261102-DGhtkFEg/material/accepted-material.json --state-material-sha 91f23b39abb33ce243d07e98b618b070f40c4afaea6e72e395da1e2741882367 --native-run $LUMINA_RUNS_ROOT/toy06_19p48d_field_feedback_429038/material --out $NEW_UNUSED_STATE_DIRECTORY",
+    "remaining": [
+      "native full-level 복원과 실제 C full 인구의 동일 상태 대조",
+      "현재 J7d257602 및 실제 선별 J 소비의 동일성",
+      "J71 원 붕괴 구현과 native_instantaneous_scenario 열 정책의 명시적 일치",
+      "별도 승인 범위에서 실제 열행 평가/수치 비교 및 후속 자기일관 수송"
+    ],
+    "new_physical_material_responses": 0,
+    "new_BF_integrations": 0,
+    "new_transport": 0,
+    "slurm_submissions": 0,
+    "goal_achieved": false
+  },
   "final_goal": "NOT_MET"
 }
