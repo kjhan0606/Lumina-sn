@@ -466,6 +466,16 @@
   비교 JSON SHA256은 `b82caf1c0375502615ceed0856c9a8c240424f2c75266dbc917ded98f325809e`,
   90점 표는 `c3dfd0d771579487fdd39d427361c87a5c432307839931a7eedb29563e536167`이다.
   상세와 이후 판단은 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 절을 참조한다.
+- 같은-state native line output 부재도 확인했다. fixed-J 보존본의 VADAT에서
+  `WRITE_RATES=F`이고 `LINEHEAT`/`NETRATE`/`TOTRATE`는 없다. 현재 해당 실행의
+  `cmfgen_sub.f` SHA256은 `0d494c06a9eb61f57feaf5e326cd29ffd5ea6631cbb197168a316a5436985c68`이며,
+  마지막 반복의 `WRITE_RATES` 분기가 `LINEHEAT=ZNET_SIM*ETAL_MAT`과
+  `NETRATE=ZNET_SIM`을 기록한다. 이는 이전 P09 source SHA
+  `84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c`와 다른 판본으로,
+  현재 결과에 적용한 직접 source 확인이다. 재생성은 동일 fixed-J 상태를 격리 복제해
+  출력 제어만 켜고 물질 갱신 전 `STOP96`을 유지해야 한다. 과거 유사 rate 출력은
+  약4.75 GiB이며 원본 보존본은 약4.0 GiB다. 해당 추가 native 실행은 이전 단회 승인
+  범위 밖이므로 미승인·미제출이고, 새 자원 승인이 필요하다.
 - 재사용성 확인: 10월27일의 1,115,020점 `sources.npz`는 현재 generation14의
   source로 재사용하지 않는다. `MODEL_SPEC`은 같지만 그 producer의
   `native_material_nodes.bin` SHA256 `942cec390a51807f0269e0dd8afecda8c0548bfef0fbf5bef22bc954bc98b735`
