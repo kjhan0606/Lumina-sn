@@ -312,6 +312,10 @@
   `ccc1951d323819a2880e423a3a37971d679101f8c89132df4430844fa9d50271`;
   자세한 집계와 response SHA는 [11월3일 인계](HANDOVER_2026-11-03.md)의
   `generation14 기준 열장부 재판독` 참조.
+- 비교 신원 주의: 11월2일에 준비된 native `STEQ_T` 비교는 다른 J·response·balance
+  해시에 고정돼 있다. 11월3일 generation14의 새 J와 일치하지 않으므로 현재 결과의
+  동상태 CMFGEN parity 증거로 재사용하지 않는다. 현재 입력에 맞춘 native 열행 평가는
+  별도 실행 범위이며, direction-only 진단의 증거로 간주하지 않는다.
 - 최근 재판독: generation22의 저장 장부를 항별 합산해 두 정책의 net을 정확히
   재현했다. 정책 차이는 주로 BB 가중이며, 인공 가열/physical 가열냉각 척도의
   최대 비는 약4.4e-203이다. 이는 해당 저장 상태에 대한 확인이다.
