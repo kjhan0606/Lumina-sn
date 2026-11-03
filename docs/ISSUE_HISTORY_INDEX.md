@@ -536,6 +536,14 @@
   `FIXED_MATERIAL_RATE_COMPARISON_NOT_SE`로 명시한다. 따라서 현재 generation14 및
   반환 물질 상태의 CMFGEN 동상태 SE·열·이온분포 증거로 재사용하지 않는다. 이는
   코드 적용성 판독이며 새 비교 실행이나 물리 결과를 뜻하지 않는다.
+- **현재 고정-J 물질응답의 실제 SE 위상(2026-11-04):** job `1262975`가 봉인한
+  source `0824950d`의 `lumina_new_field_response.py`는 `ModelResponse`→
+  `MaterialBridge`→`nlte_model_element_fixed_field_candidate` 경로를 사용한다.
+  이 경로는 각 Z·깊이점에서 모델에 포함된 이온의 SL·terminal 행과 BF/BB/충돌율을
+  원소 단일 생성자에 모아 고정장 정상 SE 후보를 푼다. 이는 `lumina_plasma.c`의
+  기본 pair-sweep 및 별도 opt-in `LUMINA_NLTE_ELEMENT_WIDE` 경로와 구별된다.
+  따라서 이 특정 고정-J 응답의 잔차를 pair-sweep 비활성만으로 설명하지 않는다.
+  이 배선 사실은 CMFGEN 해 일치, 새 수송 또는 온도·복사장 공동수렴을 입증하지 않는다.
 - **2026-11-04 same-state Si/S full-level data bridge:** fixed-J comparison-policy-v6
   (SHA256 `c46e89e009bd0e1b09dedf7e79edba8590d57ecd24b513bf4fb5bb37dab5d66e`)는 같은
   injected state·평가71·90점에서 C-imported full 인구와 native `EVAL_LTE_V5` 직후
