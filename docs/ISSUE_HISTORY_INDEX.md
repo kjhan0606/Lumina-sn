@@ -475,12 +475,15 @@
   90점 표는 `c3dfd0d771579487fdd39d427361c87a5c432307839931a7eedb29563e536167`이다.
   상세와 이후 판단은 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 절을 참조한다.
 - 같은-state native line output 부재도 확인했다. fixed-J 보존본의 VADAT에서
-  `WRITE_RATES=F`이고 `LINEHEAT`/`NETRATE`/`TOTRATE`는 없다. 현재 해당 실행의
-  `cmfgen_sub.f` SHA256은 `0d494c06a9eb61f57feaf5e326cd29ffd5ea6631cbb197168a316a5436985c68`이며,
-  마지막 반복의 `WRITE_RATES` 분기가 `LINEHEAT=ZNET_SIM*ETAL_MAT`과
-  `NETRATE=ZNET_SIM`을 기록한다. 이는 이전 P09 source SHA
-  `84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c`와 다른 판본으로,
-  현재 결과에 적용한 직접 source 확인이다. 재생성은 동일 fixed-J 상태를 격리 복제해
+  `WRITE_RATES=F`이고 `LINEHEAT`/`NETRATE`/`TOTRATE`는 없다. 실제 build manifest에서
+  원본 `cmfgen_sub.f` 입력은 `84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c`,
+  `prepare_cmfgen_fixedj_heat.py`가 observer를 연결해 만든 output source는
+  `0d494c06a9eb61f57feaf5e326cd29ffd5ea6631cbb197168a316a5436985c68`, 실행파일은
+  `a51c7e5c90b94b7d6e56cd586b426c73b2f3813d9096f894f0f4f776072812d9`다. 그러므로
+  `0d494…`와 이전 P09의 `84e3…`는 서로 다른 upstream 판본이라는 증거가 아니라
+  원본 입력과 패치 생성물의 차이다. 이력의 이전 판본 불일치 해석을 정정한다. 원본에서
+  마지막 반복의 `WRITE_RATES` 분기는 `LINEHEAT=ZNET_SIM*ETAL_MAT`과 `NETRATE=ZNET_SIM`을
+  기록한다. 재생성은 동일 fixed-J 상태를 격리 복제해
   출력 제어만 켜고 물질 갱신 전 `STOP96`을 유지해야 한다. 과거 유사 rate 출력은
   약4.75 GiB이며 원본 보존본은 약4.0 GiB다. 해당 추가 native 실행은 이전 단회 승인
   범위 밖이므로 미승인·미제출이고, 새 자원 승인이 필요하다.
