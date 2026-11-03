@@ -534,6 +534,19 @@
   독립 CMFGEN NLTE 이온분포·에너지 균형 또는 사전 이온분율 합격 기준을 검증하지
   않는다. 물리 목표는 계속 `NOT_MET`; 상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의
   11월4일 재판독 절을 참조한다.
+- **2026-11-04 native SE witness의 J 신원:** fixed-J 입력 사본에 포함된
+  `NATIVE_SE_BOUND_000070.bin`(SHA256 `bfa23b9ba2b6b6027a85fd63560bbe27b8daad597d613da1d275b0bef3a948bd`),
+  `native-se-assessment.json`, `population-se-rows.csv`의 수정 시각은 모두
+  2026-10-20이며 평가 단계는 counter70/parent69, radiation record70(from69)다.
+  현재 fixed-J 입력은 2026-11-03 F-1 J SHA256
+  `40a48d9aedaafa4d8f6f8adb0fdb6ea191bd152ed3f55de38e8862fe445232a6`을 native
+  `EDDFACTOR`(SHA256 `47f78fb98810704e9b0dcf4f664e8e2a38170e5d2b68d644879fb6b447b5692d`)로
+  옮긴 자료다. 그러므로 예전 SE 행 자료는 현재 J의 동상태 native rate/SE 검증에
+  쓸 수 없다. C→native full-level 배열 일치는 독립 NLTE 해 검증과 구분한다.
+  현재 J에서 Si/S process-level 비교를 하려면 해당 J·population의 새 native
+  rate/SE witness가 필요하다. 열항 `WRITE_RATES=T` 포획은 이미 완료된 `1261748`의
+  재제출이 아니며, 새 SE witness까지 포함하려면 신규 실행 계약에 명시해야 한다.
+  상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 `고정-J 묶음의 native SE witness 신원` 참조.
 - 반경 표본·공간 평균 질문의 적용 범위(2026-11-03 재대조): 기준
   `native_material_nodes.bin`은 CMFGEN `SCRTEMP`의 같은 90개 깊이점 노드값이며,
   manifest는 `NOT transfer-cell averages`로 명시한다. 현재 반환장 물질응답은
