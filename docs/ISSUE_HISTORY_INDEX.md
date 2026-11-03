@@ -420,6 +420,14 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- 현 고정장 진단의 과정 계약 재확인(2026-11-03): 봉인 `MODEL`/`MODEL_SPEC` 해시는
+  각각 `e8ec1835355869c3b8fbaf761fc8b6eeb516b527aa660aea768b8cbc19e2f6c9`/
+  `3e6f53861f16e2dac822d68e1412f91813c7a80f939fdbd0c4b1394e9055f2fb`다. `INC_CHG=F`,
+  `TRT_NON_TE=F`, `GAMRAY_TRANS=LOCAL`, `INS_DEP=T`이며 활성 27이온은 Si/S/Ca/Fe/Co/Ni다.
+  `INC_PEN=T`지만 H I/He I가 없어 확인된 native Penning 경로는 비활성이다.
+  그러므로 이 입력에서 CE·비열전자 처리가 빠진 것을 새로운 Lumina/CMFGEN 불일치로
+  세지 않는다. 즉시 감마 침적 열은 별도 활성 입력이다. 이는 이 특정 roster에 한정한다.
+  과정 범위와 H I/He I 조건의 정본은 [전모형 물질응답 계획 §3](PLAN_CMFGEN_FULL_MATERIAL_RESPONSE_2026-10-27.md)을 참조한다.
 - 10월31일 현재 CMFGEN source `dd1660af`의 정적 추적: `comp_j_blank.f`는 formal
   `FG_J_CMF_V13` 다음 `MOM_JREL_V9`를 호출한다. MOM은 앞서 `GET_MOMS_REL`에서
   얻은 closure 배열을 사용·저장하면서 MOM 갱신 J/H도 별도로 저장한다. 음수 J의
