@@ -717,6 +717,16 @@
   자극 재결합·BB·충돌 등은 별도 같은 상태 비교 없이는 미확정이다. 이 고정 인구
   율 진단은 CMFGEN 총율이나 원인 확정이 아니며, 11월1일 점34 사례와도 구별한다.
   입력·범위·출력 신원은 [11월3일 인수인계](HANDOVER_2026-11-03.md)의 `추가 율 분해`를 따른다.
+- 같은 generation14 반환 인구에서 저장 총 BF photo와 bound-only Gamma를 결합했다
+  (11월3일, node80–89). pseudo photo 분율 중앙값은 Si II/III·S II/III 순서로
+  0.080/0.213/0.281/0.405%, 최대도0.408%였다. BF spontaneous/photo는
+  0.984/0.981/0.989/0.996, stimulated/photo는0.016/0.019/0.011/0.004이며
+  저장 BF net/photo 중앙값은 Si II `6.3e-5`, Si III `7.6e-6`, S II `7.1e-8`,
+  S III `3.3e-7`이다.
+  따라서 이 inner 구간에서 pseudo photo가 큰 III 과잉의 주원인이라는 설명은
+  지지되지 않는다. 이 net은 BF 장부만의 비율이며 전체 SE 잔차가 아니다. CMFGEN의
+  대응 역율·bound-bound/충돌 및 열·수송 공동수렴은 미비교다. 수치와 해시는
+  [11월3일 인수인계](HANDOVER_2026-11-03.md)의 `동일 인구의 총 BF 유량과 pseudo photo 기여` 참조.
 
 ## O01 장시간 git add와 대형 미추적 계산 출력
 
