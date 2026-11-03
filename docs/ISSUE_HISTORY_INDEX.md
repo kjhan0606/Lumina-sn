@@ -779,6 +779,17 @@
   [음수 소광·FL124→125 이력](LUMINA_NEGATIVE_NODAL_SOURCES_2026-10-27.md)의
   `Si II FL124→125 Δm 선택규칙과 두 코드의 원자료 경로` 및
   `FL124→125의 허용 성분 합산 추가 검증`.
+- 2026-11-04 generation14 fixed-J manifest의 Si II/III 및 S II/III OSC SHA는 각각
+  `402486588f59f44ab3635b58b27c83023b7c3e78153c3c48d68e3d8dc3cc5b8d`,
+  `3e11684e1b46903f3e60877a3a8fe655b4479fa911d50fb4490cfe43910b1555`,
+  `290f08a97bb74f086a5d4da5c844f8dcf941972d087076d5fddee45427428667`,
+  `548a14bf68b47a153bcb2c19a5bb2e0933809dbd3228878add68d8591e694c5a`로, 이력에
+  보존된 원자료 SHA와 일치한다. 현재 `cmfgen_parser.py`/
+  `expand_atomic_data_cmfgen.py` SHA도
+  `d4cfec1bda12d6a50c09f452e7167eb4a48139ed84a94cf6be1a507c96a53929`/
+  `51aa0f893589f70409dacd216d1eb98a4d623c508105a4c2585e5d41dca4e065`로 10월28일 대조와 같다. 그러므로 FL124→125 의심 전이는
+  현 generation14에서 원자료 판본이 달라진 새 회귀로 보이지 않는다. 이는 앞서
+  검토한 단일 묶음 전이의 범위만 확인하며 원자료 전체의 물리 정확성을 입증하지 않는다.
 - 부호 있는 소광의 기존 처리(10월29일): Lumina production fullSR reader와 양의
   scaled-moment core는 signed `chi`/gain을 처리하므로 raw 음수 개수만으로 실행
   실패라 단정하거나 `chi=0`으로 clamp하지 않는다. 반면 원 CMFGEN
