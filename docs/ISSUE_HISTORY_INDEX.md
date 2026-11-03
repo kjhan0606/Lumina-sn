@@ -546,6 +546,11 @@
   현재 J에서 Si/S process-level 비교를 하려면 해당 J·population의 새 native
   rate/SE witness가 필요하다. 열항 `WRITE_RATES=T` 포획은 이미 완료된 `1261748`의
   재제출이 아니며, 새 SE witness까지 포함하려면 신규 실행 계약에 명시해야 한다.
+  `1261748`의 `fixedj-heat-build.json`, 빌드 `cmfgen_sub.f`와 `build.log`, 실행파일
+  외부 심볼에서도 `LUMINA_NATIVE_SE_RESET/COLLECT/WRITE` 연결이 확인되지 않았다.
+  따라서 `WRITE_RATES=T`만 켜는 열항 capture는 동일-J native SE witness를 만들지 않는다.
+  작업 트리의 별도 native-SE 관찰기도 미추적 상태이며 과거 toy06 record66→67/J66
+  계보 전용이다. 현재 generation14/J witness나 취소 작업의 대체물이 아니다.
   상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 `고정-J 묶음의 native SE witness 신원` 참조.
 - 반경 표본·공간 평균 질문의 적용 범위(2026-11-03 재대조): 기준
   `native_material_nodes.bin`은 CMFGEN `SCRTEMP`의 같은 90개 깊이점 노드값이며,
