@@ -100,11 +100,17 @@ def validate_inputs(root: Path) -> dict:
     runtime_manifest = run_logs / "fixedj-heat-runtime.json"
     stdout = run_logs / "fixedj-heat-capture.stdout"
     stderr = run_logs / "fixedj-heat-capture.stderr"
+    outgen = run / "OUTGEN"
+    if (outgen.is_file() and
+            SUCCESS_MARKER in outgen.read_text(errors="replace")):
+        raise FileExistsError(
+            "pre-existing capture marker in OUTGEN; refusing stale completion evidence")
     if runtime_manifest.exists() or stdout.exists() or stderr.exists() or any((run / n).exists() for n in expected_outputs):
         raise FileExistsError("capture outputs already exist; refusing to overwrite")
     return {"exe": exe, "run": run, "state_manifest": state_manifest,
             "field_manifest": field_manifest, "build_manifest": build_manifest,
             "runtime_manifest": runtime_manifest, "stdout": stdout, "stderr": stderr,
+            "outgen": outgen,
             "controls": actual_controls, "fixed_j_sha256": j_hashes[0]}
 
 
@@ -112,9 +118,13 @@ def verify_outputs(artifacts: dict, job_id: str, returncode: int, elapsed: float
     run = artifacts["run"]
     missing = [name for name in OUTPUT_NAMES if not (run / name).is_file() or (run / name).stat().st_size == 0]
     stdout = artifacts["stdout"].read_text(errors="replace") if artifacts["stdout"].exists() else ""
+    outgen_path = artifacts.get("outgen", run / "OUTGEN")
+    outgen = outgen_path.read_text(errors="replace") if outgen_path.is_file() else ""
     if returncode != EXPECTED_STOP:
         raise RuntimeError(f"CMFGEN stop code was {returncode}, expected {EXPECTED_STOP}")
-    if SUCCESS_MARKER not in stdout:
+    marker_source = ("stdout" if SUCCESS_MARKER in stdout else
+                     "OUTGEN" if SUCCESS_MARKER in outgen else None)
+    if marker_source is None:
         raise RuntimeError("expected pre-update capture marker is missing")
     if missing:
         raise RuntimeError("required native line/heat output missing: " + ", ".join(missing))
@@ -130,6 +140,7 @@ def verify_outputs(artifacts: dict, job_id: str, returncode: int, elapsed: float
             "slurm_job_id": job_id, "srun_exit_code": returncode,
             "expected_stop": EXPECTED_STOP, "elapsed_seconds": elapsed,
             "activation_env": f"{ACTIVATION}=1 passed explicitly to srun",
+            "completion_marker_source": marker_source,
             "controls": artifacts["controls"], "build_sha256": sha(artifacts["exe"]),
             "accepted_result_sha256": artifacts["state_manifest"]["accepted_result_sha256"],
             "accepted_response_sha256": artifacts["state_manifest"]["accepted_response_sha256"],

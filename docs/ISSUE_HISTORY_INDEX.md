@@ -1081,6 +1081,35 @@
 
 ## P10 동일-state CMFGEN 고정-J 열 출력 포획 재개
 
+- **2026-11-04 job `1264295` 산출물 판독:** 06:55 KST CMFGEN은 승인된 물질 갱신 전
+  `STOP96`에 도달해 LINEHEAT/NETRATE/TOTRATE와 native 열행을 기록했다. batch가
+  `FAILED 1:0`인 직접 원인은 실행기가 완료 표식을 stdout에서만 찾은 것이며, 표식은
+  CMFGEN unit 6 로그 `OUTGEN`에 있다. 따라서 Slurm 성공으로 소급 표기하지 않되,
+  출력은 보존하고 별도 read-only 동일상태 비교에 사용했다. 고정 입력 population·J 전달은 확인됐지만
+  native `STEQ_T`와 Lumina 저장 열정책은 90점 중39점 부호 불일치, net 대칭 상대차 중앙
+  `0.99998`/p95 `1.1813`으로 동질하지 않다. 깊이36의 line net은 CMFGEN 냉각
+  `+2.8583e-5` 대 Lumina BB 가열 `+3.3141e-6`, 깊이85는 CMFGEN 냉각 `+0.010567` 대
+  Lumina 냉각 `+0.004687`이다. 깊이85 상위 CMFGEN line 냉각자는 Co IV/Fe IV/Co V/Ni IV라
+  Si/S만의 설명은 아니다. 원 J와 EDDFACTOR는 100,351,800개 전부 비트 일치하며
+  197,291 native 주파수점 보간 차이는 최대 절대 `6.29e-15`다. full-level population의
+  중앙/p95/최대 상대차는 `7.79e-11`/`1.14e-9`/`9.98e-9`지만 native snapshot은 LTE
+  재구성 단계이므로 독립 NLTE 일치가 아니다. 상세 수치·해시·판정은
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 최신 결과를 참조한다.
+- 같은 입력·J·Lumina 선목록으로 native 이온별 BB 합계를 독립 재조립했으며 저장된
+  총합과 최대 `5.02e-14 erg cm^-3 s^-1` 차이로 재현됐다. 하지만 깊이36에서
+  열 부호를 가열 양수로 통일하면 Lumina/CMFGEN Si IV는 `-2.91e-7/-4.55e-5`, S III는
+  `-1.22e-6/+1.95e-6`; 깊이85의 Ni IV는 `+1.93e-5/-6.66e-4`로 차이가 남는다.
+  주요 기여 이온들의 선 수는 대체로 같고 전체 선 수 차이718건은 주로 다른 저이온에
+  몰려 있어 단순 총목록 개수 문제는 아니다. 이는 저장 합산이나 상태 주입보다는
+  전이 대응·에너지 가중·프로파일/J 적분 등 선별 연산자 경로를 우선 조사하게 하지만,
+  이온별 합만으로 정확한 원인을 확정하지는 않는다. `SCL_LN` 일반 누락 가설도 현재
+  생산 코드/CMFGEN 계약 대조에서 지지되지 않는다. 상세 표와 범위 제한은
+  [11월4일 인수계](HANDOVER_2026-11-04.md)를 참조한다.
+- runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
+  수정했다. 관련 시험 4개 통과, 아직 commit/push 및 재실행은 없다. 현재 승인된 CMFGEN
+  포획 단회는 이미 사용됐다. 새 transport/material response는 없다. 보존된 NETRATE와
+  Lumina 선목록의 전이별 read-only 대조가 다음 최소 원인분리 후보이며, 새 native-grid
+  source 재평가는 별도 물리 계산이다.
 - 11월4일 `1264146`은 활성화 변수 누락, `1264261`은 Slurm spool 경로에서 실행기
   탐색 실패로 각각 물리 실행 전 종료했다. 수정 commit `77993913`을 반영한 뒤
   사용자가 같은 CPU16·32GiB·최대4시간·GPU0·재시도0 범위의 새 단회를 승인했다.
@@ -1088,9 +1117,9 @@
   대조하고 네 capture 산출물·capture 로그가 없음을 확인했다. 새 job `1264295`는
   06:42 KST Grammar `grammar008`에서 시작, `RUNNING`, `Requeue=0`이다. 06:53 조회에서
   CMFGEN step CPU 누적36:27·최대 RSS 약5.44GiB, LINEHEAT/NETRATE/TOTRATE 합계
-  4.695GB가 확인됐다. 마지막 native heat row와 runtime manifest는 아직 없어 capture
-  결과 판독 전이다. 최신 실행 세부는
-  [11월4일 인수계](HANDOVER_2026-11-04.md)의 최신 실행상태를 참조한다.
+  4.695GB가 확인됐다. 그 시각에는 마지막 native heat row와 runtime manifest가 아직
+  없어 capture 결과 판독 전이었다. 이 제출 당시 스냅샷은
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 해당 절을 참조한다.
 - scope에는 native 열·율 포획과 STOP96만 있으며 새 수송·물질 수용은 없다. 추가
   제출 권한은 없다. 동일-state 열 비교가 완료되기 전 최종 물리 목표는 `NOT_MET`이다.
 - 현재 generation14 response SHA `252993d3…`에서 새 C full 투영을 만들고 2,208,780개

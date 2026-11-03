@@ -32,6 +32,7 @@ def make_attempt(root):
     build, inputs, run = (root / name for name in ("build", "inputs", "native"))
     for path in (build, inputs, run):
         path.mkdir(parents=True)
+    (run / "OUTGEN").write_text("baseline model output\n")
     exe = build / "cmfgen_fixedj_heat.exe"
     exe.write_bytes(b"sealed synthetic executable")
     exe.chmod(0o755)
@@ -90,7 +91,8 @@ body = np.concatenate([*(v.astype("<f8", copy=False) for v in vectors),
 Path("NATIVE_HEAT_ROW.bin").write_bytes(header + body.tobytes())
 for name in ("LINEHEAT", "NETRATE", "TOTRATE"):
     Path(name).write_bytes(b"synthetic output\\n")
-print("FIXED_J_INTEGRAL_RE_CAPTURED_BEFORE_POP_UPDATE_NOT_EHB_OR_CONVERGENCE")
+with Path("OUTGEN").open("a") as stream:
+    stream.write("FIXED_J_INTEGRAL_RE_CAPTURED_BEFORE_POP_UPDATE_NOT_EHB_OR_CONVERGENCE\\n")
 raise SystemExit(96)
 ''')
     executable.chmod(0o755)
@@ -118,6 +120,7 @@ def test_slurm_wrapper_survives_spooled_script_path_and_exports_guard(tmp_path, 
     manifest = json.loads((root / "native/seq_logs/fixedj-heat-runtime.json").read_text())
     assert manifest["status"] == "CAPTURED"
     assert manifest["captured_state_exact"] is True
+    assert manifest["completion_marker_source"] == "OUTGEN"
     assert set(manifest["outputs"]) == set(runner.OUTPUT_NAMES)
     assert manifest["srun_exit_code"] == 96
 
@@ -126,6 +129,13 @@ def test_capture_runner_refuses_preexisting_native_outputs(tmp_path):
     root = make_attempt(tmp_path / "attempt")
     (root / "native/LINEHEAT").write_bytes(b"preserve")
     with pytest.raises(FileExistsError):
+        runner.validate_inputs(root)
+
+
+def test_capture_runner_refuses_stale_marker_in_outgen(tmp_path):
+    root = make_attempt(tmp_path / "attempt")
+    (root / "native/OUTGEN").write_text(runner.SUCCESS_MARKER + "\n")
+    with pytest.raises(FileExistsError, match="stale completion evidence"):
         runner.validate_inputs(root)
 
 
