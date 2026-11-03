@@ -582,6 +582,11 @@
   따라서 `WRITE_RATES=T`만 켜는 열항 capture는 동일-J native SE witness를 만들지 않는다.
   작업 트리의 별도 native-SE 관찰기도 미추적 상태이며 과거 toy06 record66→67/J66
   계보 전용이다. 현재 generation14/J witness나 취소 작업의 대체물이 아니다.
+  **11월4일 승인 실행의 운전 결함:** Grammar job `1264146`은 21초 뒤 `STOP 94`로
+  끝났다. 고정-J 실행파일 가드가 요구하는 `LUMINA_FIXEDJ_HEAT_ONLY=1`을 제출 환경에
+  전달하지 않은 것이 원인이다. lineheat/rate/heat-row 산출물은 없고, 기존 승인은
+  재시도0이므로 재제출은 새 승인 전까지 보류한다. 다음 시도는 변수 전달을 바로잡아야
+  하며, 이 실패는 물리 계산 결과나 원자자료에 대한 증거가 아니다.
   상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 `고정-J 묶음의 native SE witness 신원` 참조.
 - 반경 표본·공간 평균 질문의 적용 범위(2026-11-03 재대조): 기준
   `native_material_nodes.bin`은 CMFGEN `SCRTEMP`의 같은 90개 깊이점 노드값이며,
