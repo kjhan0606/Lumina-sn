@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # Same-state CMFGEN line-heat capture only; one attempt, no requeue.
-# sbatch argument: isolated attempt root containing build/, inputs/, native/.
+# sbatch arguments: isolated attempt root, repository root.
 #SBATCH --job-name=lumina-fixedj-heat
 #SBATCH --partition=normal
 #SBATCH --nodes=1
@@ -31,6 +31,7 @@ export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1
 export LUMINA_FIXEDJ_HEAT_ONLY=1
 test "$LUMINA_FIXEDJ_HEAT_ONLY" = 1
 
-project=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+project=$(realpath "${2:?repository root required}")
+test -f "$project/scripts/run_cmfgen_fixedj_heat_capture.py"
 exec python3 -B "$project/scripts/run_cmfgen_fixedj_heat_capture.py" \
   --attempt-root "${1:?isolated attempt root required}"

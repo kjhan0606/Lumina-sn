@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 
 import numpy as np
@@ -95,18 +96,25 @@ raise SystemExit(96)
     executable.chmod(0o755)
 
 
-def test_capture_runner_explicitly_exports_guard_and_seals_outputs(tmp_path, monkeypatch):
+def test_slurm_wrapper_survives_spooled_script_path_and_exports_guard(tmp_path, monkeypatch):
     root = make_attempt(tmp_path / "attempt")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake_srun(bin_dir)
+    module = bin_dir / "module"
+    module.write_text("#!/bin/sh\nexit 0\n")
+    module.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("SLURM_CPUS_PER_TASK", "16")
     monkeypatch.setenv("SLURM_MEM_PER_NODE", "32768")
     monkeypatch.setenv("SLURM_JOB_ID", "987654")
     monkeypatch.delenv("LUMINA_FIXEDJ_HEAT_ONLY", raising=False)
 
-    assert runner.run(root) == 0
+    completed = subprocess.run(
+        ["bash", "--noprofile", "--norc", str(SCRIPTS / "submit_cmfgen_fixedj_heat_capture.slurm"),
+         str(root), str(SCRIPTS.parent)],
+        text=True, capture_output=True, check=False, timeout=30)
+    assert completed.returncode == 0, completed.stderr
     manifest = json.loads((root / "native/seq_logs/fixedj-heat-runtime.json").read_text())
     assert manifest["status"] == "CAPTURED"
     assert manifest["captured_state_exact"] is True
