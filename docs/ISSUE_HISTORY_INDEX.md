@@ -485,8 +485,11 @@
   마지막 반복의 `WRITE_RATES` 분기는 `LINEHEAT=ZNET_SIM*ETAL_MAT`과 `NETRATE=ZNET_SIM`을
   기록한다. 재생성은 동일 fixed-J 상태를 격리 복제해
   출력 제어만 켜고 물질 갱신 전 `STOP96`을 유지해야 한다. 과거 유사 rate 출력은
-  약4.75 GiB이며 원본 보존본은 약4.0 GiB다. 해당 추가 native 실행은 이전 단회 승인
-  범위 밖이므로 미승인·미제출이고, 새 자원 승인이 필요하다.
+  약4.75 GiB이며 원본 보존본은 약4.0 GiB다. 11월4일 단회 승인은 Grammar job
+  `1264146`으로 제출됐지만, 래퍼가 `LUMINA_FIXEDJ_HEAT_ONLY=1`을 전달하지 않아
+  `STOP 94`로 실패했고 line-resolved 출력은 생성되지 않았다. 재시도0 승인이라 동일
+  포획의 교정 재제출에는 새 승인이 필요하다. 이는 native SE witness가 아니며, 이후
+  새 J 수송도 별도 승인 전에는 제출하지 않는다.
 - 재사용성 확인: 10월27일의 1,115,020점 `sources.npz`는 현재 generation14의
   source로 재사용하지 않는다. `MODEL_SPEC`은 같지만 그 producer의
   `native_material_nodes.bin` SHA256 `942cec390a51807f0269e0dd8afecda8c0548bfef0fbf5bef22bc954bc98b735`
@@ -510,7 +513,9 @@
   이미 계산된 v6 same-state `native_stored_net` 대 native `STEQ_T`에서도 최대차
   `1.5183e-3`, RMS `5.3641e-4` erg cm⁻³ s⁻¹, 부호 불일치29/90점이 남아 SCL_LN 발견만으로
   물리 불일치는 해소되지 않는다. 이는 aggregate 비교이며 termwise native `LINEHEAT`
-  대응은 아직 없고, `WRITE_RATES=T` 격리 capture는 별도 미승인·미제출이다. 수정
+  대응은 아직 없다. `WRITE_RATES=T` 격리 capture는 11월4일 승인으로 `1264146`에
+  제출했지만 활성화 환경변수 누락으로 `STOP 94` 종료되어 line-resolved 출력이 없다.
+  재시도0 승인이므로 교정 재제출에는 새 승인이 필요하다. 수정
   비교기에는 저장된 native ledger의 BF/보정BB/FF/단열/외부/인공 채널 재합산 검사를
   추가한다. 저장 balance의 재합산 오차는 최대 `2.1e-19`; 깊이85의 Lumina 항은
   BF `+5.8064e-4`, SCL_LN-BB `−1.8265e-3`, FF `−1.8582e-4`, 단열 `−1.11e-7`,
@@ -518,12 +523,17 @@
   잔차가 남지만 CMFGEN 항별 출력 없이 BB만의 차이라고 단정하지 않는다. 깊이81–90의
   raw→SCL_LN BB 순항 중앙값은 `+5.1401e-3`→`−1.7686e-3`, 부호 반전은8/10점이다.
   수정 비교기 단위시험12개 통과; 새 대형 source 생성·수송·물질 갱신은 하지 않았다.
+  `evaluation4/balance.npz` 독립 재조립은 저장값과 최대 `1.36e-20`으로 일치했다.
+  node36에서 미보정→SCL BB 순열이 `−1.3568e-5`→`+3.3141e-6`으로 부호 전환되고,
+  90점 중36점에서 전환됐다. 이는 기존 SCL 구현이 열장부에 크게 작용함을 보이나,
+  현재 same-state CMFGEN line 출력과 대조하지 못했으므로 구현 오류 판정은 아니다.
 - **동일-state 열 선 출력 재사용 검색(2026-11-04):** generation14 fixed-J 입력 사본,
   native-grid 비교 출력, 원 CMFGEN field-feedback 실행본, 반환 물질응답 디렉터리에
   `LINEHEAT`/`NETRATE`/`TOTRATE`가 없다. 기존 스트리밍 추출기·이온별 합산기는
   미래 캡처를 처리할 수 있으나 현재 저장된 합산 `STEQ_T`와 Lumina balance만으로
   CMFGEN 선별 항을 복원할 수 없다. 따라서 항별 기여 판별에 동일-state rate capture가
-  여전히 필요하며, 그 새 실행은 승인되지 않아 미제출이다.
+  여전히 필요하다. 승인된 첫 시도 `1264146`은 래퍼 환경 오류로 실패했으며, 교정
+  재제출은 새 승인 대기다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
