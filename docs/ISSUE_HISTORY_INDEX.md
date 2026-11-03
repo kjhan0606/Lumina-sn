@@ -530,6 +530,12 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- **구형 직접율 비교기의 적용 한계(2026-11-04):**
+  `scripts/compare_cmfgen_direct_native_rates.py`는 물질70→평가71, 90점·197291개
+  주파수, 구 native90 계획과 구 J_A 입력을 코드에서 강제하며 결과 상태도
+  `FIXED_MATERIAL_RATE_COMPARISON_NOT_SE`로 명시한다. 따라서 현재 generation14 및
+  반환 물질 상태의 CMFGEN 동상태 SE·열·이온분포 증거로 재사용하지 않는다. 이는
+  코드 적용성 판독이며 새 비교 실행이나 물리 결과를 뜻하지 않는다.
 - **2026-11-04 same-state Si/S full-level data bridge:** fixed-J comparison-policy-v6
   (SHA256 `c46e89e009bd0e1b09dedf7e79edba8590d57ecd24b513bf4fb5bb37dab5d66e`)는 같은
   injected state·평가71·90점에서 C-imported full 인구와 native `EVAL_LTE_V5` 직후
