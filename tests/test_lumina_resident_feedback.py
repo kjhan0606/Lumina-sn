@@ -34,14 +34,15 @@ def scenario(tmp_path, monkeypatch):
                         ('SLURM_MEM_PER_NODE', '16384')):
         monkeypatch.setenv(name, value)
     clock = [0.]; monkeypatch.setattr(F, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
-    calls = []; behavior = dict(fail=None, cost=200., source_identity=identity)
+    calls = []; behavior = dict(fail=None, cost=200., source_identity=identity, outputs=None)
     def launch(command, *, stdout, stderr, timeout):
         calls.append(command)
         index = len(calls); child = Path(command[2]); clock[0] += behavior['cost']
         stdout.write('worker output\n'); stderr.write('worker diagnostics\n')
         if behavior['fail'] == 'timeout': raise subprocess.TimeoutExpired(command, timeout)
         J = child/'J.npy'; moments = child/'moments.npy'
-        np.save(J, np.full((3, 8), float(index))); np.save(moments, np.ones((3, 3, 8)))
+        value = float(index) if behavior['outputs'] is None else behavior['outputs'][index-1]
+        np.save(J, np.full((3, 8), value)); np.save(moments, np.ones((3, 3, 8)))
         prior = 'ZERO_OWN_START' if '--input-j' not in command else dict(
             path=command[command.index('--input-j')+1],
             sha256=command[command.index('--input-j-sha256')+1])
@@ -171,6 +172,22 @@ def test_two_complete_fields_pass_exact_previous_J_without_checkpoint(scenario):
     assert json.loads((args['out']/'feedback.json').read_text()) == result
 
 
+def test_small_fresh_residual_accepts_the_input_field_not_the_unverified_output(scenario):
+    args, calls, behavior = scenario
+    behavior['outputs'] = [1., 1.00005]
+    result = F.run(**args)
+    assert len(calls) == 2
+    assert result['status'] == 'FIXED_MATERIAL_SCATTERING_CLOSED'
+    assert result['scattering_convergence_certified']
+    assert result['source_residual']['max_norm_relative'] < F.SOURCE_FIXED_POINT_RTOL
+    assert result['accepted_scattering_field']['path'] == str(args['out']/'F-1/J.npy')
+    assert result['source_residual_verified_by']['path'] == str(args['out']/'F-2/J.npy')
+    assert result['last_complete']['J']['path'] == str(args['out']/'F-2/J.npy')
+    assert result['accepted_physical_field'] is False
+    assert result['material_updates'] == result['new_BF_BB_integrals'] == 0
+    assert result['final_goal'] == 'NOT_MET'
+
+
 @pytest.mark.parametrize('fault', ['partial', 'hash', 'input', 'source', 'missing', 'nan', 'exit'])
 def test_failed_second_sweep_preserves_first_and_never_retries(scenario, fault):
     args, calls, behavior = scenario; behavior['fail'] = fault
@@ -220,3 +237,10 @@ def test_field_gap_rejects_invalid_full_field(tmp_path, bad):
     if bad == 'nan': x[0, 0] = np.nan
     np.save(b, x)
     with pytest.raises(ValueError): F.field_gap(a, b, (3, 8))
+
+
+def test_all_zero_field_cannot_claim_relative_source_closure(tmp_path):
+    a = tmp_path/'zero-a.npy'; b = tmp_path/'zero-b.npy'
+    np.save(a, np.zeros((3, 8))); np.save(b, np.zeros((3, 8)))
+    with pytest.raises(ValueError, match='all-zero J'):
+        F.field_gap(a, b, (3, 8))

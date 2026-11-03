@@ -2,8 +2,9 @@
 """같은 수용 물질에서 완성 J를 다음 F에 전달한다. 새 물질 해법은 아니다.
 
 GPU1/CPU1/host16GiB의 같은 Slurm 할당·총시간 안에서 최대2회만 호출한다.
-유한2회 응답과 F(J1)-J1 간격을 산란/물질 수렴으로 표시하지 않는다.
-기본은0장이며, 명시하면 같은 물질의 검증된 완성 J에서 새 반복을 시작한다.
+최종 F 입력장의 fresh 상대 잔차가 1e-4 이하면 그 입력장만 고정물질 산란해로
+표시한다. 새 F 출력 자체나 물질·열·CMFGEN 수렴을 뜻하지 않는다. 기본은0장이며,
+명시하면 검증된 완성 J를 초기 iterate로 사용한다.
 """
 import argparse
 import json
@@ -21,9 +22,11 @@ from lumina_fullsr_sc_actual import completed_transport, publish, verify_stage
 from lumina_native_columns import sha
 from lumina_material_trial_field import open_transport_trial, validate_initial_arguments
 
+SOURCE_FIXED_POINT_RTOL = 1.0e-4  # equivalence-plan transport-residual scale
+
 
 def field_gap(previous, current, shape):
-    """큰 J를 복사하지 않는 간격 진단. 반환 J의 잔차 인증은 아니다."""
+    """F(J_previous)-J_previous의 전장 상대 L-infinity 잔차."""
     a = np.load(previous, mmap_mode='r', allow_pickle=False)
     try:
         b = np.load(current, mmap_mode='r', allow_pickle=False)
@@ -37,8 +40,10 @@ def field_gap(previous, current, shape):
                     raise ValueError('완성 J의 비유한/음수')
                 difference = max(difference, float(abs(y-x).max()))
                 scale = max(scale, float(x.max()), float(y.max()))
-            return dict(absolute_max=difference, max_norm_relative=difference/scale if scale else 0.,
-                meaning='F(J_previous)-J_previous; last returned J is not independently residual-tested')
+            if scale == 0.:
+                raise ValueError('all-zero J cannot certify source closure')
+            return dict(absolute_max=difference, max_norm_relative=difference/scale,
+                meaning='F(J_previous)-J_previous; residual belongs to the input field, not F(input)')
         finally:
             b._mmap.close()
     finally:
@@ -84,7 +89,11 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
         limits=dict(total_seconds=seconds, maximum_F_invocations=max_sweeps, GPUs=1, CPUs=1,
                     host_memory_GiB=16, automatic_retries=0),
         material_updates=0, new_BF_BB_integrals=0, observer_calls=0,
-        scattering_convergence_certified=False, final_goal='NOT_MET')
+        scattering_convergence_certified=False,
+        scattering_convergence_scope='fixed accepted material/source coefficients and full-SR field equation only',
+        scattering_source_residual_rtol=SOURCE_FIXED_POINT_RTOL,
+        scattering_source_residual_definition='max_abs(F(J)-J)/max(max_abs(J),max_abs(F(J))) over the full native field',
+        accepted_physical_field=False, final_goal='NOT_MET')
     if initial is not None:
         record['initial_field_role'] = initial_role
     def save():
@@ -134,15 +143,28 @@ def run(staged_root, out, *, cache, accepted_input, accepted_input_sha256, secon
             expected_input = 'ZERO_OWN_START' if prior is None else prior['J']
             if report['identity']['input_J'] != expected_input:
                 raise ValueError('이전 완성 J가 다음 실제 F에 전달되지 않음')
+            residual = None
             if prior is not None:
-                entry['J_gap'] = field_gap(prior['J']['path'], report['J']['path'], shape)
+                residual = field_gap(prior['J']['path'], report['J']['path'], shape)
+                entry['J_gap'] = residual
             else:
                 # 첫 완성 J도 전체 값의 유한성/부호를 확인하되 자기 대조를 잔차로 부르지 않는다.
                 field_gap(report['J']['path'], report['J']['path'], shape)
-            entry['state'] = 'COMPLETE_F_NOT_CONVERGENCE'
             record['last_complete'] = {n: report[n] for n in ('J', 'moments')}
             record['last_complete']['sweep'] = index
-            record['status'] = 'FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE'; save()
+            if residual is not None and residual['max_norm_relative'] <= SOURCE_FIXED_POINT_RTOL:
+                # F(J_in)-J_in verifies the source field that entered this sweep.
+                # Retain F(J_in) as a witness; do not label that new output tested.
+                entry['state'] = 'FIXED_MATERIAL_SOURCE_RESIDUAL_PASS'
+                record.update(status='FIXED_MATERIAL_SCATTERING_CLOSED',
+                    scattering_convergence_certified=True,
+                    accepted_scattering_field=dict(prior['J']),
+                    source_residual=residual,
+                    source_residual_verified_by=dict(report['J']))
+                break
+            entry['state'] = 'COMPLETE_F_NOT_CONVERGENCE'
+            record['status'] = 'FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE'
+            save()
         if record['status'] == 'STARTED': record['status'] = 'NO_COMPLETE_SWEEP'
     except Exception as error:
         if record['sweeps'] and record['sweeps'][-1]['state'] == 'RUNNING':
@@ -166,4 +188,5 @@ if __name__ == '__main__':
     parser.add_argument('--initial-preparation-sha256')
     result = run(**vars(parser.parse_args()))
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-    raise SystemExit(0 if result['status'] == 'FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE' else 1)
+    raise SystemExit(0 if result['status'] in
+        ('FINITE_FEEDBACK_RESPONSE_NOT_CONVERGENCE', 'FIXED_MATERIAL_SCATTERING_CLOSED') else 1)

@@ -646,15 +646,22 @@
   `cmf_fullsr_sc.cpp`도 해당 sweep을 동결 source 수송으로 정의한다. 외부
   `lumina_resident_feedback.py`는 F 호출을 최대2회까지 연결하지만 J 간격은
   `J_n−J_(n−1)=F(J_(n−1))−J_(n−1)`이다. 이 값은 직전 입력장의 잔차이지
-  기록되는 마지막 출력 `J_n`의 새 잔차가 아니며, 실행부도
-  `scattering_convergence_certified=false`로 남긴다. 따라서 기존 1회 F와 2회
-  되먹임은 고정점 증명이 아니다. `lumina_cmf_field_solve`에는 coherent source
+  기록되는 마지막 출력 `J_n`의 새 잔차가 아니다. 기존 실행은
+  `scattering_convergence_certified=false`로 끝났다. 따라서 기존 1회 F와 그 2회
+  되먹임 실행은 고정점 증명이 아니다. `lumina_cmf_field_solve`에는 coherent source
   반복이 있으나 정적 shell-center 전용이고 frequency advection/r_eval과 함께
   사용을 거부하므로 현재 full-SR 수송의 대체 해법이 아니다. 다음 수송 구현은
-  같은 계수 신원에서 반환 J 자체의 fresh residual을 확인할 수 있어야 하며,
-  그 뒤 물질·T/ne 갱신과 계수 재구축을 묶은 외부 반복이 여전히 필요하다.
+  같은 계수 신원에서 후보 J의 fresh residual을 확인해야 하며, 그 뒤 물질·T/ne
+  갱신과 계수 재구축을 묶은 외부 반복이 여전히 필요하다.
   기존 H100 실측 1회 수송은17,546.720초였고, 이번 검토에서는 새 수송을 실행하지
   않았다. 이는 구현 경로 진단이며 수렴 속도·Si/S 개선량을 아직 입증하지 않는다.
+- 11월3일 후속 코드 수정: `lumina_resident_feedback.py`는 fresh
+  `F(J_in)−J_in`이 global relative L-infinity `1e-4` 이하일 때만 해당 마지막
+  sweep의 **입력 J**를 고정 물질 산란해로 기록하고 `F(J_in)`은 검증장으로
+  보존한다. 새 반환 J를 잔차 미검증 상태로 수용하지 않으며, 0장 자기비교도
+  거부한다. 이 스코프는 고정 물질/source 계수의 full-SR 복사장만이며 물질·열·
+  이온화 수용이나 CMFGEN 동질성을 뜻하지 않는다. 합성 wrapper 시험29개 통과,
+  실제 GPU 실행과 물리 closure는 미실행이다.
 - CMFGEN J 직접 비교(11월1일): 같은 점34·B 인구·같은σ/전역 격자로
   Si III147/S III256개의 **전체 bound 경로**를 합하면 현재/CMFGEN 장의
   Gamma 비는 각각1.17614175/0.87463838이다. Si 과이온화·S 저이온화의
