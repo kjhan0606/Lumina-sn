@@ -544,6 +544,13 @@
   기본 pair-sweep 및 별도 opt-in `LUMINA_NLTE_ELEMENT_WIDE` 경로와 구별된다.
   따라서 이 특정 고정-J 응답의 잔차를 pair-sweep 비활성만으로 설명하지 않는다.
   이 배선 사실은 CMFGEN 해 일치, 새 수송 또는 온도·복사장 공동수렴을 입증하지 않는다.
+- **DR 재사용 판본 주의(2026-11-04):** 9월19일 DR-on 런 `385315`은 구 경로에서
+  DR/RR≈1.48을 켜 S II 분율을 약2.4배 올렸지만 CMFGEN 수준에는 미달했다(필요·불충분).
+  현재 v5 Si/S PHOT 경로는 `DIE_AUTO=DIE_WI=F`, `external_dr_fit_allowed=0`,
+  `PHOT_MILNE_NO_EXTERNAL_FIT`를 원자모형/PHOT 신원에 묶어 강제한다. 따라서 구
+  `DR_TABLE` 보정을 현 generation14 물질응답에 바로 더하지 않는다. 독립 DIE나 외부
+  DR을 다시 켜려면 현 CMFGEN 기준과 같은 원자과정 계약부터 재검증해야 한다. 과거
+  DR-on 효과는 현재 불일치의 원인 판정이 아니다.
 - **2026-11-04 same-state Si/S full-level data bridge:** fixed-J comparison-policy-v6
   (SHA256 `c46e89e009bd0e1b09dedf7e79edba8590d57ecd24b513bf4fb5bb37dab5d66e`)는 같은
   injected state·평가71·90점에서 C-imported full 인구와 native `EVAL_LTE_V5` 직후
