@@ -62,29 +62,42 @@ def test_scaled_relative_metrics_handle_shared_zero_and_report_worst_location():
     assert (result['worst_row'],result['worst_point'])==(0,2)
 
 
-def test_native_heat_row_normalizes_cmfgen_cooling_sign_against_lumina_heating(tmp_path):
+def test_native_heat_row_converts_cmfgen_internal_units_and_preserves_residual_sign(tmp_path):
     balance=tmp_path/'balance.npz'
-    np.savez(balance,native_instantaneous_scenario_net=np.array([2.,-1.,0.]),
-             native_instantaneous_scenario_gross=np.array([4.,2.,0.]))
-    heat=dict(steq_t_native=np.array([-2.,1.,0.]),frequencies=1115020)
+    stored=np.array([2.,-1.,0.])
+    instantaneous=np.array([0.5,2.,0.])
+    scenario=stored+instantaneous
+    np.savez(balance,native_stored_net=stored,native_stored_gross=np.array([4.,2.,0.]),
+             native_instantaneous_scenario_net=scenario,
+             native_instantaneous_scenario_gross=np.array([5.,3.,0.]),
+             instantaneous_scenario=instantaneous,stored_decay=np.zeros(3))
+    factor=compare_module.CMFGEN_RE_INTERNAL_TO_CGS
+    heat=dict(steq_t_native=stored/factor,frequencies=1115020)
     result=compare_module.compare_heat_row(heat,balance,compare_module.sha(balance))
-    assert result['max_absolute_difference']==0.
-    assert result['max_scaled_absolute_difference']==0.
-    assert result['native_steq_t_sign_convention']=='positive=cooling, negative=heating'
+    assert result['stored_policy_candidate']['max_absolute_difference']==pytest.approx(0.,abs=1.e-14)
+    assert result['stored_policy_candidate']['max_gross_scaled_absolute_difference']==pytest.approx(0.,abs=1.e-14)
+    assert result['instantaneous_scenario']['nonzero_sign_mismatch_points']==1
+    assert result['instantaneous_scenario']['max_absolute_difference']==pytest.approx(2.)
+    assert result['source_policy']['instantaneous_recomposition_max_absolute']<1.e-14
+    assert result['source_policy']['stored_decay_max_absolute']==0.
+    assert result['native_steq_t_sign_convention']=='positive=net heating, negative=net cooling'
+    assert result['native_steq_t_raw_units']=='CMFGEN radiative-equilibrium internal units'
+    assert result['native_steq_t_to_cgs_factor']==factor
+    assert result['comparison_units']=='erg cm^-3 s^-1'
     assert result['comparison_sign_convention']=='positive=heating'
-    assert result['points'][0]['native_steq_t_raw']==-2.
-    assert result['points'][0]['native_heat_positive']==2.
-    assert result['points'][0]['lumina_heat_positive_net']==2.
-    assert result['points'][0]['difference_heat_positive']==0.
-    assert len(result['points'])==3
+    assert result['stored_policy_candidate']['points'][0]['native_steq_t_raw']==pytest.approx(2./factor)
+    assert result['stored_policy_candidate']['points'][0]['native_steq_t_cgs']==pytest.approx(2.)
+    assert result['stored_policy_candidate']['points'][0]['lumina_net']==2.
+    assert result['stored_policy_candidate']['points'][0]['difference']==pytest.approx(0.,abs=1.e-14)
+    assert len(result['stored_policy_candidate']['points'])==3
     assert result['interpretation'].startswith('No pass threshold')
 
     mismatched=compare_module.compare_heat_row(
-        dict(steq_t_native=np.array([-1.,2.,0.]),frequencies=1115020),
+        dict(steq_t_native=np.array([1.,0.,0.])/factor,frequencies=1115020),
         balance,compare_module.sha(balance))
-    assert mismatched['max_absolute_difference']==1.
-    assert mismatched['worst_point_1based']==2
-    assert mismatched['max_scaled_absolute_difference']==0.5
+    assert mismatched['stored_policy_candidate']['max_absolute_difference']==pytest.approx(1.)
+    assert mismatched['stored_policy_candidate']['worst_net_relative_point_1based']==2
+    assert mismatched['stored_policy_candidate']['max_gross_scaled_absolute_difference']==pytest.approx(0.5)
     with pytest.raises(ValueError,match='봉인 해시'):
         compare_module.compare_heat_row(heat,balance,'0'*64)
 
@@ -160,7 +173,7 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     native_steq_t=np.linspace(-1.,1.,nd)
     vectors=np.vstack((radius,np.zeros(nd),np.zeros(nd),np.ones(nd),np.full(nd,2.),
                        np.ones(nd),np.ones(nd),native_steq_t,np.zeros(nd)))
-    heat=b'NATIVEHEATROWV1 '+struct.pack('<8i',1,64,nt,nd,100,7,9,0)
+    heat=b'NATIVEHEATROWV1 '+struct.pack('<8i',1,64,nt,nd,197291,7,9,0)
     heat+=vectors.astype('<f8').tobytes()+pops.astype('<f8').tobytes(order='F')
     (root/'NATIVE_HEAT_ROW.bin').write_bytes(heat)
 
@@ -179,8 +192,11 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     np.savez(response,fraction=np.vstack((fraction[1],fraction[0])),
              occupation=np.vstack((occupation[1],occupation[0])))
     balance=tmp_path/'balance.npz'
-    np.savez(balance,native_instantaneous_scenario_net=-native_steq_t,
-             native_instantaneous_scenario_gross=np.ones(nd))
+    balance_net=native_steq_t*compare_module.CMFGEN_RE_INTERNAL_TO_CGS
+    np.savez(balance,native_stored_net=balance_net,native_stored_gross=np.ones(nd),
+             native_instantaneous_scenario_net=balance_net,
+             native_instantaneous_scenario_gross=np.ones(nd),
+             instantaneous_scenario=np.zeros(nd),stored_decay=np.zeros(nd))
     field_root=tmp_path/'field';field_root.mkdir()
     (field_root/'EDDFACTOR').write_bytes(b'fixed-J field fixture')
     (field_root/'EDDFACTOR_INFO').write_bytes(b'fixed-J field metadata fixture')
@@ -188,7 +204,10 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
     field_manifest.write_text(json.dumps({'output_sha256':{
         'EDDFACTOR':compare_module.sha(field_root/'EDDFACTOR'),
         'EDDFACTOR_INFO':compare_module.sha(field_root/'EDDFACTOR_INFO')},
-        'input_sha256':{'generation15/J.npy':'7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841'}}))
+        'input_sha256':{'generation15/J.npy':'7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841'},
+        'layout':{'depths':nd,'frequencies':1115020,'native_quadrature_equal':False},
+        'interpolation':'linear-frequency fixture interpolation',
+        'quadrature':'native-grid fixture'}))
     executable=tmp_path/'cmfgen_fixedj_heat.exe';executable.write_bytes(b'fixture executable')
     build_manifest=tmp_path/'build-manifest.json'
     build_manifest.write_text(json.dumps({'output_sha256':{
@@ -209,14 +228,18 @@ def test_complete_same_state_comparison_writes_diagnostic_only_report(tmp_path,m
         expected_lumina_balance_sha256=compare_module.sha(balance),levels=level_path,
         model_spec=model_spec,atomic_links=links)
     result=compare_module.compare(args)
-    assert result['schema']=='lumina-cmfgen-fixedj-full-comparison-v2'
+    assert result['schema']=='lumina-cmfgen-fixedj-full-comparison-v6'
     assert result['exact_injected_state'] and result['heat_row_same_state']
     assert result['fixed_J_source_sha256']=='7d257602576edf93fe32fa4d7c0e61d162eb26c2d7f8f8683c6c2956d5542841'
     assert result['comparisons']['native_full_vs_C_imported_full']['max_absolute']==0.
     assert result['comparisons']['native_LTE_fraction_vs_Lumina_fraction']['max_absolute']==0.
-    assert result['native_heat_comparison']['max_absolute_difference']==0.
-    assert result['native_heat_comparison']['points'][0]['difference_heat_positive']==0.
-    assert len(result['native_heat_comparison']['points'])==nd
+    assert result['native_heat_comparison']['stored_policy_candidate']['max_absolute_difference']==pytest.approx(0.)
+    assert result['native_heat_comparison']['stored_policy_candidate']['points'][0]['difference']==pytest.approx(0.)
+    assert len(result['native_heat_comparison']['stored_policy_candidate']['points'])==nd
+    assert result['native_heat_comparison']['frequency_quadrature']==dict(
+        lumina_field_frequency_count=1115020,cmfgen_native_frequency_count=197291,
+        native_quadrature_equal=False,field_interpolation='linear-frequency fixture interpolation',
+        field_quadrature='native-grid fixture')
     assert result['physical_equivalence']=='DIAGNOSTIC_ONLY_NO_PREDECLARED_THRESHOLD'
     assert result['final_goal']=='NOT_MET'
     saved=json.loads(args.out.read_text())

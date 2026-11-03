@@ -14,6 +14,7 @@ import struct
 import numpy as np
 
 from expand_atomic_data_cmfgen import load_cmfgen_model_spec
+from extract_cmfgen_line_net_fixture import CMFGEN_RE_INTERNAL_TO_CGS
 from prepare_cmfgen_fixedj_heat import read_heat_row
 
 
@@ -80,6 +81,9 @@ def verify_run_identity(args):
         field_factor=Path(args.field_root)/'EDDFACTOR',
         field_info=Path(args.field_root)/'EDDFACTOR_INFO',
         native_vadat=vadat,
+        fixed_J_field_layout=field.get('layout',{}),
+        fixed_J_field_interpolation=field.get('interpolation'),
+        fixed_J_field_quadrature=field.get('quadrature'),
         fixed_J_source_name=Path(j_inputs[0][0]).name,
         fixed_J_source_sha256=j_inputs[0][1])
 
@@ -211,7 +215,7 @@ def error_metrics(left,right):
 
 
 def compare_heat_row(native_row,balance_path,expected_balance_sha256):
-    """Compare the captured native RE row with the selected Lumina native ledger.
+    """Compare the captured native RE row against both Lumina source policies.
 
     This is a raw, same-state diagnostic. The native and Lumina frequency
     quadratures are not assumed identical, and no acceptance threshold is added.
@@ -223,43 +227,89 @@ def compare_heat_row(native_row,balance_path,expected_balance_sha256):
     if sha(balance_path)!=expected:
         raise ValueError('Lumina balance가 선택 물질의 봉인 해시와 불일치')
     with np.load(balance_path,allow_pickle=False) as archive:
-        required=('native_instantaneous_scenario_net','native_instantaneous_scenario_gross')
+        required=('native_stored_net','native_stored_gross',
+                  'native_instantaneous_scenario_net','native_instantaneous_scenario_gross',
+                  'instantaneous_scenario','stored_decay')
         if any(name not in archive.files for name in required):
-            raise ValueError('Lumina balance에 native 순간 열정책 net/gross가 없음')
-        lumina=np.asarray(archive[required[0]],dtype=np.float64)
-        gross=np.asarray(archive[required[1]],dtype=np.float64)
+            raise ValueError('Lumina balance에 저장/순간 열정책 비교항이 없음')
+        stored=np.asarray(archive['native_stored_net'],dtype=np.float64)
+        stored_gross=np.asarray(archive['native_stored_gross'],dtype=np.float64)
+        instantaneous=np.asarray(archive['instantaneous_scenario'],dtype=np.float64)
+        stored_decay=np.asarray(archive['stored_decay'],dtype=np.float64)
+        scenario=np.asarray(archive['native_instantaneous_scenario_net'],dtype=np.float64)
+        scenario_gross=np.asarray(archive['native_instantaneous_scenario_gross'],dtype=np.float64)
     native_steq_t=np.asarray(native_row['steq_t_native'],dtype=np.float64)
-    if (native_steq_t.ndim!=1 or lumina.shape!=native_steq_t.shape or
-            gross.shape!=native_steq_t.shape or
-            not np.isfinite([native_steq_t,lumina,gross]).all() or np.any(gross<0)):
+    arrays=(native_steq_t,stored,stored_gross,instantaneous,stored_decay,scenario,scenario_gross)
+    if (native_steq_t.ndim!=1 or any(value.shape!=native_steq_t.shape for value in arrays[1:]) or
+            not np.isfinite(arrays).all() or np.any(stored_gross<0) or np.any(scenario_gross<0)):
         raise ValueError('native/Lumina 실제 열행의 형상·유한성·부호 오류')
-    # CMFGEN STEQ_T is positive for cooling; the Lumina balance ledger is
-    # positive for heating. Preserve the raw native row, but normalize its sign
-    # before computing a physical same-state difference.
-    native_heat_positive=-native_steq_t
-    delta=native_heat_positive-lumina
-    scale=np.maximum.reduce((gross,np.abs(native_heat_positive),np.abs(lumina)))
-    scaled=np.divide(np.abs(delta),scale,out=np.zeros_like(delta),where=scale>0)
-    worst=int(np.argmax(scaled))
-    points=[dict(point_1based=i+1,native_steq_t_raw=float(native_steq_t[i]),
-                  native_heat_positive=float(native_heat_positive[i]),
-                  lumina_heat_positive_net=float(lumina[i]),
-                  difference_heat_positive=float(delta[i]),
-                  lumina_native_gross=float(gross[i]),scaled_absolute_difference=float(scaled[i]))
+    # CMFGEN's STEQ_T is in its radiative-equilibrium internal units, whereas
+    # Lumina's balance ledger is cgs volumetric power. Convert before comparing.
+    # The shared conversion follows EMLIN=1e25*h/(4*pi), frequency in 1e15 Hz,
+    # cm^-3 populations, and CMFGEN's 1e10 opacity/radius scaling.
+    native_steq_t_cgs=native_steq_t*CMFGEN_RE_INTERNAL_TO_CGS
+    # The accumulated CMFGEN STEQ_T has the same net-heating sign as Lumina:
+    # the continuum term adds chi*J-eta, while positive line/adiabatic cooling
+    # terms are subtracted. Do not transfer LINEHEAT's positive=cooling sign
+    # to the accumulated STEQ_T row.
+    native_heat_positive=native_steq_t_cgs
+
+    recomposed_scenario=stored+instantaneous
+    recomposition_error=np.abs(scenario-recomposed_scenario)
+    recomposition_scale=np.maximum.reduce((np.abs(scenario),np.abs(stored),np.abs(instantaneous),
+                                           np.full_like(scenario,1.0e-300)))
+    recomposition_tolerance=64.0*np.finfo(np.float64).eps*recomposition_scale
+    if np.any(recomposition_error>recomposition_tolerance):
+        raise ValueError('Lumina 순간 시나리오 net이 저장 net+즉시 열원 항으로 재현되지 않음')
+
+    def metrics(lumina,gross):
+        delta=native_heat_positive-lumina
+        net_scale=np.maximum(np.abs(native_heat_positive),np.abs(lumina))
+        net_scaled=np.divide(np.abs(delta),net_scale,out=np.zeros_like(delta),where=net_scale>0)
+        gross_scaled=np.divide(np.abs(delta),gross,out=np.zeros_like(delta),where=gross>0)
+        worst=int(np.argmax(net_scaled))
+        points=[dict(point_1based=i+1,
+            native_steq_t_raw=float(native_steq_t[i]),
+            native_steq_t_cgs=float(native_heat_positive[i]),
+            lumina_net=float(lumina[i]),
+            difference=float(delta[i]),
+            symmetric_net_relative_difference=float(net_scaled[i]),
+            lumina_gross_scale=float(gross[i]),
+            gross_scaled_absolute_difference=float(gross_scaled[i]))
             for i in range(len(native_steq_t))]
-    return dict(scope='same-state sign-normalized native STEQ_T vs Lumina native_instantaneous_scenario_net; diagnostic only',
-        native_steq_t_sign_convention='positive=cooling, negative=heating',
+        return dict(max_absolute_difference=float(np.max(np.abs(delta))),
+            rms_difference=float(np.sqrt(np.mean(delta*delta))),
+            nonzero_sign_mismatch_points=int(np.count_nonzero(native_heat_positive*lumina<0)),
+            max_symmetric_net_relative_difference=float(net_scaled[worst]),
+            median_symmetric_net_relative_difference=float(np.median(net_scaled)),
+            p95_symmetric_net_relative_difference=float(np.quantile(net_scaled,0.95)),
+            max_gross_scaled_absolute_difference=float(np.max(gross_scaled)),
+            median_gross_scaled_absolute_difference=float(np.median(gross_scaled)),
+            p95_gross_scaled_absolute_difference=float(np.quantile(gross_scaled,0.95)),
+            worst_net_relative_point_1based=worst+1,points=points)
+
+    return dict(scope='same-state cgs-converted native STEQ_T compared separately with Lumina stored and instantaneous-source policies; diagnostic only',
+        native_steq_t_sign_convention='positive=net heating, negative=net cooling',
+        native_steq_t_raw_units='CMFGEN radiative-equilibrium internal units',
+        native_steq_t_to_cgs_factor=CMFGEN_RE_INTERNAL_TO_CGS,
+        comparison_units='erg cm^-3 s^-1',
         comparison_sign_convention='positive=heating',
         native_frequency_count=int(native_row['frequencies']),
         lumina_balance_sha256=expected,
-        max_absolute_difference=float(np.max(np.abs(delta))),
-        rms_difference=float(np.sqrt(np.mean(delta*delta))),
-        max_scaled_absolute_difference=float(scaled[worst]),
-        median_scaled_absolute_difference=float(np.median(scaled)),
-        p95_scaled_absolute_difference=float(np.quantile(scaled,0.95)),
-        worst_point_1based=worst+1,points=points,
-        interpretation=('No pass threshold; native STEQ_T is negated for the shared heat-positive '
-                        'comparison, and native/Lumina frequency quadratures may differ.'))
+        source_policy=dict(
+            cmfgen_explicit_decay='captured STEQ_T does not add dE_RAD_DECAY; this source path writes it to STEQ_T_EHB',
+            lumina_base='native_stored_net excludes the separately represented instantaneous_scenario term',
+            lumina_instantaneous='native_instantaneous_scenario_net = native_stored_net + instantaneous_scenario',
+            instantaneous_recomposition_max_absolute=float(np.max(recomposition_error)),
+            stored_decay_max_absolute=float(np.max(np.abs(stored_decay)))),
+        stored_policy_candidate=dict(policy='native_stored_net; no added instantaneous_scenario term',
+                                     **metrics(stored,stored_gross)),
+        instantaneous_scenario=dict(policy='native_instantaneous_scenario_net; includes instantaneous_scenario',
+                                    **metrics(scenario,scenario_gross)),
+        interpretation=('No pass threshold. The stored-policy comparison is the closer source-policy candidate '
+                        'for this captured STEQ_T; it is not exact parity because native/Lumina quadratures '
+                        'and remaining source/atomic details may differ. Gross-scaled values measure the '
+                        'difference against large cancellation channels and must not be read as net heat agreement.'))
 
 
 def read_index(path,nfull):
@@ -314,6 +364,13 @@ def compare(args):
         raise ValueError('수용 Lumina response가 봉인된 선택 응답과 불일치')
     native_heat_comparison=compare_heat_row(
         heat,args.lumina_balance,args.expected_lumina_balance_sha256)
+    field_layout=run_identity['fixed_J_field_layout']
+    native_heat_comparison['frequency_quadrature']=dict(
+        lumina_field_frequency_count=field_layout.get('frequencies'),
+        cmfgen_native_frequency_count=int(heat['frequencies']),
+        native_quadrature_equal=field_layout.get('native_quadrature_equal'),
+        field_interpolation=run_identity['fixed_J_field_interpolation'],
+        field_quadrature=run_identity['fixed_J_field_quadrature'])
 
     with Path(args.levels).open(newline='') as stream:
         level_rows=list(csv.DictReader(stream))
@@ -383,11 +440,14 @@ def compare(args):
         'C_material_occupation':Path(args.c_occupation),
         'accepted_Lumina_response':Path(args.response),
         'selected_Lumina_balance':Path(args.lumina_balance),
+        'comparison_source':Path(__file__).resolve(),
+        'native_unit_conversion_source':Path(__file__).with_name(
+            'extract_cmfgen_line_net_fixture.py').resolve(),
         'atomic_levels':Path(args.levels),
         'MODEL_SPEC':Path(args.model_spec),
         'atomic_links':Path(args.atomic_links),
     }
-    report=dict(schema='lumina-cmfgen-fixedj-full-comparison-v2',
+    report=dict(schema='lumina-cmfgen-fixedj-full-comparison-v6',
         scope='실제 native fixed-J 상태의 전체 FL 진단 비교; 사전 동질성 합격선 없음',
         native_evaluation_counter=counter,active_ions=npres,full_levels=nfull,points=nd,
         fixed_J_source_name=run_identity['fixed_J_source_name'],

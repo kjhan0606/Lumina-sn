@@ -423,6 +423,32 @@
   물리적으로 대응하면 오차0, 불일치면 오차가 남음을 확인했다. 실제 native
   실행·열행 parity는 여전히 미실행/미평가이며, native/Lumina 주파수 quadrature
   차이도 해석에 남는다.
+- **2026-11-03 정정 — 위 sign 판정·v4의 순간열 비교는 superseded.** 실제 고정-J
+  열행 job `1261748`은 parent `COMPLETED 0:0`이고 실행단계는 의도된 `STOP96`
+  (`96:0`)으로 물질 갱신 전에 끝났다. 같은 J·물질의 native 누적
+  `STEQ_T`를 unit-corrected v6로 다시 비교했다. 봉인 native source
+  `cmfgen_sub.f` SHA256 `84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c`
+  에서 복사 연속항은 `CHI_NOSCAT*RJ-ETA_NOSCAT`를 `STEQ_T`에 더하고 선 냉각항은
+  빼며, 직접 `dE_RAD_DECAY`는 별도 `STEQ_T_EHB`에 더한다. 따라서 독립 `LINEHEAT`
+  성분의 양수=냉각 관례를 누적 `STEQ_T`에 옮긴 이전 sign flip은 잘못이다.
+  CMFGEN 내부 단위는 `4*pi*1e-10`으로 cgs 환산한다.
+- Lumina 장부에서 `native_instantaneous_scenario_net`은
+  `native_stored_net + instantaneous_scenario`로 재현되며 최대 절대 재조립오차는
+  `4.34e-19`, 이 실행의 `stored_decay`는0이다. 직접 붕괴항이 없는 native
+  `STEQ_T`에는 순간가열 포함 정책보다 저장 정책이 더 가까운 비교 후보지만,
+  동등성은 아니다. 그 후보의 90점 절대차 최대 `1.5183e-3`, RMS `5.3641e-4`
+  erg cm⁻³ s⁻¹, 비영점 부호 불일치29점, 대칭 net 척도 중앙 상대차0.9878/p95
+  `1.1623`이다. gross 척도 p95 `2.968e-5`는 큰 상쇄 흐름을 분모로 한 값일 뿐
+  net 열 일치 증거가 아니다. 순간가열 포함 v4 비교는 정책 차이로 부호 불일치가
+  더 커져(59점) source-policy 판정에 쓰지 않는다.
+- 격자도 일치하지 않는다. Lumina J 입력은1,115,020점, CMFGEN `NCF`는197,291점이며
+  native는 선형 주파수 보간을 사용한다. v6 보고서는 두 격자 수와 보간법을
+  함께 기록하며 field manifest가 `native_quadrature_equal=false`로 명시하므로
+  v6 수치는 같은 물질/J 계보의 **서로 다른 적분 격자 진단**이지
+  parity 합격/실패나 회귀 원인 확정이 아니다. 다음 판정에는 native 격자에서의
+  Lumina 재적분 또는 term별 native/Lumina 대응이 필요하다. v2 원단위·v3 잘못된
+  부호·v4 순간열 비교 원본은 포렌식으로 보존하며 덮어쓰지 않는다. 현재 최종목표는
+  계속 `NOT_MET`이다. 상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 진행상태.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
