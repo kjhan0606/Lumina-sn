@@ -312,6 +312,18 @@
   `ccc1951d323819a2880e423a3a37971d679101f8c89132df4430844fa9d50271`;
   자세한 집계와 response SHA는 [11월3일 인계](HANDOVER_2026-11-03.md)의
   `generation14 기준 열장부 재판독` 참조.
+- 11월3일 구현·계약 대조: v2 RE 행의 사전 합의 척도는
+  `max(total heating, total cooling, |deposition|)`이다. 현 `packet()`은
+  `0.5*(gross+|net|)`을 사용하며 `gross=H+C`, `net=H-C`이면 `max(H,C)`와 같다.
+  이번 generation14에서 gross 중앙은 `1.660e4`, 별도 기록된 즉시 붕괴 외부가열은
+  `4.360e-3`이다. 이 한 항은 큰 H/C 척도를 정하지 않지만, 이것만으로 모든
+  deposition 항의 포함이나 native 식과의 동등성을 증명하지 않는다. 따라서 현재
+  gross 기반 척도 자체를 오류로 단정하거나 P09의 net-channel 비율로 교체하지 않는다.
+  반면 이 척도에서 작은 잔차만으로 열평형의 물리적 동등성을 선언하지도 않는다.
+  결론은 같은 물질·J에서 CMFGEN native `STEQ_T` 열행과 합의된 residual/Jv를
+  대조해야 하며, 현재 direction-only 진단은 그 증거가 아니다.
+  근거: `CODEX_CMFGEN_EQUIVALENCE_PLAN_v2.md`의 RE scaling 규약과
+  `scripts/lumina_coupled_material.py`의 `packet()`/`residual()`.
 - 비교 신원 주의: 11월2일에 준비된 native `STEQ_T` 비교는 다른 J·response·balance
   해시에 고정돼 있다. 11월3일 generation14의 새 J와 일치하지 않으므로 현재 결과의
   동상태 CMFGEN parity 증거로 재사용하지 않는다. 현재 입력에 맞춘 native 열행 평가는
