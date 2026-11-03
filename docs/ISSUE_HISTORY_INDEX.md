@@ -432,22 +432,38 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
-- 반경 표본 질문의 범위 판정(2026-11-03): 기준 `native_material_nodes.bin`은
-  CMFGEN `SCRTEMP`의 같은 90개 깊이점에서 내보내며 preparation manifest가 이를
-  `CMFGEN outer-to-inner nodal values; NOT transfer-cell averages`로 명시한다.
-  현재 반환장 물질응답은 원 material 반경과 `source.radius`를 점별 정확 비교하고,
-  고정인구 bound-photo 비교도 CMFGEN field 반경과 material 반경의 정확 일치를
-  요구한다. 이 비교기는 방사 방향 보간/셀 평균 대신 같은 반경의 값을 쓰고
-  주파수축에만 log-ν 적분 가중치의 adjoint 보간을 적용한다. 따라서 이 특정
-  90점 물질응답·bound-photo 차이는 단순한 “반경 bin 평균 대 bin 중심점” 표본
-  오프셋으로 설명되지 않는다. 단, 이 판정은 그 고정인구 비교 범위에 한정되며
-  production 수송 내부의 cell-to-node remap, 미세격자 평균화, 최종 스펙트럼의
-  공간 이산화 오차를 배제하지 않는다. 근거: `prepare_lumina_material_seed.py`,
-  `prepare_lumina_outer_input.py`, `lumina_new_field_response.py`,
-  `compare_cmfgen_bound_photo_profiles.py`의 명시적 표본 계약과 반경 동일성 검사.
-  이 네 파일의
-  blob은 현재 방향 job의 source commit `0824950d2de24af90c1a47456c58f5632c35fcd2`와
-  byte-level로 일치한다.
+- 반경 표본·공간 평균 질문의 적용 범위(2026-11-03 재대조): 기준
+  `native_material_nodes.bin`은 CMFGEN `SCRTEMP`의 같은 90개 깊이점 노드값이며,
+  manifest는 `NOT transfer-cell averages`로 명시한다. 현재 반환장 물질응답은
+  material 반경과 `source.radius`를 점별 정확 비교하고, 고정인구 bound-photo도
+  CMFGEN field와 material 반경의 정확 일치를 요구하며 주파수축에만 log-ν 적분
+  가중치의 adjoint 보간을 한다. 따라서 이 특정 90점 고정인구 율 차이는 radial
+  bin-average/center 오프셋으로 설명되지 않는다. 다만 production 수송 경로는
+  별도다. `prepare_lumina_material_cells.py`는 90점에서 89개 구간의 rho·n·rhoX·
+  rhoT를 재구성해 부피/질량 평균을 만들며, 그 manifest도 물질 평균만으로 J의
+  공간 평균 기능을 추정하지 말라고 명시한다.
+- 과거 10월22일 89셀 고정-J 대조는 Lumina 셀중심 F를 CMFGEN native 양 끝점 J의
+  산술평균과 비교했다. 셀37/39의 100–400Å 겉보기 비 `0.647/1.438`은 실제
+  끝점 평균 자체가 아니라 비선형 source의 계수중간 대리값 `0.631/1.477`과
+  가깝다. 따라서 표본/공간 source 차이는 해당 두꺼운 대역의 겉보기 잔차 일부를
+  설명하지만, 대리값은 CMFGEN의 실제 셀중심 J가 아니다. 같은 공간계수 세분화
+  P0-4/native-2/native-4도 EUV 차이를 제거하지 못했다. 셀39 native49/50 출력점의
+  F/J는 대역별로 크게 달랐고, 동일 위치라고 전체 대역 동등성이 성립하지 않았다.
+- 별도 1450Å 중앙광선 분석에서는 물질 `∫χds≈0.044`여도 주파수 이류를 포함한
+  CMFGEN 유효 감쇠가 `τ≈41.67`, source의 `98.7–99.96%`가 직전 주파수 강도였다.
+  그러므로 `η/χ`는 중심 J 대리값이 아니며, 이는 단일 광선 결과라 전각도/전대역
+  결론으로 확대하지 않는다. CMFGEN 이산 upwind와 Lumina 연속 특성선은 수치
+  연산자가 다르며 한 광선의 주파수 이동량 일치만으로 전체 장 parity가 증명되지
+  않는다. 원자료와 수치는 `LUMINA_NATIVE_SPATIAL_FIXED_2026-10-22.md`,
+  `LUMINA_UV_SOURCE_LOCATION_2026-10-22.md`,
+  `LUMINA_FORMAL_FREQUENCY_COUPLING_2026-10-22.md`에 있다.
+- 따라서 현재 90점 bound-photo 차이를 공간 평균 문제로 무효화하지 말고, 반대로
+  89셀 transport의 F/Jref 잔차도 실제 같은 위치 J와 곧바로 동일시하지 않는다.
+  공간 차이를 닫으려면 실제 CMFGEN 셀중심 formal J 또는 동등한 중심 formal
+  평가를 같은 각도·주파수·공간 functional로 확보해야 한다.
+  `prepare_lumina_material_seed.py`, `prepare_lumina_outer_input.py`,
+  `lumina_new_field_response.py`, `compare_cmfgen_bound_photo_profiles.py`의 blob은
+  현재 방향 job source `0824950d2de24af90c1a47456c58f5632c35fcd2`와 byte-level로 일치한다.
 - 현 고정장 진단의 과정 계약 재확인(2026-11-03): 봉인 `MODEL`/`MODEL_SPEC` 해시는
   각각 `e8ec1835355869c3b8fbaf761fc8b6eeb516b527aa660aea768b8cbc19e2f6c9`/
   `3e6f53861f16e2dac822d68e1412f91813c7a80f939fdbd0c4b1394e9055f2fb`다. `INC_CHG=F`,
