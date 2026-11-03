@@ -449,6 +449,23 @@
   Lumina 재적분 또는 term별 native/Lumina 대응이 필요하다. v2 원단위·v3 잘못된
   부호·v4 순간열 비교 원본은 포렌식으로 보존하며 덮어쓰지 않는다. 현재 최종목표는
   계속 `NOT_MET`이다. 상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 진행상태.
+- **2026-11-03 같은-J fine/native 선 적분 후속:** Grammar job `1262541`은 정상
+  완료했다. fine-grid와 EDDFACTOR J는 100,351,800개 값에서 정확 일치했고,
+  주파수 상대차 최대는 `2.50e-16`이다. 같은 물질/full population의 fine/native
+  grid 열원 차이는 BB가 지배하며 최대 절대차 `5.8699e-3`, RMS `1.9908e-3`
+  erg cm⁻³ s⁻¹, 부호 불일치 30점이다. 같은 790,493개 선 profile의 nodal 적분을
+  재현하면 fine grid는 선당 48–49개 표본, 질량 `1 ± 2.2e-11`인 반면 native 격자는
+  표본 중앙값12/p95 14/최대27, 질량 절대오차 중앙`8.53e-5`/p95`3.25e-3`이며
+  40.85%가 `1e-4`, 5.92%가 `1e-3`을 초과한다. 일부 native 선 profile은 미표본 또는
+  과대 적분이다. 이는 native 격자에서 Lumina local-Gaussian BB 적분의 표본화
+  오류를 확인하지만, CMFGEN `STEQ_T`와의 전 차이를 설명하지 않는다. fine-grid
+  Lumina 국소 계수 적분과 native 누적 `LINEHEAT`는 아직 항별 동등 비교가 아니며,
+  native-grid heat 최대차`4.0012e-3`/RMS`1.3684e-3`, fine-grid 후처리 최대차
+  `9.4515e-3`/RMS`2.9181e-3` erg cm⁻³ s⁻¹로 목표는 계속 `NOT_MET`이다.
+  물리 실행은 source/line-resolved 대응 0회, 새 수송·물질 갱신도 0회다. 재현용
+  비교 JSON SHA256은 `b82caf1c0375502615ceed0856c9a8c240424f2c75266dbc917ded98f325809e`,
+  90점 표는 `c3dfd0d771579487fdd39d427361c87a5c432307839931a7eedb29563e536167`이다.
+  상세와 이후 판단은 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 절을 참조한다.
 - 재사용성 확인: 10월27일의 1,115,020점 `sources.npz`는 현재 generation14의
   source로 재사용하지 않는다. `MODEL_SPEC`은 같지만 그 producer의
   `native_material_nodes.bin` SHA256 `942cec390a51807f0269e0dd8afecda8c0548bfef0fbf5bef22bc954bc98b735`
