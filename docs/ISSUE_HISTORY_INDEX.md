@@ -298,6 +298,20 @@
 - 과거 확인: 작은 gross 정규화 잔차와 순채널 잔차가 거의1인 상태가 함께 있었다.
   physical/native 계열은 BB 선 가중·FF·내부 에너지/단열에서 구분한다.
   외부열의 저장0 붕괴열과 국소 순간붕괴 시나리오는 별도의 정책 선택이다.
+- 11월3일 generation14 같은 새-J 응답을 선택 정책 `native_instantaneous_scenario`로
+  읽기 전용 재집계했다. 안쪽 node80–89에서 net은 모두 양수, 중앙
+  `+2.6870e-3` erg cm⁻³ s⁻¹이고, `|net|/channel_scale`은 중앙0.4213/p95 0.5885/
+  최대0.7169다. 현재 packet의 gross Newton 척도 `0.5*(gross+|net|)`로 나눈 열행은
+  중앙 `3.569e-7`/최대 `4.683e-7`로 작다. 큰 gross는 중앙 `1.660e4`이며 큰 상반 BB
+  흐름이 포함된다. net 성분 중앙은 즉시 붕괴 외부가열 `+4.360e-3`, native BB
+  `−1.769e-3`, BF `+5.012e-4`, FF `−1.613e-4`다. 이는 gross 정규화와 net 열평형
+  해석을 분리해야 한다는 기존 P09 경고의 현 응답 사례다. channel-scale 비율은
+  진단이며 새 합격선을 만들지 않는다. 고정장 방향 진단은 후보를 수용하지 않고,
+  동상태 CMFGEN `STEQ_T` parity도 아직 미확인이다. result SHA256
+  `7d2d5248ee5ab2706728310a82c18eb68104792eeabf5b77c42d64bdc4c467f5`, balance SHA256
+  `ccc1951d323819a2880e423a3a37971d679101f8c89132df4430844fa9d50271`;
+  자세한 집계와 response SHA는 [11월3일 인계](HANDOVER_2026-11-03.md)의
+  `generation14 기준 열장부 재판독` 참조.
 - 최근 재판독: generation22의 저장 장부를 항별 합산해 두 정책의 net을 정확히
   재현했다. 정책 차이는 주로 BB 가중이며, 인공 가열/physical 가열냉각 척도의
   최대 비는 약4.4e-203이다. 이는 해당 저장 상태에 대한 확인이다.
