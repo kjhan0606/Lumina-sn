@@ -13,6 +13,7 @@ from compare_lumina_native_grid_heat import (
     heat_components,
     interpolate_native_j,
     native_trapuneq_weights,
+    native_stored_ledger_terms,
     parse_native_cont_freq_text,
     read_native_heat_controls,
 )
@@ -97,6 +98,32 @@ def test_native_heat_controls_reject_missing_or_invalid_line_scaling(tmp_path):
                      "bad [SCL_LN_FAC]\n")
     with pytest.raises(ValueError, match='not numeric'):
         read_native_heat_controls(vadat)
+
+
+def test_native_stored_ledger_terms_recompose_saved_policy_net():
+    bf = np.array([[5., 2.], [1., 1.]])
+    bb = np.array([[3., 4.], [5., 2.]])
+    ff = np.array([[2., 3.], [.5, 1.]])
+    adiabatic = np.array([1., .25])
+    stored = np.array([.1, .2])
+    artificial = np.array([.01, 0.])
+    expected = (bf[0]-bf[1]) + (bb[0]-bb[1]) + (ff[0]-ff[1]) - adiabatic + stored + artificial
+    balance = dict(bf=bf, native_bb=bb, ff_native_upper_ions=ff,
+        native_stored_net=expected, native_stored_gross=np.full(2, 100.),
+        native_adiabatic=adiabatic, stored_decay=stored, artificial=artificial)
+    terms = native_stored_ledger_terms(balance)
+    recomposed = sum(terms.values())
+    np.testing.assert_allclose(recomposed, expected, rtol=0, atol=1.e-14)
+    np.testing.assert_array_equal(terms['bb_scl_net'], np.array([-2., 2.]))
+
+
+def test_native_stored_ledger_terms_reject_mismatched_net():
+    balance = dict(bf=np.zeros((2, 1)), native_bb=np.zeros((2, 1)),
+        ff_native_upper_ions=np.zeros((2, 1)), native_stored_net=np.ones(1),
+        native_stored_gross=np.ones(1), native_adiabatic=np.zeros(1),
+        stored_decay=np.zeros(1), artificial=np.zeros(1))
+    with pytest.raises(ValueError, match='do not recompose'):
+        native_stored_ledger_terms(balance)
 
 
 def test_rd_cont_j_interpolation_is_linear_in_frequency_and_clamps_endpoints():

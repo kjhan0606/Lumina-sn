@@ -207,6 +207,34 @@ def metrics(reference, candidate):
         p95_symmetric_net_relative_difference=float(np.quantile(relative, 0.95)))
 
 
+def native_stored_ledger_terms(balance):
+    """기존 native-policy balance를 채널별 순열로 분해하고 재합산한다."""
+    bf = np.asarray(balance['bf'], dtype=np.longdouble)
+    bb = np.asarray(balance['native_bb'], dtype=np.longdouble)
+    ff = np.asarray(balance['ff_native_upper_ions'], dtype=np.longdouble)
+    net = np.asarray(balance['native_stored_net'], dtype=np.longdouble)
+    gross = np.asarray(balance['native_stored_gross'], dtype=np.float64)
+    if (bf.ndim != 2 or bf.shape[0] != 2 or bb.shape != bf.shape or ff.shape != bf.shape or
+            net.shape != (bf.shape[1],) or gross.shape != net.shape or
+            any(not np.isfinite(value).all() for value in (bf, bb, ff, net, gross))):
+        raise ValueError('native stored energy ledger shapes/finiteness invalid')
+    terms = dict(
+        bf_net=bf[0]-bf[1],
+        bb_scl_net=bb[0]-bb[1],
+        ff_net=ff[0]-ff[1],
+        adiabatic_cooling=-np.asarray(balance['native_adiabatic'], dtype=np.longdouble),
+        stored_decay=np.asarray(balance['stored_decay'], dtype=np.longdouble),
+        artificial=np.asarray(balance['artificial'], dtype=np.longdouble))
+    if any(value.shape != net.shape or not np.isfinite(value).all()
+           for value in terms.values()):
+        raise ValueError('native stored ledger term shape/finiteness invalid')
+    recomposed = sum(np.asarray(value, dtype=np.longdouble) for value in terms.values())
+    rounding = 8*np.finfo(np.float64).eps*np.maximum(gross, np.abs(net))
+    if np.any(np.abs(recomposed-net) > rounding):
+        raise ValueError('native stored ledger terms do not recompose the saved net')
+    return terms
+
+
 def field_input(manifest, basename, base=None):
     matches = []
     for raw_path, digest in manifest.get('input_sha256', {}).items():
@@ -362,6 +390,7 @@ def run(input_root, phot_library, kernel_library, out):
     native_heat = heat_row['steq_t_native'] * CMFGEN_RE_INTERNAL_TO_CGS
     with np.load(balance_path, allow_pickle=False) as balance:
         old_lumina = np.asarray(balance['native_stored_net'], dtype=np.float64)
+        native_terms = native_stored_ledger_terms(balance)
         if 'native_instantaneous_scenario_net' not in balance.files:
             raise ValueError('accepted balance lacks separately identified native instantaneous scenario')
         native_instantaneous = np.asarray(
@@ -389,7 +418,14 @@ def run(input_root, phot_library, kernel_library, out):
             lumina_native_same_field_net=float(lumina_native_same_field[i]),
             lumina_native_same_field_gross=float(native_same_gross[i]),
             lumina_native_EDDFACTOR_J_net=float(lumina_native_cmfgen_j[i]),
-            lumina_native_EDDFACTOR_J_gross=float(native_cmfgen_gross[i])))
+            lumina_native_EDDFACTOR_J_gross=float(native_cmfgen_gross[i]),
+            lumina_native_policy_BF_net=float(native_terms['bf_net'][i]),
+            lumina_native_scl_BB_net=float(native_terms['bb_scl_net'][i]),
+            lumina_native_policy_FF_net=float(native_terms['ff_net'][i]),
+            lumina_native_policy_adiabatic_cooling=float(native_terms['adiabatic_cooling'][i]),
+            lumina_native_stored_decay=float(native_terms['stored_decay'][i]),
+            lumina_native_policy_artificial=float(native_terms['artificial'][i]),
+            native_steq_t_minus_native_scl_stored_net=float(native_heat[i]-old_lumina[i])))
     with (out/'depths.csv').open('x', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader(); writer.writerows(rows)
@@ -427,6 +463,12 @@ def run(input_root, phot_library, kernel_library, out):
                 'captured CMFGEN STEQ_T routes explicit decay separately')),
         bound_bound_comparison_note=('Raw Lumina local BB coefficients omit CMFGEN SCL_LN and are not native thermal parity. '
             'The separately reported native_stored_net includes SCL_LN, but still is not termwise LINEHEAT parity.'),
+        native_stored_ledger_decomposition=dict(
+            source='existing accepted balance.npz; no new physical evaluation',
+            terms=['BF net', 'SCL_LN-scaled BB net', 'FF net', 'negative adiabatic term',
+                   'stored decay heating', 'artificial term'],
+            recomposition_checked=True,
+            limitation='Lumina channel split only; native CMFGEN STEQ_T remains aggregate'),
         luminosity_units='erg cm^-3 s^-1', native_sign='STEQ_T positive=net heating',
         native_steq_t_to_cgs_factor=CMFGEN_RE_INTERNAL_TO_CGS,
         comparison=dict(
