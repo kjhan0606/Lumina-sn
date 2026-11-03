@@ -727,6 +727,9 @@
   지지되지 않는다. 이 net은 BF 장부만의 비율이며 전체 SE 잔차가 아니다. CMFGEN의
   대응 역율·bound-bound/충돌 및 열·수송 공동수렴은 미비교다. 수치와 해시는
   [11월3일 인수인계](HANDOVER_2026-11-03.md)의 `동일 인구의 총 BF 유량과 pseudo photo 기여` 참조.
+  generation14 응답은 inverse율 cache 경로24426개와 직접 재적분241개를 사용했다.
+  직접 계수가 별도 저장되지 않았으므로 기준 `bound-rates.npy`만으로 전체 응답의
+  bound/pseudo 역율을 분해하지 않는다.
 
 ## O01 장시간 git add와 대형 미추적 계산 출력
 
