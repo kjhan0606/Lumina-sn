@@ -171,10 +171,13 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
     if reuse_thermal_base:
         if (thermal_policy is None or report.get('thermal_energy_policy') != thermal_policy):
             raise ValueError('완료 기준 열장부의 정책 불일치')
+        thermal_implementation = report.get('thermal_implementation_sha256')
         for name in THERMAL_PRODUCERS:
             current = Path(__file__).with_name(name); digest_now = B.sha(current)
-            if report.get('thermal_implementation_sha256', {}).get(name) != digest_now:
-                raise ValueError('완료 기준 열장부의 물리 구현 변경: '+name)
+            if not isinstance(thermal_implementation, dict) or name not in thermal_implementation:
+                raise ValueError('완료 기준 열장부 producer 신원 누락: '+name)
+            if thermal_implementation[name] != digest_now:
+                raise ValueError('완료 기준 열장부 producer 신원 불일치: '+name)
             consumed[str(current)] = digest_now
         heat = Path(entry['root'])/'balance.npz'
         if B.sha(heat) != entry.get('balance_sha256'):

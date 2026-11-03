@@ -43,6 +43,12 @@ import lumina_thermal_refinement as thermal_refinement
 from lumina_temperature_response_cache import TemperatureResponseCache, extra_memory_reserve
 
 
+def thermal_implementation_hashes():
+    """Record the exact heat producers even when a fixed-T response runs zero T callbacks."""
+    return {name: B.sha(Path(__file__).with_name(name))
+            for name in completed_seed.THERMAL_PRODUCERS}
+
+
 @contextmanager
 def open_field(preparation, preparation_sha, feedback, feedback_sha):
     """완성된 마지막 F만 소비한다. F2 실패 시 보존된 F1도 명시적으로 허용한다."""
@@ -302,6 +308,7 @@ def run(args):
     result = dict(state='STARTED', final_goal='NOT_MET', source_commit=args.source_commit,
         execution=execution, fixed_accepted_temperature=temperature_evaluations == 0,
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
+        thermal_implementation_sha256=thermal_implementation_hashes(),
         charge_projection=projecting,
         fresh_temperature_full_BF_integrations_max=2 if direction_only or refining else (0 if projecting else None),
         secant_after_accept=secant_after_accept,
@@ -370,8 +377,6 @@ def run(args):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
             if temperature_evaluations:
                 thermal_code = completed_seed.THERMAL_PRODUCERS
-                result['thermal_implementation_sha256'] = {
-                    name: B.sha(Path(__file__).with_name(name)) for name in thermal_code}
                 for name in (*thermal_code, 'lumina_fixed_field_thermal.py',
                              'lumina_charge_projection.py',
                              'lumina_completed_field_seed.py', 'lumina_thermal_replay.py',

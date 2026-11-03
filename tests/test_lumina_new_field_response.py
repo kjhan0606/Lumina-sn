@@ -12,6 +12,13 @@ from test_lumina_resident_feedback import scenario
 import lumina_resident_feedback as F
 
 
+def test_thermal_producer_identity_is_available_for_zero_temperature_evaluations():
+    hashes=N.thermal_implementation_hashes()
+    assert tuple(hashes)==N.completed_seed.THERMAL_PRODUCERS
+    assert all(hashes[name]==N.B.sha(Path(N.__file__).with_name(name))
+               for name in N.completed_seed.THERMAL_PRODUCERS)
+
+
 @pytest.fixture
 def manual_resources(monkeypatch):
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')

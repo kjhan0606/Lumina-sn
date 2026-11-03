@@ -282,12 +282,16 @@
   seed `1260171`은 고정온도(`temperature_evaluations_max=0`) 결과이며
   `thermal_implementation_sha256`가 없다. 현 결과 생성기는 온도평가 한도가0이면
   producer hash를 기록하지 않지만 방향 seed loader는 이 해시를 요구한다. 따라서
-  확인된 직접 원인은 물리 구현 변경이 아니라 **seed provenance 누락**이다. 기존
-  해시 일치검사를 우회하지 말고, pinned source archive로 동일성을 안전하게 증명하거나
-  향후 fixed-T 결과 생성 시 producer hash를 남기도록 계약을 보완한다. 이 단회는
-  재시도0이므로 재제출하지 않았다. 상세 수치와 승인된 BF 응답 `1260171`이 이미
-  완료되어 중복 제출하지 않은 사실은 [11월3일 인수인계](HANDOVER_2026-11-03.md)의
-  최신 갱신을 참조한다.
+  확인된 직접 원인은 물리 구현 변경이 아니라 **seed provenance 누락**이다. 완료 run의
+  보존 source archive에 있는 열 producer 9개 해시가 source commit
+  `cf147be68eef17eb1a35cf74f924f09cc6c5b717`의 Git tree와 전부 일치하고, 실패 job도
+  같은 commit을 사용했다. 원본 결과 SHA `7d2d5248ee5ab2706728310a82c18eb68104792eeabf5b77c42d64bdc4c467f5`를 보존한 채
+  별도 `result.thermal-provenance-attested.json`(SHA `4d6c52d0b79eed824602c6dc643cf7c74f660449da0717ff8f1321d4b9df1e72`)을 만들었다.
+  현재 source의 loader로 계수6종·열 기준·producer9종을 read-only 복원했고 새 물리 callback/BF/수송은0회다. 해시 검사를 우회하지 않았다.
+  결과 생성기는 이제 고정온도 평가0회에도 producer hash를 기록하며, loader는 누락과 불일치를 구별한다. 관련125시험 통과. 실패한 단회는
+  재시도0이므로 새 방향 계산은 제출하지 않았고, 후속 물리 단회는 새 승인이 필요하다.
+  승인된 BF 응답 `1260171`이 이미 완료되어 중복 제출하지 않은 사실과 검증 범위는
+  [11월3일 인수인계](HANDOVER_2026-11-03.md)의 최신 갱신을 참조한다.
 
 ## P09 작은 열잔차와 BB 왕복 상쇄 및 에너지 정책
 

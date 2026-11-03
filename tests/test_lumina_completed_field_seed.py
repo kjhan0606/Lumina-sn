@@ -87,6 +87,13 @@ def test_direction_base_reuses_only_pinned_unchanged_thermal_state(thermal_archi
         load(thermal_archive)
 
 
+def test_direction_base_distinguishes_missing_producer_identity(thermal_archive):
+    root,report,args=thermal_archive
+    report.pop('thermal_implementation_sha256')
+    with pytest.raises(ValueError,match='producer 신원 누락'):
+        load(thermal_archive)
+
+
 @pytest.mark.parametrize('fault',['temperature_updated','evaluations','history','selected',
                                  'producer','policy','heat'])
 def test_direction_base_refuses_changed_physics_or_material(thermal_archive,fault):
