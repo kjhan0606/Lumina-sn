@@ -494,6 +494,17 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- **2026-11-04 same-state Si/S full-level data bridge:** fixed-J comparison-policy-v6
+  (SHA256 `c46e89e009bd0e1b09dedf7e79edba8590d57ecd24b513bf4fb5bb37dab5d66e`)는 같은
+  injected state·평가71·90점에서 C-imported full 인구와 native `EVAL_LTE_V5` 직후
+  full 인구를 비교한다. Si II p95/max scaled relative `4.36e-11`/`6.99e-9`, Si III
+  `4.28e-11`/`8.72e-11`, S II `1.44e-9`/`9.64e-9`, S III `6.28e-10`/`8.51e-9`다.
+  C full SHA256 `8712d64916bd203d5140439400047641c846fad2cfbc7fc1efacd4562478e92d`,
+  native full SHA256 `8abf99cf39fa09ddbfb8076f28ee49cff87f196944f24d02e54faa51882ea5a1`.
+  이 결과는 동일 수용 인구의 native full-level 재구성과 주소 연결 진단으로,
+  독립 CMFGEN NLTE 이온분포·에너지 균형 또는 사전 이온분율 합격 기준을 검증하지
+  않는다. 물리 목표는 계속 `NOT_MET`; 상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의
+  11월4일 재판독 절을 참조한다.
 - 반경 표본·공간 평균 질문의 적용 범위(2026-11-03 재대조): 기준
   `native_material_nodes.bin`은 CMFGEN `SCRTEMP`의 같은 90개 깊이점 노드값이며,
   manifest는 `NOT transfer-cell averages`로 명시한다. 현재 반환장 물질응답은
