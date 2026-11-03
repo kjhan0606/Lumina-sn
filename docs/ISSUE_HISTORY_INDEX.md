@@ -800,6 +800,17 @@
   generation14 응답은 inverse율 cache 경로24426개와 직접 재적분241개를 사용했다.
   직접 계수가 별도 저장되지 않았으므로 기준 `bound-rates.npy`만으로 전체 응답의
   bound/pseudo 역율을 분해하지 않는다.
+- Astra가 코드 read-only 검토에서 제기한 `ModelResponse.evaluate()`의 seed 기반
+  occupation/fraction과 SE 반환 population 불일치를 generation14 실자료로 대조했다
+  (2026-11-03). 선택 response SHA `216347a338d3adb66337cd46180135c71dec42581c18f48f0351bcb5055eb2a8`,
+  result SHA `7d2d5248ee5ab2706728310a82c18eb68104792eeabf5b77c42d64bdc4c467f5`에 대해
+  해당 MODEL/OSC/준위 입력과 최종 population·T·ne로 `material_occupation` 및 LTE
+  분율을 재계산했다. 24,542×90 occupation, fraction, population×fraction이 저장값과
+  정확히 일치했고, seed/최종 총 양이온 밀도 합의 상대차는 `3.91e-15`였다. 따라서
+  코드 흐름은 향후 상태에 대한 잠재 위험으로 남지만 이 generation14 출력의 stale
+  occupation 원인설은 반증된다. 이는 다른 모형·상태의 보증이나 독립 CMFGEN 인구
+  일치가 아니며, 코드 수정·새 계산·추가 게이트를 만들지 않았다. [11월3일 인계](HANDOVER_2026-11-03.md)의
+  `점유율 stale 가능성 재검사`를 참조한다.
 
 ## O01 장시간 git add와 대형 미추적 계산 출력
 
