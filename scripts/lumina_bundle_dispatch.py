@@ -103,11 +103,15 @@ def dispatch(config, digest, step):
     if step == 'field':
         limits = c.get('limits', {})
         maximum_F = limits.get('maximum_F')
-        if type(maximum_F) is not int or maximum_F != 1:
-            raise ValueError('외부 물질-장 왕복당 F 1회 설정이 필요')
-        thermal_response = limits.get('response_temperature_evaluations') == 12
+        temperature_evaluations = limits.get('response_temperature_evaluations', 0)
+        if type(maximum_F) is not int or maximum_F not in (1, 2):
+            raise ValueError('외부 물질-장 왕복당 F는 1회 또는 2회여야 함')
+        if type(temperature_evaluations) is not int or temperature_evaluations not in (0, 12):
+            raise ValueError('후속 열평가 한도는 미사용 또는 12회여야 함')
+        thermal_response = temperature_evaluations == 12
+        gpu_hours = 12 if maximum_F == 2 or thermal_response else 10
         expected_gpu = dict(GPU_allocations=1, GPU_CPU=1, GPU_GiB=16,
-            GPU_hours=12 if thermal_response else 10, automatic_retries=0)
+            GPU_hours=gpu_hours, automatic_retries=0)
         if any(limits.get(key) != value for key, value in expected_gpu.items()):
             raise ValueError('GPU 수송 자원 한도 불일치')
         common += ['--time='+str(expected_gpu['GPU_hours'])+':00:00']

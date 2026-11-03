@@ -906,6 +906,22 @@
   않았으므로 연결 성공 자체를 주장하지 않는다. [11월2일 인계](HANDOVER_2026-11-02.md)의
   `후속 실행 보호`를 따른다.
 
+## O03 Full-SR 2-sweep GPU dispatch 시간 한도
+
+- 11월3일 경로 재대조에서 resident feedback Slurm wrapper는 최대2회 F sweep과
+  12시간 할당을 지원했지만, 묶음 준비기는 `max_sweeps=1`만 허용하고 dispatcher도
+  F 1회·GPU 10시간만 받아 두 번째 sweep closure를 실행할 수 없었다. 이전 H100
+  sweep 실측17,546.720초와 다음 sweep 진입 여유(`1.2×첫 sweep+180초`)를 합치면
+  단순 예상 약10.77시간이므로 10시간은 여유가 부족하고 12시간이 맞다.
+- 수정: 기본 구성은 기존대로 F 1회·10시간. 명시적 F 2회 구성은 12시간을 요구하며,
+  thermal-response 구성도 기존처럼12시간이다. `GPU=1`, CPU1, GPU memory16GiB,
+  재시도0은 유지한다. 2회인데10시간인 구성은 submission 전에 거부한다. 이는
+  실행 권한 확대나 자동 제출이 아니며, 실제 수송·산란 closure·물리 수렴 증거도 아니다.
+- 재현: `tests/test_lumina_bundle_dispatch.py` 51개 통과; 2회/12시간 구성 생성,
+  dispatcher 한도, Slurm wrapper의 43,140초 전달을 직접 확인. 아직 Syntax GPU
+  job은 제출하지 않았다. 상세 현재 상태는 [11월3일 인계](HANDOVER_2026-11-03.md)를
+  참조한다.
+
 ## 이력 추가 형식
 
 기존 항목을 갱신하는 것을 우선한다. 새 원인은 증상, 원인·해결 방식, 당시

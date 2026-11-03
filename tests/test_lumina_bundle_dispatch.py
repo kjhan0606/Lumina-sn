@@ -234,7 +234,7 @@ def test_one_sweep_and_previous_material_trial_reach_the_submission_argv(setup):
     assert '--resume-checkpoint' not in command
 
 
-@pytest.mark.parametrize('fault',[0,2,3,True,'missing_J','bad_sha'])
+@pytest.mark.parametrize('fault',[0,3,True,'missing_J','bad_sha'])
 def test_invalid_sweep_or_partial_warm_start_cannot_submit(setup,fault):
     config,c,calls=setup
     if fault in ('missing_J','bad_sha'):
@@ -282,10 +282,45 @@ def test_control_preparation_defaults_to_one_transport_sweep(tmp_path,monkeypatc
     assert config['limits']['response_hours']==3
 
 
-@pytest.mark.parametrize('limits',[{},dict(maximum_F=2)])
-def test_transport_dispatch_requires_exactly_one_sweep(setup,limits):
+def test_control_preparation_allows_two_sweeps_with_twelve_gpu_hours(tmp_path,monkeypatch):
+    import prepare_lumina_bundle_dispatch as P
+    gpu=tmp_path/'gpu';gpu.mkdir()
+    (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*40)))
+    monkeypatch.setattr(P.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(stdout=b'# sealed control\n'))
+    prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'coeff/result.json',
+        tmp_path/'response','c'*40,max_sweeps=2,
+        submission_host_addresses={'grammar':'192.0.2.20'})
+    config=json.loads(Path(prepared['config']).read_text())
+    assert config['limits']['maximum_F']==2
+    assert config['limits']['GPU_hours']==12
+    assert config['limits']['GPU_CPU']==1 and config['limits']['GPU_GiB']==16
+    assert prepared['jobs_submitted']==0
+
+
+@pytest.mark.parametrize('limits',[{},dict(maximum_F=3)])
+def test_transport_dispatch_rejects_missing_or_invalid_sweep_limit(setup,limits):
     config,c,calls=setup
     c['limits']=limits
+    config.write_text(json.dumps(c))
+    with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'field')
+    assert not calls and not (config.parent/'field-submission.json').exists()
+
+
+def test_two_sweep_dispatch_uses_twelve_gpu_hours(setup):
+    config,c,calls=setup
+    c['limits']=dict(GPU_allocations=1,GPU_CPU=1,GPU_GiB=16,GPU_hours=12,
+        maximum_F=2,automatic_retries=0,response_temperature_evaluations=0)
+    config.write_text(json.dumps(c))
+    D.dispatch(config,D.sha(config),'field')
+    command=shlex.split(calls[0][-1])
+    assert '--time=12:00:00' in command
+    assert command[command.index('--max-sweeps')+1]=='2'
+
+
+def test_two_sweep_dispatch_rejects_ten_hour_limit(setup):
+    config,c,calls=setup
+    c['limits']=dict(GPU_allocations=1,GPU_CPU=1,GPU_GiB=16,GPU_hours=10,
+        maximum_F=2,automatic_retries=0,response_temperature_evaluations=0)
     config.write_text(json.dumps(c))
     with pytest.raises(ValueError):D.dispatch(config,D.sha(config),'field')
     assert not calls and not (config.parent/'field-submission.json').exists()
@@ -344,6 +379,23 @@ python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").wri
     if control:
         assert json.loads((folder/'response-args.json').read_text())==[str(config),'config-sha','response']
         assert json.loads((gpu/'events.json').read_text())==['preflight','field','response']
+
+
+def test_controlled_two_sweep_wrapper_reserves_twelve_gpu_hours(tmp_path):
+    gpu=tmp_path/'gpu';(gpu/'code/scripts').mkdir(parents=True)
+    runner=gpu/'code/scripts/run_lumina_resident_field.sh'
+    runner.write_text("""#!/bin/bash
+python3 -c 'import json,sys;from pathlib import Path;Path("field-args.json").write_text(json.dumps(sys.argv[1:]))' "$@"
+""")
+    folder=tmp_path/'control';folder.mkdir();config=folder/'config.json'
+    config.write_text(json.dumps({'limits':{'GPU_hours':12}}))
+    (folder/'lumina_bundle_dispatch.py').write_text('import sys\nsys.exit(0)\n')
+    script=Path(__file__).resolve().parents[1]/'scripts/submit_lumina_accepted_feedback.slurm'
+    subprocess.run(['bash',str(script),str(gpu),'new P.json','prep-sha',str(config),
+                    'config-sha','--max-sweeps','2'],check=True,capture_output=True,text=True)
+    forwarded=json.loads((gpu/'field-args.json').read_text())
+    assert forwarded[1]=='43140'
+    assert forwarded[forwarded.index('--max-sweeps')+1]=='2'
 
 
 def test_feedback_batch_stops_before_field_when_compute_node_preflight_fails(tmp_path):

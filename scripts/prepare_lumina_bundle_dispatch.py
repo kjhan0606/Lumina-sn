@@ -17,8 +17,8 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
     routing = dict(submission_host_addresses=submission_host_addresses or {})
     require_callback_route(routing)
     if (not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in (commit, coefficient_commit)) or
-            type(max_sweeps) is not int or max_sweeps != 1):
-        raise ValueError('실제 계수/후속 소스 commit과 왕복당 F 1회 한도 필요')
+            type(max_sweeps) is not int or max_sweeps not in (1, 2)):
+        raise ValueError('실제 계수/후속 소스 commit과 왕복당 F 1회 또는 2회 한도 필요')
     if type(thermal_response) is not bool:
         raise ValueError('반환장 열보정 선택은 불리언이어야 함')
     initial = (input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
@@ -48,7 +48,8 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
         control_sha256={name: sha(out/name) for name in names},
         submission_host_addresses=dict(routing['submission_host_addresses']),
         limits=dict(GPU_allocations=1, GPU_CPU=1, GPU_GiB=16,
-                    GPU_hours=12 if thermal_response else 10, maximum_F=max_sweeps,
+                    GPU_hours=12 if thermal_response or max_sweeps == 2 else 10,
+                    maximum_F=max_sweeps,
                     response_allocations=1, response_CPU=16, response_GiB=32,
                     response_hours=30 if thermal_response else 3,
                     response_temperature_evaluations=12 if thermal_response else 0,
@@ -68,7 +69,7 @@ if __name__ == '__main__':
         p.add_argument('--'+name, type=Path, required=True)
     p.add_argument('--commit', required=True)
     p.add_argument('--coefficient-commit', required=True)
-    p.add_argument('--max-sweeps', type=int, choices=(1,), default=1)
+    p.add_argument('--max-sweeps', type=int, choices=(1, 2), default=1)
     p.add_argument('--input-j', type=Path)
     p.add_argument('--input-j-sha256')
     p.add_argument('--initial-preparation', type=Path)
