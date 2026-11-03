@@ -1079,6 +1079,20 @@
   job은 제출하지 않았다. 상세 현재 상태는 [11월3일 인계](HANDOVER_2026-11-03.md)를
   참조한다.
 
+## P10 동일-state CMFGEN 고정-J 열 출력 포획 재개
+
+- 11월4일 `1264146`은 활성화 변수 누락, `1264261`은 Slurm spool 경로에서 실행기
+  탐색 실패로 각각 물리 실행 전 종료했다. 수정 commit `77993913`을 반영한 뒤
+  사용자가 같은 CPU16·32GiB·최대4시간·GPU0·재시도0 범위의 새 단회를 승인했다.
+- 같은 격리 staging을 재사용하기 전에 두 번째 job이 `srun` 전에 끝났음을 회계로
+  대조하고 네 capture 산출물·capture 로그가 없음을 확인했다. 새 job `1264295`는
+  06:42 KST Grammar `grammar008`에서 시작, `RUNNING`, `Requeue=0`이다. 06:45:50 조회에서
+  CMFGEN step도 `RUNNING`이었고 LINEHEAT/NETRATE/TOTRATE가 쓰이는 중이었다. 마지막
+  native heat row와 runtime manifest는 아직 없어 capture 결과 판독 전이다. 최신 실행 세부는
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 최신 실행상태를 참조한다.
+- scope에는 native 열·율 포획과 STOP96만 있으며 새 수송·물질 수용은 없다. 추가
+  제출 권한은 없다. 동일-state 열 비교가 완료되기 전 최종 물리 목표는 `NOT_MET`이다.
+
 ## 이력 추가 형식
 
 기존 항목을 갱신하는 것을 우선한다. 새 원인은 증상, 원인·해결 방식, 당시
