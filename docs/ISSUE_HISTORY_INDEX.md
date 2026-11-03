@@ -432,6 +432,22 @@
 - 재사용: 조건부 인구 일치는 독립 장·온도·스펙트럼 일치가 아니다. J71은 물질70의
   장이라는 생산 phase를 확인한다. 물질→그 물질의 계수/경계→새 J→반환장 응답의
   고리를 닫아야 한다. fixed-T 비수렴 CMFGEN70은 인증 oracle이 아니다.
+- 반경 표본 질문의 범위 판정(2026-11-03): 기준 `native_material_nodes.bin`은
+  CMFGEN `SCRTEMP`의 같은 90개 깊이점에서 내보내며 preparation manifest가 이를
+  `CMFGEN outer-to-inner nodal values; NOT transfer-cell averages`로 명시한다.
+  현재 반환장 물질응답은 원 material 반경과 `source.radius`를 점별 정확 비교하고,
+  고정인구 bound-photo 비교도 CMFGEN field 반경과 material 반경의 정확 일치를
+  요구한다. 이 비교기는 방사 방향 보간/셀 평균 대신 같은 반경의 값을 쓰고
+  주파수축에만 log-ν 적분 가중치의 adjoint 보간을 적용한다. 따라서 이 특정
+  90점 물질응답·bound-photo 차이는 단순한 “반경 bin 평균 대 bin 중심점” 표본
+  오프셋으로 설명되지 않는다. 단, 이 판정은 그 고정인구 비교 범위에 한정되며
+  production 수송 내부의 cell-to-node remap, 미세격자 평균화, 최종 스펙트럼의
+  공간 이산화 오차를 배제하지 않는다. 근거: `prepare_lumina_material_seed.py`,
+  `prepare_lumina_outer_input.py`, `lumina_new_field_response.py`,
+  `compare_cmfgen_bound_photo_profiles.py`의 명시적 표본 계약과 반경 동일성 검사.
+  이 네 파일의
+  blob은 현재 방향 job의 source commit `0824950d2de24af90c1a47456c58f5632c35fcd2`와
+  byte-level로 일치한다.
 - 현 고정장 진단의 과정 계약 재확인(2026-11-03): 봉인 `MODEL`/`MODEL_SPEC` 해시는
   각각 `e8ec1835355869c3b8fbaf761fc8b6eeb516b527aa660aea768b8cbc19e2f6c9`/
   `3e6f53861f16e2dac822d68e1412f91813c7a80f939fdbd0c4b1394e9055f2fb`다. `INC_CHG=F`,
