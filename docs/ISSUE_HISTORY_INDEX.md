@@ -460,8 +460,9 @@
   과대 적분이다. 이는 native 격자에서 Lumina local-Gaussian BB 적분의 표본화
   오류를 확인하지만, CMFGEN `STEQ_T`와의 전 차이를 설명하지 않는다. fine-grid
   Lumina 국소 계수 적분과 native 누적 `LINEHEAT`는 아직 항별 동등 비교가 아니며,
-  native-grid heat 최대차`4.0012e-3`/RMS`1.3684e-3`, fine-grid 후처리 최대차
-  `9.4515e-3`/RMS`2.9181e-3` erg cm⁻³ s⁻¹로 목표는 계속 `NOT_MET`이다.
+  과거 native-grid `4.0012e-3`/RMS`1.3684e-3` 및 fine-grid 후처리
+  `9.4515e-3`/RMS`2.9181e-3` erg cm⁻³ s⁻¹ 차이는 아래 SCL_LN 정책 불일치를
+  포함한 진단값으로 재분류한다. 목표는 계속 `NOT_MET`이다.
   물리 실행은 source/line-resolved 대응 0회, 새 수송·물질 갱신도 0회다. 재현용
   비교 JSON SHA256은 `b82caf1c0375502615ceed0856c9a8c240424f2c75266dbc917ded98f325809e`,
   90점 표는 `c3dfd0d771579487fdd39d427361c87a5c432307839931a7eedb29563e536167`이다.
@@ -485,6 +486,22 @@
   따라서 해당 출력은 이전 입력 상태의 결과이며, 현재 고정-J 열행과의 동상태 격자
   비교에 쓰지 않는다. 현 상태에서 동일 source producer·물질·J를 fine/native 양 격자에
   직접 적용해 적분 차이를 분리한다.
+- **2026-11-04 SCL_LN 생산·비교 정책 대조:** 현재 native `VADAT`는 `SCL_LN=T`,
+  `SCL_LN_FAC=0.5`이고, 해당 generation14 수용 응답 manifest는
+  `thermal_energy_policy=native_instantaneous_scenario`다. `ResponseBalance.evaluate()`가
+  `ModelThermalEnergy.line_scaling()`을 native 광자 열항에 적용하고, 공통 물질응답은
+  선택된 `native_*` 열정책의 잔차를 사용한다. 따라서 생산용 응답에서 SCL_LN 보정이
+  빠졌다는 원인 가설은 현재 판본에서 기각한다. SCL_LN은 열장부에만 적용되며 수송
+  χ/η를 스케일하지 않는다.
+  기존 native-grid 직접 BB source 적분은 unscaled local line coefficient를 사용했으므로
+  과거 `native_steq_t_vs_native_grid_using_EDDFACTOR_J`는 native thermal parity가 아닌
+  source-grid 진단이다. 비교기 v3은 이 이름을 명시적으로 바꾸고 보존
+  `native_stored_net`의 정책 일치 aggregate 비교를 별도 출력하도록 수정했다.
+  이미 계산된 v6 same-state `native_stored_net` 대 native `STEQ_T`에서도 최대차
+  `1.5183e-3`, RMS `5.3641e-4` erg cm⁻³ s⁻¹, 부호 불일치29/90점이 남아 SCL_LN 발견만으로
+  물리 불일치는 해소되지 않는다. 이는 aggregate 비교이며 termwise native `LINEHEAT`
+  대응은 아직 없고, `WRITE_RATES=T` 격리 capture는 별도 미승인·미제출이다. 수정
+  비교기 단위시험10개 통과; 새 대형 source 생성·수송·물질 갱신은 하지 않았다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 

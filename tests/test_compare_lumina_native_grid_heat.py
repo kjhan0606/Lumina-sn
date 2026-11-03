@@ -81,8 +81,22 @@ def test_fine_field_and_eddfactor_comparison_reports_exact_shared_J():
 
 def test_native_heat_controls_determine_scattering_and_line_handling(tmp_path):
     vadat = tmp_path/'VADAT'
-    vadat.write_text("T [COH_ES] ! coherent\nBLANK [GLOBAL_LINE] ! line mode\n")
-    assert read_native_heat_controls(vadat) == {'COH_ES': 'T', 'GLOBAL_LINE': 'BLANK'}
+    vadat.write_text("T [COH_ES] ! coherent\nBLANK [GLOBAL_LINE] ! line mode\n"
+                     "T [SCL_LN] ! scale thermal line exchange\n"
+                     "0.5 [SCL_LN_FAC] ! relative cutoff\n")
+    assert read_native_heat_controls(vadat) == {
+        'COH_ES': 'T', 'GLOBAL_LINE': 'BLANK', 'SCL_LN': 'T', 'SCL_LN_FAC': 0.5}
+
+
+def test_native_heat_controls_reject_missing_or_invalid_line_scaling(tmp_path):
+    vadat = tmp_path/'VADAT'
+    vadat.write_text("T [COH_ES]\nBLANK [GLOBAL_LINE]\nT [SCL_LN]\n")
+    with pytest.raises(ValueError, match='SCL_LN_FAC'):
+        read_native_heat_controls(vadat)
+    vadat.write_text("T [COH_ES]\nBLANK [GLOBAL_LINE]\nT [SCL_LN]\n"
+                     "bad [SCL_LN_FAC]\n")
+    with pytest.raises(ValueError, match='not numeric'):
+        read_native_heat_controls(vadat)
 
 
 def test_rd_cont_j_interpolation_is_linear_in_frequency_and_clamps_endpoints():

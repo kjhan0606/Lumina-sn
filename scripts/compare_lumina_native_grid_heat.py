@@ -3,7 +3,9 @@
 
 같은 source producer·같은 population·같은 fine-grid J를 유지해 fine/native
 격자 효과를 분리하고, 실제 EDDFACTOR native J로도 재적분해 native STEQ_T와
-비교한다. 수송, SE/RE 해법, 물질 갱신이나 합격선은 추가하지 않는다.
+비교한다. 격자 source 적분은 SCL_LN 비적용 진단으로 표시하고, native SCL_LN을
+포함한 보존 열장부를 별도로 native STEQ_T와 비교한다. 수송, SE/RE 해법,
+물질 갱신이나 합격선은 추가하지 않는다.
 """
 import argparse
 import csv
@@ -32,11 +34,19 @@ def sha(path):
 def read_native_heat_controls(path):
     text = Path(path).read_text()
     controls = {}
-    for name in ('COH_ES', 'GLOBAL_LINE'):
+    for name in ('COH_ES', 'GLOBAL_LINE', 'SCL_LN', 'SCL_LN_FAC'):
         values = re.findall(r'^\s*(\S+)\s+\['+name+r'\]', text, re.M | re.I)
         if len(values) != 1:
             raise ValueError('native VADAT control missing/duplicated: '+name)
-        controls[name] = values[0].strip("'\" ").upper()
+        value = values[0].strip("'\" ").upper()
+        if name == 'SCL_LN_FAC':
+            try:
+                value = float(value)
+            except ValueError as error:
+                raise ValueError('native SCL_LN_FAC is not numeric') from error
+            if not math.isfinite(value) or value < 0:
+                raise ValueError('native SCL_LN_FAC is invalid')
+        controls[name] = value
     return controls
 
 
@@ -277,6 +287,10 @@ def run(input_root, phot_library, kernel_library, out):
     if (accepted.get('schema') != 'lumina-accepted-nodal-material-v1' or
             accepted.get('status') != 'EXPORTED_NOT_TRANSPORT_READY'):
         raise ValueError('accepted physical material manifest missing')
+    accepted_policy = accepted.get('thermal_energy_policy')
+    if accepted_policy not in ('physical_stored', 'physical_instantaneous_scenario',
+                               'native_stored', 'native_instantaneous_scenario'):
+        raise ValueError('accepted material has no explicit supported thermal energy policy')
     for name, expected in accepted['output_sha256'].items():
         if sha(material/name) != expected:
             raise ValueError('accepted material output changed: '+name)
@@ -294,8 +308,9 @@ def run(input_root, phot_library, kernel_library, out):
     if heat_row['evaluation_counter'] != v6['native_evaluation_counter']:
         raise ValueError('native heat row is from a different evaluation')
     controls = read_native_heat_controls(native/'VADAT')
-    if controls != {'COH_ES': 'T', 'GLOBAL_LINE': 'BLANK'}:
-        raise ValueError('thermal source accounting assumes coherent ES and GLOBAL_LINE=BLANK')
+    if controls != {'COH_ES': 'T', 'GLOBAL_LINE': 'BLANK',
+                    'SCL_LN': 'T', 'SCL_LN_FAC': 0.5}:
+        raise ValueError('thermal comparison requires the sealed COH_ES/GLOBAL_LINE/SCL_LN contract')
     cont_freq = native/'CONT_FREQ'
     nu, nu_cont, grid_meta = parse_native_cont_freq_text(cont_freq.read_text())
     if len(nu) != heat_row['frequencies']:
@@ -347,7 +362,12 @@ def run(input_root, phot_library, kernel_library, out):
     native_heat = heat_row['steq_t_native'] * CMFGEN_RE_INTERNAL_TO_CGS
     with np.load(balance_path, allow_pickle=False) as balance:
         old_lumina = np.asarray(balance['native_stored_net'], dtype=np.float64)
+        if 'native_instantaneous_scenario_net' not in balance.files:
+            raise ValueError('accepted balance lacks separately identified native instantaneous scenario')
+        native_instantaneous = np.asarray(
+            balance['native_instantaneous_scenario_net'], dtype=np.float64)
     if (old_lumina.shape != native_heat.shape or
+            native_instantaneous.shape != native_heat.shape or
             lumina_fine.shape != native_heat.shape or
             lumina_native_same_field.shape != native_heat.shape or
             lumina_native_cmfgen_j.shape != native_heat.shape):
@@ -356,7 +376,8 @@ def run(input_root, phot_library, kernel_library, out):
     for i in range(len(native_heat)):
         rows.append(dict(depth_1based=i+1,
             native_steq_t_cgs=float(native_heat[i]),
-            lumina_original_grid_stored_net=float(old_lumina[i]),
+            lumina_native_scl_stored_balance_net=float(old_lumina[i]),
+            lumina_native_scl_instantaneous_scenario_net=float(native_instantaneous[i]),
             lumina_fine_grid_BF=float(fine_components['BF'][i]),
             lumina_fine_grid_FF=float(fine_components['FF'][i]),
             lumina_fine_grid_BB=float(fine_components['BB'][i]),
@@ -383,7 +404,7 @@ def run(input_root, phot_library, kernel_library, out):
         ('C-imported-full.bin', full_population),
         ('comparison-policy-v6.json', v6_path), ('balance.npz', balance_path),
         ('phot-library', phot_library), ('kernel-library', kernel_library))}
-    result = dict(schema='lumina-native-grid-heat-comparison-v2',
+    result = dict(schema='lumina-native-grid-heat-comparison-v3',
         scope='same accepted material/full population and same fine-grid J; direct Lumina source generation on both sealed 1,115,020-point and printed native NCF grids; separates grid/quadrature sensitivity from native-J and source-policy differences; diagnostic only',
         grid=grid_meta, fine_frequency_count=len(fine_nu), native_frequency_count=len(nu),
         continuum_evaluation_unique_count=int(len(np.unique(nu_cont))),
@@ -393,15 +414,26 @@ def run(input_root, phot_library, kernel_library, out):
         fine_grid_input_sha256=dict(frequency=fine_nu_sha, J=fine_j_sha),
         fine_field_vs_EDDFACTOR=field_agreement,
         source_components=dict(bound_free='direct evaluation at requested grid; native run uses CONT_FREQ mapping',
-            free_free='NATIVE_UPPER_IONS', bound_bound='included separately as local line coefficients',
+            free_free='NATIVE_UPPER_IONS',
+            bound_bound='local line coefficients are unscaled for transport/source-grid diagnostics',
             coherent_electron_scattering='excluded from thermal heat', native_VADAT_controls=controls),
-        bound_bound_comparison_note='Lumina local BB coefficients are compared with aggregate native STEQ_T; this is not termwise native LINEHEAT parity',
+        thermal_policy=dict(
+            accepted_material_policy=accepted_policy,
+            native_line_scaling_enabled=controls['SCL_LN'] == 'T',
+            native_line_scaling_ratio_limit=controls['SCL_LN_FAC'],
+            scaling_scope='native RE line heating/cooling ledger; do not scale transport chi/eta',
+            accepted_balance='native_stored_net includes the native SCL_LN line-energy factor',
+            comparison_to_native_STEQ_T=('compare native_stored_net without the separate instantaneous-scenario term; '
+                'captured CMFGEN STEQ_T routes explicit decay separately')),
+        bound_bound_comparison_note=('Raw Lumina local BB coefficients omit CMFGEN SCL_LN and are not native thermal parity. '
+            'The separately reported native_stored_net includes SCL_LN, but still is not termwise LINEHEAT parity.'),
         luminosity_units='erg cm^-3 s^-1', native_sign='STEQ_T positive=net heating',
         native_steq_t_to_cgs_factor=CMFGEN_RE_INTERNAL_TO_CGS,
         comparison=dict(
             same_J_fine_grid_vs_native_grid=metrics(lumina_fine, lumina_native_same_field),
-            accepted_balance_vs_new_fine_grid=metrics(old_lumina, lumina_fine),
-            native_steq_t_vs_native_grid_using_EDDFACTOR_J=metrics(native_heat, lumina_native_cmfgen_j),
+            native_scl_stored_balance_vs_raw_fine_grid_source_diagnostic=metrics(old_lumina, lumina_fine),
+            native_steq_t_vs_unscaled_native_grid_source_using_EDDFACTOR_J=metrics(native_heat, lumina_native_cmfgen_j),
+            native_steq_t_vs_native_scl_stored_balance=metrics(native_heat, old_lumina),
             native_same_field_J_vs_EDDFACTOR_J=metrics(lumina_native_same_field, lumina_native_cmfgen_j)),
         depth_count=len(rows), evaluation_counter=heat_row['evaluation_counter'],
         source_model=dict(
