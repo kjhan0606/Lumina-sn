@@ -276,6 +276,13 @@
   유한 T/ne 수정1회(16 CPU·3시간)가 같은 목적의 승인 묶음이다. 이 한 번은
   수렴이나 CMFGEN 동질성 선언이 아니다. 단계별 완료 후 이 인덱스와
   [최신 인수인계](HANDOVER_2026-11-02.md)를 갱신한다.
+- 그 묶음의 마지막 유한 수정은 새-J 방향 결과 `1260758`을 재사용해 Grammar job
+  `1262975`로 제출했다(2026-11-04 01:15 KST). CPU16·32GiB·최대3시간·GPU0·재시도0,
+  실제 물질응답≤12·새 T BF≤2·제안≤2·수용 보정≤1·새 수송0이다. direction result SHA
+  `e89fdc7254012454bfc446a8936afbf4af266f8fd390341672035d4f1e1b8428`, seed
+  `4d6c52d0b79eed824602c6dc643cf7c74f660449da0717ff8f1321d4b9df1e72`를 확인했다.
+  제출 직후 `RUNNING`·grammar104, 시간제한3시간이다. 이는 앞선 완료 `1257134`와 별도인
+  승인 단계이며, 결과·실제 개선·최종 동질성은 아직 미확인이다.
 - 11월3일 방향 전용 job `1260551`은 Grammar에서65초 후 exit1로 끝났고 실제 callback,
   BF 적분, 물질응답은 모두0회다. 보존 결과의 `evaluations=[]`,
   `full_BF_integrations=0`, `RE_solved=false`, `new_transport=0`으로 확인했다.
