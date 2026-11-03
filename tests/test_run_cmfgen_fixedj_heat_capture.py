@@ -60,7 +60,7 @@ def make_attempt(root):
     write_json(inputs / "fixedj-field-input.json", {
         "schema": "lumina-native-current-fixedj-input-v1",
         "layout": {"depths": ND, "frequencies": 1_115_020},
-        "input_sha256": {"J.npy": J_SHA}, "output_sha256": field,
+        "input_sha256": {"/sealed/fixed-field/J.npy": J_SHA}, "output_sha256": field,
     })
     (run / "VADAT").write_text(
         "T [COH_ES]\nT [USE_FIXED_J]\nF [FLUX_CAL_ONLY]\nT [WRITE_RATES]\n")

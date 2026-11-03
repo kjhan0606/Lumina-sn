@@ -73,10 +73,13 @@ def validate_inputs(root: Path) -> dict:
         expected = manifest.get("output_sha256", {}).get(name)
         if not expected or sha(run / name) != expected:
             raise ValueError(f"sealed input mismatch: {name}")
+    j_hashes = [digest for name, digest in field_manifest.get("input_sha256", {}).items()
+                if Path(name).name == "J.npy"]
     if (state_manifest.get("points") != 90 or state_manifest.get("variables") != 1800
             or field_manifest.get("layout", {}).get("depths") != 90
             or field_manifest.get("layout", {}).get("frequencies") != 1_115_020
-            or field_manifest.get("input_sha256", {}).get("J.npy") !=
+            or len(j_hashes) != 1
+            or j_hashes[0] !=
             "40a48d9aedaafa4d8f6f8adb0fdb6ea191bd152ed3f55de38e8862fe445232a6"):
         raise ValueError("not the approved generation14/evaluation4 fixed-J state")
     if (state_manifest.get("accepted_result_sha256") !=
@@ -102,7 +105,7 @@ def validate_inputs(root: Path) -> dict:
     return {"exe": exe, "run": run, "state_manifest": state_manifest,
             "field_manifest": field_manifest, "build_manifest": build_manifest,
             "runtime_manifest": runtime_manifest, "stdout": stdout, "stderr": stderr,
-            "controls": actual_controls}
+            "controls": actual_controls, "fixed_j_sha256": j_hashes[0]}
 
 
 def verify_outputs(artifacts: dict, job_id: str, returncode: int, elapsed: float) -> dict:
@@ -130,7 +133,7 @@ def verify_outputs(artifacts: dict, job_id: str, returncode: int, elapsed: float
             "controls": artifacts["controls"], "build_sha256": sha(artifacts["exe"]),
             "accepted_result_sha256": artifacts["state_manifest"]["accepted_result_sha256"],
             "accepted_response_sha256": artifacts["state_manifest"]["accepted_response_sha256"],
-            "fixed_j_sha256": artifacts["field_manifest"]["input_sha256"]["J.npy"],
+            "fixed_j_sha256": artifacts["fixed_j_sha256"],
             "captured_state_exact": True, "outputs": outputs,
             "new_transport": False, "material_update": False, "final_goal": "NOT_MET"}
 
