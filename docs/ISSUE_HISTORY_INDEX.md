@@ -508,6 +508,12 @@
   잔차가 남지만 CMFGEN 항별 출력 없이 BB만의 차이라고 단정하지 않는다. 깊이81–90의
   raw→SCL_LN BB 순항 중앙값은 `+5.1401e-3`→`−1.7686e-3`, 부호 반전은8/10점이다.
   수정 비교기 단위시험12개 통과; 새 대형 source 생성·수송·물질 갱신은 하지 않았다.
+- **동일-state 열 선 출력 재사용 검색(2026-11-04):** generation14 fixed-J 입력 사본,
+  native-grid 비교 출력, 원 CMFGEN field-feedback 실행본, 반환 물질응답 디렉터리에
+  `LINEHEAT`/`NETRATE`/`TOTRATE`가 없다. 기존 스트리밍 추출기·이온별 합산기는
+  미래 캡처를 처리할 수 있으나 현재 저장된 합산 `STEQ_T`와 Lumina balance만으로
+  CMFGEN 선별 항을 복원할 수 없다. 따라서 항별 기여 판별에 동일-state rate capture가
+  여전히 필요하며, 그 새 실행은 승인되지 않아 미제출이다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
