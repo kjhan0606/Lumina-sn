@@ -449,6 +449,15 @@
   Lumina 재적분 또는 term별 native/Lumina 대응이 필요하다. v2 원단위·v3 잘못된
   부호·v4 순간열 비교 원본은 포렌식으로 보존하며 덮어쓰지 않는다. 현재 최종목표는
   계속 `NOT_MET`이다. 상세는 [11월3일 인계](HANDOVER_2026-11-03.md)의 최신 진행상태.
+- 재사용성 확인: 10월27일의 1,115,020점 `sources.npz`는 현재 generation14의
+  source로 재사용하지 않는다. `MODEL_SPEC`은 같지만 그 producer의
+  `native_material_nodes.bin` SHA256 `942cec390a51807f0269e0dd8afecda8c0548bfef0fbf5bef22bc954bc98b735`
+  는 현재 `db8fac3431aa1fc5698ddd438563df8cd1a81d3a4b1f5d7c5e98672687359c73`와 다르고,
+  `C-imported-full.bin` SHA256 `2ce239bd5d39e994e2cca0a46b283d8ccb68fc17a60bbaabcc58c9291de22ea6`
+  도 현재 `8712d64916bd203d5140439400047641c846fad2cfbc7fc1efacd4562478e92d`와 다르다.
+  따라서 해당 출력은 이전 입력 상태의 결과이며, 현재 고정-J 열행과의 동상태 격자
+  비교에 쓰지 않는다. 현 상태에서 동일 source producer·물질·J를 fine/native 양 격자에
+  직접 적용해 적분 차이를 분리한다.
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
