@@ -16,6 +16,31 @@ sys.path.insert(0, str(SCRIPTS))
 from prepare_cmfgen_fixedj_heat import (COMP_OPAC, FINISH, FINISH_POINT, FIXED_SKIP,
                                       FULL_CAPTURE, FULL_POINT, GUARD, GUARD_POINT,
                                       patched, read_heat_row, native_state, prepare_state)
+from prepare_cmfgen_fixedj_heat import refined_grid_inputs
+
+
+@pytest.mark.parametrize('spacing',[.5,.25])
+def test_grid_refinement_only_changes_spacing_and_capacity(spacing):
+    vadat=('T [USE_FIXED_J]\nT [COH_ES]\nT [WRITE_RATES]\nF [FLUX_CAL_ONLY]\n'
+           'F [RD_CF_FILE]\n1.0D0  [FRAC_DOP] ! spacing\n2 [TDOP]\n')
+    spec='800000 [NCF_MAX] ! capacity\n90 [ND]\n'
+    result=refined_grid_inputs(vadat,spec,frac_dop=spacing)
+    assert result['vadat']==vadat.replace('1.0D0',str(spacing)+'D0')
+    assert result['model_spec']==spec.replace('800000','2000000')
+    assert not any(result[k] for k in ('executable_changed','material_changed',
+                                      'radiation_changed','computation_started'))
+
+
+@pytest.mark.parametrize('change',['missing','duplicate','wrong_field','unsupported_spacing'])
+def test_grid_refinement_rejects_different_baseline(change):
+    vadat=('T [USE_FIXED_J]\nT [COH_ES]\nT [WRITE_RATES]\nF [FLUX_CAL_ONLY]\n'
+           'F [RD_CF_FILE]\n1.0D0 [FRAC_DOP]\n')
+    spec='800000 [NCF_MAX]\n'
+    if change=='missing':vadat=vadat.replace('1.0D0 [FRAC_DOP]\n','')
+    if change=='duplicate':vadat+='1.0D0 [FRAC_DOP]\n'
+    if change=='wrong_field':vadat=vadat.replace('T [USE_FIXED_J]','F [USE_FIXED_J]')
+    with pytest.raises(ValueError):
+        refined_grid_inputs(vadat,spec,frac_dop=.1 if change=='unsupported_spacing' else .5)
 
 
 def test_private_patch_restores_actual_coefficients_before_re_and_preserves_rest():

@@ -8,6 +8,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import struct
 import shutil
@@ -16,6 +17,29 @@ import numpy as np
 
 from prepare_cmfgen_fixedj_exponent import OLD
 from prepare_cmfgen_mom_capture import FLAGS, command, once, sha
+
+
+def refined_grid_inputs(vadat, model_spec, *, frac_dop, ncf_max=2_000_000):
+    """완료 h=1 포획의 격자 간격/배열 용량만 바꾼 텍스트. 파일·계산은 생성하지 않는다."""
+    if frac_dop not in (.5, .25) or type(ncf_max) is not int or ncf_max != 2_000_000:
+        raise ValueError('준비 범위는 h=0.5/0.25와 NCF_MAX=2000000뿐임')
+    def replace(text, key, expected, replacement):
+        pattern=re.compile(r'^([ \t]*)([^\s!#]\S*)([ \t]+\['+re.escape(key)+r'\])',re.M)
+        matches=list(pattern.finditer(text))
+        if len(matches)!=1 or float(matches[0].group(2).replace('D','E'))!=expected:
+            raise ValueError(key+' 기준값 누락·중복·변경')
+        return pattern.sub(lambda m:m.group(1)+replacement+m.group(3),text,count=1)
+    for key,expected in [('USE_FIXED_J','T'),('COH_ES','T'),('WRITE_RATES','T'),
+                         ('FLUX_CAL_ONLY','F'),('RD_CF_FILE','F')]:
+        values=re.findall(r'^[ \t]*(\S+)[ \t]+\['+key+r'\]',vadat,re.M)
+        if values!=[expected]:
+            raise ValueError(key+' 공통-state 포획 control 불일치')
+    changed_vadat=replace(vadat,'FRAC_DOP',1.,str(frac_dop)+'D0')
+    changed_spec=replace(model_spec,'NCF_MAX',800000.,str(ncf_max))
+    return dict(vadat=changed_vadat,model_spec=changed_spec,
+                changes={'FRAC_DOP':[1.,frac_dop],'NCF_MAX':[800000,ncf_max]},
+                executable_changed=False,material_changed=False,radiation_changed=False,
+                computation_started=False)
 
 
 CALLER_SHA = '84e3b5ae0c6f44f531b4c1cd6aa83cde9cd51bc051a0f98cddd8fcd7fd17d54c'
