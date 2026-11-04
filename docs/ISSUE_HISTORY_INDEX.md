@@ -1161,6 +1161,8 @@
   T/ne/인구/J에서 coarse line-profile 적분 해상도가 주요 열 차이의 강한 원인임을 지지한다.
   다만 반올림 격자·선 중심으로 계산한 반사실이며 exact native qsum, CMFGEN 재실행,
   ionization/thermal 공동수렴 증거는 아니다. 그러므로 이온분포 목표는 계속 `NOT_MET`이다.
+  재현기는 `scripts/reconstruct_cmfgen_lineheat_fine_j.py`이며, 단위시험 6개와 기존 포획의
+  깊이36/85 이온별 합 재생을 확인했다.
   상세 절차와 이온별 값은 [11월4일 인수계](HANDOVER_2026-11-04.md)를 따른다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
