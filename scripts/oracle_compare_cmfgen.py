@@ -20,10 +20,6 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 ANALYSIS = ROOT / "validation/cmfgen_toy06_19p48d/analysis"
 GAMMA_DIR = ANALYSIS / "gamma_coiii_alllevel"
-sys.path.insert(0, str(ANALYSIS))
-sys.path.insert(0, str(GAMMA_DIR))
-from cmp_rvtj_T_ne_vs_published import read_rvtj  # noqa: E402
-from gamma_coiii_alllevel import read_eddfactor  # noqa: E402
 
 SHELLS = (0, 8, 43)
 ION_FILE = {
@@ -72,12 +68,20 @@ def model_superlevels(path: Path) -> dict[str, int]:
     return out
 
 
-def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int) -> dict[str, np.ndarray]:
-    """Parse every depth chunk, requiring exactly N_SL photo-rate rows."""
+def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int, *,
+               lower_ion_density: np.ndarray | None = None) -> dict[str, object]:
+    """PRRR의 DHYD는 상위 이온 바닥상태다. 하위 이온 Gamma의 분모가 아니다.
+
+    체적 photo/recombination 흐름을 그대로 반환한다. Gamma는 별도로 대응시킨
+    하위 이온 총수를 명시한 경우에만 계산한다. alpha도 상위 바닥상태 정규화다.
+    """
+    if nd < 1 or nsl < 1:
+        raise ValueError('PRRR의 깊이/준위 수는 양수여야 함')
     lines = path.read_text(errors="strict").replace("\f", "\n").splitlines()
     ion_density = np.full(nd, np.nan)
     electron_density = np.full(nd, np.nan)
     photo_sum = np.full(nd, np.nan)
+    recomb_sum = np.full(nd, np.nan)
     alpha = np.full(nd, np.nan)
     chunks: set[int] = set()
     i = 0
@@ -88,10 +92,15 @@ def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int) -> dict[str, np.nd
         depth_vals = numeric_line(lines[i + 1])
         if not depth_vals:
             raise ValueError(f"{path}: missing depth-index row at physical line {i + 2}")
+        if any(not np.isfinite(v) or v != int(v) for v in depth_vals):
+            raise ValueError(f'{path}: noninteger depth index')
         depths = [int(v) - 1 for v in depth_vals]
         if any(d < 0 or d >= nd for d in depths):
             raise ValueError(f"{path}: depth out of range: {depths}")
         j0, width = depths[0], len(depths)
+        if (j0 in chunks or j0 % 10 or
+                depths != list(range(j0, min(j0+10, nd)))):
+            raise ValueError(f'{path}: missing, duplicate or misordered depths')
         chunks.add(j0)
         k = i + 2
         while k < len(lines) and lines[k].strip() != "Depth index":
@@ -106,7 +115,7 @@ def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int) -> dict[str, np.nd
                 arr[j0:j0 + width] = vals
                 k += 2
                 continue
-            if label == f"{ion_label} Photoionization Rates":
+            if label in {f"{ion_label} Photoionization Rates", f"{ion_label} Recombination Rates"}:
                 block = []
                 for row in range(nsl):
                     vals = numeric_line(lines[k + 1 + row])
@@ -116,7 +125,8 @@ def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int) -> dict[str, np.nd
                     block.append(vals)
                 if numeric_line(lines[k + 1 + nsl]) is not None:
                     raise ValueError(f"{path}: more than MODEL_SPEC N_SL={nsl} photo rows")
-                photo_sum[j0:j0 + width] = np.sum(np.asarray(block), axis=0)
+                target = photo_sum if label.endswith("Photoionization Rates") else recomb_sum
+                target[j0:j0 + width] = np.sum(np.asarray(block), axis=0)
                 k += 1 + nsl
                 continue
             k += 1
@@ -125,12 +135,21 @@ def parse_prrr(path: Path, ion_label: str, nd: int, nsl: int) -> dict[str, np.nd
     if chunks != expected_chunks:
         raise ValueError(f"{path}: depth chunks {sorted(chunks)} != {sorted(expected_chunks)}")
     for name, arr in [("Ion Density", ion_density), ("Electron Density", electron_density),
-                      ("photo sum", photo_sum), ("alpha", alpha)]:
+                      ("photo sum", photo_sum), ("recombination sum", recomb_sum), ("alpha", alpha)]:
         if not np.all(np.isfinite(arr)):
             raise ValueError(f"{path}: incomplete {name}, finite={np.isfinite(arr).sum()}/{nd}")
-    gamma = photo_sum / ion_density
-    return {"gamma": gamma, "alpha": alpha, "ion_density": ion_density,
-            "electron_density": electron_density}
+        if np.any(arr < 0):
+            raise ValueError(f'{path}: negative {name}')
+    gamma = None
+    if lower_ion_density is not None:
+        lower_ion_density = np.asarray(lower_ion_density, dtype='f8')
+        if (lower_ion_density.shape != (nd,) or not np.isfinite(lower_ion_density).all()
+                or np.any(lower_ion_density <= 0)):
+            raise ValueError('Gamma에는 대응된 양의 하위 이온 총수가 필요함')
+        gamma = photo_sum / lower_ion_density
+    return {"gamma": gamma, "photo_flow": photo_sum, "recombination_flow": recomb_sum,
+            "alpha_explicit_parent_ground": alpha, "parent_ground_density": ion_density,
+            "lower_ion_density": lower_ion_density, "electron_density": electron_density}
 
 
 def parse_out_bk(path: Path, nd: int) -> np.ndarray:
@@ -323,6 +342,12 @@ def fmt(x: float | None) -> str:
 
 
 def main() -> None:
+    # 파서 import만으로 과거 validation 모듈의 최상위 실행을 유발하지 않는다.
+    sys.path.insert(0, str(ANALYSIS))
+    sys.path.insert(0, str(GAMMA_DIR))
+    from cmp_rvtj_T_ne_vs_published import read_rvtj
+    from gamma_coiii_alllevel import read_eddfactor
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--oracle-dir", type=Path,
                     default=ROOT / "validation/gate_b_dual_oracle/phase1_6")
@@ -389,7 +414,7 @@ def main() -> None:
         elif q == "n_e":
             cmf, source, status = float(Ne[depth0]), "RVTJ:Electron density; source-certified #/cm^3", "compared"
         elif q == "n_ion" and key in prrr:
-            cmf, source, status = float(prrr[key]["ion_density"][depth0]), f"{ION_FILE[key][1]}:Ion Density", "compared"
+            note = "PRRR Ion Density는 재결합 대상 상위 이온의 바닥상태이며 선택한 하위 이온 총수가 아님"
         elif q == "ion_fraction":
             note = "CMFGEN target PRRR files do not constitute a complete element-stage census"
         elif q == "b_k_representative" and key in bout:
@@ -401,9 +426,14 @@ def main() -> None:
             else:
                 note = f"representative level {lev} outside CMFGEN OUT NLEV={bout[key].shape[1]}"
         elif q == "Gamma_photoion_total" and key in prrr:
-            cmf, source, status = float(prrr[key]["gamma"][depth0]), f"{ION_FILE[key][1]}:sum(exact N_SL PR)/Ion Density", "compared"
+            if prrr[key]['gamma'] is None:
+                note = "Gamma에는 별도로 대응시킨 하위 이온 총수가 필요하며 PRRR DHYD를 분모로 쓸 수 없음"
+            else:
+                cmf, source, status = float(prrr[key]["gamma"][depth0]), f"{ION_FILE[key][1]}:photo flow/mapped lower-ion total", "compared"
         elif q == "alpha_recomb_total" and key in prrr:
-            cmf, source, status = float(prrr[key]["alpha"][depth0]), f"{ION_FILE[key][1]}:RR/(ED*ion density), source-certified cm^3/s", "compared"
+            cmf = float(prrr[key]["alpha_explicit_parent_ground"][depth0])
+            source, status = f"{ION_FILE[key][1]}:explicit RR/(ED*parent ground population)", "context_only_nonidentical"
+            note = "명시 준위·상위 바닥상태 정규화 계수는 상위 이온 총수 기준의 전체 재결합 계수와 다름"
         elif q in {"alpha_recomb_spont", "alpha_recomb_stim"}:
             note = "CMFGEN PRRR does not expose a separately labelled spontaneous/stimulated alpha split"
         elif q in {"jbar_representative", "jbar_input_raw"} and row["frequency_Hz"]:

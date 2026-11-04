@@ -1436,7 +1436,7 @@ def main() -> int:
                                      int(model_map[(Z, stage)]["n_super"]))
         prrr_profiles[label] = {
             "next_ion": str(model_map[next_key]["label"]),
-            "ion_density": np.asarray(summary["ion_density"], dtype=float),
+            "ion_density": np.asarray(summary["parent_ground_density"], dtype=float),
             "electron_density": np.asarray(summary["electron_density"], dtype=float),
             "temperature": parse_prrr_temperature(prrr_path, nd),
         }

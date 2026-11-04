@@ -393,17 +393,139 @@ def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
         final_goal='NOT_MET')
 
 
+def compare_saved_continuum_flows(response_root, native):
+    """완료된 PRRR/GENCOOL만 읽는다. full-photon BF 열 일치로 해석하지 않는다."""
+    from oracle_compare_cmfgen import parse_prrr, model_superlevels, parse_gencool
+    from lumina_native_heat_sources import cooling_vector
+    response_root, native = Path(response_root), Path(native)
+    record = json.loads((response_root/'result.json').read_text())
+    selected = record['selected_response']
+    evaluation = response_root/Path(selected['root']).name
+    runtime_path = native/'seq_logs/fixedj-heat-runtime.json'
+    runtime = json.loads(runtime_path.read_text())
+    if (runtime['status'] != 'CAPTURED' or not runtime['captured_state_exact'] or
+            runtime['accepted_response_sha256'] != selected['response_sha256'] or
+            runtime['material_update'] or runtime['new_transport']):
+        raise ValueError('완료된 동일-state 고정장 포획이 아님')
+    bound = {}
+    def bind(path, expected=None):
+        actual = sha(path)
+        if expected is not None and actual != expected:
+            raise ValueError(path.name+' 봉인 해시 불일치')
+        bound[path] = actual
+        return path
+    bind(runtime_path)
+    heat = read_heat_row(bind(native/'NATIVE_HEAT_ROW.bin',
+                             runtime['outputs']['NATIVE_HEAT_ROW.bin']['sha256']))
+    with np.load(bind(evaluation/'response.npz', selected['response_sha256'])) as data:
+        columns, pop = data['columns'], data['population']
+        if (not np.array_equal(data['ne'], heat['ne']) or
+                not np.array_equal(data['temperature']*1.e-4, heat['temperature_native'])):
+            raise ValueError('native/Lumina T/ne 동일-state 불일치')
+    with np.load(bind(evaluation/'balance.npz', selected['balance_sha256'])) as data:
+        balance = {key:data[key] for key in data.files}
+    with bind(native/'NATIVE_FULL_INDEX.csv').open() as stream:
+        rows = list(csv.DictReader(stream))
+    nsl = model_superlevels(bind(native/'MODEL_SPEC'))
+    nd = pop.shape[1]
+    def addresses(label):
+        subset = [r for r in rows if r['ion_label'] == label]
+        ids = sorted({int(r['eq_sl'])-1 for r in subset})
+        if (not ids or len(ids) != nsl[label] or min(ids) < 0 or
+                max(ids) >= heat['pops'].shape[0]-2):
+            raise ValueError('native SL 주소/개수 오류: '+label)
+        return ids
+    def stats(reference, candidate):
+        a, b = np.asarray(reference, dtype='f8'), np.asarray(candidate, dtype='f8')
+        if (a.shape != (nd,) or b.shape != a.shape or not np.isfinite([a,b]).all()
+                or np.any(a <= 0) or np.any(b <= 0)):
+            raise ValueError('전체 깊이의 양의 BF 흐름이 필요함')
+        ratio = a/b
+        return dict(native_over_lumina=ratio.tolist(),
+            minimum_ratio=float(ratio.min()), median_ratio=float(np.median(ratio)),
+            maximum_ratio=float(ratio.max()), maximum_relative_difference=float(abs(ratio-1).max()),
+            worst_depth=int(abs(ratio-1).argmax())+1,
+            native=a.tolist(), lumina=b.tolist())
+    results = {}
+    for label in ('Sk2','SkIII','S2','SIII'):
+        z, stage, _ = parse_cmfgen_ion_id(label)
+        ids = addresses(label)
+        native_lower = heat['pops'][ids].sum(axis=0)
+        mask = (columns[:,0] == z) & (columns[:,1] == stage-1)
+        if not np.array_equal(native_lower, pop[mask].sum(axis=0)):
+            raise ValueError('선택 하위 이온 총수의 native/Lumina 불일치')
+        path = bind(native/(label+'PRRR'))
+        values = parse_prrr(path, label, nd, nsl[label], lower_ion_density=native_lower)
+        parent = [r for r in rows if parse_cmfgen_ion_id(r['ion_label'])[:2] == (z,stage+1)
+                  and int(r['full_level']) == 1]
+        if len(parent) != 1:
+            raise ValueError('상위 이온 바닥상태의 독립 주소 누락/중복')
+        ground = heat['pops'][int(parent[0]['eq_sl'])-1]
+        parent_error = float(abs(values['parent_ground_density']/ground-1).max())
+        electron_error = float(abs(values['electron_density']/heat['ne']-1).max())
+        if max(parent_error,electron_error) > 5.1e-5:
+            raise ValueError('PRRR/native parent-ground/ne의 인쇄 정밀도 밖 불일치')
+        i = np.flatnonzero((balance['bf_ion_Z_stage'] == [z,stage]).all(axis=1)).item()
+        if not np.array_equal(native_lower, balance['bf_ion_number_density'][i]):
+            raise ValueError('저장 BF 이온 총수 불일치')
+        flows = balance['bf_ion_number_flows'][i]
+        results[label] = dict(photo=stats(values['photo_flow'],flows[0]),
+            recombination=stats(values['recombination_flow'],flows[1]+flows[2]),
+            parent_ground_max_relative_difference=parent_error,
+            electron_max_relative_difference=electron_error,
+            gamma_native=values['gamma'].tolist(),
+            gamma_lumina=np.asarray(flows[0]/native_lower,dtype='f8').tolist())
+    path = bind(native/'GENCOOL')
+    text = path.read_text()
+    state_errors = {}
+    for title, vector in [('Radius [1.0E+10cm]',heat['radius_native']),
+                          ('Temperature [1.0E+4K]',heat['temperature_native']),
+                          ('Electron Density',heat['ne'])]:
+        error = float(abs(cooling_vector(text,title,nd)/vector-1).max())
+        if error > 5.1e-5:
+            raise ValueError('GENCOOL의 상태 불일치: '+title)
+        state_errors[title] = error
+    cool = parse_gencool(path,nd)
+    native_ff = -cool['ff']
+    ff = balance['ff_native_upper_ions']
+    lumina_ff = np.asarray(ff[0]-ff[1],dtype='f8')
+    delta = native_ff-lumina_ff
+    for path, digest in bound.items():
+        if sha(path) != digest:
+            raise ValueError('판독 중 원자료 변경: '+path.name)
+    return dict(status='SAME_STATE_CONTINUUM_NUMBER_FLOWS',depths=nd,
+        input_sha256={str(p.relative_to(native)) if p.is_relative_to(native) else
+                      'response/'+str(p.relative_to(response_root)):h for p,h in bound.items()},
+        density_contract='PRRR DHYD=parent ground SL; Gamma=photo volume flow/same lower-ion total',
+        bf_number_flows=results,
+        ff=dict(native=native_ff.tolist(),lumina=lumina_ff.tolist(),delta=delta.tolist(),
+                maximum_absolute_difference=float(abs(delta).max()),
+                worst_depth=int(abs(delta).argmax())+1,
+                gencool_state_max_relative_differences=state_errors),
+        units=dict(number_flows='cm^-3 s^-1',gamma='s^-1',ff='erg cm^-3 s^-1'),
+        interpretation='BF 수/FF 열 대조만 해당; GENCOOL BF 전자냉각을 full-photon RE와 비교하지 않음. 이온분포/열수렴/스펙트럼 동질성 미입증',
+        invalid_predecessor='h025_prrr_vs_stored_BF_ion_flows.json: 잘못된 DHYD 분모의 Gamma 비교는 사용 금지',
+        new_physical_evaluations=0,final_goal='NOT_MET')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--sources', type=Path, required=True)
+    parser.add_argument('--sources', type=Path)
     parser.add_argument('--response-root', type=Path, required=True)
     parser.add_argument('--netrate', type=Path)
     parser.add_argument('--expected-netrate-sha256')
     parser.add_argument('--native-comparison', type=Path)
     parser.add_argument('--bundle-root', type=Path)
+    parser.add_argument('--continuum-native-root', type=Path,
+                        help='완료 PRRR/GENCOOL와 저장 응답만 비교; 새 BF 적분 없음')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    report=(compare_grid_bundle(args.sources,args.response_root,args.bundle_root,args.native_comparison,
+    if args.continuum_native_root and (args.bundle_root or args.netrate):
+        parser.error('저장 연속 흐름 대조와 BB/격자 재생 옵션을 혼합하지 않음')
+    if not args.continuum_native_root and not args.sources:
+        parser.error('BB/격자 재생에는 --sources가 필요함')
+    report=(compare_saved_continuum_flows(args.response_root,args.continuum_native_root)
+        if args.continuum_native_root else compare_grid_bundle(args.sources,args.response_root,args.bundle_root,args.native_comparison,
                                baseline_netrate_sha256=args.expected_netrate_sha256)
         if args.bundle_root else summarize(args.sources, args.response_root,netrate=args.netrate,
         expected_netrate_sha256=args.expected_netrate_sha256,

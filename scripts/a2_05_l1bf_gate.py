@@ -514,9 +514,9 @@ def main() -> int:
             _Path(a.run) / f"{io0['spec']['cmf']}PRRR", io0['spec']['cmf'],
             ND, int(io0.get('NS', 0)) or 52)
         d0 = GATE[0]
-        alpha = float(pr_full['alpha'][d0])
+        alpha = float(pr_full['alpha_explicit_parent_ground'][d0])
         ne_t = float(pr_full['electron_density'][d0])
-        ni_t = float(pr_full['ion_density'][d0])
+        ni_t = float(pr_full['parent_ground_density'][d0])
         if not (alpha > 0 and ne_t > 0 and ni_t > 0):
             raise SystemExit('alpha channel: non-positive PRRR data at s0')
         rate_density = alpha * ne_t * ni_t

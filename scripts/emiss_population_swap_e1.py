@@ -249,7 +249,7 @@ def main() -> None:
             # PRRR and OUT are compared as an audit only.  Some depths disagree
             # far beyond text precision; never use PRRR to alter the validated
             # OUT-header DIC input.
-            pr_rel = np.max(np.abs(pr["ion_density"] / dic - 1.0))
+            pr_rel = np.max(np.abs(pr["parent_ground_density"] / dic - 1.0))
             ne_rel = np.max(np.abs(hdr["electron_density"] / ne - 1.0))
             te_rel = np.max(np.abs(hdr["temperature_1e4K"] / te4 - 1.0))
 

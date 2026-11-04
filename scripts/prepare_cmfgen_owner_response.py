@@ -131,7 +131,7 @@ def main():
         prrr = rates.parse_prrr_summary(path, label, nd,
                                         loaded["model"][(Z, stage)]["n_super"])
         profiles[label] = dict(next_ion=loaded["model"][(Z, stage + 1)]["label"],
-                               ion_density=np.asarray(prrr["ion_density"]),
+                               ion_density=np.asarray(prrr["parent_ground_density"]),
                                electron_density=np.asarray(prrr["electron_density"]),
                                temperature=rates.parse_prrr_temperature(path, nd))
     reader = ScrtempReader(run / "SCRTEMP", nd, nt)
