@@ -66,6 +66,21 @@ def test_v2_residual_tolerances_accept_base_without_new_material_callbacks():
     assert result['new_transport']==0 and not result['joint_convergence']
 
 
+def test_normal_response_root_option_survives_callback_adapter():
+    def large_gross(t,ne):
+        value=case(t,ne)
+        value[1]['physical_stored_gross'][:]=1.e6
+        return value
+    first=large_gross(np.array([2.,3.])*1.02,np.array([5.,7.]))
+    result=T.solve(large_gross,first,adiabatic,policy='physical_stored',
+        max_evaluations=12,charge_tolerance=1.e-10,thermal_tolerance=1.e-3,
+        root_log_step_tolerance=1.e-3,secant_after_accept=True)
+    assert result['root_search_requested'] and result['fixed_field_root_converged']
+    assert result['accepted_iterations']>0 and result['fresh_evaluations_used']>=9
+    assert not result['joint_convergence'] and result['new_transport']==0
+    np.testing.assert_allclose(result['selected'][0]['temperature'],[2.,3.],rtol=1.e-8)
+
+
 def test_direction_only_resolves_temperature_sensitivity_inside_gross_tolerance():
     first=case(np.array([2.,3.])*1.2,[5.,7.]); saved=first[0]['temperature'].copy()
     first[1]['physical_stored_gross'][:]=1.e12

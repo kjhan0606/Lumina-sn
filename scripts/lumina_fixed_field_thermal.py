@@ -97,7 +97,7 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
           numerical_tolerance=1.e-10, charge_tolerance=None, thermal_tolerance=None,
           max_log_step=.1, on_evaluation=None,
           on_direction=None, replay=(), on_replay=None, charge_bounds=None,
-          secant_after_accept=False):
+          secant_after_accept=False, root_log_step_tolerance=None):
     """evaluate(T,ne)는 같은 J에서 (전체 SE 결과, 전체 열장부, 기록)을 반환한다."""
     replay = tuple(replay)
     minimum = 1 if replay else 5
@@ -165,7 +165,8 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
         max_evaluations=len(replay)+max_evaluations, numerical_tolerance=numerical_tolerance,
         max_log_step=max_log_step, on_evaluation=decision, on_direction=direction,
         project_candidate=projector,secant_after_accept=secant_after_accept,
-        charge_tolerance=charge_tolerance,thermal_tolerance=thermal_tolerance)
+        charge_tolerance=charge_tolerance,thermal_tolerance=thermal_tolerance,
+        root_log_step_tolerance=root_log_step_tolerance)
     selected = values[id(outer['packet'])]
     # 기준 물질 자체가 물리 문턱을 만족하면 섭동은 필요 없다. 사용한 섭동의
     # 순서 검증은 그대로 두고, 미사용 섭동을 소비한 것으로 보고하지 않는다.
@@ -178,6 +179,11 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
     return dict(selected=selected, history=outer['history'],
         accepted_iterations=outer['iterations'],
         fixed_field_numerical_converged=outer['numerical_converged'],
+        fixed_field_root_converged=outer['fixed_field_root_converged'],
+        physical_tolerances_satisfied=outer['physical_tolerances_satisfied'],
+        root_search_requested=outer['root_search_requested'],
+        root_log_step_tolerance=outer['root_log_step_tolerance'],
+        root_fresh_direction_max=outer['root_fresh_direction_max'],
         charge_scaled_max=outer['charge_scaled_max'],
         thermal_scaled_max=outer['thermal_scaled_max'],
         charge_physical_scaled_max=outer['charge_physical_scaled_max'],

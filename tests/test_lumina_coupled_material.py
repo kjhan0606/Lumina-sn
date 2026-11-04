@@ -77,6 +77,49 @@ def test_separate_physical_tolerances_stop_without_expensive_probes_when_base_pa
     assert result['charge_tolerance']==1.e-10 and result['thermal_tolerance']==1.e-3
 
 
+@pytest.mark.parametrize('secant',[False,True])
+def test_root_search_moves_despite_small_gross_residual_and_checks_fresh_direction(secant):
+    target=np.array([2.,3.]);calls=[];kinds=[]
+    def evaluate(t,ne):
+        calls.append(1)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),
+            1.e-6*np.log(t/target),ne-1.,np.ones(2))
+    base=evaluate(target*np.exp(.05),np.ones(2));calls.clear()
+    result=solve_coupled(evaluate,base,lambda *a:np.zeros(2),max_evaluations=12,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3,
+        root_log_step_tolerance=1.e-3,secant_after_accept=secant,
+        on_direction=lambda *a:kinds.append(a[-1] if secant else 'centered'))
+    assert result['fixed_field_root_converged'] and result['iterations']>=1
+    assert len(calls)>=9 and len(calls)<=12
+    assert kinds[-1]=='centered'
+    assert result['root_fresh_direction_max']<=1.e-3
+    np.testing.assert_allclose(result['packet'].temperature,target,rtol=1.e-8)
+
+
+def test_root_search_budget_does_not_turn_physical_tolerance_into_root_proof():
+    base=MaterialPacket(np.ones(2),np.ones(2),np.ones(2),np.ones(2),
+        np.full(2,1.e-7),np.zeros(2),np.ones(2))
+    result=solve_coupled(lambda *a:pytest.fail('평가 한도 보존'),base,
+        lambda *a:np.zeros(2),max_evaluations=4,charge_tolerance=1.e-10,
+        thermal_tolerance=1.e-3,root_log_step_tolerance=1.e-3)
+    assert result['physical_tolerances_satisfied']
+    assert not result['numerical_converged'] and not result['fixed_field_root_converged']
+    assert result['root_fresh_direction_max'] is None
+
+
+def test_root_search_rejects_worsening_trial_even_inside_physical_tolerance():
+    base=MaterialPacket(np.ones(2),np.ones(2),np.ones(2),np.ones(2),
+        np.full(2,1.e-7),np.zeros(2),np.ones(2))
+    def evaluate(t,ne):
+        x=np.log(t)
+        heat=1.e-7+1.e-6*x if np.max(abs(x))<.001 else np.full(2,2.e-7)
+        return MaterialPacket(t,ne,np.ones(2),np.ones(2),heat,ne-1.,np.ones(2))
+    result=solve_coupled(evaluate,base,lambda *a:np.zeros(2),max_evaluations=5,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3,root_log_step_tolerance=1.e-3)
+    assert result['iterations']==0 and result['packet'] is base
+    assert not result['numerical_converged'] and not result['history'][-1]['accepted']
+
+
 @pytest.mark.parametrize('charge,heat',[(1.e-9,1.e-6),(1.e-12,2.e-3)])
 def test_separate_physical_tolerances_do_not_hide_a_failing_residual(charge,heat):
     base=MaterialPacket(np.array([1.e4,1.1e4]),np.ones(2),np.ones(2),np.ones(2),

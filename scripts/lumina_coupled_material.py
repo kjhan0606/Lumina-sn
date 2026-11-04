@@ -104,7 +104,8 @@ def newton_direction(matrix,scaled_residual):
 def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-10,
                   max_evaluations=12,on_evaluation=None,max_log_step=.1,on_direction=None,
                   project_candidate=None,secant_after_accept=False,
-                  charge_tolerance=None,thermal_tolerance=None):
+                  charge_tolerance=None,thermal_tolerance=None,
+                  root_log_step_tolerance=None):
     """동적 물질 생산 callback을 쓰는 전체 깊이 감쇠 Newton.
 
     evaluate(T,ne)는 모든 동적 율과 SE를 갱신한 MaterialPacket을 반환한다.
@@ -113,6 +114,9 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
     iteration/관측 한도는 미수렴으로 반환하며 마지막 수용 상태를 보존한다.
     numerical_converged는 이 고정장 계에서 별도로 지정한 전하/RE 잔차기준을
     만족한다는 뜻이며 복사장과의 공동수렴을 뜻하지 않는다.
+    root_log_step_tolerance를 지정하면 잔차조건에 더해 현재 상태의 centered
+    Jacobian으로 구한 보정의 최대 절대 log 크기도 작아야 한다. 이 수치 종료
+    목표는 물리 수용문턱을 바꾸지 않으며, 근의 유일성/외부 수송 수렴 증명이 아니다.
     """
     base.validate()
     charge_tolerance=numerical_tolerance if charge_tolerance is None else charge_tolerance
@@ -121,10 +125,13 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         not np.isfinite([numerical_tolerance,charge_tolerance,thermal_tolerance]).all() or
         min(numerical_tolerance,charge_tolerance,thermal_tolerance)<=0 or
         not np.isfinite(max_log_step) or max_log_step<=0 or
-        type(secant_after_accept) is not bool):
+        type(secant_after_accept) is not bool or
+        (root_log_step_tolerance is not None and
+         (isinstance(root_log_step_tolerance,bool) or
+          not np.isfinite(root_log_step_tolerance) or root_log_step_tolerance<=0))):
         raise ValueError('공동 Newton 비용/수치 목표 오류')
     c=base.ne.copy();h=base.thermal_scale.copy();history=[];used=0;iterations=0;entries={}
-    secant_matrix=None
+    secant_matrix=None;root_direction_max=None
     def residual_metrics(value):
         scaled=residual(value,adiabatic,c,h);n=len(value.ne)
         return scaled,float(abs(scaled[:n]).max()),float(abs(scaled[n:]).max())
@@ -143,7 +150,12 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
             charge_scaled_max=charge_max,thermal_scaled_max=thermal_max,
             charge_physical_scaled_max=physical_charge,thermal_physical_scaled_max=physical_thermal,
             charge_tolerance=float(charge_tolerance),thermal_tolerance=float(thermal_tolerance),
-            scaled_max=float(abs(scaled).max()))
+            scaled_max=float(abs(scaled).max()),
+            physical_tolerances_satisfied=within_tolerances(value),
+            root_search_requested=root_log_step_tolerance is not None,
+            root_log_step_tolerance=root_log_step_tolerance,
+            root_fresh_direction_max=root_direction_max,
+            fixed_field_root_converged=bool(converged and root_log_step_tolerance is not None))
     def call(t,ne,phase):
         nonlocal used
         value=evaluate(t,ne);value.validate();used+=1
@@ -158,7 +170,13 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         return value
     while True:
         f=residual(base,adiabatic,c,h);norm=float(abs(f).max())
-        if within_tolerances(base):return result(base,True)
+        # 물리 수용 영역과 근 탐색 종료를 분리한다. 선택적 근 탐색에서는
+        # 큰 왕복 선량에 비해 작은 잔차만으로 온도 갱신을 생략하지 않는다.
+        if root_log_step_tolerance is None and within_tolerances(base):return result(base,True)
+        if (root_log_step_tolerance is not None and norm==0. and
+                np.all(residual(base,adiabatic,np.ones_like(c),np.ones_like(h))==0.)):
+            root_direction_max=0.
+            return result(base,True)
         if max_evaluations-used<(1 if secant_matrix is not None else 5):break
         t=base.temperature;ne=base.ne
         using_secant=secant_matrix is not None
@@ -183,6 +201,14 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 on_direction(base,j,f,direction,c,h)
         # 전체 방향에 같은 감쇠를 적용한다. 개별 T/ne의 물리값을 clamp하지 않는다.
         magnitude=float(abs(direction).max())
+        if root_log_step_tolerance is not None:
+            if not using_secant:root_direction_max=magnitude
+            if magnitude<=root_log_step_tolerance and within_tolerances(base):
+                if using_secant:
+                    # 오래된 secant 기울기만으로 근 근접을 인증하지 않는다.
+                    secant_matrix=None
+                    continue
+                return result(base,True)
         accepted=False;alpha=min(1.,max_log_step/magnitude) if magnitude>0 else 1.
         while used<max_evaluations and alpha>=2.**-20:
             with np.errstate(over='ignore',under='ignore',invalid='ignore'):
@@ -206,7 +232,8 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                     not np.allclose(candidate.nuclei,base.nuclei,rtol=1.e-12,atol=0)):
                     raise ValueError('전하 보정은 실제 평가된 동일 T/핵수 후보만 반환해야 함')
             merit=float(abs(residual(candidate,adiabatic,c,h)).max())
-            accepted=bool(within_tolerances(candidate) or merit<norm*(1.-1.e-4*alpha))
+            accepted=bool((root_log_step_tolerance is None and within_tolerances(candidate)) or
+                          merit==0. or merit<norm*(1.-1.e-4*alpha))
             entry=entries[id(candidate)][1]
             entry.update(alpha=alpha,accepted=accepted,
                 predicted_scaled_max=float(abs(f+alpha*(j@direction)).max()),scaled_start_max=norm)
@@ -225,7 +252,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                         secant_matrix=updated if np.isfinite(updated).all() else None
                     else:
                         secant_matrix=None
-                base=candidate;iterations+=1;break
+                base=candidate;root_direction_max=None;iterations+=1;break
             alpha*=.5
         if not accepted:
             if using_secant and max_evaluations-used>=5:

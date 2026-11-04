@@ -610,9 +610,12 @@ def run(args):
                             policy=thermal_policy, max_evaluations=temperature_evaluations,
                             on_evaluation=thermal_decision, on_replay=replayed)
                     else:
+                        # 0.1% 규모 log 보정은 내부 근 탐색 목표다. 기존 물리
+                        # 전하/열 수용문턱과 최종 CMFGEN 기준은 변경하지 않는다.
                         block = thermal_block.solve(evaluate_temperature, first_value, full_ad,
                             policy=thermal_policy, max_evaluations=temperature_evaluations,
                             charge_tolerance=1.e-10, thermal_tolerance=1.e-3,
+                            root_log_step_tolerance=1.e-3,
                             on_evaluation=thermal_decision, on_direction=thermal_direction,
                             replay=() if replay_source is None else replay_source['replay'], on_replay=replayed,
                             charge_bounds=(lower, upper) if result['charge_projected_trials'] else None,
