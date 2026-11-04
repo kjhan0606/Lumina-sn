@@ -49,3 +49,30 @@ def test_profile_slice_recovers_unit_gaussian_mass():
 def test_degenerate_line_heat_inputs_fail_closed(values):
     with pytest.raises(ValueError):
         reweight.reweighted_line_heat(*values)
+
+
+def test_printed_coordinate_box_contains_perturbed_discrete_masses():
+    center=4.9e15;width=4.5e-5
+    printed=np.linspace(center-9*center*width,center+9*center*width,73)
+    printed=np.array([float(f'{v:.7e}') for v in printed])
+    low,high=reweight.profile_mass_printing_interval(printed,center,width)
+    eps=.5*10.**(np.floor(np.log10(printed))-7)
+    rng=np.random.default_rng(1234)
+    for _ in range(50):
+        actual=printed+rng.uniform(-1,1,len(printed))*eps
+        w=reweight.native_trapuneq_weights(actual)
+        phi=np.exp(-((actual-center)/(center*width))**2)/(1.77245385095516*center*width)
+        q=np.sum(w*phi*(abs(actual-center)<=6*center*width))
+        assert low-1e-14<=q<=high+1e-14
+    assert 0<high-low<.01
+
+
+@pytest.mark.parametrize('nu,width',[(np.array([1.,1.]),.1),(np.array([1.,2.]),0.),
+                                    (np.array([np.nan,2.]),.1)])
+def test_invalid_mass_printing_box_inputs_rejected(nu,width):
+    with pytest.raises(ValueError):reweight.profile_mass_printing_interval(nu,1.,width)
+
+
+def test_negative_center_and_width_do_not_cancel_validation():
+    with pytest.raises(ValueError):
+        reweight.profile_mass_printing_interval(np.array([1.,2.]),-1.,-.1)

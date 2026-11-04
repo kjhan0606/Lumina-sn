@@ -111,6 +111,33 @@ def reweighted_line_heat(
     return q_one, q_one_fine_j
 
 
+def profile_mass_printing_interval(frequency_hz,center_hz,width_fraction,*,digits=8):
+    """인쇄 좌표 반올림 상자의 Q 범위. native binary Q의 직접 포획이 아니다.
+
+    양의 사다리꼴 가중치와 Gaussian의 구간별 최솟값/최댓값을 합한다.
+    하한에는 확실히6 Doppler 폭 안인 점만 포함하고, 상한에는 전 격자를 쓴다.
+    가중치의 하한0은 구간 산술의 양수 조건이며 실제 데이터 보정이 아니다.
+    """
+    nu=np.asarray(frequency_hz,dtype='f8');width=center_hz*width_fraction
+    if (nu.ndim!=1 or len(nu)<2 or not np.isfinite(nu).all() or np.any(nu<=0) or
+            np.any(np.diff(nu)<=0) or not math.isfinite(center_hz) or center_hz<=0 or
+            not math.isfinite(width_fraction) or width_fraction<=0 or not math.isfinite(width) or width<=0 or
+            type(digits) is not int or digits<2):
+        raise ValueError('Q 반올림 구간의 격자/폭/정밀도 오류')
+    epsilon=.5*10.**(np.floor(np.log10(nu))-digits+1)
+    low,high=nu-epsilon,nu+epsilon
+    wl=np.r_[(low[1]-high[0])*.5,(low[2:]-high[:-2])*.5,(low[-1]-high[-2])*.5]
+    wh=np.r_[(high[1]-low[0])*.5,(high[2:]-low[:-2])*.5,(high[-1]-low[-2])*.5]
+    xl,xh=(low-center_hz)/width,(high-center_hz)/width
+    near=np.where((xl<=0)&(xh>=0),0.,np.minimum(xl*xl,xh*xh))
+    far=np.maximum(xl*xl,xh*xh)
+    norm=1.77245385095516*width
+    inside=(xl>=-6)&(xh<=6)
+    qlow=np.sum(np.maximum(wl,0)*np.exp(-far)*inside/norm,dtype=np.longdouble)
+    qhigh=np.sum(wh*np.exp(-near)/norm,dtype=np.longdouble)
+    return float(qlow),float(qhigh)
+
+
 def _compensated_add(total: np.ndarray, correction: np.ndarray, index: int, value: float) -> None:
     """Kahan-add one scalar to a long-double depth accumulator."""
     y = np.longdouble(value) - correction[index]

@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from summarize_cmfgen_ir_grid_impact import add_bb_flow, compare_native_bb_flows, pairwise_native_blocks
+from summarize_cmfgen_ir_grid_impact import (add_bb_flow, compare_native_bb_flows,
+                                            pairwise_native_blocks, rank_native_bb_heat)
 
 
 def test_independent_response_heat_applies_occupation_only_to_absorption(monkeypatch):
@@ -86,3 +87,43 @@ def test_native_znet_comparison_uses_species_and_full_level_keys(tmp_path):
         assert ion['max_absolute_row_delta']==pytest.approx(6.)
         assert ion['delta_over_BB_gross_median']==pytest.approx(.5)
     assert pairwise_native_blocks(sink,twice)['Z14_stage2']['max_L1']==pytest.approx(6.)
+
+
+@pytest.fixture
+def ranked_lines(tmp_path):
+    path=tmp_path/'NETRATE'
+    path.write_text('1 Sk2(u-l) 1.000000 1 2 1 2\n0.5 0.5\n\n'
+                    '2 Sk2(v-w) 2.000000 3 4 3 4\n0.5 0.5\n')
+    pop=np.array([[10.,20.],[2.,3.],[15.,25.],[4.,5.]])
+    rows=[dict(atomic_number='14',ion_number='1',level_number=str(i)) for i in range(4)]
+    columns=np.array([[14,1,i] for i in range(4)])
+    lines=dict(lower=np.array([0,2]),upper=np.array([1,3]),nu0=np.array([1.e15,2.e15]),
+               A=np.array([3.,3.]),g_ratio=np.ones(2))
+    return [path,lines,np.zeros((2,2)),np.ones(2),pop,np.ones((4,2)),columns,rows,
+            np.arange(4),np.zeros(2,dtype=bool),pop.copy(),np.ones((2,2))]
+
+
+def test_bb_heat_ranking_uses_common_native_pop_and_retains_largest_transitions(ranked_lines):
+    import cmfgen_model_continuum as B
+    ranked_lines[10]*=2  # C의 다른 full 재구성 대신 같은 native full 인구를 양쪽에 쓴다.
+    result=rank_native_bb_heat(*ranked_lines,depths=(0,1),keep=1)
+    expected=1.5*B.H*(1.e15*ranked_lines[10][1]+2.e15*ranked_lines[10][3])
+    np.testing.assert_allclose(result['by_ion']['Z14_stage2']['delta'],expected,rtol=3.e-15)
+    assert result['matched_lines']==2 and result['depths']==[1,2]
+    assert all(v[0]['line_id']==2 for v in result['top_lines'].values())
+    assert result['final_goal']=='NOT_MET' and result['new_physical_evaluations']==0
+
+
+@pytest.mark.parametrize('fault',['missing','duplicate','frequency'])
+def test_bb_heat_ranking_rejects_misaligned_native_records(ranked_lines,fault):
+    path=ranked_lines[0];text=path.read_text()
+    if fault=='missing':text=text.replace('3 4 3 4','3 4 3 9')
+    if fault=='duplicate':text+=text
+    if fault=='frequency':text=text.replace('2.000000','2.100000')
+    path.write_text(text)
+    with pytest.raises(ValueError):rank_native_bb_heat(*ranked_lines,depths=(0,1))
+
+
+@pytest.mark.parametrize('depths,keep',[((),1),((0,0),1),((0,.5),1),((0,2),1),((0,1),1.5)])
+def test_bb_heat_ranking_rejects_invalid_depth_or_heap_size(ranked_lines,depths,keep):
+    with pytest.raises(ValueError):rank_native_bb_heat(*ranked_lines,depths=depths,keep=keep)

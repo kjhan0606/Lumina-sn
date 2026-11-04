@@ -3,6 +3,7 @@
 import argparse
 import csv
 import json
+import heapq
 import re
 from pathlib import Path
 
@@ -17,12 +18,75 @@ from lumina_model_energy import ModelThermalEnergy
 from cmfgen_ion_identity import parse_cmfgen_ion_id
 from extract_cmfgen_line_net_fixture import netrate_header, vectors
 
+RANK_DEPTHS=(0,35,51,84,85,88,89)
 
 def add_bb_flow(target, lower, upper, downward):
     """이온 내부 전이의 유입−유출. 같은 SL 안의 전이는 풀 변수에 작용하지 않는다."""
     if lower != upper:
         target[lower] += downward
         target[upper] -= downward
+
+
+def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,excluded,
+                        full_population,factor,*,depths=RANK_DEPTHS,keep=8):
+    """공통 A·native full 인구에서 ZNET 대 저장 Jbar의 열차이를 전이별로 순위화한다."""
+    nd=pop.shape[1];points=np.asarray(depths)
+    if (points.ndim!=1 or not np.issubdtype(points.dtype,np.integer) or not len(points)
+            or len(set(points))!=len(points) or np.any(points<0) or np.any(points>=nd)
+            or type(keep) is not int or keep<1 or factor.shape!=(len(mass),len(points))):
+        raise ValueError('전이 열 순위의 깊이/가중치 범위 오류')
+    keys={};line_ions=[]
+    for i,(lo,up) in enumerate(zip(lines['lower'],lines['upper'])):
+        key=(int(rows[lo]['atomic_number']),int(rows[lo]['ion_number'])+1,
+             int(rows[lo]['level_number'])+1,int(rows[up]['level_number'])+1)
+        line_ions.append(key[:2])
+        if not excluded[i]:
+            if key in keys:raise ValueError('중복 BB 원자 주소')
+            keys[key]=i
+    lo,up=lines['lower'],lines['upper'];nu=lines['nu0'];a=lines['A']
+    lower=np.asarray(full_population[lo[:,None],points],dtype=np.longdouble)
+    upper=np.asarray(full_population[up[:,None],points],dtype=np.longdouble)
+    bul=a*B.C**2/(2*B.H*nu**3)
+    J=np.asarray(jbar[:,points],dtype=np.longdouble)
+    upward=lower*(bul/lines['g_ratio'])[:,None]*J
+    downward=upper*(a*mass)[:,None]+upper*bul[:,None]*J
+    energy=(B.H*nu)[:,None]*np.asarray(factor,dtype=np.longdouble)
+    fine_heat=(upward-downward)*energy
+    native_scale=upper*a[:,None]*energy
+    totals={key:dict(native=np.zeros(len(points),dtype=np.longdouble),
+                    fine=np.zeros(len(points),dtype=np.longdouble),count=0) for key in set(line_ions)}
+    heaps=[[] for _ in points];seen=set()
+    for header,values in vectors(path,nd,netrate_header):
+        z,stage,_=parse_cmfgen_ion_id(header.transition.split('(',1)[0])
+        key=(z,stage,header.lower_full,header.upper_full)
+        if key not in keys or key in seen:raise ValueError(f'native BB 주소 누락/중복: line {header.line_id}, {key}')
+        seen.add(key);i=keys[key]
+        if abs(nu[i]-header.frequency_field*1.e15)>5.01e8:
+            raise ValueError('BB 전이 주파수 대응 오류')
+        znet=np.asarray(values,dtype=np.longdouble)[points]
+        native=-native_scale[i]*znet;fine=fine_heat[i];delta=native-fine
+        if not np.isfinite([native,fine]).all():raise ValueError('비유한 BB 열 순위')
+        entry=totals[z,stage];entry['native']+=native;entry['fine']+=fine;entry['count']+=1
+        for d,value in enumerate(delta):
+            heap=heaps[d]
+            if len(heap)>=keep and (float(abs(value)),header.line_id)<=heap[0][:2]:continue
+            item=(float(abs(value)),header.line_id,dict(line_id=header.line_id,
+                transition=header.transition,Z=z,stage=stage,lower_full=header.lower_full,
+                upper_full=header.upper_full,lower_SL=int(columns[group[lo[i]],2])+1,
+                upper_SL=int(columns[group[up[i]],2])+1,
+                wavelength_A=float(B.C/nu[i]*1.e8),native=float(native[d]),fine=float(fine[d]),
+                delta=float(value),native_ZNET=float(znet[d]),fine_Jbar=float(J[i,d]),
+                fine_profile_mass=float(mass[i]),thermal_factor=float(factor[i,d])))
+            if len(heap)<keep:heapq.heappush(heap,item)
+            elif item[:2]>heap[0][:2]:heapq.heapreplace(heap,item)
+    if seen!=set(keys):raise ValueError('일부 native BB 전이를 대응하지 못함')
+    return dict(scope='공통 A·native full 인구·에너지 가중의 ZNET 대 저장 Jbar 비교; LINEHEAT 자체나 새 SE 해 아님',
+        matched_lines=len(seen),depths=[int(p)+1 for p in points],units='erg cm^-3 s^-1',
+        by_ion={f'Z{z}_stage{stage}':dict(lines=v['count'],native=np.asarray(v['native'],dtype='f8').tolist(),
+            fine=np.asarray(v['fine'],dtype='f8').tolist(),delta=np.asarray(v['native']-v['fine'],dtype='f8').tolist())
+            for (z,stage),v in sorted(totals.items())},
+        top_lines={str(int(p)+1):[item[2] for item in sorted(heap,reverse=True)]
+                   for p,heap in zip(points,heaps)},new_physical_evaluations=0,final_goal='NOT_MET')
 
 
 def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, rows, group, excluded,
@@ -120,7 +184,7 @@ def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, row
 
 def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=None,
               native_comparison=None, native_heat=None, expected_native_heat_sha256=None,
-              native_vector_sink=None, occupation_impact=False):
+              native_vector_sink=None, occupation_impact=False, rank_bb_heat=False):
     record = json.loads((response_root / 'result.json').read_text())
     source_record = json.loads((sources / 'sources.json').read_text())
     if record['BB_contract'] != 'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1':
@@ -244,6 +308,7 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
         heat_comparison=compare_heat_row(row,evaluation/'balance.npz',selected['balance_sha256'],
                                          native_gencool=bind(gencool,sha(gencool)) if gencool.is_file() else None)
     native_flows = None
+    heat_ranking = None
     if netrate is not None:
         if expected_netrate_sha256 is None:
             raise ValueError('NETRATE 기대 hash가 필요함')
@@ -273,8 +338,16 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
                 raise ValueError('native full-level 대응 중복/SL 불일치')
             aligned[target] = native_full[i]
             mapped.add(target)
-        native_flows = compare_native_bb_flows(netrate, lines, jbar, mass, pop, fraction,
-                                              columns, rows, group, excluded, aligned,native_vector_sink)
+        if rank_bb_heat:
+            factor=owner.line_scaling(lines['lower'],lines['upper'],lines['nu0'],nuclei[list(RANK_DEPTHS)],
+                enabled=enabled,ratio_limit=limit,density_limit=density_limit)
+            heat_ranking=rank_native_bb_heat(netrate,lines,jbar,mass,pop,fraction,columns,
+                                            rows,group,excluded,aligned,factor)
+        else:
+            native_flows = compare_native_bb_flows(netrate, lines, jbar, mass, pop, fraction,
+                                                  columns, rows, group, excluded, aligned,native_vector_sink)
+    elif rank_bb_heat:
+        raise ValueError('전이 열 순위에는 봉인 NETRATE와 native 비교 정본이 필요함')
     for path, digest in expected.items():
         if sha(path) != digest:
             raise ValueError(path.name + ' 분석 중 변경')
@@ -294,6 +367,7 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
             frozen_state_new_heat_residual=float(old_net[i]+delta[i])) for i in (0,35,51,84,85,88,89)],
         input_sha256=[dict(name=path.name, sha256=digest) for path,digest in expected.items()],
         native_BB_flow_comparison=native_flows,
+        native_BB_heat_ranking=heat_ranking,
         native_heat_comparison=heat_comparison,
         final_goal='NOT_MET')
     if occupation is not None:
@@ -544,12 +618,15 @@ if __name__ == '__main__':
                         help='완료 PRRR/GENCOOL와 저장 응답만 비교; 새 BF 적분 없음')
     parser.add_argument('--bb-occupation-impact', action='store_true',
                         help='저장된 선 흡수에 w_upper/w_lower를 적용한 반사실만 합산')
+    parser.add_argument('--rank-bb-heat',action='store_true',help='공통 인구/A의 전 native BB 열차이 순위')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.continuum_native_root and (args.bundle_root or args.netrate):
         parser.error('저장 연속 흐름 대조와 BB/격자 재생 옵션을 혼합하지 않음')
     if args.bb_occupation_impact and (args.continuum_native_root or args.bundle_root):
         parser.error('BB 점유확률 반사실은 보존 단일-state 재합산에서만 사용함')
+    if args.rank_bb_heat and (args.continuum_native_root or args.bundle_root or not args.netrate):
+        parser.error('BB 열 순위는 --netrate를 지정한 보존 단일-state 재합산에서만 사용함')
     if not args.continuum_native_root and not args.sources:
         parser.error('BB/격자 재생에는 --sources가 필요함')
     report=(compare_saved_continuum_flows(args.response_root,args.continuum_native_root)
@@ -557,7 +634,8 @@ if __name__ == '__main__':
                                baseline_netrate_sha256=args.expected_netrate_sha256)
         if args.bundle_root else summarize(args.sources, args.response_root,netrate=args.netrate,
         expected_netrate_sha256=args.expected_netrate_sha256,
-        native_comparison=args.native_comparison,occupation_impact=args.bb_occupation_impact))
+        native_comparison=args.native_comparison,occupation_impact=args.bb_occupation_impact,
+        rank_bb_heat=args.rank_bb_heat))
     if args.output:
         if args.bundle_root and report['status']!='SAME_STATE_GRID_COMPARISON':
             raise SystemExit('두 포획 미완료: 결과 파일을 저장하지 않음')
