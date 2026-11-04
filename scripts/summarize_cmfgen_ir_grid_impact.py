@@ -17,8 +17,39 @@ from expand_atomic_data_cmfgen import load_cmfgen_model_spec
 from lumina_model_energy import ModelThermalEnergy
 from cmfgen_ion_identity import parse_cmfgen_ion_id
 from extract_cmfgen_line_net_fixture import netrate_header, vectors
+from lumina_model_linear_lines import SourceModelLines
 
 RANK_DEPTHS=(0,35,51,84,85,88,89)
+
+def resample_native_profiles(lines,profile,library,fine_nu,fine_J,native_nu,excluded):
+    """같은 J를 native 인쇄 격자에서 재적분한다. source/SE/수송은 실행하지 않는다."""
+    fine_nu=np.asarray(fine_nu,dtype='f8');native_nu=np.asarray(native_nu,dtype='f8')
+    fine_J=np.asarray(fine_J,dtype='f8');excluded=np.asarray(excluded)
+    if (fine_nu.ndim!=1 or native_nu.ndim!=1 or min(len(fine_nu),len(native_nu))<2
+            or not np.isfinite(fine_nu).all() or not np.isfinite(native_nu).all()
+            or np.any(fine_nu<=0) or np.any(native_nu<=0)
+            or np.any(np.diff(fine_nu)<=0) or np.any(np.diff(native_nu)<=0)
+            or native_nu[0]<fine_nu[0] or native_nu[-1]>fine_nu[-1]
+            or fine_J.ndim!=2 or fine_J.shape[0]!=len(fine_nu) or not fine_J.shape[1]
+            or not np.isfinite(fine_J).all() or np.any(fine_J<0)
+            or excluded.dtype!=np.bool_ or excluded.shape!=(len(lines['nu0']),)):
+        raise ValueError('공통 격자 J 재생의 입력/외삽 범위 오류')
+    indices=np.flatnonzero(~excluded)
+    if not len(indices):raise ValueError('공통 격자 재생 대상 선이 없음')
+    J=np.column_stack([np.interp(native_nu,fine_nu,fine_J[:,p]) for p in range(fine_J.shape[1])])
+    retained={key:value[indices] for key,value in lines.items()}
+    provider=SourceModelLines(retained,profile,library,native_nu,J,radiation_generation=1)
+    values=provider.contract(0,len(indices),radiation_generation=1)
+    if not np.isin(values['status'],[1,2]).all():
+        raise ValueError('공통 격자에서 선 지지범위 미포함/미표본; 선을 조용히 제외하지 않음')
+    jbar=np.full((len(excluded),fine_J.shape[1]),np.nan);mass=np.full(len(excluded),np.nan)
+    jbar[indices]=values['jbar'];mass[indices]=values['profile_mass']
+    return dict(jbar=jbar,mass=mass,metadata=dict(
+        scope='동일 J의 native 인쇄 격자 선형보간·점표본 Gaussian 재적분; 새 물리해 아님',
+        native_grid_points=len(native_nu),fine_grid_points=len(fine_nu),
+        replayed_lines=len(indices),signature=provider.signature,
+        profile_mass_renormalized=False,binary_native_grid=False))
+
 
 def add_bb_flow(target, lower, upper, downward):
     """이온 내부 전이의 유입−유출. 같은 SL 안의 전이는 풀 변수에 작용하지 않는다."""
@@ -28,7 +59,7 @@ def add_bb_flow(target, lower, upper, downward):
 
 
 def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,excluded,
-                        full_population,factor,*,depths=RANK_DEPTHS,keep=8):
+                        full_population,factor,*,depths=RANK_DEPTHS,keep=8,profile_replay=None):
     """공통 A·native full 인구에서 ZNET 대 저장 Jbar의 열차이를 전이별로 순위화한다."""
     nd=pop.shape[1];points=np.asarray(depths)
     if (points.ndim!=1 or not np.issubdtype(points.dtype,np.integer) or not len(points)
@@ -52,9 +83,23 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
     downward=upper*(a*mass)[:,None]+upper*bul[:,None]*J
     energy=(B.H*nu)[:,None]*np.asarray(factor,dtype=np.longdouble)
     fine_heat=(upward-downward)*energy
+    replay_heat=None;replay_flow=None;blocks=None
+    if profile_replay is not None:
+        rj=np.asarray(profile_replay['jbar'],dtype=np.longdouble)
+        rm=np.asarray(profile_replay['mass'],dtype=np.longdouble)
+        if (rj.shape!=J.shape or rm.shape!=mass.shape or not np.isfinite(rj[~excluded]).all()
+                or not np.isfinite(rm[~excluded]).all() or np.any(rm[~excluded]<=0)
+                or np.any(rj[~excluded]<0)):
+            raise ValueError('공통 격자 재생 Jbar/Q의 형상/값 오류')
+        replay_flow=upper*(a[:,None]*rm[:,None]+bul[:,None]*rj)-lower*(bul/lines['g_ratio'])[:,None]*rj
+        replay_heat=-replay_flow*energy
+        blocks=np.zeros((3,len(columns),len(points)),dtype=np.longdouble)
+        block_rounding=np.zeros_like(blocks[0])
     native_scale=upper*a[:,None]*energy
     totals={key:dict(native=np.zeros(len(points),dtype=np.longdouble),
                     fine=np.zeros(len(points),dtype=np.longdouble),count=0) for key in set(line_ions)}
+    if replay_heat is not None:
+        for entry in totals.values():entry['replay']=np.zeros(len(points),dtype=np.longdouble)
     heaps=[[] for _ in points];seen=set()
     for header,values in vectors(path,nd,netrate_header):
         z,stage,_=parse_cmfgen_ion_id(header.transition.split('(',1)[0])
@@ -67,6 +112,16 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
         native=-native_scale[i]*znet;fine=fine_heat[i];delta=native-fine
         if not np.isfinite([native,fine]).all():raise ValueError('비유한 BB 열 순위')
         entry=totals[z,stage];entry['native']+=native;entry['fine']+=fine;entry['count']+=1
+        if replay_heat is not None:entry['replay']+=replay_heat[i]
+        if blocks is not None and key[:2] in ((14,2),(14,3),(16,2),(16,3)):
+            lc,uc=group[lo[i]],group[up[i]]
+            for target,flow in zip(blocks,(upper[i]*a[i]*znet,downward[i]-upward[i],replay_flow[i])):
+                add_bb_flow(target,lc,uc,flow)
+            if lc!=uc:
+                quantum=np.zeros_like(znet);nonzero=znet!=0
+                quantum[nonzero]=.5*10.**(np.floor(np.log10(abs(znet[nonzero])))-6)
+                bound=upper[i]*a[i]*quantum
+                block_rounding[lc]+=bound;block_rounding[uc]+=bound
         for d,value in enumerate(delta):
             heap=heaps[d]
             if len(heap)>=keep and (float(abs(value)),header.line_id)<=heap[0][:2]:continue
@@ -80,13 +135,34 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
             if len(heap)<keep:heapq.heappush(heap,item)
             elif item[:2]>heap[0][:2]:heapq.heapreplace(heap,item)
     if seen!=set(keys):raise ValueError('일부 native BB 전이를 대응하지 못함')
-    return dict(scope='공통 A·native full 인구·에너지 가중의 ZNET 대 저장 Jbar 비교; LINEHEAT 자체나 새 SE 해 아님',
+    result=dict(scope='공통 A·native full 인구·에너지 가중의 ZNET 대 저장 Jbar 비교; LINEHEAT 자체나 새 SE 해 아님',
         matched_lines=len(seen),depths=[int(p)+1 for p in points],units='erg cm^-3 s^-1',
         by_ion={f'Z{z}_stage{stage}':dict(lines=v['count'],native=np.asarray(v['native'],dtype='f8').tolist(),
             fine=np.asarray(v['fine'],dtype='f8').tolist(),delta=np.asarray(v['native']-v['fine'],dtype='f8').tolist())
             for (z,stage),v in sorted(totals.items())},
         top_lines={str(int(p)+1):[item[2] for item in sorted(heap,reverse=True)]
                    for p,heap in zip(points,heaps)},new_physical_evaluations=0,final_goal='NOT_MET')
+    if replay_heat is not None:
+        for (z,stage),v in totals.items():
+            result['by_ion'][f'Z{z}_stage{stage}'].update(
+                native_grid_replay=np.asarray(v['replay'],dtype='f8').tolist(),
+                native_minus_replay=np.asarray(v['native']-v['replay'],dtype='f8').tolist(),
+                replay_minus_fine=np.asarray(v['replay']-v['fine'],dtype='f8').tolist())
+        result['profile_replay']=profile_replay['metadata']
+        block_report={}
+        for z,stage in ((14,2),(14,3),(16,2),(16,3)):
+            ids=np.flatnonzero((columns[:,0]==z)&(columns[:,1]==stage-1))
+            if not len(ids):continue
+            before=np.sum(abs(blocks[0,ids]-blocks[1,ids]),axis=0)
+            after=np.sum(abs(blocks[0,ids]-blocks[2,ids]),axis=0)
+            current=blocks[:,ids];gross=np.sum(abs(current),axis=1)
+            conservation=np.divide(abs(current.sum(axis=1)),gross,out=np.zeros_like(gross),where=gross>0)
+            block_report[f'Z{z}_stage{stage}']=dict(
+                units='cm^-3 s^-1',max_number_conservation_relative=float(conservation.max()),
+                depths=[dict(depth=int(p)+1,before_L1=float(before[d]),after_L1=float(after[d]),
+                             native_print_L1_bound=float(block_rounding[ids,d].sum())) for d,p in enumerate(points)])
+        result['same_grid_SiS_BB_blocks']=block_report
+    return result
 
 
 def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, rows, group, excluded,
@@ -184,7 +260,10 @@ def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, row
 
 def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=None,
               native_comparison=None, native_heat=None, expected_native_heat_sha256=None,
-              native_vector_sink=None, occupation_impact=False, rank_bb_heat=False):
+              native_vector_sink=None, occupation_impact=False, rank_bb_heat=False,
+              replay_native_profile=False,expected_cont_freq_sha256=None):
+    if replay_native_profile and (not rank_bb_heat or expected_cont_freq_sha256 is None):
+        raise ValueError('공통 격자 재생에는 선 열 순위와 CONT_FREQ 기대 hash가 필요함')
     record = json.loads((response_root / 'result.json').read_text())
     source_record = json.loads((sources / 'sources.json').read_text())
     if record['BB_contract'] != 'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1':
@@ -339,10 +418,26 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
             aligned[target] = native_full[i]
             mapped.add(target)
         if rank_bb_heat:
+            profile_replay=None
+            if replay_native_profile:
+                from compare_lumina_native_grid_heat import parse_native_cont_freq_text
+                from reconstruct_cmfgen_lineheat_fine_j import read_eddfactor_depths
+                grid_path=bind(netrate.parent/'CONT_FREQ',expected_cont_freq_sha256)
+                native_nu,_,_=parse_native_cont_freq_text(grid_path.read_text())
+                edd=bind(netrate.parent/'EDDFACTOR',evidence['fixed_J_field_factor']['sha256'])
+                info=bind(netrate.parent/'EDDFACTOR_INFO',evidence['fixed_J_field_info']['sha256'])
+                fine_nu,fine_J=read_eddfactor_depths(edd,info,RANK_DEPTHS)
+                library=response_root.parent/'build/lines.so'
+                bind(library,record['input_sha256'][str(library)])
+                profile=S.fixed_profile(model)
+                if source_record['profile']!=profile:
+                    raise ValueError('source와 봉인 MODEL의 고정 선 profile이 다름')
+                profile_replay=resample_native_profiles(lines,profile,library,
+                                                       fine_nu,fine_J,native_nu,excluded)
             factor=owner.line_scaling(lines['lower'],lines['upper'],lines['nu0'],nuclei[list(RANK_DEPTHS)],
                 enabled=enabled,ratio_limit=limit,density_limit=density_limit)
             heat_ranking=rank_native_bb_heat(netrate,lines,jbar,mass,pop,fraction,columns,
-                                            rows,group,excluded,aligned,factor)
+                                            rows,group,excluded,aligned,factor,profile_replay=profile_replay)
         else:
             native_flows = compare_native_bb_flows(netrate, lines, jbar, mass, pop, fraction,
                                                   columns, rows, group, excluded, aligned,native_vector_sink)
@@ -619,6 +714,8 @@ if __name__ == '__main__':
     parser.add_argument('--bb-occupation-impact', action='store_true',
                         help='저장된 선 흡수에 w_upper/w_lower를 적용한 반사실만 합산')
     parser.add_argument('--rank-bb-heat',action='store_true',help='공통 인구/A의 전 native BB 열차이 순위')
+    parser.add_argument('--replay-native-profile',action='store_true',help='기존 J를 native 인쇄 격자로 읽기 전용 재적분')
+    parser.add_argument('--expected-cont-freq-sha256')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.continuum_native_root and (args.bundle_root or args.netrate):
@@ -627,6 +724,8 @@ if __name__ == '__main__':
         parser.error('BB 점유확률 반사실은 보존 단일-state 재합산에서만 사용함')
     if args.rank_bb_heat and (args.continuum_native_root or args.bundle_root or not args.netrate):
         parser.error('BB 열 순위는 --netrate를 지정한 보존 단일-state 재합산에서만 사용함')
+    if args.replay_native_profile and (not args.rank_bb_heat or not args.expected_cont_freq_sha256):
+        parser.error('공통 격자 재생에는 --rank-bb-heat와 --expected-cont-freq-sha256가 필요함')
     if not args.continuum_native_root and not args.sources:
         parser.error('BB/격자 재생에는 --sources가 필요함')
     report=(compare_saved_continuum_flows(args.response_root,args.continuum_native_root)
@@ -635,7 +734,8 @@ if __name__ == '__main__':
         if args.bundle_root else summarize(args.sources, args.response_root,netrate=args.netrate,
         expected_netrate_sha256=args.expected_netrate_sha256,
         native_comparison=args.native_comparison,occupation_impact=args.bb_occupation_impact,
-        rank_bb_heat=args.rank_bb_heat))
+        rank_bb_heat=args.rank_bb_heat,replay_native_profile=args.replay_native_profile,
+        expected_cont_freq_sha256=args.expected_cont_freq_sha256))
     if args.output:
         if args.bundle_root and report['status']!='SAME_STATE_GRID_COMPARISON':
             raise SystemExit('두 포획 미완료: 결과 파일을 저장하지 않음')

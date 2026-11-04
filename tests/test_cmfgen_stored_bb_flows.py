@@ -127,3 +127,32 @@ def test_bb_heat_ranking_rejects_misaligned_native_records(ranked_lines,fault):
 @pytest.mark.parametrize('depths,keep',[((),1),((0,0),1),((0,.5),1),((0,2),1),((0,1),1.5)])
 def test_bb_heat_ranking_rejects_invalid_depth_or_heap_size(ranked_lines,depths,keep):
     with pytest.raises(ValueError):rank_native_bb_heat(*ranked_lines,depths=depths,keep=keep)
+
+
+def test_common_grid_replay_separates_the_grid_effect_from_the_remaining_error(ranked_lines):
+    profile=dict(jbar=np.zeros((2,2)),mass=np.full(2,.5),metadata=dict(binary_native_grid=False))
+    result=rank_native_bb_heat(*ranked_lines,depths=(0,1),profile_replay=profile)
+    ion=result['by_ion']['Z14_stage2']
+    np.testing.assert_allclose(ion['native_minus_replay'],0.,atol=1.e-30)
+    np.testing.assert_allclose(ion['replay_minus_fine'],ion['delta'],rtol=2.e-15)
+    assert result['profile_replay']==profile['metadata']
+    block=result['same_grid_SiS_BB_blocks']['Z14_stage2']
+    assert all(v['before_L1']>0 and v['after_L1']==0 for v in block['depths'])
+    assert block['max_number_conservation_relative']==0
+    assert result['final_goal']=='NOT_MET'
+
+
+def test_common_grid_block_keeps_a_real_remaining_operator_difference(ranked_lines):
+    profile=dict(jbar=np.zeros((2,2)),mass=np.full(2,.75),metadata={})
+    result=rank_native_bb_heat(*ranked_lines,depths=(0,1),profile_replay=profile)
+    block=result['same_grid_SiS_BB_blocks']['Z14_stage2']
+    for d in block['depths']:
+        assert d['after_L1']==pytest.approx(.5*d['before_L1'])
+        assert d['after_L1']>d['native_print_L1_bound']
+
+
+@pytest.mark.parametrize('jbar,mass',[(np.zeros((2,1)),np.ones(2)),
+    (np.full((2,2),np.nan),np.ones(2)),(np.zeros((2,2)),np.zeros(2))])
+def test_invalid_common_grid_replay_is_not_silently_consumed(ranked_lines,jbar,mass):
+    with pytest.raises(ValueError):
+        rank_native_bb_heat(*ranked_lines,depths=(0,1),profile_replay=dict(jbar=jbar,mass=mass))

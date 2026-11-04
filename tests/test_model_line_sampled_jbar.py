@@ -79,6 +79,30 @@ def test_profile_mass_scales_spontaneous_without_renormalizing_jbar(library):
     np.testing.assert_array_equal(p.rates(0,1,v)['spontaneous'],p.lines['A']*v['profile_mass'])
 
 
+def test_native_profile_replay_uses_the_same_sampled_kernel_without_mass_normalization(library):
+    from summarize_cmfgen_ir_grid_impact import resample_native_profiles
+    fine=np.array([90.,95.,100.,105.,110.]);native=np.array([90.,98.,100.,103.,110.])
+    J=np.column_stack((fine,2*fine));lines=line(100.)
+    profile=dict(width_fraction=.01,support_fraction=.06)
+    result=resample_native_profiles(lines,profile,library,fine,J,native,np.array([False]))
+    expected_J=np.column_stack((native,2*native))
+    direct=provider(library,native,expected_J).contract(0,1,radiation_generation=1)
+    np.testing.assert_array_equal(result['jbar'],direct['jbar'])
+    np.testing.assert_array_equal(result['mass'],direct['profile_mass'])
+    assert result['metadata']['profile_mass_renormalized'] is False
+    assert result['metadata']['binary_native_grid'] is False
+    assert abs(result['mass'][0]-1)>1.e-3
+
+
+def test_native_profile_replay_does_not_extrapolate_or_drop_uncovered_retained_lines(library):
+    from summarize_cmfgen_ir_grid_impact import resample_native_profiles
+    fine=np.array([90.,100.,110.]);J=np.ones((3,2));profile=dict(width_fraction=.01,support_fraction=.06)
+    with pytest.raises(ValueError,match='외삽'):
+        resample_native_profiles(line(100.),profile,library,fine,J,np.array([89.,100.,110.]),np.array([False]))
+    with pytest.raises(ValueError,match='지지범위'):
+        resample_native_profiles(line(108.),profile,library,fine,J,fine,np.array([False]))
+
+
 def test_dark_outside_and_unsampled_are_distinct(library):
     lines={key:np.repeat(value,3) for key,value in line(100.).items()}
     lines['nu0']=np.array([100.,120.,105.])
