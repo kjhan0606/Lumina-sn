@@ -197,6 +197,13 @@
 
 ## P08 열 정지기준과 후보 척도 및 불필요한 replay
 
+- **11월5일 실물 전달 대조:** 현재 계수 입력90점 T/ne/SL 인구는 수용 evaluation4와
+  비트 동일하고, 원 물질70 seed와 T/ne는90점 모두 다르다. 실제 계수 metadata와
+  새 경계도 같은 물질 SHA를 소비한다. 옛 T/ne 재사용 가설은 이 경로에서 지지되지
+  않는다. 새 물리평가0회이며 근·수송 수렴 증거와 구분한다. 정본은
+  [직접 판독 증거](LUMINA_CLOSURE_REASSESSMENT_2026-11-05.json)의
+  `accepted_material_to_current_source_readback`이다.
+
 - **11월5일 정상 근 탐색 연결:** 정상 새-J 응답에서 물리 허용조건과 내부 근 탐색
   종료를 분리했다. 기존 전하/열 문턱은 유지하며 새 centered Jacobian의 최대 log
   T/ne 보정1e-3을 내부 수치 목표로 사용한다. secant만으로 종료하지 않고 물리

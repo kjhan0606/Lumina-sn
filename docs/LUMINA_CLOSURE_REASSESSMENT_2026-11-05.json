@@ -111,5 +111,25 @@
     "related_tests_passed": 206,
     "scope_limit": "새 BF/SE/물질 후보/수송/CMFGEN 실행이나 실제 근 수렴 증거가 아니다. 위 원 판독은 원 코드 시점 기록으로 보존한다."
   },
+  "accepted_material_to_current_source_readback": {
+    "method": "완료 evaluation4 NPZ와 실제 계수 입력 native_material_nodes.bin을 읽어 배열을 직접 비교; 새 물리평가 없음",
+    "points": 90,
+    "temperature_bit_equal": true,
+    "ne_bit_equal": true,
+    "population_bit_equal": true,
+    "columns_equal": true,
+    "temperature_changed_points_from_original_seed": 90,
+    "ne_changed_points_from_original_seed": 90,
+    "geometry_density_equal_to_original_seed": true,
+    "inner_temperature_K": 23086.62669594496,
+    "inner_temperature_equals_boundary": true,
+    "accepted_response_sha256": "252993d3da03dd43ede0d02908c5134896aea8df902b9a54f947027b9556436e",
+    "material_nodes_sha256": "fdad9fc859db4c42c69f5d4912af0ffaee66302888bab36a05d8258f2a296223",
+    "source_metadata_sha256": "ba380c04a0f84e777c50a43a935ebfb71260f1e9de7dd1406f44ebb6fabb6616",
+    "source_and_boundary_material_identity_equal": true,
+    "interpretation": "현재 계수 입력이 옛 물질70의 T/ne를 조용히 재사용한다는 가설은 지지되지 않음. 이 결과는 수송 출력이나 근 수렴의 증거가 아니다.",
+    "new_physical_evaluations": 0,
+    "running_configuration_changed": false
+  },
   "final_goal": "NOT_MET"
 }
