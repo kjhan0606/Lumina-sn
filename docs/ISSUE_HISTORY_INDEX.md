@@ -1105,11 +1105,25 @@
   이온별 합만으로 정확한 원인을 확정하지는 않는다. `SCL_LN` 일반 누락 가설도 현재
   생산 코드/CMFGEN 계약 대조에서 지지되지 않는다. 상세 표와 범위 제한은
   [11월4일 인수계](HANDOVER_2026-11-04.md)를 참조한다.
+- `LINEHEAT`/`NETRATE` 전체 789,775쌍의 식별자를 맞춘 뒤, 상위 14개 Si IV/S III/Co IV/Ni IV
+  전이를 native full-level index와 OSC/Lumina roster에 연결했다. 14개 모두 현재 Lumina의
+  GENOSC·주파수 선택에서 살아남는다. CMFGEN 실제 누적은 `ZNET=Σq_i(1-RJ_i*CHIL_MAT/ETAL_MAT)`,
+  `JBAR_SIM=Σq_i*RJ_i`, `LINE_QW_SUM=Σq_i`, `q_i=LINE_PROF_SIM(i)*Δν_i`다. source 입력
+  SHA `84e3b5ae…7fd17d54c`, build `libsubs.a` SHA `e4d5ec0d…8f49c4f7`에서 확인했다.
+  VADAT는 Doppler 폭당 격자 간격1.0, line-center 삽입 off를 사용한다. 고정 Gaussian 폭은
+  Lumina와 일치한다. 197,291 native CONT_FREQ에서 재구성한 Si IV 255874의 profile 면적은
+  `Q_native=1.019525`(line center 출력 반올림 범위 `1.01907–1.01998`), fine-grid 면적은1이다.
+  정규화 Jbar 차이는 `4.06e-7`, native/Lumina 직접 열비는 `1.019631`이므로 해당 선의
+  `1.93%` 열차는 native profile 면적 과적분이 거의 설명한다. Si IV 257462도 Q `0.999992`,
+  정규화 Jbar 차 `1.63e-7`, 열비 `1.000005`로 일치한다. 반면 S III 두 선은 Q가 거의1인데
+  정규화 Jbar 차 `0.425%/0.0651%`와 열비 `1.02118/1.01179`가 남아, profile J 샘플링 차이가
+  상쇄로 증폭되는 별도 원인이다. 이것은 대표 전이의 고정-J 열 진단이며 Si/S 이온화
+  공동수렴은 아니다. 이전 `CONT_FREQ` 단순 재적분은 채택하지 않는다. 상세·가정·한계는
+  [11월4일 인수계](HANDOVER_2026-11-04.md).
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
-  수정했다. 관련 시험 4개 통과, 아직 commit/push 및 재실행은 없다. 현재 승인된 CMFGEN
-  포획 단회는 이미 사용됐다. 새 transport/material response는 없다. 보존된 NETRATE와
-  Lumina 선목록의 전이별 read-only 대조가 다음 최소 원인분리 후보이며, 새 native-grid
-  source 재평가는 별도 물리 계산이다.
+  수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
+  이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획
+  단회는 이미 소진됐다. 새 Slurm·transport·material response는 없다.
 - 11월4일 `1264146`은 활성화 변수 누락, `1264261`은 Slurm spool 경로에서 실행기
   탐색 실패로 각각 물리 실행 전 종료했다. 수정 commit `77993913`을 반영한 뒤
   사용자가 같은 CPU16·32GiB·최대4시간·GPU0·재시도0 범위의 새 단회를 승인했다.
