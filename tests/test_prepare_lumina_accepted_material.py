@@ -295,6 +295,56 @@ def test_legacy_thermal_result_uses_v2_re_tolerance_when_field_missing(tmp_path,
     assert exported['final_goal']=='NOT_MET' and exported['new_transport']==0
 
 
+def test_root_budget_exhaustion_exports_actual_step_not_trailing_probe(tmp_path,monkeypatch):
+    """근 탐색→실제 NPZ→다음 계수 입력의 연결; 합성 물질이며 새 실물 계산은 없다."""
+    import lumina_fixed_field_thermal as T
+    result,seed,run,_,physical,target=fixture(tmp_path,monkeypatch)
+    old=json.loads(result.read_text());entries=[]
+    desired=target['temperature']*.5
+    def evaluate(t,ne):
+        data={k:v.copy() for k,v in target.items()}
+        data['temperature']=t.copy();data['ne']=ne.copy()
+        data['charge_residual']=(data['population']*data['columns'][:,1,None]).sum(axis=0)-ne
+        weight=np.array([2.,4.])[:,None]*np.exp(-np.array([0.,1.])[:,None]*E.B.EV/(E.B.KB*t))
+        data['fraction']=weight/weight.sum(axis=0)
+        heat=dict(physical_stored_net=np.log(t/desired),physical_stored_gross=np.full(3,1.e6),
+            physical_adiabatic=np.zeros(3),physical_internal_energy=np.ones(3))
+        directory=tmp_path/('root-evaluation-'+str(len(entries)));directory.mkdir()
+        np.savez(directory/'response.npz',**data);np.savez(directory/'balance.npz',**heat)
+        record=dict(root=str(directory),response_sha256=E.B.sha(directory/'response.npz'),
+            balance_sha256=E.B.sha(directory/'balance.npz'),fixed_field_thermal_callback=bool(entries))
+        entries.append(record)
+        return data,heat,record
+    first=evaluate(target['temperature'],target['ne'])
+    block=T.solve(evaluate,first,lambda t,*args:np.zeros_like(t),policy='physical_stored',
+        max_evaluations=9,charge_tolerance=1.e-10,thermal_tolerance=1.e-3,
+        root_log_step_tolerance=1.e-3)
+    selected=block.pop('selected')
+    assert block['evaluations_used']==9 and block['accepted_iterations']==1
+    assert block['physical_tolerances_satisfied'] and not block['fixed_field_root_converged']
+    assert selected[2]==entries[5] and selected[2]!=entries[-1]
+    report=dict(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+        charge_converged=True,fixed_accepted_temperature=False,points=old['points'],
+        input_sha256=old['input_sha256'],selected_response=selected[2],evaluations=entries,
+        thermal_initial_response=first[2],thermal_evaluation_order=entries[1:],temperature_block=block)
+    result.write_text(json.dumps(report))
+    output=tmp_path/'root-finite-export'
+    exported=E.prepare(result,E.B.sha(result),seed,run,output)
+    _,actual,pop,_,_=E.read_nodes(output/'native_material_nodes.bin')
+    np.testing.assert_array_equal(actual[:,[0,3]],physical[:,[0,3]])
+    np.testing.assert_array_equal(actual[:,1],selected[0]['temperature'])
+    np.testing.assert_array_equal(actual[:,2],selected[0]['ne'])
+    np.testing.assert_array_equal(pop.T,selected[0]['population'])
+    assert exported['accepted_evaluation']==5
+    assert exported['accepted_response_sha256']==entries[5]['response_sha256']
+    assert not exported['checks']['fixed_field_numerical_converged']
+    assert not exported['joint_convergence_certified'] and exported['final_goal']=='NOT_MET'
+    assert exported['new_transport']==exported['new_SE_solves']==exported['new_BF_BB_integrals']==0
+    report['selected_response']=entries[-1];result.write_text(json.dumps(report))
+    with pytest.raises(ValueError,match='선택 결과'):
+        E.prepare(result,E.B.sha(result),seed,run,tmp_path/'probe-export')
+
+
 @pytest.mark.parametrize('mode_key', ['charge_projection', 'charge_projected_trials'])
 def test_charge_projected_step_exports_only_its_actual_final_selected_response(tmp_path,monkeypatch,mode_key):
     result,seed,run,*_=fixture(tmp_path,monkeypatch)
