@@ -43,7 +43,8 @@ def test_native_ir_roster_uses_actual_outer_velocity_and_strict_boundary(tmp_pat
 
 @pytest.mark.parametrize('velocity',['35975','1000 35975','35975 nan','35975 1000 500'])
 def test_native_ir_roster_rejects_incomplete_or_invalid_velocity(tmp_path,velocity):
-    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n'
+        '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
     (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n'+velocity+'\n')
     with pytest.raises(ValueError):S.native_line_domain(tmp_path)
 
@@ -54,6 +55,26 @@ def test_native_grid_support_rejects_variable_doppler(tmp_path):
     (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
     with pytest.raises(ValueError,match='FIX_DOP=T'):
         S.native_line_domain(tmp_path)
+
+
+def test_load_lines_applies_grid_support_to_actual_catalogue(tmp_path,monkeypatch):
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n'
+        '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
+    (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
+    path=tmp_path/'osc';path.write_text('synthetic oscillator identity')
+    energies=np.array([(0.,2.),(4.2e12/B.C,4.),(6.e12/B.C,6.)],
+        dtype=[('E_cm','f8'),('g','f8')])
+    transitions=np.array([(1,2,.1),(1,3,.1)],dtype=[('i','i4'),('j','i4'),('f','f8')])
+    atom=SimpleNamespace(levels=energies,transitions=transitions,declared_n_transitions=2)
+    monkeypatch.setattr(B.atomic,'load_cmfgen_links',lambda p:{(14,2):dict(osc=path)})
+    monkeypatch.setattr(B,'parse_osc',lambda p:atom)
+    monkeypatch.setattr(S,'gf_selection',lambda *args:np.ones(2,dtype=bool))
+    rows=[dict(atomic_number='14',ion_number='1',level_number=str(i)) for i in range(3)]
+    lines,counts,_=S.load_lines(tmp_path,rows,{(14,2):dict(n_full=3)})
+    np.testing.assert_allclose(lines['nu0'],[6.e12])
+    assert counts['Z14_stage2']['omitted_by_native_IR']==0
+    assert counts['Z14_stage2']['omitted_by_grid_support']==1
+    assert counts['Z14_stage2']['retained']==1
 
 
 def test_full_pair_known_memory_includes_both_states_and_postprocessing():
