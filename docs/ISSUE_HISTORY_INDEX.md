@@ -1176,14 +1176,21 @@
   반폭 이내와 일치한다. 양쪽 MODEL은 `WRITE_RATES`만 다르고, `MIN_CF`, 모든 비교한 GF
   기준, RVTJ는 동일하다. native cutoff는 약`3.960825e12 Hz`, CONT_FREQ는
   `3.49897e12–1e18 Hz`라 20개 선은 명시적 선택 하한과 격자 범위에 들어간다.
-  `atomic_links.txt` 및 Si/S OSC 입력도 generation14 manifest와 일치한다. 그러나
-  `NETRATE`/`LINEHEAT` writer는 `END_RES_ZONE`인 선만 기록하므로 ledger 부재만으로 native
-  전체 line roster에서 빠졌다고 할 수 없다. 아직 20개별 `END_RES_ZONE` 상태 또는 complete
-  native `VEC` roster가 없다. 다음 read-only 확인은 `SET_LINE_MOD` 등 linked library의
-  line-zone 판정 경로다. 원자자료·`MIN_CF`·비교한 GF 설정의 차이는 이 증거로 배제하지만,
-  출력 필터/선택 구현 중 어느 것이 원인인지와 물리 영향은 미확정이다. 세부 수치와 20개
-  주소는 [11월4일 인수계](HANDOVER_2026-11-04.md)의 `Si/S 전이 주소 목록 대조`를 참조한다.
-  이 결과는 열·이온분포 불일치의 원인 확정이나 수정 승인이 아니며, 최종 목표는 `NOT_MET`다.
+  `atomic_links.txt` 및 Si/S OSC 입력도 generation14 manifest와 일치한다. read-only source
+  추적에서 `INS_LINE_V6`가 `T1=1/(1+(6*MAXVAL(VDOP)+3*MAX(VINF,3000))/c)`로 저주파
+  resonance-zone tail을 버리는 것을 확인했다. 현재 fixed Doppler 설정(13.51152286 km/s),
+  `VINF=36,000 km/s`, 최저 continuum `3.49897e12 Hz`에서 line-center 경계는
+  `4.7604174e12 Hz`; 후보 최고 중심 `4.7062e12 Hz`도 그보다 낮다. 따라서 20개는 기존
+  GENOSC `GF_CUT=0.003`과 center cutoff 약`3.960825e12 Hz`는 통과하지만 CMFGEN active
+  line grid에는 들어가지 않는다. native `OUTGEN`도 INS_LINE_V6가 extreme-IR 선 4084개를
+  continuum 범위 밖이라 무시했다고 기록한다. 이 roster 차이는 atomic vintage·GF 데이터
+  문제가 아니라 Lumina가 CMFGEN의 추가 grid-support cutoff를 빠뜨린 데서 생겼다.
+  `cmfgen_model_sources.py`에 fixed-Doppler 지지 cutoff를 추가했고 비고정 profile은 fail-closed로
+  했다. 관련 45개 시험은 통과했다. 아직 수정 후 물리 재계산을
+  하지 않아 열/이온화 영향과 최종 동질성은 미확정이며 목표는 `NOT_MET`다. 이 발견은
+  line-roster 차이만 설명하며 전체 열·이온분포 불일치를 해결했다고 보지 않는다. 준위 주소는
+  이온 간 반복되므로 NETRATE 대조 키는 `(Z,stage,lower,upper)`를 유지한다. 상세는
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 `Si/S 전이 주소 목록 대조`를 참조한다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
   이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획

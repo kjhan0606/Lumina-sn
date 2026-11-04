@@ -19,14 +19,24 @@ from lumina_model_freefree import ModelFreeFree
 
 
 def test_native_ir_roster_uses_actual_outer_velocity_and_strict_boundary(tmp_path):
-    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897D-3 [MIN_CF]\n36000 [VINF]\n')
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897D-3 [MIN_CF]\n36000 [VINF]\n'
+        '2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
     (tmp_path/'RVTJ').write_text('ND: 2\n Velocity (km/s)\n 35975.288045 1000\n Temperature\n')
     domain=S.native_line_domain(tmp_path)
     cutoff=3.49897e12*(1+1.1*35975.288045/2.998e5)
+    vdop=12.85*np.sqrt(.5+(10/12.85)**2)
+    grid_cutoff=3.49897e12*(1+(6*vdop+3*36000)/(B.C*1.e-5))
     assert domain['minimum_line_Hz_exclusive']==cutoff
+    assert domain['minimum_line_Hz_grid_guard_inclusive']==pytest.approx(grid_cutoff)
     assert domain['outer_velocity_kms']!=36000
     np.testing.assert_array_equal(S.native_radiative_selection(
         [3.49897e12,cutoff,np.nextafter(cutoff,np.inf),1.e15],domain),[False,False,True,True])
+    np.testing.assert_array_equal(S.native_grid_support_selection(
+        [np.nextafter(grid_cutoff,0),grid_cutoff,np.nextafter(grid_cutoff,np.inf)],domain),
+        [False,True,True])
+    low_frequency_candidates=np.array([4.05e12,4.7062e12])
+    assert S.native_radiative_selection(low_frequency_candidates,domain).all()
+    assert not S.native_grid_support_selection(low_frequency_candidates,domain).any()
     assert not domain['collision_selection_changed']
     assert len(domain['source_sha256'])==2
 
@@ -36,6 +46,14 @@ def test_native_ir_roster_rejects_incomplete_or_invalid_velocity(tmp_path,veloci
     (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
     (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n'+velocity+'\n')
     with pytest.raises(ValueError):S.native_line_domain(tmp_path)
+
+
+def test_native_grid_support_rejects_variable_doppler(tmp_path):
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\nF [FIX_DOP]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n'
+        '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
+    (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
+    with pytest.raises(ValueError,match='FIX_DOP=T'):
+        S.native_line_domain(tmp_path)
 
 
 def test_full_pair_known_memory_includes_both_states_and_postprocessing():
@@ -277,7 +295,8 @@ def test_fixed_doppler_default_ignores_variable_width_global_profile(tmp_path):
 
 
 def test_model_line_source_rejects_incomplete_transition_list(tmp_path,monkeypatch):
-    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (tmp_path/'MODEL').write_text('F [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n'
+        '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
     (tmp_path/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
     path=tmp_path/'osc'
     path.write_text('2 !Number of energy levels\n2 !Number of transitions\n'
@@ -305,7 +324,8 @@ def test_invalid_FF_publication_policy_fails_before_any_output_or_integration(tm
 @pytest.mark.parametrize('mode',['ALL_POSITIVE_IONS','NATIVE_UPPER_IONS'])
 def test_actual_FF_selection_is_in_binary_NPZ_and_total_not_just_report(tmp_path,monkeypatch,kernels,mode):
     run=tmp_path/'model';run.mkdir();out=tmp_path/'out';out.mkdir()
-    (run/'MODEL').write_text('F [DO_DIS]\nF [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n')
+    (run/'MODEL').write_text('F [DO_DIS]\nF [RD_CF_FILE]\n11 [VEL_LAW]\n3.49897e-3 [MIN_CF]\n'
+        '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
     (run/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
     nu=np.array([1e13,1e14,1e15]);material=state();material['full']=np.array([[1e7,2e7],[1e6,2e6]])
     models={(20,2):{},(20,3):{}};lines=line()

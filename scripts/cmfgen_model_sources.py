@@ -72,11 +72,10 @@ def gf_selection(lower,upper,f,A,g_lower,Z,model,nlevels):
 
 
 def native_line_domain(run):
-    """SET_FREQUENCY_GRID_V2의 최종 복사 선 roster 범위(SN frozen 모델).
+    """CMFGEN 선택과 INS_LINE_V6 격자 지지가 함께 허용하는 선 범위.
 
-    INS_LINE_V6의 격자 삽입용 제외 수와 혼동하지 않는다. VEL_LAW11/12의
-    실제 외곽 V(1)은 MODEL의 명목 VINF가 아니라 보존 RVTJ에서 얻는다.
-    충돌 전이를 제외하는 규칙이 아니며 부족한 J를 0으로 채우지도 않는다.
+    VEL_LAW11/12 중심 주파수 선택에는 보존 RVTJ의 실제 V(1)을 사용한다.
+    INS_LINE_V6의 extreme-IR tail 제거는 fixed-Doppler 프로파일만 재현한다.
     """
     model=run/'MODEL';rvtj=run/'RVTJ'
     before={str(p):B.sha(p) for p in (model,rvtj)}
@@ -84,6 +83,18 @@ def native_line_domain(run):
         raise ValueError('원 continuum 격자/SN 외곽 속도 선택을 확인해야 하는 입력')
     minimum=number(model,'MIN_CF')*1.e15
     if minimum<=0:raise ValueError('MIN_CF는 양수여야 함')
+    if control(model,'FIX_DOP','T')!='T':
+        raise ValueError('INS_LINE_V6 격자 지지 재현에는 FIX_DOP=T가 필요함')
+    tdop=number(model,'TDOP');amass=number(model,'AMASS_DOP');vturb=number(model,'VTURB')
+    vinf_model=number(model,'VINF')
+    if tdop<=0 or amass<=0 or vturb<0 or vinf_model<=0:
+        raise ValueError('INS_LINE_V6 fixed-Doppler 경계 입력 오류')
+    vdop=12.85*np.sqrt(tdop/amass+(vturb/12.85)**2)
+    c_kms=B.C*1.e-5
+    grid_factor=1.+(6.*vdop+3.*max(vinf_model,3000.))/c_kms
+    grid_guard=minimum*grid_factor
+    if not np.isfinite(vdop) or vdop<=0 or not np.isfinite(grid_guard):
+        raise ValueError('INS_LINE_V6 fixed-Doppler 경계 수치 범위 초과')
     lines=rvtj.read_text().splitlines()
     dimensions=re.findall(r'^\s*ND:\s*(\d+)\s*$', '\n'.join(lines),re.M)
     markers=[i for i,s in enumerate(lines) if s.strip()=='Velocity (km/s)']
@@ -102,10 +113,15 @@ def native_line_domain(run):
     if not np.isfinite(cutoff):raise ValueError('복사 선 하한 수치 범위 초과')
     if any(B.sha(Path(p))!=digest for p,digest in before.items()):
         raise ValueError('복사 선 범위 판독 중 입력 변경')
-    return dict(policy='SET_FREQUENCY_GRID_V2_FINAL_IR_ROSTER',
+    return dict(policy='SET_FREQUENCY_GRID_V2_PLUS_INS_LINE_V6_GRID_SUPPORT',
         minimum_continuum_Hz=minimum,outer_velocity_kms=vinf,
         outer_velocity_source='RVTJ V(1); text precision, not nominal MODEL VINF',
         minimum_line_Hz_exclusive=cutoff,comparison='nu0 > cutoff',
+        fixed_Doppler_velocity_kms=float(vdop),
+        model_terminal_velocity_kms=vinf_model,
+        minimum_line_Hz_grid_guard_inclusive=float(grid_guard),
+        grid_guard_source='INS_LINE_V6: NU_CONT(NCF) <= NU_LINE*T1',
+        grid_guard_comparison='nu0 >= minimum_line_Hz_grid_guard_inclusive',
         collision_selection_changed=False,source_sha256=before)
 
 
@@ -114,6 +130,13 @@ def native_radiative_selection(nu,domain):
     if nu.ndim!=1 or not np.isfinite(nu).all() or np.any(nu<=0) or not np.isfinite(cutoff) or cutoff<=0:
         raise ValueError('복사 선 주파수/선택 범위 오류')
     return nu>cutoff
+
+
+def native_grid_support_selection(nu,domain):
+    nu=np.asarray(nu,dtype='f8');cutoff=float(domain['minimum_line_Hz_grid_guard_inclusive'])
+    if nu.ndim!=1 or not np.isfinite(nu).all() or np.any(nu<=0) or not np.isfinite(cutoff) or cutoff<=0:
+        raise ValueError('격자 지지 선 주파수/선택 범위 오류')
+    return nu>=cutoff
 
 
 def load_lines(run,rows,models,*,line_domain=None):
@@ -141,14 +164,18 @@ def load_lines(run,rows,models,*,line_domain=None):
         # 0인 OSC 항은 주파수0일 수 있으므로 양의 f만 범위를 검사한다.
         in_domain=np.zeros(len(f),dtype=bool)
         in_domain[f>0]=native_radiative_selection(nu[f>0],domain)
-        keep=gf_keep&in_domain
+        in_grid_support=np.zeros(len(f),dtype=bool)
+        in_grid_support[f>0]=native_grid_support_selection(nu[f>0],domain)
+        keep=gf_keep&in_domain&in_grid_support
         global_rows=np.array([lookup[Z,stage,l+1] for l in range(n)],dtype='i4')
         values=dict(lower=global_rows[low[keep]],upper=global_rows[up[keep]],
             nu0=nu[keep],f=f[keep],A=A[keep],g_ratio=(gl/gu)[keep])
         for key in collected:collected[key].append(values[key])
         counts[f'Z{Z}_stage{stage}']=dict(raw_in_model=int(len(f)),
             raw_nonzero=int(np.count_nonzero(f)),retained_after_GF=int(gf_keep.sum()),
-            omitted_by_native_IR=int(np.count_nonzero(gf_keep&~in_domain)),retained=int(keep.sum()),
+            omitted_by_native_IR=int(np.count_nonzero(gf_keep&~in_domain)),
+            omitted_by_grid_support=int(np.count_nonzero(gf_keep&in_domain&~in_grid_support)),
+            retained=int(keep.sum()),
             omitted_by_native_selection=int(np.count_nonzero((f>0)&~keep)))
         if before!=B.sha(path):raise ValueError('선 생성 중 원자료 변경')
         identities[str(path)]=before
