@@ -49,6 +49,33 @@ def thermal_implementation_hashes():
             for name in completed_seed.THERMAL_PRODUCERS}
 
 
+def source_atomic_libraries(report):
+    """실제 계수를 만든 두 원자 라이브러리를 그 기록에서 찾는다. 옛 경로를 고르지 않는다."""
+    result=[]
+    for name in ('cmfgen_phot_smoothing.so','model_sources.so'):
+        entries=[(Path(p),h) for p,h in report['input_sha256'].items() if Path(p).name==name]
+        if len(entries)!=1:raise ValueError('계수 생산 원자 라이브러리 신원 누락/중복: '+name)
+        path,digest=entries[0]
+        if B.sha(path)!=digest:raise ValueError('계수 생산 원자 라이브러리 변경: '+name)
+        result.append(path)
+    return tuple(result)
+
+
+def validate_source_line_roster(directory,report,lines,models,rows,routes):
+    """고정 model-atom 범위와 실제 생산된 전체 선 주소/계수를 함께 대조한다."""
+    sizes=(len(models),len(rows),len(routes))
+    if sizes!=(27,24542,24667) or sizes!=tuple(report.get(k) for k in ('model_ions','full_levels','routes')):
+        raise ValueError('전모형 원자/준위/연속 경로 누락')
+    path=Path(directory)/'line_catalog.npz';digest=report['output_sha256'].get('line_catalog.npz')
+    if not digest or B.sha(path)!=digest:raise ValueError('생산 선 catalogue 신원 변경')
+    if type(report.get('lines')) is not int or len(lines['lower'])!=report['lines']:
+        raise ValueError('생산/응답 선 개수 불일치')
+    with np.load(path,allow_pickle=False) as saved:
+        if set(saved.files)!=set(lines) or any(not np.array_equal(saved[k],lines[k]) for k in lines):
+            raise ValueError('생산/응답 선 주소 또는 원자 계수 불일치')
+    return path,digest
+
+
 @contextmanager
 def open_field(preparation, preparation_sha, feedback, feedback_sha):
     """완성된 마지막 F만 소비한다. F2 실패 시 보존된 F1도 명시적으로 허용한다."""
@@ -345,8 +372,7 @@ def run(args):
             if len(original_nodes) != 1 or len(model_paths) != 1: raise ValueError('원 물질/모형 주소 모호')
             material = Path(p['material']); runroot = model_paths[0].parent; atomic = material.parent/'atomic'
             source_report = json.loads(Path(p['sources']).read_text())
-            phot = Path('/gpfs/kjhan/cmfgen_runs/lumina_model_spec_428222/cmfgen_phot_smoothing.so')
-            kernel = Path('/gpfs/kjhan/cmfgen_runs/lumina_full_source_tests_20261020-0sY1jL/kernels/model_sources.so')
+            phot,kernel=source_atomic_libraries(source_report)
             inputs = {str(Path(v).resolve()): B.sha(v) for v in (args.preparation, args.feedback,
                 args.library, args.line_library, PARAMETERS, phot, kernel)}
             for path, digest in manifest['input_sha256'].items():
@@ -365,8 +391,8 @@ def run(args):
                 raise ValueError('장/수용 물질/참조 물질 반경 변경')
             lines, _, line_inputs = S.load_lines(runroot, rows, models)
             inputs.update(line_inputs)
-            if (len(models), len(rows), len(routes), len(lines['lower'])) != (27, 24542, 24667, 790493):
-                raise ValueError('전모형 율 roster 누락')
+            catalogue,digest=validate_source_line_roster(Path(p['sources']).parent,source_report,lines,models,rows,routes)
+            inputs[str(catalogue)]=digest
             result['memory_inventory'] = memory_inventory(ns, nf, len(routes), len(lines['lower']), len(rows),
                                                         temperature_cache=bool(temperature_evaluations))
             if result['memory_inventory']['known_allocation_and_reserve_bytes'] > 32*1024**3:

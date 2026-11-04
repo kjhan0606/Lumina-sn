@@ -19,6 +19,61 @@ def test_thermal_producer_identity_is_available_for_zero_temperature_evaluations
                for name in N.completed_seed.THERMAL_PRODUCERS)
 
 
+def test_response_libraries_come_from_actual_new_coefficient_producer(tmp_path):
+    paths=[tmp_path/'new-run/kernels'/name for name in ('cmfgen_phot_smoothing.so','model_sources.so')]
+    paths[0].parent.mkdir(parents=True)
+    for p in paths:p.write_bytes(p.name.encode())
+    report=dict(input_sha256={str(p):N.B.sha(p) for p in paths})
+    assert N.source_atomic_libraries(report)==tuple(paths)
+    paths[1].write_bytes(b'changed')
+    with pytest.raises(ValueError,match='라이브러리 변경'):N.source_atomic_libraries(report)
+
+
+@pytest.mark.parametrize('fault',['missing','duplicate'])
+def test_response_library_selection_never_falls_back_to_an_old_global_path(tmp_path,fault):
+    paths=[tmp_path/name for name in ('cmfgen_phot_smoothing.so','model_sources.so')]
+    for p in paths:p.write_bytes(b'fixture')
+    inputs={str(p):N.B.sha(p) for p in paths}
+    if fault=='missing':inputs.pop(str(paths[1]))
+    else:inputs[str(tmp_path/'old/model_sources.so')]='0'*64
+    with pytest.raises(ValueError,match='누락/중복'):N.source_atomic_libraries(dict(input_sha256=inputs))
+
+
+def test_response_library_preserves_the_producer_identity_for_symlink_paths(tmp_path):
+    paths=[tmp_path/name for name in ('cmfgen_phot_smoothing.so','model_sources.so')]
+    target=tmp_path/'compiled-photo-target.so';target.write_bytes(b'phot')
+    paths[0].symlink_to(target);paths[1].write_bytes(b'kernel')
+    report=dict(input_sha256={str(p):N.B.sha(p) for p in paths})
+    assert N.source_atomic_libraries(report)==tuple(paths)
+    assert all(str(p) in report['input_sha256'] for p in N.source_atomic_libraries(report))
+
+
+@pytest.mark.parametrize('count',[3,790493-718])
+def test_response_line_roster_matches_produced_addresses_not_the_old_hardcoded_count(tmp_path,count):
+    lines=dict(lower=np.arange(count,dtype='i4'),upper=np.arange(count,dtype='i4')+1,
+               nu0=np.full(count,1.e15))
+    path=tmp_path/'line_catalog.npz';np.savez(path,**lines)
+    report=dict(model_ions=27,full_levels=24542,routes=24667,lines=count,
+                output_sha256={'line_catalog.npz':N.B.sha(path)})
+    result=N.validate_source_line_roster(tmp_path,report,lines,[None]*27,[None]*24542,[None]*24667)
+    assert result==(path,N.B.sha(path))
+    lines['upper'][0]+=1
+    with pytest.raises(ValueError,match='주소 또는 원자 계수'):
+        N.validate_source_line_roster(tmp_path,report,lines,[None]*27,[None]*24542,[None]*24667)
+
+
+@pytest.mark.parametrize('fault',['model','count','hash'])
+def test_response_roster_still_rejects_incomplete_models_or_changed_source(tmp_path,fault):
+    lines=dict(lower=np.array([0]),upper=np.array([1]));path=tmp_path/'line_catalog.npz';np.savez(path,**lines)
+    report=dict(model_ions=27,full_levels=24542,routes=24667,lines=1,
+                output_sha256={'line_catalog.npz':N.B.sha(path)})
+    if fault=='model':report['full_levels']-=1
+    elif fault=='count':report['lines']=2
+    else:report['output_sha256']['line_catalog.npz']='0'*64
+    with pytest.raises(ValueError):
+        N.validate_source_line_roster(tmp_path,report,lines,[None]*27,[None]*24542,[None]*24667)
+
+
 @pytest.fixture
 def manual_resources(monkeypatch):
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')

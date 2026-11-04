@@ -1081,6 +1081,16 @@
 
 ## P10 동일-state CMFGEN 고정-J 열 출력 포획 재개
 
+- **미실행 반환의 source 계약 충돌 추가 수리(2026-11-04):** 새 producer의 kernel을
+  만들었어도 반환 응답은 옛 전역 kernel 경로와790493선을 강제했다. 실제 source JSON의
+  라이브러리 신원과 저장 catalogue의 모든 주소/계수 배열을 사용하도록 교정했다.
+  원자/준위/BF 범위27/24542/24667은 유지,306시험 통과. 기존 계수 job1269211의
+  source/config/입력은 변경하지 않고 미래 field 제출만 `OPERATOR_HOLD_NOT_SUBMITTED`
+  marker로 보류했다(실제 GPU제출0). 완성 계수를 재계산하지 않고 교정 successor로
+  GPU/반환을 처음 제출한다. 옛 source wrapper의 post-callback exit1 가능성과 실제
+  계수 완료는 구별한다. 승인 횟수/자원은 그대로다. 상세는
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 `미실행 후속의 source 계약 교정`을 따른다.
+
 - **승인 왕복1269211 실제 시작(2026-11-04):** 새 root
   `lumina_outer_roundtrip_20261104-uw1e00_s`, 코드`a4831c98`로 계수 단회를 제출했다.
   22:31:17 KST Grammar016에서 CPU16·32GiB·2h·Requeue0으로 시작했고22:34 `RUNNING`.
