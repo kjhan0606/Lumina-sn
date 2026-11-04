@@ -1173,12 +1173,17 @@
   `NETRATE`의 `(Z,stage,lower_full,upper_full)`를 직접 맞췄다. Si II/III, S II/III에서
   각각 2/5/5/8개의 Lumina-only 저주파선(약 `4.05–4.71e12 Hz`)이 있고 native-only는0개다;
   Si IV/S IV는 완전 일치한다. 공유선의 주파수 차이는 native F10.6 중심의 출력 반올림
-  반폭 이내와 일치한다. 이는 광범위한 준위 주소 오류보다 line-domain/선택 기준 차이를
-  우선 가리키지만, 양쪽 sealed MODEL/RVTJ와 GF 선택값을 직접 대조하지 않아 `MIN_CF`
-  원인으로 확정하지 않는다. 다음 read-only 확인은 20개 전이에 양쪽 선택식을 적용하는
-  것이다. 전이 목록, 제한 및 아직 모르는 점은 [11월4일 인수계](HANDOVER_2026-11-04.md)의
-  `Si/S 전이 주소 목록 대조`를 참조한다. 이 결과는 열·이온분포 불일치의 원인 확정이나
-  수정 승인이 아니며, 최종 목표는 `NOT_MET`다.
+  반폭 이내와 일치한다. 양쪽 MODEL은 `WRITE_RATES`만 다르고, `MIN_CF`, 모든 비교한 GF
+  기준, RVTJ는 동일하다. native cutoff는 약`3.960825e12 Hz`, CONT_FREQ는
+  `3.49897e12–1e18 Hz`라 20개 선은 명시적 선택 하한과 격자 범위에 들어간다.
+  `atomic_links.txt` 및 Si/S OSC 입력도 generation14 manifest와 일치한다. 그러나
+  `NETRATE`/`LINEHEAT` writer는 `END_RES_ZONE`인 선만 기록하므로 ledger 부재만으로 native
+  전체 line roster에서 빠졌다고 할 수 없다. 아직 20개별 `END_RES_ZONE` 상태 또는 complete
+  native `VEC` roster가 없다. 다음 read-only 확인은 `SET_LINE_MOD` 등 linked library의
+  line-zone 판정 경로다. 원자자료·`MIN_CF`·비교한 GF 설정의 차이는 이 증거로 배제하지만,
+  출력 필터/선택 구현 중 어느 것이 원인인지와 물리 영향은 미확정이다. 세부 수치와 20개
+  주소는 [11월4일 인수계](HANDOVER_2026-11-04.md)의 `Si/S 전이 주소 목록 대조`를 참조한다.
+  이 결과는 열·이온분포 불일치의 원인 확정이나 수정 승인이 아니며, 최종 목표는 `NOT_MET`다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
   이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획
