@@ -1081,6 +1081,17 @@
 
 ## P10 동일-state CMFGEN 고정-J 열 출력 포획 재개
 
+- **승인 왕복1269211 실제 시작(2026-11-04):** 새 root
+  `lumina_outer_roundtrip_20261104-uw1e00_s`, 코드`a4831c98`로 계수 단회를 제출했다.
+  22:31:17 KST Grammar016에서 CPU16·32GiB·2h·Requeue0으로 시작했고22:34 `RUNNING`.
+  실제 compute-node→Syntax SSH 확인 후 새 occupation 지원 kernel로 생산 중이다.
+  계수 완성 뒤에만 GPU최대2F/12h와 반환 T/ne 최대12열평가/48h를 단회 연결한다.
+  22:37에는 계수완료/후속제출 기록이 아직없고 새 F/물질응답/native는0회다. 실제 상태는
+  준비 스냅샷이 아니라Slurm/단회 제출 기록을 따른다. source 완료예상23:00–23:15 KST,
+  이후 필요 시10분 간격으로 확인한다. 다른 프로젝트는 변경하지 않았다. 상세 SHA·위상·
+  예상과 상한 구분은 [11월4일 인수계](HANDOVER_2026-11-04.md)의
+  `승인 왕복1269211 실제 시작`을 따른다. 최종 목표`NOT_MET`다.
+
 - **새 왕복 실행 연결 수리·사용자 승인(2026-11-04):** 과거 source kernel 고정 참조를
   현재 봉인 소스의 격리 빌드로 바꿔 occupation 수리를 실제 다음 계수에 연결했다.
   `FIXED_MATERIAL_SOURCE_RESIDUAL_PASS` 완성장을 두 후속 소비자가 거부하던 경로도
