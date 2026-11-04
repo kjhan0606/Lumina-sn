@@ -1126,9 +1126,15 @@
   각 790,493개 Lumina profile mass는 출력 정밀도상 모두 `0.999999999993`이다. 반면
   CMFGEN은 native `LINE_QW_SUM=Σq`를 line rate에 사용하고 대표선에서는 native 격자의
   `Q≠1`이 관측됐다. 따라서 선택된 응답에서 profile-area 차이는 SE에 전달 가능한 실제
-  경로다. 다만 전체 선을 native 구간과 정확히 짝지은 비교는 아직 없고, 대표선만으로 전
-  이온분포나 39/90 열 부호 차이의 원인을 확정하지 않는다. 포획본에 `TRANS_INFO`와
-  `fort.77`이 없어 `CONT_FREQ` 재적분은 exact native qsum이 아니다. 정본은
+  경로다. 11월4일 기존 `NETRATE` 789,775개 선 헤더를 인쇄된 `CONT_FREQ`에 Gaussian
+  `TRAPUNEQ`로 재적분한 추정에서는 Q 중앙값 `1.00000225`, 1/99백분위
+  `0.984087/1.019973`; Si II/III는 각각 1,417/1,414개 중 27/52개, S II/III는
+  5,906/3,678개 중 165/106개가 `|Q−1|>1%`였다. 대표 6개 선의 기존 격자 재구성과
+  일치한다. 하지만 이 값은 native 내부 `LINE_QW_SUM` 직접 포획이나 population·A·Jbar
+  가중 영향이 아니며, 전 선을 native 정수 구간과 정확히 짝지은 비교도 아니다. 포획본에
+  `TRANS_INFO`와 `fort.77`이 없어 근사 한계가 남는다. 그러므로 일부 line-rate에 면적
+  차이가 들어갈 개연성은 커졌지만 전 이온분포·39/90 열 부호 차이의 원인은 미확정이고,
+  Lumina 정규화를 native 격자 오차에 맞춰 바꾸지 않는다. 정본은
   [11월4일 인수계](HANDOVER_2026-11-04.md).
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
