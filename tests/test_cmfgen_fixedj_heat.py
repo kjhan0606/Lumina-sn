@@ -16,7 +16,7 @@ sys.path.insert(0, str(SCRIPTS))
 from prepare_cmfgen_fixedj_heat import (COMP_OPAC, FINISH, FINISH_POINT, FIXED_SKIP,
                                       FULL_CAPTURE, FULL_POINT, GUARD, GUARD_POINT,
                                       patched, read_heat_row, native_state, prepare_state)
-from prepare_cmfgen_fixedj_heat import refined_grid_inputs
+from prepare_cmfgen_fixedj_heat import refined_grid_inputs, OBSERVER_CALL, OBSERVER_OUTPUT
 
 
 @pytest.mark.parametrize('spacing',[.5,.25])
@@ -57,6 +57,29 @@ def test_private_patch_restores_actual_coefficients_before_re_and_preserves_rest
     assert changed.index('CALL LUMINA_FIXEDJ_HEAT_FINISH') < changed.index(FINISH_POINT)
     with pytest.raises(ValueError):
         patched(changed)
+
+
+def test_optional_observer_skip_leaves_rate_heat_and_finish_bytes_unchanged():
+    original = (GUARD_POINT+FIXED_SKIP+FULL_POINT+OBSERVER_CALL+
+                'line_and_continuum_rates\n'+OBSERVER_OUTPUT+'weak_line_RE\n'+FINISH_POINT)
+    default = patched(original)
+    skipped = patched(original, skip_observer_spectrum=True)
+    assert default.count(OBSERVER_CALL) == default.count(OBSERVER_OUTPUT) == 1
+    restored = skipped.replace(
+        '! Fixed-J heat-only capture: observer spectrum not evaluated.\n', OBSERVER_CALL
+    ).replace('! Fixed-J heat-only capture: no OBSFLUX product.\n', OBSERVER_OUTPUT)
+    assert restored == default
+    assert 'CALL COMP_OBS_V2' not in skipped
+    assert "'OBSFLUX'" not in skipped
+    assert skipped.count(GUARD) == skipped.count(COMP_OPAC) == skipped.count(FINISH) == 1
+
+
+@pytest.mark.parametrize('marker', [OBSERVER_CALL, OBSERVER_OUTPUT])
+def test_optional_observer_skip_rejects_missing_or_duplicate_native_blocks(marker):
+    original = GUARD_POINT+FIXED_SKIP+FULL_POINT+OBSERVER_CALL+OBSERVER_OUTPUT+FINISH_POINT
+    for source in (original.replace(marker, ''), original+marker):
+        with pytest.raises(ValueError):
+            patched(source, skip_observer_spectrum=True)
 
 
 @pytest.mark.parametrize('marker', [FIXED_SKIP, GUARD_POINT, FULL_POINT, FINISH_POINT])

@@ -70,13 +70,33 @@ FULL_POINT = ('! This routine not only evaluates the LTE populations of both mod
 FULL_CAPTURE = '\tCALL LUMINA_FIXEDJ_FULL_CAPTURE(POPS,R,NT,ND,MAIN_COUNTER)\n'
 VECTOR_NAMES = ('radius_native', 'velocity_native', 'sigma', 'temperature_native',
                 'ne', 'atoms', 'clump', 'steq_t_native', 'steq_ed_native')
+OBSERVER_CALL = ("\t   CALL COMP_OBS_V2(IPLUS,FL,\n"
+                 '\t1           IPLUS_STORE,NU_STORE,NST_CMF,\n'
+                 '\t1           MU_AT_RMAX,HQW_AT_RMAX,OBS_FREQ,OBS_FLUX,N_OBS,\n'
+                 "\t1           V_AT_RMAX,RMAX_OBS,'IPLUS','LIN_INT',DO_FULL_REL_OBS,\n"
+                 '\t1           FIRST_OBS_COMP,NP_OBS)\n')
+OBSERVER_OUTPUT = ("\tCALL GEN_ASCI_OPEN(LU_FLUX,'OBSFLUX','UNKNOWN',' ',' ',IZERO,IOS)\n"
+                   "\t  WRITE(STRING,'(I10)')N_OBS\n"
+                   '\t  STRING=ADJUSTL(STRING)\n'
+                   "          STRING='Continuum Frequencies ( '//TRIM(STRING)//' )'\n"
+                   '\t  CALL WRITV_V2(OBS_FREQ,N_OBS,ISEV,TRIM(STRING),LU_FLUX)\n'
+                   "\t  CALL WRITV_V2(OBS_FLUX,N_OBS,IFOUR,'Observed intensity (Janskys)',LU_FLUX)\n"
+                   "\t  CALL WRITV(RLUMST,ND,'Luminosity',LU_FLUX)\n"
+                   '\tCLOSE(UNIT=LU_FLUX)\n')
 
 
-def patched(source):
+def patched(source, *, skip_observer_spectrum=False):
     """관찰 대상은 최종 적분 RE이며 EHB/GENCOOL/dummy H 출력이 아니다."""
     source = once(source, FIXED_SKIP, COMP_OPAC)
     source = once(source, GUARD_POINT, GUARD_POINT + GUARD)
     source = once(source, FULL_POINT, FULL_POINT + FULL_CAPTURE)
+    if skip_observer_spectrum:
+        # HEAT_GUARD는 USE_FIXED_J를 강제하고 CHECK_SPEC_CONV도 원래 이때 비활성이다.
+        # BB/연속/열 적분과는 무관한 관측자계 버퍼만 생략한다. 가짜 OBSFLUX도 쓰지 않는다.
+        source = once(source, OBSERVER_CALL,
+                      '! Fixed-J heat-only capture: observer spectrum not evaluated.\n')
+        source = once(source, OBSERVER_OUTPUT,
+                      '! Fixed-J heat-only capture: no OBSFLUX product.\n')
     return once(source, FINISH_POINT, FINISH + FINISH_POINT)
 
 
@@ -207,7 +227,7 @@ def prepare_state(material, material_sha, native_run, out):
     return report
 
 
-def prepare(parent, out, *, instantaneous_decay=False):
+def prepare(parent, out, *, instantaneous_decay=False, skip_observer_spectrum=False):
     """원 J71의 실제 객체/라이브러리를 사용한다. 설치 native archive로 바꾸지 않는다."""
     parent, out = Path(parent).resolve(), Path(out).resolve()
     if out.exists():
@@ -263,7 +283,7 @@ def prepare(parent, out, *, instantaneous_decay=False):
             inputs[path] = sha(path)
     if any(sha(path) != digest for path, digest in inputs.items()):
         raise ValueError('봉인 J71 native 링크 입력 변경')
-    modified = patched(source.read_text())
+    modified = patched(source.read_text(), skip_observer_spectrum=skip_observer_spectrum)
     out.mkdir()
     (out/'cmfgen_sub.f').write_text(modified)
     shutil.copy2(include, out/'GET_J_CHI.INC')
@@ -296,6 +316,8 @@ def prepare(parent, out, *, instantaneous_decay=False):
                   output_sha256={p.name: sha(p) for p in out.iterdir() if p.is_file()},
                   activation='LUMINA_FIXEDJ_HEAT_ONLY=1; incompatible controls STOP94',
                   terminal='STOP96 before original population solver; no material update',
+                  observer_spectrum=('NOT_EVALUATED_NO_OBSFLUX' if skip_observer_spectrum
+                                     else 'UNCHANGED_NATIVE_PATH'),
                   actual_native_evaluation=False, common_state_injection='EXPLICIT_INPUT_REQUIRED_BEFORE_POPTOION',
                   decay_implementation=('EXPLICIT_VERIFIED_INSTANTANEOUS_DT0_OBJECT' if instantaneous_decay
                                         else 'UNCHANGED_J71_ARCHIVE; not an instantaneous-decay-patch build'),
@@ -316,13 +338,16 @@ if __name__ == '__main__':
     parser.add_argument('--state-material-sha')
     parser.add_argument('--native-run', type=Path)
     parser.add_argument('--instantaneous-decay', action='store_true')
+    parser.add_argument('--skip-observer-spectrum', action='store_true',
+                        help='고정-J 열 포획 전용: 관측자계 적분/OBSFLUX 출력 생략')
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     if any((args.state_material, args.state_material_sha, args.native_run)):
-        if args.parent or args.instantaneous_decay or not all((args.state_material, args.state_material_sha, args.native_run)):
+        if args.parent or args.instantaneous_decay or args.skip_observer_spectrum or not all((args.state_material, args.state_material_sha, args.native_run)):
             parser.error('상태 준비는 --state-material/--state-material-sha/--native-run만 함께 지정')
         prepare_state(args.state_material, args.state_material_sha, args.native_run, args.out)
     elif args.parent:
-        prepare(args.parent, args.out, instantaneous_decay=args.instantaneous_decay)
+        prepare(args.parent, args.out, instantaneous_decay=args.instantaneous_decay,
+                skip_observer_spectrum=args.skip_observer_spectrum)
     else:
         parser.error('--parent 빌드 또는 명시한 수용 상태 준비가 필요')
