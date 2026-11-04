@@ -1201,6 +1201,17 @@
   읽는 재현기는 `scripts/summarize_cmfgen_ir_grid_impact.py`; 상세 입력 신원·수치·명령은
   [11월4일 인수계](HANDOVER_2026-11-04.md)의 `IR 격자 경계 보정의 실제 저장-state 열 기여`다.
   이 작은 경계 수리만으로 장시간 물질응답을 재실행하지 않는다. 최종 목표는`NOT_MET`다.
+- **동일-state BB 순율 블록(2026-11-04):** 보존 native ZNET와 fine Jbar의12,415개 Si II/III·
+  S II/III 전이를 공통 A·동일 native 이진 인구에서 비교했다. 깊이36 SL별 순율 차이 L1은
+  각각`15.904`, `1.513e6`, `1600.5`, `4.969e5 cm^-3 s^-1`; fine BB 순율 L1의
+  `0.0548/1.5694/6.8628/0.4925`배다. native 출력 반올림의 보수적 상한은
+  `0.0563/6.379/0.0923/9.551`로 차이보다 훨씬 작고, 동일 native 인구 사용으로 약1e-8
+  인구 전달 차이도 제거했다. 따라서 열장부만이 아니라 준위 재분배 BB 연산자에도 차이가
+  있다. BB는 이온 총수를 보존하므로 이 결과 자체가 이온화율 변화나 native 전체 SE 잔차는
+  아니다. BF/충돌 포함 새 해·실제 격자 수렴·스펙트럼은 미검증이다. 재현기는 기존
+  `summarize_cmfgen_ir_grid_impact.py`의 선택 NETRATE 경로이며 직접시험48개 통과,
+  새 SE/RE/수송/물질수용0회, 목표`NOT_MET`다. 상세 수식·표·한계·재현 인자는
+  [11월4일 인수계](HANDOVER_2026-11-04.md)의 `동일-state BB 순율 블록 대조`를 따른다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
   이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획
