@@ -1,0 +1,100 @@
+{
+  "schema": "lumina-operator-closure-reassessment-v1",
+  "date_KST": "2026-11-05",
+  "author": "현 운전자 직접 판독; 별도 Astra/다른 모델 호출 없음",
+  "source_commit_inspected": "0aef2762",
+  "physics_source_equal_to_commit": "e2b03233775789dcc75990b441bf9430efa521a4",
+  "method": "Lageunha CPU affinity1·OMP/BLAS1에서 봉인 완료 NPZ/라이브러리를 검증하고 현행 solve_coupled의 정지 제어만 재생. 실제 평가 callback은 호출 시 예외를 내도록 설정.",
+  "new_BF_integrations": 0,
+  "new_SE_solves": 0,
+  "new_transport": 0,
+  "new_CMFGEN_runs": 0,
+  "running_calculation_or_config_modified": false,
+  "read_only_termination_replays": [
+    {
+      "case": "before_T_refinement",
+      "material_source": "lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/evaluation-4",
+      "response_sha256": "216347a338d3adb66337cd46180135c71dec42581c18f48f0351bcb5055eb2a8",
+      "balance_sha256": "ccc1951d323819a2880e423a3a37971d679101f8c89132df4430844fa9d50271",
+      "numerical_converged": true,
+      "iterations": 0,
+      "new_callback_count": 0,
+      "temperature_bit_equal": true,
+      "charge_physical_scaled_max": 9.676621951763535e-11,
+      "thermal_physical_scaled_max": 1.3843479132777867e-6
+    },
+    {
+      "case": "after_one_accepted_T_refinement",
+      "material_source": "lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/evaluation-4",
+      "result_sha256": "be3bf940802800c7df94396e1fbd6a8828aa444a9c444082582179349f1eaf47",
+      "response_sha256": "252993d3da03dd43ede0d02908c5134896aea8df902b9a54f947027b9556436e",
+      "balance_sha256": "bcc48de1e6372b0510ea28c39c6487ccfeb2342f6da1dd6b62ded6510a68f604",
+      "numerical_converged": true,
+      "iterations": 0,
+      "new_callback_count": 0,
+      "temperature_bit_equal": true,
+      "charge_physical_scaled_max": 1.959567966097656e-15,
+      "thermal_physical_scaled_max": 6.741965329428934e-7
+    }
+  ],
+  "common_replay_parameters": {
+    "policy": "native_instantaneous_scenario",
+    "charge_tolerance": 1e-10,
+    "thermal_tolerance": 1e-3,
+    "max_evaluations": 12,
+    "secant_after_accept": true,
+    "adiabatic_library_sha256": "63820394771e22c0f282d481fba697028d246776231b02a86d6803b420b735f0",
+    "epoch_seconds": 1683072.0,
+    "radius_source": "lumina_currentJ_Trefine_after1260758_v1/run/physical-profiles.npz"
+  },
+  "stored_centered_direction": {
+    "root": "lumina_outer_iteration_20261102_ee33377ee2/temperature_direction_grammar_1260171_approved_20261103/run",
+    "result_sha256": "e89fdc7254012454bfc446a8936afbf4af266f8fd390341672035d4f1e1b8428",
+    "linearization_sha256": "73fb31c8260e6d8ea14ce23a3a8d47be4794e2f4324306afd953e10e09bd3d67",
+    "max_abs_log_temperature_direction": 1.7372918235098447,
+    "max_abs_log_ne_direction": 0.033931258975632754,
+    "maximum_temperature_direction_depth_1based": 4,
+    "maximum_temperature_direction_signed_value": -1.7372918235098447,
+    "row_normalized_thermal_Schur_condition": 7.246319549538706,
+    "linear_backward_relative_error": 2.516802810888295e-18,
+    "interpretation": "작은 RE 잔차만으로 온도근 근접을 보일 수 없다는 증거. 선형 방향은 실제 근까지 거리·유효 온도 제안이 아니며 새 기준해가 아니다. 단순 선형 풀이 실패 설명은 지지되지 않음."
+  },
+  "selected_heat_depth_36": {
+    "net_erg_cm3_s": 3.313846401210889e-6,
+    "gross_erg_cm3_s": 9.830502300728103,
+    "channel_scale_erg_cm3_s": 3.3193279144374387e-6,
+    "scaled_max_H_C": 6.741965329428934e-7,
+    "channel_normalized": 0.9983486074989134,
+    "interpretation": "기존 물리 행 척도는 보존한다. 순채널 비율을 임의의 새 합격선으로 대체하지 않음."
+  },
+  "replayed_selected_ion_fraction_diagnostics": {
+    "method": "compare_lumina_new_field_response_eval.compare_result(result, sealed_sha256, 4)",
+    "selected_response_is_this_evaluation": true,
+    "Si_II_max_abs_dex": 0.16343916250376722,
+    "Si_III_max_abs_dex": 0.2867475282825362,
+    "S_II_max_abs_dex": 0.0814033077575473,
+    "S_III_max_abs_dex": 0.18173859451933444,
+    "activity_basis": "ION_FRACTION_ONLY; RATE_ACTIVITY_NOT_AVAILABLE",
+    "reference": "CMFGEN70 fixed-T nonconverged diagnostic, not certified released-T anchor",
+    "acceptance": "DIAGNOSTIC_ONLY_NOT_FULL_V2_ACCEPTANCE"
+  },
+  "rechecked_existing_science_artifacts": {
+    "h025_common_native_grid_BB_heat_replay_v2.json": "ac0f7a469ea9fe43aebe645221db7d9d77477c720495571e8747de38afe7d767",
+    "h025_native_BF_flows_all90_corrected.json": "62c02ae95d6585d527b3e8226127eeb470a2b732d13aa92d5123e191bcd51980"
+  },
+  "findings": [
+    "기본 경로의 RE 허용영역 조기 종료는 의도된 기존 동작이다. 온도 근 탐색 목적은 별도 refinement에만 있어 현재 정상 반환 경로가 이전 온도를 그대로 수용할 수 있다.",
+    "고정물질 최대2F 뒤 고정J 물질응답으로 끝나는 유한 묶음은 바깥 물질-장 공동수렴 해법과 다르다. 새 물질의 계수와 장을 다시 풀어 닫는 전체 반복은 현재 묶음 안에 없다.",
+    "같은 J의 원자율/열 비교, 격자 연산자 대조, 자기일관 해, CMFGEN 수렴 기준해를 서로 다른 질문으로 구분해야 한다. 특정 블록 재현 통과는 나머지 증거를 대신하지 않는다.",
+    "지난 자문의 알려진 위험을 생산 기본 경로의 근 탐색 목적으로 전환하지 않고 제한 진단/별도 보정으로 다룬 것이 진행 지연의 구체적인 해법 구성 원인이다. 한 달 모든 물리 차이를 이 단일 원인으로 확정한 것은 아니다."
+  ],
+  "not_proven": [
+    "현재 Si/S 차이 전부의 유일 물리 원인",
+    "온도 보정만으로 새 수송/스펙트럼이 CMFGEN과 일치한다는 보장",
+    "현재 실행 중인 새 J에서 온도 보정이 반드시 0회가 된다는 예측",
+    "MC 또는 GPU 커널 자체의 오류",
+    "새 외부 반복의 수렴률 또는 수렴 소요시간"
+  ],
+  "next_priority": "진행 중 승인 단회는 보존한다. 다음 해법 변경은 기존 물리 수용문턱과 별개로 실제 온도근 탐색을 정상 물질응답에 연결하고, 같은 물질-J의 반복을 닫는 목적에 집중한다. 새 실물 실행·자원 확대·CMFGEN 기준해 계산을 이 판독으로 자동 승인하지 않는다.",
+  "final_goal": "NOT_MET"
+}
