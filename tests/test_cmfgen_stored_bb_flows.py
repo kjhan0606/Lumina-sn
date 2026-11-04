@@ -149,6 +149,22 @@ def test_common_grid_block_keeps_a_real_remaining_operator_difference(ranked_lin
     for d in block['depths']:
         assert d['after_L1']==pytest.approx(.5*d['before_L1'])
         assert d['after_L1']>d['native_print_L1_bound']
+        worst=d['top_remaining_lines'][0]
+        assert worst['line_id']==2
+        assert worst['native_minus_replay_flow']==pytest.approx(
+            worst['native_downward_flow']-worst['replay_downward_flow'])
+        assert worst['native_minus_replay_flow']<0
+        assert abs(worst['native_minus_replay_flow'])>worst['native_print_flow_bound']
+        assert d['after_L1']==pytest.approx(2*sum(
+            abs(row['native_minus_replay_flow']) for row in d['top_remaining_lines']))
+
+
+def test_same_superlevel_transition_is_not_a_remaining_SE_row_error(ranked_lines):
+    ranked_lines[8][3]=ranked_lines[8][2]
+    profile=dict(jbar=np.zeros((2,2)),mass=np.full(2,.75),metadata={})
+    result=rank_native_bb_heat(*ranked_lines,depths=(0,1),profile_replay=profile)
+    for d in result['same_grid_SiS_BB_blocks']['Z14_stage2']['depths']:
+        assert [row['line_id'] for row in d['top_remaining_lines']]==[1]
 
 
 @pytest.mark.parametrize('jbar,mass',[(np.zeros((2,1)),np.ones(2)),

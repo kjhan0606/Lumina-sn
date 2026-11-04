@@ -100,7 +100,7 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
                     fine=np.zeros(len(points),dtype=np.longdouble),count=0) for key in set(line_ions)}
     if replay_heat is not None:
         for entry in totals.values():entry['replay']=np.zeros(len(points),dtype=np.longdouble)
-    heaps=[[] for _ in points];seen=set()
+    heaps=[[] for _ in points];seen=set();remaining_heaps={}
     for header,values in vectors(path,nd,netrate_header):
         z,stage,_=parse_cmfgen_ion_id(header.transition.split('(',1)[0])
         key=(z,stage,header.lower_full,header.upper_full)
@@ -122,6 +122,21 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
                 quantum[nonzero]=.5*10.**(np.floor(np.log10(abs(znet[nonzero])))-6)
                 bound=upper[i]*a[i]*quantum
                 block_rounding[lc]+=bound;block_rounding[uc]+=bound
+                residual_flow=upper[i]*a[i]*znet-replay_flow[i]
+                for d,value in enumerate(residual_flow):
+                    heap=remaining_heaps.setdefault((z,stage,d),[])
+                    if len(heap)>=keep and (float(abs(value)),header.line_id)<=heap[0][:2]:continue
+                    item=(float(abs(value)),header.line_id,dict(line_id=header.line_id,
+                        transition=header.transition,lower_full=header.lower_full,
+                        upper_full=header.upper_full,lower_SL=int(columns[lc,2])+1,
+                        upper_SL=int(columns[uc,2])+1,wavelength_A=float(B.C/nu[i]*1.e8),
+                        native_downward_flow=float(upper[i,d]*a[i]*znet[d]),
+                        replay_downward_flow=float(replay_flow[i,d]),
+                        native_minus_replay_flow=float(value),native_print_flow_bound=float(bound[d]),
+                        native_ZNET=float(znet[d]),replay_Jbar=float(rj[i,d]),
+                        replay_profile_mass=float(rm[i])))
+                    if len(heap)<keep:heapq.heappush(heap,item)
+                    elif item[:2]>heap[0][:2]:heapq.heapreplace(heap,item)
         for d,value in enumerate(delta):
             heap=heaps[d]
             if len(heap)>=keep and (float(abs(value)),header.line_id)<=heap[0][:2]:continue
@@ -160,7 +175,10 @@ def rank_native_bb_heat(path,lines,jbar,mass,pop,fraction,columns,rows,group,exc
             block_report[f'Z{z}_stage{stage}']=dict(
                 units='cm^-3 s^-1',max_number_conservation_relative=float(conservation.max()),
                 depths=[dict(depth=int(p)+1,before_L1=float(before[d]),after_L1=float(after[d]),
-                             native_print_L1_bound=float(block_rounding[ids,d].sum())) for d,p in enumerate(points)])
+                             native_print_L1_bound=float(block_rounding[ids,d].sum()),
+                             top_remaining_lines=[item[2] for item in
+                                 sorted(remaining_heaps.get((z,stage,d),[]),reverse=True)])
+                        for d,p in enumerate(points)])
         result['same_grid_SiS_BB_blocks']=block_report
     return result
 
