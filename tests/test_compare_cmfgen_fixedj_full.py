@@ -91,6 +91,7 @@ def test_native_heat_row_converts_cmfgen_internal_units_and_preserves_residual_s
     assert result['stored_policy_candidate']['points'][0]['difference']==pytest.approx(0.,abs=1.e-14)
     assert len(result['stored_policy_candidate']['points'])==3
     assert result['interpretation'].startswith('No pass threshold')
+    assert result['primary_policy'] is None
 
     mismatched=compare_module.compare_heat_row(
         dict(steq_t_native=np.array([1.,0.,0.])/factor,frequencies=1115020),
@@ -100,6 +101,60 @@ def test_native_heat_row_converts_cmfgen_internal_units_and_preserves_residual_s
     assert mismatched['stored_policy_candidate']['max_gross_scaled_absolute_difference']==pytest.approx(0.5)
     with pytest.raises(ValueError,match='봉인 해시'):
         compare_module.compare_heat_row(heat,balance,'0'*64)
+
+
+def test_heat_source_policy_uses_actual_deposition_not_smaller_residual(tmp_path):
+    balance=tmp_path/'balance.npz';stored=np.array([2.,-1.,0.])
+    deposition=np.array([.5,2.,0.])
+    np.savez(balance,native_stored_net=stored,native_stored_gross=[4.,2.,0.],
+        native_instantaneous_scenario_net=stored+deposition,
+        native_instantaneous_scenario_gross=[5.,3.,0.],instantaneous_scenario=deposition,
+        stored_decay=np.zeros(3))
+    native=dict(steq_t_native=stored/compare_module.CMFGEN_RE_INTERNAL_TO_CGS,
+                frequencies=123,radius_native=np.array([3.,2.,1.]),
+                temperature_native=np.array([1.,1.,1.]),ne=np.array([4.,5.,6.]))
+    path=tmp_path/'GENCOOL'
+    (tmp_path/'VADAT').write_text('F [TRT_NON_TE]\n')
+    path.write_text('''Depth
+1 2 3
+Radius [1.0E+10cm]
+3 2 1
+
+Temperature [1.0E+4K]
+1 1 1
+
+Electron Density
+4 5 6
+
+Radiative decay heating term [ergs/cm**3/sec]
+0.5 2 0
+''')
+    result=compare_module.compare_heat_row(native,balance,compare_module.sha(balance),native_gencool=path)
+    assert result['stored_policy_candidate']['max_absolute_difference']==pytest.approx(0.)
+    assert result['primary_policy']=='instantaneous_scenario'
+    assert result['primary_comparison']['max_absolute_difference']==pytest.approx(2.)
+    assert result['native_source_evidence']['sha256']==compare_module.sha(path)
+    (tmp_path/'VADAT').write_text('T [TRT_NON_TE]\n')
+    assert compare_module.compare_heat_row(native,balance,compare_module.sha(balance),
+        native_gencool=path)['primary_policy'] is None
+    (tmp_path/'VADAT').write_text('F [TRT_NON_TE]\n')
+    path.write_text(path.read_text().replace('0.5 2 0','1 3 1'))
+    unknown=compare_module.compare_heat_row(native,balance,compare_module.sha(balance),native_gencool=path)
+    assert unknown['primary_policy'] is None
+    path.write_text(path.read_text().replace('3 2 1','4 2 1'))
+    with pytest.raises(ValueError,match='상태 불일치'):
+        compare_module.compare_heat_row(native,balance,compare_module.sha(balance),native_gencool=path)
+
+
+def test_nonzero_stored_decay_is_replaced_not_added_twice(tmp_path):
+    path=tmp_path/'balance.npz';stored=np.array([5.,6.]);old=np.array([1.,2.]);new=np.array([3.,4.])
+    scenario=stored-old+new
+    np.savez(path,native_stored_net=stored,native_stored_gross=[8.,9.],
+        native_instantaneous_scenario_net=scenario,native_instantaneous_scenario_gross=[10.,11.],
+        stored_decay=old,instantaneous_scenario=new)
+    result=compare_module.compare_heat_row(dict(steq_t_native=scenario/compare_module.CMFGEN_RE_INTERNAL_TO_CGS,
+        frequencies=123),path,compare_module.sha(path))
+    assert result['instantaneous_scenario']['max_absolute_difference']==pytest.approx(0.)
 
 
 def test_run_identity_rejects_field_artifact_not_matching_sealed_manifest(tmp_path):

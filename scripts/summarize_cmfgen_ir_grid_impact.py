@@ -240,7 +240,9 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
         if (not np.array_equal(row['pops'],state['pops']) or
             not np.array_equal(row['radius_native'],state['radius'])):
             raise ValueError('포획 열행과 입력 state 불일치')
-        heat_comparison=compare_heat_row(row,evaluation/'balance.npz',selected['balance_sha256'])
+        gencool=native_heat.parent/'GENCOOL'
+        heat_comparison=compare_heat_row(row,evaluation/'balance.npz',selected['balance_sha256'],
+                                         native_gencool=bind(gencool,sha(gencool)) if gencool.is_file() else None)
     native_flows = None
     if netrate is not None:
         if expected_netrate_sha256 is None:

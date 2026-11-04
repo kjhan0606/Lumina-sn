@@ -21,6 +21,7 @@ import numpy as np
 import cmfgen_model_sources as S
 from extract_cmfgen_line_net_fixture import CMFGEN_RE_INTERNAL_TO_CGS
 from prepare_cmfgen_fixedj_heat import read_heat_row
+from compare_cmfgen_fixedj_full import compare_heat_row
 
 
 def sha(path):
@@ -388,6 +389,8 @@ def run(input_root, phot_library, kernel_library, out):
     lumina_native_same_field = native_same_components['total_no_coherent_ES']
     lumina_native_cmfgen_j = native_cmfgen_components['total_no_coherent_ES']
     native_heat = heat_row['steq_t_native'] * CMFGEN_RE_INTERNAL_TO_CGS
+    source_matched_heat=compare_heat_row(heat_row,balance_path,balance_sha,
+                                       native_gencool=native/'GENCOOL')
     with np.load(balance_path, allow_pickle=False) as balance:
         old_lumina = np.asarray(balance['native_stored_net'], dtype=np.float64)
         native_terms = native_stored_ledger_terms(balance)
@@ -459,8 +462,9 @@ def run(input_root, phot_library, kernel_library, out):
             native_line_scaling_ratio_limit=controls['SCL_LN_FAC'],
             scaling_scope='native RE line heating/cooling ledger; do not scale transport chi/eta',
             accepted_balance='native_stored_net includes the native SCL_LN line-energy factor',
-            comparison_to_native_STEQ_T=('compare native_stored_net without the separate instantaneous-scenario term; '
-                'captured CMFGEN STEQ_T routes explicit decay separately')),
+            comparison_to_native_STEQ_T=('EVAL_RAD_DECAY_V1 adds deposition to RE and EHB; '
+                'select by actual GENCOOL deposition, not which residual is smaller'),
+            source_matched_heat_comparison=source_matched_heat),
         bound_bound_comparison_note=('Raw Lumina local BB coefficients omit CMFGEN SCL_LN and are not native thermal parity. '
             'The separately reported native_stored_net includes SCL_LN, but still is not termwise LINEHEAT parity.'),
         native_stored_ledger_decomposition=dict(

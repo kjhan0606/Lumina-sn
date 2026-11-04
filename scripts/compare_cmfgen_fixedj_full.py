@@ -8,6 +8,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 import struct
 
@@ -214,7 +215,7 @@ def error_metrics(left,right):
         worst_left=float(left[row,point]),worst_right=float(right[row,point]))
 
 
-def compare_heat_row(native_row,balance_path,expected_balance_sha256):
+def compare_heat_row(native_row,balance_path,expected_balance_sha256,*,native_gencool=None):
     """Compare the captured native RE row against both Lumina source policies.
 
     This is a raw, same-state diagnostic. The native and Lumina frequency
@@ -254,13 +255,42 @@ def compare_heat_row(native_row,balance_path,expected_balance_sha256):
     # to the accumulated STEQ_T row.
     native_heat_positive=native_steq_t_cgs
 
-    recomposed_scenario=stored+instantaneous
+    recomposed_scenario=stored-stored_decay+instantaneous
     recomposition_error=np.abs(scenario-recomposed_scenario)
     recomposition_scale=np.maximum.reduce((np.abs(scenario),np.abs(stored),np.abs(instantaneous),
                                            np.full_like(scenario,1.0e-300)))
     recomposition_tolerance=64.0*np.finfo(np.float64).eps*recomposition_scale
     if np.any(recomposition_error>recomposition_tolerance):
-        raise ValueError('Lumina 순간 시나리오 net이 저장 net+즉시 열원 항으로 재현되지 않음')
+        raise ValueError('Lumina 순간 시나리오 net이 저장 net-저장 붕괴열+즉시 열원으로 재현되지 않음')
+
+    source_evidence=None
+    matching=[]
+    thermal_decay_branch=False
+    if native_gencool is not None:
+        from lumina_native_heat_sources import cooling_vector
+        path=Path(native_gencool);digest=sha(path);text=path.read_text();nd=len(stored)
+        for title,key in [('Radius [1.0E+10cm]','radius_native'),
+                          ('Temperature [1.0E+4K]','temperature_native'),
+                          ('Electron Density','ne')]:
+            actual=cooling_vector(text,title,nd)
+            if not np.allclose(actual,native_row[key],rtol=5.1e-5,atol=0):
+                raise ValueError('GENCOOL 원90점 상태 불일치: '+title)
+        # WR_COOLING_TERM은 전 깊이 합이0인 비음수 붕괴열 벡터를 생략한다.
+        deposition=cooling_vector(text,'Radiative decay heating term [ergs/cm**3/sec]',nd,
+                                   omitted_sum_zero=True)
+        if np.any(deposition<0):raise ValueError('GENCOOL 붕괴 가열 음수')
+        for name,values in [('stored_policy_candidate',stored_decay),
+                            ('instantaneous_scenario',instantaneous)]:
+            if np.allclose(deposition,values,rtol=5.1e-5,atol=0):matching.append(name)
+        control=path.parent/'VADAT'
+        flags=re.findall(r'^\s*([TF])\s+\[TRT_NON_TE\]',control.read_text(),re.M) if control.is_file() else []
+        thermal_decay_branch=flags==['F']
+        if sha(path)!=digest:raise ValueError('GENCOOL 판독 중 변경')
+        source_evidence=dict(name=path.name,sha256=digest,native_decay_cgs=deposition.tolist(),
+            matching_policy_names=matching,
+            active_control_sha256=sha(control) if control.is_file() else None,
+            thermal_decay_branch_confirmed=thermal_decay_branch,
+            selection_basis='EVAL_RAD_DECAY_V1의 RE 가열과 같은-state GENCOOL 실측 침적열; 총열 잔차 크기로 고르지 않음')
 
     def metrics(lumina,gross):
         delta=native_heat_positive-lumina
@@ -288,6 +318,13 @@ def compare_heat_row(native_row,balance_path,expected_balance_sha256):
             p95_gross_scaled_absolute_difference=float(np.quantile(gross_scaled,0.95)),
             worst_net_relative_point_1based=worst+1,points=points)
 
+    comparisons=dict(
+        stored_policy_candidate=dict(policy='native_stored_net; stored deposition, legacy key is not acceptance',
+                                     **metrics(stored,stored_gross)),
+        instantaneous_scenario=dict(policy='native_instantaneous_scenario_net; instantaneous deposition replaces stored decay',
+                                    **metrics(scenario,scenario_gross)))
+    # 실측 열원이 같으면 두 정책은 동등하다. 자료가 없거나 어느 쪽도 안 맞으면 선택하지 않는다.
+    primary=matching[0] if matching and thermal_decay_branch else None
     return dict(scope='same-state cgs-converted native STEQ_T compared separately with Lumina stored and instantaneous-source policies; diagnostic only',
         native_steq_t_sign_convention='positive=net heating, negative=net cooling',
         native_steq_t_raw_units='CMFGEN radiative-equilibrium internal units',
@@ -297,19 +334,17 @@ def compare_heat_row(native_row,balance_path,expected_balance_sha256):
         native_frequency_count=int(native_row['frequencies']),
         lumina_balance_sha256=expected,
         source_policy=dict(
-            cmfgen_explicit_decay='captured STEQ_T does not add dE_RAD_DECAY; this source path writes it to STEQ_T_EHB',
+            cmfgen_explicit_decay='EVAL_RAD_DECAY_V1 thermal branch adds RADIOACTIVE_DECAY_ENERGY to both STEQ_T (scaled) and STEQ_T_EHB; inspect callee, not only caller assignments',
             lumina_base='native_stored_net excludes the separately represented instantaneous_scenario term',
-            lumina_instantaneous='native_instantaneous_scenario_net = native_stored_net + instantaneous_scenario',
+            lumina_instantaneous='native_instantaneous_scenario_net = native_stored_net - stored_decay + instantaneous_scenario',
             instantaneous_recomposition_max_absolute=float(np.max(recomposition_error)),
             stored_decay_max_absolute=float(np.max(np.abs(stored_decay)))),
-        stored_policy_candidate=dict(policy='native_stored_net; no added instantaneous_scenario term',
-                                     **metrics(stored,stored_gross)),
-        instantaneous_scenario=dict(policy='native_instantaneous_scenario_net; includes instantaneous_scenario',
-                                    **metrics(scenario,scenario_gross)),
-        interpretation=('No pass threshold. The stored-policy comparison is the closer source-policy candidate '
-                        'for this captured STEQ_T; it is not exact parity because native/Lumina quadratures '
-                        'and remaining source/atomic details may differ. Gross-scaled values measure the '
-                        'difference against large cancellation channels and must not be read as net heat agreement.'))
+        native_source_evidence=source_evidence,primary_policy=primary,
+        primary_comparison=comparisons[primary] if primary else None,
+        **comparisons,
+        interpretation=('No pass threshold. 실제 native 침적열과 같은 정책만 우선 비교한다. '
+                        'GENCOOL 근거가 없거나 열원이 안 맞으면 정책을 선택하지 않는다. '
+                        '더 작은 총열 잔차는 정책 선택 근거가 아니며 gross 정규화도 순열 일치가 아니다.'))
 
 
 def read_index(path,nfull):
@@ -363,7 +398,8 @@ def compare(args):
     if sha(args.response)!=expected_response:
         raise ValueError('수용 Lumina response가 봉인된 선택 응답과 불일치')
     native_heat_comparison=compare_heat_row(
-        heat,args.lumina_balance,args.expected_lumina_balance_sha256)
+        heat,args.lumina_balance,args.expected_lumina_balance_sha256,
+        native_gencool=root/'GENCOOL' if (root/'GENCOOL').is_file() else None)
     field_layout=run_identity['fixed_J_field_layout']
     native_heat_comparison['frequency_quadrature']=dict(
         lumina_field_frequency_count=field_layout.get('frequencies'),
