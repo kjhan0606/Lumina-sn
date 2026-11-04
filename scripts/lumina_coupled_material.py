@@ -177,7 +177,10 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 np.all(residual(base,adiabatic,np.ones_like(c),np.ones_like(h))==0.)):
             root_direction_max=0.
             return result(base,True)
-        if max_evaluations-used<(1 if secant_matrix is not None else 5):break
+        # 근 확인에는 centered 네 응답만 필요하다. 후보 한 회의 여유가
+        # 없더라도 남은 네 평가로 종료 여부를 판단할 수 있다.
+        centered_cost=4 if root_log_step_tolerance is not None else 5
+        if max_evaluations-used<(1 if secant_matrix is not None else centered_cost):break
         t=base.temperature;ne=base.ne
         using_secant=secant_matrix is not None
         if using_secant:
@@ -189,7 +192,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
         try:
             direction=newton_direction(j,f)
         except np.linalg.LinAlgError:
-            if using_secant and max_evaluations-used>=5:
+            if using_secant and max_evaluations-used>=centered_cost:
                 secant_matrix=None
                 continue
             raise
@@ -255,7 +258,7 @@ def solve_coupled(evaluate,base,adiabatic,*,step=1.e-4,numerical_tolerance=1.e-1
                 base=candidate;root_direction_max=None;iterations+=1;break
             alpha*=.5
         if not accepted:
-            if using_secant and max_evaluations-used>=5:
+            if using_secant and max_evaluations-used>=centered_cost:
                 secant_matrix=None
                 continue
             break

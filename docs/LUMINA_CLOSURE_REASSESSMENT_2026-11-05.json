@@ -96,5 +96,20 @@
     "새 외부 반복의 수렴률 또는 수렴 소요시간"
   ],
   "next_priority": "진행 중 승인 단회는 보존한다. 다음 해법 변경은 기존 물리 수용문턱과 별개로 실제 온도근 탐색을 정상 물질응답에 연결하고, 같은 물질-J의 반복을 닫는 목적에 집중한다. 새 실물 실행·자원 확대·CMFGEN 기준해 계산을 이 판독으로 자동 승인하지 않는다.",
+  "successor_four_probe_control_replay": {
+    "implementation_scope": "e0941bab 이후 근 확인 예산 및 callback/물질선택 연결 보완",
+    "input": "위 stored_centered_direction의 같은 원 기점과 SHA 확인한 네 보존 응답",
+    "maximum_evaluations": 4,
+    "stored_probes_replayed": 4,
+    "new_physical_evaluations": 0,
+    "physical_tolerances_satisfied": true,
+    "numerical_converged": false,
+    "fixed_field_root_converged": false,
+    "root_fresh_direction_max": 1.7372918235098447,
+    "accepted_iterations": 0,
+    "selected_packet_is_original_base": true,
+    "related_tests_passed": 206,
+    "scope_limit": "새 BF/SE/물질 후보/수송/CMFGEN 실행이나 실제 근 수렴 증거가 아니다. 위 원 판독은 원 코드 시점 기록으로 보존한다."
+  },
   "final_goal": "NOT_MET"
 }

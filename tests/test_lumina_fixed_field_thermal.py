@@ -81,6 +81,28 @@ def test_normal_response_root_option_survives_callback_adapter():
     np.testing.assert_allclose(result['selected'][0]['temperature'],[2.,3.],rtol=1.e-8)
 
 
+def test_four_probe_root_confirmation_exports_base_not_last_perturbation():
+    from prepare_lumina_accepted_material import thermal_selection
+    first=case(np.array([2.,3.])*np.exp(.0005),np.array([5.,7.]));order=[]
+    first[2]['fixed_field_thermal_callback']=True
+    def evaluate(t,ne):
+        value=case(t,ne,len(order)+1)
+        value[2]['fixed_field_thermal_callback']=True
+        order.append(value[2]);return value
+    result=T.solve(evaluate,first,adiabatic,policy='physical_stored',max_evaluations=4,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3,root_log_step_tolerance=1.e-3)
+    assert result['fixed_field_root_converged'] and result['accepted_iterations']==0
+    assert result['evaluations_used']==len(order)==4 and result['selected'] is first
+    report=dict(temperature_block=result,thermal_evaluation_order=order,
+        thermal_initial_response=first[2],selected_response=result['selected'][2])
+    index,selected,kind=thermal_selection(report)
+    assert index==0 and selected is first[2]
+    assert kind=='FINITE_NEW_FIELD_TNE_CONVERGED_BASE'
+    report['selected_response']=order[-1]
+    with pytest.raises(ValueError,match='선택 결과'):
+        thermal_selection(report)
+
+
 def test_direction_only_resolves_temperature_sensitivity_inside_gross_tolerance():
     first=case(np.array([2.,3.])*1.2,[5.,7.]); saved=first[0]['temperature'].copy()
     first[1]['physical_stored_gross'][:]=1.e12
