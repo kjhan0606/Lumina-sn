@@ -10,7 +10,8 @@ import numpy as np
 
 import cmfgen_model_continuum as B
 import cmfgen_model_sources as S
-from compare_cmfgen_fixedj_full import sha, read_matrix
+from compare_cmfgen_fixedj_full import sha, read_matrix, read_state, compare_heat_row
+from prepare_cmfgen_fixedj_heat import read_heat_row
 from expand_atomic_data_cmfgen import load_cmfgen_model_spec
 from lumina_model_energy import ModelThermalEnergy
 from cmfgen_ion_identity import parse_cmfgen_ion_id
@@ -25,7 +26,7 @@ def add_bb_flow(target, lower, upper, downward):
 
 
 def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, rows, group, excluded,
-                            full_population=None):
+                            full_population=None, vector_sink=None):
     targets = {(14, 2), (14, 3), (16, 2), (16, 3)}
     z = np.array([int(r['atomic_number']) for r in rows])
     stage = np.array([int(r['ion_number'])+1 for r in rows])
@@ -96,6 +97,9 @@ def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, row
         relative = np.divide(l1, gross_sum, out=np.zeros_like(l1), where=gross_sum>0)
         worst = np.unravel_index(np.argmax(abs(delta)), delta.shape)
         conserved = np.abs(delta.sum(axis=0))
+        if vector_sink is not None:
+            vector_sink[atomic,ion]=dict(columns=columns[ids].copy(),native=native[ids].copy(),
+                                        gross=gross_sum.copy())
         result[f'Z{atomic}_stage{ion}'] = dict(
             matched_lines=sum(k[:2] == (atomic, ion) for k in keys),
             delta_over_BB_gross_median=float(np.median(relative)),
@@ -115,7 +119,8 @@ def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, row
 
 
 def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=None,
-              native_comparison=None):
+              native_comparison=None, native_heat=None, expected_native_heat_sha256=None,
+              native_vector_sink=None):
     record = json.loads((response_root / 'result.json').read_text())
     source_record = json.loads((sources / 'sources.json').read_text())
     if record['BB_contract'] != 'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1':
@@ -209,6 +214,20 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
     error = float(np.max(np.abs(total - stored)))
     if not np.allclose(total, stored, rtol=1.e-11, atol=1.e-13):
         raise ValueError('전체 BB 합이 보존 열장부를 재현하지 못함')
+    heat_comparison=None
+    if native_heat is not None:
+        if expected_native_heat_sha256 is None or native_comparison is None:
+            raise ValueError('native 열행과 same-state 비교 신원이 필요함')
+        heat_evidence=json.loads(native_comparison.read_text())['input_sha256']
+        if heat_evidence['accepted_Lumina_response']['sha256']!=selected['response_sha256']:
+            raise ValueError('native 열행의 선택 응답 신원이 다름')
+        row=read_heat_row(bind(native_heat,expected_native_heat_sha256))
+        state=read_state(bind(native_heat.parent/'NATIVE_HEAT_INPUT.bin',
+                              heat_evidence['expected_state']['sha256']))
+        if (not np.array_equal(row['pops'],state['pops']) or
+            not np.array_equal(row['radius_native'],state['radius'])):
+            raise ValueError('포획 열행과 입력 state 불일치')
+        heat_comparison=compare_heat_row(row,evaluation/'balance.npz',selected['balance_sha256'])
     native_flows = None
     if netrate is not None:
         if expected_netrate_sha256 is None:
@@ -240,7 +259,7 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
             aligned[target] = native_full[i]
             mapped.add(target)
         native_flows = compare_native_bb_flows(netrate, lines, jbar, mass, pop, fraction,
-                                              columns, rows, group, excluded, aligned)
+                                              columns, rows, group, excluded, aligned,native_vector_sink)
     for path, digest in expected.items():
         if sha(path) != digest:
             raise ValueError(path.name + ' 분석 중 변경')
@@ -260,6 +279,97 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
             frozen_state_new_heat_residual=float(old_net[i]+delta[i])) for i in (0,35,51,84,85,88,89)],
         input_sha256=[dict(name=path.name, sha256=digest) for path,digest in expected.items()],
         native_BB_flow_comparison=native_flows,
+        native_heat_comparison=heat_comparison,
+        final_goal='NOT_MET')
+
+
+def pairwise_native_blocks(left,right):
+    if set(left)!=set(right) or set(left)!={(14,2),(14,3),(16,2),(16,3)}:
+        raise ValueError('native BB 블록 이온 누락')
+    report={}
+    for key in sorted(left):
+        a,b=left[key],right[key]
+        if not np.array_equal(a['columns'],b['columns']) or a['native'].shape!=b['native'].shape:
+            raise ValueError('격자 사이 BB 블록 주소 불일치')
+        l1=np.sum(abs(a['native']-b['native']),axis=0)
+        scale=np.asarray(a['gross'])
+        relative=np.divide(l1,scale,out=np.zeros_like(l1),where=scale>0)
+        report[f'Z{key[0]}_stage{key[1]}']=dict(max_L1=float(l1.max()),
+            max_L1_depth=int(np.argmax(l1))+1,max_over_fine_BB_gross=float(relative.max()),
+            depths=[dict(depth=i+1,L1=float(l1[i])) for i in (0,35,51,84,89)])
+    return report
+
+
+def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
+                        baseline_netrate_sha256,analyzer=None):
+    """완료된 두 포획만 h=1과 대조한다. 미완료 파일을 분석하거나 계산을 재제출하지 않는다."""
+    if analyzer is None:analyzer=summarize
+    if native_comparison is None:raise ValueError('기준 same-state 비교가 필요함')
+    plan_path=bundle_root/'bundle-inputs.json'
+    plan_digest=sha(plan_path);comparison_digest=sha(native_comparison)
+    plan=json.loads(plan_path.read_text())
+    if [(a['root'],a['frac_dop']) for a in plan['attempts']]!=[('h05',.5),('h025',.25)]:
+        raise ValueError('알려진 격자 묶음 순서와 다름')
+    evidence=json.loads(native_comparison.read_text())
+    runtime_by_root={}
+    for attempt in plan['attempts']:
+        path=bundle_root/attempt['root']/'native/seq_logs/fixedj-heat-runtime.json'
+        if not path.is_file():
+            return dict(status='WAITING_FOR_BOTH_CAPTURES',missing=attempt['root'],final_goal='NOT_MET')
+        try:
+            runtime=json.loads(path.read_text())
+        except json.JSONDecodeError:
+            return dict(status='WAITING_FOR_RUNTIME_PUBLICATION',capture=attempt['root'],final_goal='NOT_MET')
+        if runtime.get('status')!='CAPTURED':
+            return dict(status='CAPTURE_NOT_COMPLETE',capture=attempt['root'],
+                        capture_status=runtime.get('status'),final_goal='NOT_MET')
+        if (runtime.get('srun_exit_code')!=96 or runtime.get('captured_state_exact') is not True or
+            runtime.get('fixed_j_sha256')!=evidence['fixed_J_source_sha256'] or
+            runtime.get('accepted_response_sha256')!=evidence['input_sha256']['accepted_Lumina_response']['sha256'] or
+            runtime.get('build_sha256')!=evidence['input_sha256']['native_executable']['sha256']):
+            raise ValueError('세분화 포획이 기준 same-state/J/실행파일과 다름')
+        root=bundle_root/attempt['root']
+        for name in ('VADAT','MODEL_SPEC','NATIVE_HEAT_INPUT.bin','EDDFACTOR','EDDFACTOR_INFO'):
+            if sha(root/'native'/name)!=attempt['input_sha256'][name]:
+                raise ValueError('세분화 포획의 초기 입력 변경: '+name)
+        for name in ('NETRATE','NATIVE_HEAT_ROW.bin'):
+            item=runtime['outputs'][name]
+            if sha(root/'native'/name)!=item['sha256']:
+                raise ValueError('세분화 포획 출력 변경: '+name)
+        runtime_by_root[attempt['root']]=runtime
+    baseline=Path(plan['baseline'])/'native'
+    baseline_heat=evidence['input_sha256']['native_heat_row']['sha256']
+    if not baseline_netrate_sha256 or sha(baseline/'NETRATE')!=baseline_netrate_sha256:
+        raise ValueError('기준 NETRATE 봉인 hash 불일치')
+    blocks=[{}]
+    cases=[dict(frac_dop=1.,report=analyzer(sources,response_root,
+        netrate=baseline/'NETRATE',expected_netrate_sha256=baseline_netrate_sha256,
+        native_comparison=native_comparison,native_heat=baseline/'NATIVE_HEAT_ROW.bin',
+        expected_native_heat_sha256=baseline_heat,native_vector_sink=blocks[0]))]
+    for attempt in plan['attempts']:
+        root=bundle_root/attempt['root']/'native';outputs=runtime_by_root[attempt['root']]['outputs']
+        blocks.append({})
+        cases.append(dict(frac_dop=attempt['frac_dop'],report=analyzer(sources,response_root,
+            netrate=root/'NETRATE',expected_netrate_sha256=outputs['NETRATE']['sha256'],
+            native_comparison=native_comparison,native_heat=root/'NATIVE_HEAT_ROW.bin',
+            expected_native_heat_sha256=outputs['NATIVE_HEAT_ROW.bin']['sha256'],native_vector_sink=blocks[-1])))
+    differences=[]
+    for i in (0,1):
+        heat=[]
+        for case in cases[i:i+2]:
+            points=case['report']['native_heat_comparison']['stored_policy_candidate']['points']
+            heat.append(np.array([p['native_steq_t_cgs'] for p in points]))
+        change=heat[1]-heat[0]
+        differences.append(dict(from_frac_dop=cases[i]['frac_dop'],to_frac_dop=cases[i+1]['frac_dop'],
+            native_heat_max_abs_change=float(np.max(abs(change))),
+            native_heat_RMS_change=float(np.sqrt(np.mean(change*change))),
+            native_BB_blocks=pairwise_native_blocks(blocks[i],blocks[i+1])))
+    if sha(plan_path)!=plan_digest or sha(native_comparison)!=comparison_digest:
+        raise ValueError('격자 비교 중 입력 계획/기준 비교 변경')
+    return dict(status='SAME_STATE_GRID_COMPARISON',cases=cases,
+        bundle_inputs_sha256=plan_digest,baseline_comparison_sha256=comparison_digest,
+        successive_grid_differences=differences,
+        interpretation='열/BB 블록의 실제 격자 의존성만 비교; 단조 감소를 격자 수렴이나 이온화·스펙트럼 동질성으로 승격하지 않음',
         final_goal='NOT_MET')
 
 
@@ -270,7 +380,18 @@ if __name__ == '__main__':
     parser.add_argument('--netrate', type=Path)
     parser.add_argument('--expected-netrate-sha256')
     parser.add_argument('--native-comparison', type=Path)
+    parser.add_argument('--bundle-root', type=Path)
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    print(json.dumps(summarize(args.sources, args.response_root,netrate=args.netrate,
+    report=(compare_grid_bundle(args.sources,args.response_root,args.bundle_root,args.native_comparison,
+                               baseline_netrate_sha256=args.expected_netrate_sha256)
+        if args.bundle_root else summarize(args.sources, args.response_root,netrate=args.netrate,
         expected_netrate_sha256=args.expected_netrate_sha256,
-        native_comparison=args.native_comparison), ensure_ascii=False, indent=2))
+        native_comparison=args.native_comparison))
+    if args.output:
+        if args.bundle_root and report['status']!='SAME_STATE_GRID_COMPARISON':
+            raise SystemExit('두 포획 미완료: 결과 파일을 저장하지 않음')
+        with args.output.open('x') as stream:
+            json.dump(report,stream,ensure_ascii=False,indent=2)
+            stream.write('\n')
+    print(json.dumps(report,ensure_ascii=False,indent=2))

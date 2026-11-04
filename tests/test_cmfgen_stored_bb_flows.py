@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from summarize_cmfgen_ir_grid_impact import add_bb_flow, compare_native_bb_flows
+from summarize_cmfgen_ir_grid_impact import add_bb_flow, compare_native_bb_flows, pairwise_native_blocks
 
 
 def test_bound_bound_flow_conserves_number_and_internal_sl_is_zero():
@@ -32,8 +32,9 @@ def test_native_znet_comparison_uses_species_and_full_level_keys(tmp_path):
     pop=np.tile(np.array([10.,2.]*4)[:,None],(1,90))
     lines=dict(lower=np.array([0,2,4,6]),upper=np.array([1,3,5,7]),
                nu0=np.full(4,1.e15),A=np.full(4,3.),g_ratio=np.ones(4))
+    sink={}
     report=compare_native_bb_flows(path,lines,np.zeros((4,90)),np.ones(4),pop,
-        np.ones((8,90)),np.array(columns),rows,np.arange(8),np.zeros(4,dtype=bool))
+        np.ones((8,90)),np.array(columns),rows,np.arange(8),np.zeros(4,dtype=bool),vector_sink=sink)
     assert report['matched_lines']==4
     for ion in report['by_ion'].values():
         assert ion['matched_lines']==1
@@ -41,9 +42,11 @@ def test_native_znet_comparison_uses_species_and_full_level_keys(tmp_path):
         assert ion['delta_over_BB_gross_median']==pytest.approx(.5)
         assert ion['number_conservation_relative']==0.
         assert ion['depths'][0]['native_print_L1_bound']==pytest.approx(6.e-7)
+    twice={}
     native=compare_native_bb_flows(path,lines,np.zeros((4,90)),np.ones(4),pop,
-        np.ones((8,90)),np.array(columns),rows,np.arange(8),np.zeros(4,dtype=bool),2*pop)
+        np.ones((8,90)),np.array(columns),rows,np.arange(8),np.zeros(4,dtype=bool),2*pop,twice)
     assert native['population']=='native full snapshot'
     for ion in native['by_ion'].values():
         assert ion['max_absolute_row_delta']==pytest.approx(6.)
         assert ion['delta_over_BB_gross_median']==pytest.approx(.5)
+    assert pairwise_native_blocks(sink,twice)['Z14_stage2']['max_L1']==pytest.approx(6.)
