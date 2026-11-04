@@ -2,7 +2,9 @@
 import json
 from pathlib import Path
 import sys
+import struct
 from types import SimpleNamespace
+import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
@@ -212,3 +214,53 @@ def test_staging_rejects_changed_reference_before_any_capture(staged_replacement
     path.write_text(json.dumps(r))
     with pytest.raises(ValueError):B.stage(baseline,out,replacement_build=new,bridge_reference=ref)
     assert not (out/'bundle-runtime.json').exists()
+
+
+def heat_bytes(heat,*,radius=3.,counter=70):
+    vectors=np.array([[radius,1.],[30.,10.],[0.,0.],[1.,2.],[5.,7.],
+                      [2.,3.],[1.,1.],heat,[1e-16,-2e-16]],dtype='<f8')
+    pops=np.array([[2.,2.],[3.,3.],[5.,7.],[1.,2.]],dtype='<f8')
+    return (b'NATIVEHEATROWV1 '+struct.pack('<8i',1,64,4,2,11,counter,9,7)+
+            vectors.tobytes()+pops.tobytes(order='F'))
+
+
+@pytest.fixture
+def numeric_bridge(tmp_path):
+    old=tmp_path/'old';new=tmp_path/'new'
+    for root in (old,new):
+        (root/'native').mkdir(parents=True)
+        for name in B.capture.OUTPUT_NAMES:
+            (root/'native'/name).write_bytes(heat_bytes([-3.,4.]) if name=='NATIVE_HEAT_ROW.bin'
+                                            else b'exact line rates')
+    reference=dict(root=str(old),output_sha256={n:B.capture.sha(old/'native'/n)
+                                               for n in B.capture.OUTPUT_NAMES})
+    return old,new,reference
+
+
+@pytest.mark.parametrize('steps',[0,1,2])
+@pytest.mark.parametrize('point',[0,1])
+def test_binary_heat_roundoff_is_not_a_physical_difference(numeric_bridge,steps,point):
+    _,new,reference=numeric_bridge;heat=np.array([-3.,4.])
+    for _ in range(steps):heat[point]=np.nextafter(heat[point],np.inf)
+    (new/'native/NATIVE_HEAT_ROW.bin').write_bytes(heat_bytes(heat))
+    r=B.compare_bridge(new,reference)
+    assert r['final_goal']=='NOT_MET'
+    if steps:
+        assert r['status']=='PHYSICAL_OUTPUT_REPRODUCTION_WITH_THERMAL_ROUNDOFF'
+        assert r['thermal_roundoff']['max_ulp']==steps
+        assert r['thermal_roundoff']['changed_depths_1based']==[point+1]
+    else:assert r['status']=='EXACT_PHYSICAL_OUTPUT_REPRODUCTION'
+
+
+@pytest.mark.parametrize('fault',['three_ulp','sign','state','header','rates','reference'])
+def test_heat_roundoff_rule_does_not_mask_other_changes(numeric_bridge,fault):
+    old,new,reference=numeric_bridge;heat=np.array([-3.,4.]);kw={}
+    for _ in range(2):heat[0]=np.nextafter(heat[0],np.inf)
+    if fault=='three_ulp':heat[0]=np.nextafter(heat[0],np.inf)
+    if fault=='sign':heat[0]=3.
+    if fault=='state':kw['radius']=np.nextafter(3.,np.inf)
+    if fault=='header':kw['counter']=71
+    if fault=='rates':(new/'native/NETRATE').write_text('changed')
+    if fault=='reference':(old/'native/NATIVE_HEAT_ROW.bin').write_bytes(heat_bytes([-3.,5.]))
+    (new/'native/NATIVE_HEAT_ROW.bin').write_bytes(heat_bytes(heat,**kw))
+    with pytest.raises(ValueError):B.compare_bridge(new,reference)

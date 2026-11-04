@@ -7,8 +7,9 @@ import os
 from pathlib import Path
 import shutil
 import time
+import numpy as np
 
-from prepare_cmfgen_fixedj_heat import refined_grid_inputs, patched
+from prepare_cmfgen_fixedj_heat import refined_grid_inputs, patched, read_heat_row, VECTOR_NAMES
 import run_cmfgen_fixedj_heat_capture as capture
 from run_cmfgen_lambda_probe import INPUTS, RESTART
 from run_cmfgen_field_feedback import RESTART_OVERLAY
@@ -58,13 +59,43 @@ def completed_bridge_reference(root):
 
 
 def compare_bridge(root,reference):
-    # 산술·물리 정책 변경 없이 두 관측 출력 구간만 제거했으므로 우선 정확 재현을 요구한다.
-    # 불일치 시 자동 허용오차 완화/후속 실행 없이 보존·분석한다.
+    # 선율 텍스트·상태는 정확 재현, 이진 열잔차만 최대2 ULP의 재현 반올림을 구분한다.
+    # 물리적 허용오차나 net/gross 상대 기준으로 차이를 가리지 않는다.
     expected=reference['output_sha256']
     if set(expected)!=set(capture.OUTPUT_NAMES):
         raise ValueError('h05 대조 기준의 필수 물리 출력 누락')
     actual={name:capture.sha(root/'native'/name) for name in capture.OUTPUT_NAMES}
     different=[name for name in expected if expected[name]!=actual[name]]
+    if different==['NATIVE_HEAT_ROW.bin']:
+        if not reference.get('root'):
+            raise ValueError('이진 열행의 보존 대조 경로가 필요함')
+        old=Path(reference['root'])/'native/NATIVE_HEAT_ROW.bin'
+        new=root/'native/NATIVE_HEAT_ROW.bin'
+        if capture.sha(old)!=expected['NATIVE_HEAT_ROW.bin']:
+            raise ValueError('보존 열행 신원 변경')
+        with old.open('rb') as a,new.open('rb') as b:
+            if a.read(48)!=b.read(48):raise ValueError('포획 열행 헤더 변경')
+        a,b=read_heat_row(old),read_heat_row(new)
+        for key in (*VECTOR_NAMES,'pops'):
+            if key!='steq_t_native' and not np.array_equal(a[key],b[key]):
+                raise ValueError('열잔차 외 포획 물리 상태 변경: '+key)
+        x,y=a['steq_t_native'],b['steq_t_native']
+        if np.any((x!=0)&(y!=0)&(np.signbit(x)!=np.signbit(y))):
+            raise ValueError('열잔차 부호 변경')
+        def ordered(values):
+            bits=values.view(np.uint64);sign=np.uint64(1<<63)
+            return np.where(bits&sign,~bits,bits^sign)
+        u,v=ordered(x),ordered(y)
+        distance=np.maximum(u,v)-np.minimum(u,v)
+        if np.any(distance>2):raise ValueError('열잔차 재현 차이가2 ULP를 초과함')
+        if (capture.sha(old)!=expected['NATIVE_HEAT_ROW.bin'] or
+            capture.sha(new)!=actual['NATIVE_HEAT_ROW.bin']):
+            raise ValueError('대조 중 열행 변경')
+        delta=float(np.max(np.abs(x-y)))
+        return dict(status='PHYSICAL_OUTPUT_REPRODUCTION_WITH_THERMAL_ROUNDOFF',outputs=actual,
+            thermal_roundoff=dict(max_ulp=int(distance.max()),changed_depths_1based=(np.flatnonzero(x!=y)+1).tolist(),
+                maximum_absolute_native=delta,maximum_absolute_cgs=delta*4*np.pi*1e-10,
+                all_other_state_exact=True,line_rate_files_byte_exact=True),final_goal='NOT_MET')
     if different:
         raise ValueError('교체 빌드 h05 물리 출력 불일치: '+', '.join(different))
     return dict(status='EXACT_PHYSICAL_OUTPUT_REPRODUCTION',outputs=actual,
