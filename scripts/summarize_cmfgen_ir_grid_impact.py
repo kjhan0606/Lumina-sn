@@ -311,6 +311,11 @@ def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
     if [(a['root'],a['frac_dop']) for a in plan['attempts']]!=[('h05',.5),('h025',.25)]:
         raise ValueError('알려진 격자 묶음 순서와 다름')
     evidence=json.loads(native_comparison.read_text())
+    baseline_build=evidence['input_sha256']['native_executable']['sha256']
+    expected_build=plan.get('capture_build_sha256',baseline_build)
+    bridge=plan.get('observer_build_bridge')
+    if expected_build!=baseline_build and bridge is None:
+        raise ValueError('수정 실행파일은 완료 h05 대조 근거가 필요함')
     runtime_by_root={}
     for attempt in plan['attempts']:
         path=bundle_root/attempt['root']/'native/seq_logs/fixedj-heat-runtime.json'
@@ -326,7 +331,7 @@ def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
         if (runtime.get('srun_exit_code')!=96 or runtime.get('captured_state_exact') is not True or
             runtime.get('fixed_j_sha256')!=evidence['fixed_J_source_sha256'] or
             runtime.get('accepted_response_sha256')!=evidence['input_sha256']['accepted_Lumina_response']['sha256'] or
-            runtime.get('build_sha256')!=evidence['input_sha256']['native_executable']['sha256']):
+            runtime.get('build_sha256')!=expected_build):
             raise ValueError('세분화 포획이 기준 same-state/J/실행파일과 다름')
         root=bundle_root/attempt['root']
         for name in ('VADAT','MODEL_SPEC','NATIVE_HEAT_INPUT.bin','EDDFACTOR','EDDFACTOR_INFO'):
@@ -337,6 +342,20 @@ def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
             if sha(root/'native'/name)!=item['sha256']:
                 raise ValueError('세분화 포획 출력 변경: '+name)
         runtime_by_root[attempt['root']]=runtime
+    bridge_report=None
+    if bridge is not None:
+        from run_cmfgen_fixedj_grid_bundle import (completed_bridge_reference,compare_bridge,
+                                                  observer_only_build)
+        reference=completed_bridge_reference(Path(bridge['root']))
+        if (any(reference[k]!=bridge[k] for k in reference) or
+            reference['build_sha256']!=baseline_build or
+            reference['fixed_j_sha256']!=evidence['fixed_J_source_sha256'] or
+            reference['accepted_response_sha256']!=evidence['input_sha256']['accepted_Lumina_response']['sha256']):
+            raise ValueError('보존 h05 대조 기준과 같은-state/J/원 실행파일 신원이 다름')
+        proof=observer_only_build(Path(plan['baseline'])/'build',Path(bridge['replacement_build']))
+        if proof['output_sha256']['cmfgen_fixedj_heat.exe']!=expected_build:
+            raise ValueError('세분화 포획이 검증한 관측 경로 제외 빌드와 다름')
+        bridge_report=compare_bridge(bundle_root/'h05',bridge)
     baseline=Path(plan['baseline'])/'native'
     baseline_heat=evidence['input_sha256']['native_heat_row']['sha256']
     if not baseline_netrate_sha256 or sha(baseline/'NETRATE')!=baseline_netrate_sha256:
@@ -369,6 +388,7 @@ def compare_grid_bundle(sources,response_root,bundle_root,native_comparison,*,
     return dict(status='SAME_STATE_GRID_COMPARISON',cases=cases,
         bundle_inputs_sha256=plan_digest,baseline_comparison_sha256=comparison_digest,
         successive_grid_differences=differences,
+        observer_build_bridge=bridge_report,
         interpretation='열/BB 블록의 실제 격자 의존성만 비교; 단조 감소를 격자 수렴이나 이온화·스펙트럼 동질성으로 승격하지 않음',
         final_goal='NOT_MET')
 
