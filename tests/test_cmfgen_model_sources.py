@@ -128,6 +128,27 @@ def test_single_state_resource_failure_precedes_any_actual_integration(tmp_path,
             tmp_path/'kernel.so', tmp_path/'full.bin', np.geomspace(1.e12, 1.e18, nf), tmp_path/'out')
 
 
+def test_old_source_abi_is_rejected_before_expensive_bf(tmp_path,monkeypatch):
+    for name in ('MODEL','MODEL_SPEC','LEVEL_SL_STEQ_LINKS','atomic_links.txt',
+                 'TWO_PHOT_DATA','material','levels.csv','phot.so','kernel.so','full.bin'):
+        (tmp_path/name).write_text('synthetic metadata only')
+    monkeypatch.setattr(B.atomic,'load_cmfgen_links',lambda *args:{})
+    monkeypatch.setattr(B.atomic,'HYD_BF_DATA_FILES',())
+    monkeypatch.setattr(B,'load_model',lambda *args:([{}],{},[None],{},{},{}))
+    monkeypatch.setattr(B,'read_material',lambda *args:dict(temperature=np.ones(2)))
+    monkeypatch.setattr(B,'dissolution_flag',lambda *args:False)
+    monkeypatch.setattr(B,'consume_c_full_population',lambda *args:{})
+    monkeypatch.setattr(S,'inactive_processes',lambda *args:{})
+    monkeypatch.setattr(S,'fixed_profile',lambda *args:{})
+    monkeypatch.setattr(S.shutil,'disk_usage',lambda *args:SimpleNamespace(free=10**16))
+    monkeypatch.setattr(S,'SourceKernels',lambda *args:SimpleNamespace(occupation_line_function=None))
+    def forbidden(*args,**kwargs):pytest.fail('구형 kernel 확인 전에 BF 적분을 시작함')
+    monkeypatch.setattr(B,'continuum_grid',forbidden)
+    with pytest.raises(ValueError,match='BF 적분 전에'):
+        S.prepare(tmp_path,tmp_path/'material',tmp_path,tmp_path/'phot.so',tmp_path/'kernel.so',
+            tmp_path/'full.bin',np.array([1.e14,2.e14]),tmp_path/'out')
+
+
 def test_explicit_continuum_mapping_preserves_requested_order_and_duplicates():
     nu=np.array([1e14,2e14,3e14,4e14])
     mapped=np.array([2.1e14,2.1e14,1.2e14,4.1e14])
@@ -283,6 +304,31 @@ def test_line_lte_at_center_and_profile_integral(kernels):
         np.testing.assert_array_equal(a,0)
 
 
+def test_occupation_ratio_restores_dissolved_line_lte_source(kernels):
+    lines=line();nu0=lines['nu0'][0];t=1e4
+    occupation=np.array([[.9],[.1]])
+    lower=1.e8
+    upper=lower/lines['g_ratio'][0]*(.1/.9)*np.exp(-B.H*nu0/(B.KB*t))
+    pop=np.array([[lower],[upper]])
+    profile=dict(width_fraction=1e-4,support_fraction=6e-4)
+    chi,eta=kernels.lines([nu0],pop,lines,profile,occupation=occupation)
+    old_chi,old_eta=kernels.lines([nu0],pop,lines,profile)
+    planck=2*B.H*nu0**3/B.C**2/np.expm1(B.H*nu0/(B.KB*t))
+    assert eta[0,0]/chi[0,0]==pytest.approx(planck,rel=3e-14)
+    assert abs(old_eta[0,0]/old_chi[0,0]/planck-1)>.5
+    np.testing.assert_array_equal(eta,old_eta)
+    ones=kernels.lines([nu0],pop,lines,profile,occupation=np.ones_like(pop))
+    np.testing.assert_array_equal(ones[0],old_chi)
+    np.testing.assert_array_equal(ones[1],old_eta)
+
+
+@pytest.mark.parametrize('occupation',[[[0.],[1.]],[[1.],[np.nan]],[[1.]],[[1.],[1.1]]])
+def test_invalid_line_occupation_rejected(kernels,occupation):
+    with pytest.raises(ValueError,match='점유확률'):
+        kernels.lines([1.e15],np.ones((2,1)),line(),
+            dict(width_fraction=1e-4,support_fraction=6e-4),occupation=occupation)
+
+
 def test_line_no_arbitrary_wavelength_mask(kernels):
     for nu0 in (1e12,1e17):
         c,e=kernels.lines(np.array([nu0]),np.array([[1e6],[1e4]]),line(nu0),
@@ -349,6 +395,7 @@ def test_actual_FF_selection_is_in_binary_NPZ_and_total_not_just_report(tmp_path
         '36000 [VINF]\n2 [TDOP]\n4 [AMASS_DOP]\n10 [VTURB]\n')
     (run/'RVTJ').write_text('ND: 2\nVelocity (km/s)\n35975 1000\n')
     nu=np.array([1e13,1e14,1e15]);material=state();material['full']=np.array([[1e7,2e7],[1e6,2e6]])
+    material['occupation']=np.ones_like(material['full'])
     models={(20,2):{},(20,3):{}};lines=line()
     monkeypatch.setattr(S,'load_lines',lambda *args,**kwargs:(lines,{},{}))
     bf=dict(chi_net=np.zeros((2,3)),eta_spont=np.zeros((2,3)))

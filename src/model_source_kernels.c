@@ -18,12 +18,12 @@ static size_t upper_bound(const double *x, size_t n, double y) {
     return a;
 }
 
-int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
+int lumina_model_gaussian_sources_with_occupation(size_t nl,size_t ns,size_t nf,size_t nt,
     const double *nu,const double *population,const int32_t *lower,
     const int32_t *upper,const double *nu0,const double *f,
     const double *A,const double *g_ratio,double width_fraction,
     double support_fraction,double opacity_constant,double emission_constant,
-    double *chi,double *eta) {
+    double *chi,double *eta,const double *occupation) {
     if(!nl||!ns||!nf||!nt||ns>SIZE_MAX/nf||nl>SIZE_MAX/ns||
        nt>SIZE_MAX/(2*sizeof(size_t))||!nu||!population||!lower||!upper||
        !nu0||!f||!A||!g_ratio||!chi||!eta||
@@ -34,7 +34,8 @@ int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
     for(size_t b=0;b<nf;b++)
         if(!isfinite(nu[b])||nu[b]<=0||(b&&nu[b]<=nu[b-1]))return 1;
     for(size_t i=0;i<nl*ns;i++)
-        if(!isfinite(population[i])||population[i]<0)return 1;
+        if(!isfinite(population[i])||population[i]<0 ||
+           (occupation && (!isfinite(occupation[i]) || occupation[i]<=0. || occupation[i]>1.)))return 1;
     size_t *bounds=malloc(2*nt*sizeof(size_t));if(!bounds)return 2;
     for(size_t l=0;l<nt;l++){
         if(lower[l]<0||upper[l]<0||(size_t)lower[l]>=nl||(size_t)upper[l]>=nl||
@@ -52,6 +53,8 @@ int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
         for(size_t l=0;l<nt;l++){
             double nlo=population[(size_t)lower[l]*ns+s];
             double nup=population[(size_t)upper[l]*ns+s];
+            /* SET_LINE_OPAC: LTE 분율에 w가 들어 있어도 흡수의 wu/wl은 별도다. */
+            if(occupation)nlo*=occupation[(size_t)upper[l]*ns+s]/occupation[(size_t)lower[l]*ns+s];
             double integrated_chi=opacity_constant*f[l]*(nlo-g_ratio[l]*nup);
             double integrated_eta=emission_constant*nu0[l]*A[l]*nup;
             for(size_t b=bounds[2*l];b<bounds[2*l+1];b++){
@@ -65,6 +68,18 @@ int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
     for(size_t i=0;i<ns*nf;i++)
         if(!isfinite(chi[i])||!isfinite(eta[i])||eta[i]<0)return 3;
     return 0;
+}
+
+/* 기존의 무용해 호출 ABI를 보존한다. */
+int lumina_model_gaussian_sources(size_t nl,size_t ns,size_t nf,size_t nt,
+    const double *nu,const double *population,const int32_t *lower,
+    const int32_t *upper,const double *nu0,const double *f,
+    const double *A,const double *g_ratio,double width_fraction,
+    double support_fraction,double opacity_constant,double emission_constant,
+    double *chi,double *eta) {
+    return lumina_model_gaussian_sources_with_occupation(nl,ns,nf,nt,nu,population,
+        lower,upper,nu0,f,A,g_ratio,width_fraction,support_fraction,opacity_constant,
+        emission_constant,chi,eta,NULL);
 }
 
 /* 원래점 하나의 source-profile 적분. status: 1=VALID,2=EXACT_ZERO,

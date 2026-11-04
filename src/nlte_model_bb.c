@@ -28,7 +28,8 @@ int nlte_model_element_bb_assemble_with_native_thermal(NLTEModelBBBlock *out,
        !v->radiation_generation || n->radfield_view_status!=RADIATION_FIELD_VIEW_OK ||
        n->radfield_view.generation!=v->radiation_generation ||
        (a->model_level_occupation &&
-        (a->partition_stamp.status!=POP_OK || v->material_model_sha256[64]!='\0' ||
+        (a->model_occupation_n_shells!=v->n_shells ||
+         a->partition_stamp.status!=POP_OK || v->material_model_sha256[64]!='\0' ||
          a->partition_stamp.atomic_model_sha256[64]!='\0' ||
          !v->material_model_sha256[0] ||
          strcmp(v->material_model_sha256,a->partition_stamp.atomic_model_sha256))) ||
@@ -72,6 +73,12 @@ int nlte_model_element_bb_assemble_with_native_thermal(NLTEModelBBBlock *out,
         if(lower<0 || upper<0 || !isfinite(fl) || fl<0. || fl>1. ||
            !isfinite(fu) || fu<0. || fu>1.)goto fail;
         double forward=fl*v->absorption[i];
+        if(a->model_level_occupation){
+            double wl=a->model_level_occupation[(size_t)lo*ns+e->shell];
+            double wu=a->model_level_occupation[(size_t)up*ns+e->shell];
+            if(!isfinite(wl) || !isfinite(wu) || wl<=0. || wu<=0. || wl>1. || wu>1.)goto fail;
+            forward*=wu/wl;
+        }
         double reverse=fu*(v->spontaneous[i]+v->stimulated[i]);
         if(!isfinite(forward) || forward<0. || !isfinite(reverse) || reverse<0.)goto fail;
         if(lower==upper)b.intra_super_lines++;

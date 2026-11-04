@@ -120,7 +120,7 @@ def compare_native_bb_flows(path, lines, jbar, mass, pop, fraction, columns, row
 
 def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=None,
               native_comparison=None, native_heat=None, expected_native_heat_sha256=None,
-              native_vector_sink=None):
+              native_vector_sink=None, occupation_impact=False):
     record = json.loads((response_root / 'result.json').read_text())
     source_record = json.loads((sources / 'sources.json').read_text())
     if record['BB_contract'] != 'SOURCE_SAMPLED_TRAPEZOID_A_TIMES_MASS_V1':
@@ -153,6 +153,10 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
     models = load_cmfgen_model_spec(spec, links)
     with np.load(evaluation / 'response.npz') as z:
         pop, fraction, columns = (z[k] for k in ('population', 'fraction', 'columns'))
+        occupation = z['occupation'] if occupation_impact else None
+    if occupation is not None and (occupation.shape != fraction.shape or
+            not np.isfinite(occupation).all() or np.any(occupation <= 0) or np.any(occupation > 1)):
+        raise ValueError('BB 흡수 점유확률 형상/범위 오류')
     atomic_links = B.atomic.load_cmfgen_links(links)
     ions = {}
     for key, atom in models.items():
@@ -181,6 +185,8 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
     total = np.zeros((2, nd), dtype=np.longdouble)
     dropped = np.zeros_like(total)
     by_ion = {}
+    occupation_delta = np.zeros(nd, dtype=np.longdouble)
+    occupation_ions = {}
     nuclei = pop.sum(axis=0)
     group = owner.full_to_sl
     enabled = S.control(model, 'SCL_LN') == 'T'
@@ -201,6 +207,13 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
         forward *= factor
         reverse *= factor
         total += np.stack([forward.sum(axis=0), reverse.sum(axis=0)])
+        if occupation is not None:
+            change = forward * (np.asarray(occupation[up],dtype=np.longdouble)/occupation[lo]-1)
+            occupation_delta += change.sum(axis=0)
+            for z, stage in {(int(rows[l]['atomic_number']),int(rows[l]['ion_number'])+1) for l in lo}:
+                ids = np.array([(int(rows[l]['atomic_number']),int(rows[l]['ion_number'])+1)==(z,stage)
+                                for l in lo])
+                occupation_ions.setdefault((z,stage),np.zeros(nd,dtype=np.longdouble))[:] += change[ids].sum(axis=0)
         for offset in np.flatnonzero(excluded[first:last]):
             key = (int(rows[lo[offset]]['atomic_number']), int(rows[lo[offset]]['ion_number']) + 1)
             entry = by_ion.setdefault(key, [0, np.zeros((2, nd), dtype=np.longdouble)])
@@ -264,7 +277,7 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
         if sha(path) != digest:
             raise ValueError(path.name + ' 분석 중 변경')
     delta = np.asarray(-(dropped[0] - dropped[1]), dtype='f8')
-    return dict(scope='고정-state 열 재합산; 새 SE/RE/수송/물질수용 없음',
+    result = dict(scope='고정-state 열 재합산; 새 SE/RE/수송/물질수용 없음',
         sign='양수=가열; delta=제외 후 열잔차−기존 열잔차',
         retained_lines=count-int(excluded.sum()), excluded_lines=int(excluded.sum()),
         grid_cutoff_Hz=domain['minimum_line_Hz_grid_guard_inclusive'],
@@ -281,6 +294,15 @@ def summarize(sources, response_root, *, netrate=None, expected_netrate_sha256=N
         native_BB_flow_comparison=native_flows,
         native_heat_comparison=heat_comparison,
         final_goal='NOT_MET')
+    if occupation is not None:
+        result['bb_occupation_absorption_impact'] = dict(
+            scope='보존 물질/Jbar에서 상위/하위 occupation 비를 흡수에만 적용한 반사실; 새 SE/수송 아님',
+            heat_delta=np.asarray(occupation_delta,dtype='f8').tolist(),
+            maximum_abs_heat_delta=float(abs(occupation_delta).max()),
+            by_ion={f'Z{z}_stage{stage}':np.asarray(v,dtype='f8').tolist()
+                    for (z,stage),v in sorted(occupation_ions.items())},
+            no_spontaneous_or_stimulated_scaling=True,new_physical_evaluations=0)
+    return result
 
 
 def pairwise_native_blocks(left,right):
@@ -518,10 +540,14 @@ if __name__ == '__main__':
     parser.add_argument('--bundle-root', type=Path)
     parser.add_argument('--continuum-native-root', type=Path,
                         help='완료 PRRR/GENCOOL와 저장 응답만 비교; 새 BF 적분 없음')
+    parser.add_argument('--bb-occupation-impact', action='store_true',
+                        help='저장된 선 흡수에 w_upper/w_lower를 적용한 반사실만 합산')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     if args.continuum_native_root and (args.bundle_root or args.netrate):
         parser.error('저장 연속 흐름 대조와 BB/격자 재생 옵션을 혼합하지 않음')
+    if args.bb_occupation_impact and (args.continuum_native_root or args.bundle_root):
+        parser.error('BB 점유확률 반사실은 보존 단일-state 재합산에서만 사용함')
     if not args.continuum_native_root and not args.sources:
         parser.error('BB/격자 재생에는 --sources가 필요함')
     report=(compare_saved_continuum_flows(args.response_root,args.continuum_native_root)
@@ -529,7 +555,7 @@ if __name__ == '__main__':
                                baseline_netrate_sha256=args.expected_netrate_sha256)
         if args.bundle_root else summarize(args.sources, args.response_root,netrate=args.netrate,
         expected_netrate_sha256=args.expected_netrate_sha256,
-        native_comparison=args.native_comparison))
+        native_comparison=args.native_comparison,occupation_impact=args.bb_occupation_impact))
     if args.output:
         if args.bundle_root and report['status']!='SAME_STATE_GRID_COMPARISON':
             raise SystemExit('두 포획 미완료: 결과 파일을 저장하지 않음')

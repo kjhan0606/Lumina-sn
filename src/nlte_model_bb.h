@@ -5,7 +5,8 @@
 
 /* 동일 복사장·물질의 한 원래점에서 완성된 모든 native 복사 선. 배열은 caller
  * 소유이고 n_lines 길이다. 준비하지 않은 점은 0율이 아니라 거부한다.
- * 수치율은 원 FL 입자당이며 조립 때 within-SL 비율을 한 번 적용한다. */
+ * 수치율은 원 FL 입자당, occupation 비 미적용이다. 조립 때 within-SL 비율과
+ * 흡수의 w_upper/w_lower를 각각 한 번 적용한다. */
 typedef struct {
     size_t n_levels, n_lines, n_shells, native_shell;
     uint64_t radiation_generation, material_generation;

@@ -1,12 +1,48 @@
 """보존 native ZNET/fine BB 블록의 주소·부호·핵수 보존 직접시험."""
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from summarize_cmfgen_ir_grid_impact import add_bb_flow, compare_native_bb_flows, pairwise_native_blocks
+
+
+def test_independent_response_heat_applies_occupation_only_to_absorption(monkeypatch):
+    import lumina_model_response_balance as M
+    from lumina_model_freefree import FreeFreeCoefficients
+    obj=M.ResponseBalance.__new__(M.ResponseBalance)
+    pop=np.array([[10.,12.],[2.,3.]])
+    fraction=np.ones_like(pop);occupation=np.array([[1.,1.],[.5,.25]])
+    t=np.array([10000.,11000.]);ne=np.array([1.e6,2.e6]);nu=1.e15;a=3.;ratio=.5
+    obj.columns=np.array([[14,1,0],[14,1,1]]);obj.index={tuple(k):i for i,k in enumerate(obj.columns)}
+    obj.roster={k:np.empty(0,dtype='i4') for k in ('lower','target','Z','stage')}
+    obj.jbar=np.array([[1.e-3,2.e-3]]);obj.profile_mass=np.array([.9])
+    obj.lines=dict(lower=np.array([0]),upper=np.array([1]),nu0=np.array([nu]),
+                   A=np.array([a]),g_ratio=np.array([ratio]))
+    obj.owner=SimpleNamespace(full_to_sl=np.array([0,1]),
+        line_scaling=lambda *args,**kwargs:np.ones((1,2)),
+        internal_energy=lambda *args:np.zeros(2))
+    obj.radius=np.array([2.,1.]);obj.epoch=1.;obj.library=None;obj.tmin=0.
+    obj.scaling_enabled=False;obj.scaling_limit=.5;obj.density_limit=1.e30
+    obj.shock=obj.xray=obj.stored=obj.instant=np.zeros(2)
+    obj.coefficients=FreeFreeCoefficients('synthetic',t,np.zeros((1,2)),np.zeros((1,2)))
+    zero=dict(heating=np.zeros(2),cooling=np.zeros(2))
+    obj.ff=SimpleNamespace(contract=lambda *args,**kwargs:dict(terms={
+        'all_positive_ions':zero,'native_upper_ions':zero}))
+    monkeypatch.setattr(M,'adiabatic',lambda *args,**kwargs:dict(signed_total=np.zeros(2)))
+    bul=a*M.B.C**2/(2*M.B.H*nu**3)
+    forward=pop[0]*occupation[1]*bul/ratio*obj.jbar[0]*M.B.H*nu
+    reverse=pop[1]*(a*.9+bul*obj.jbar[0])*M.B.H*nu
+    ledger=np.zeros((2,2,2));ledger[0,:,1]=forward;ledger[1,:,1]=-reverse
+    data=dict(population=pop,temperature=t,ne=ne,energy=np.zeros((2,3)),ledger=ledger)
+    trial=SimpleNamespace(fraction=fraction,state=dict(occupation=occupation),
+                          radiation_generation=1,material_generation=1)
+    result,_=obj.evaluate(data,trial,np.empty((0,2,6)))
+    np.testing.assert_allclose(result['bb'],np.stack([forward,reverse]),rtol=3.e-15)
+    np.testing.assert_allclose(result['native_bb'],result['bb'],rtol=0,atol=0)
 
 
 def test_bound_bound_flow_conserves_number_and_internal_sl_is_zero():

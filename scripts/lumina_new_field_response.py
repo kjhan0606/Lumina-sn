@@ -386,7 +386,9 @@ def run(args):
                     inputs[str(path)] = B.sha(path)
             bb_contract=seed['report'].get('BB_contract','LEGACY_LINEAR_J_EXACT_A') if seed else completed_seed.SAMPLED_BB
             result.update(field=last, source_identity=source.identity, input_sha256=inputs,
-                phase='NEW_BB', BB_contract=bb_contract, frequencies=nf, points=ns); save()
+                phase='NEW_BB', BB_contract=bb_contract,
+                BB_occupation_contract='ABSORPTION_TIMES_W_UPPER_OVER_W_LOWER_V1',
+                frequencies=nf, points=ns); save()
             nu = source.frequency; width = trapezoid_weights(nu)
             producer=SourceModelLines if bb_contract==completed_seed.SAMPLED_BB else LinearModelLines
             linear = producer(lines, S.fixed_profile(runroot/'MODEL'), args.line_library,

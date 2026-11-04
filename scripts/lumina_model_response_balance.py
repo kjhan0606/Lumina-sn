@@ -104,6 +104,7 @@ class ResponseBalance:
             last=min(len(self.jbar),first+4096);lo=self.lines['lower'][first:last];up=self.lines['upper'][first:last]
             nu=self.lines['nu0'][first:last];A=self.lines['A'][first:last];bul=A*B.C**2/(2*B.H*nu**3)
             lower=np.asarray(pop[group[lo]]*f[lo],dtype=np.longdouble)
+            lower*=np.asarray(trial.state['occupation'][up],dtype=np.longdouble)/trial.state['occupation'][lo]
             upper=np.asarray(pop[group[up]]*f[up],dtype=np.longdouble);J=self.jbar[first:last]
             forward=lower*(bul/self.lines['g_ratio'][first:last])[:,None]*J*(B.H*nu)[:,None]
             reverse=upper*((A*self.profile_mass[first:last])[:,None]+bul[:,None]*J)*(B.H*nu)[:,None]

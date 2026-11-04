@@ -193,6 +193,10 @@ class SourceKernels:
         self.line_function=self.dll.lumina_model_gaussian_sources
         self.line_function.argtypes=[ct.c_size_t]*4+[dp,dp,ip,ip]+[dp]*4+[ct.c_double]*4+[dp,dp]
         self.line_function.restype=ct.c_int
+        self.occupation_line_function=getattr(self.dll,'lumina_model_gaussian_sources_with_occupation',None)
+        if self.occupation_line_function is not None:
+            self.occupation_line_function.argtypes=self.line_function.argtypes+[dp]
+            self.occupation_line_function.restype=ct.c_int
 
     @staticmethod
     def pointer(a,kind=ct.c_double):return a.ctypes.data_as(ct.POINTER(kind))
@@ -208,9 +212,18 @@ class SourceKernels:
         if not np.isfinite(result).all() or np.any(result<=0):raise ValueError('Gaunt 출력 손상')
         return result
 
-    def lines(self,nu,population,lines,profile):
+    def lines(self,nu,population,lines,profile,*,occupation=None):
         nu=np.ascontiguousarray(nu,dtype='f8');pop=np.ascontiguousarray(population,dtype='f8')
         if pop.ndim!=2:raise ValueError('FL 인구 형상 손상')
+        extra=[];function=self.line_function
+        if occupation is not None:
+            occupation=np.ascontiguousarray(occupation,dtype='f8')
+            if (occupation.shape!=pop.shape or not np.isfinite(occupation).all() or
+                    np.any(occupation<=0) or np.any(occupation>1)):
+                raise ValueError('선 흡수 점유확률 형상/범위 오류')
+            if self.occupation_line_function is None:
+                raise ValueError('선 흡수 점유확률을 지원하는 새 source kernel 빌드가 필요함')
+            function=self.occupation_line_function;extra=[self.pointer(occupation)]
         arrays={k:np.ascontiguousarray(v,dtype='i4' if k in ('lower','upper') else 'f8')
                 for k,v in lines.items()}
         nt=len(arrays['lower'])
@@ -221,12 +234,12 @@ class SourceKernels:
             chi.fill(0);eta.fill(0)
             return chi,eta
         opacity=np.pi*B.atomic.E_CGS**2/(B.ME*B.C)
-        status=self.line_function(pop.shape[0],pop.shape[1],len(nu),nt,
+        status=function(pop.shape[0],pop.shape[1],len(nu),nt,
             self.pointer(nu),self.pointer(pop),self.pointer(arrays['lower'],ct.c_int32),
             self.pointer(arrays['upper'],ct.c_int32),
             *[self.pointer(arrays[k]) for k in ('nu0','f','A','g_ratio')],
             profile['width_fraction'],profile['support_fraction'],opacity,B.H/(4*np.pi),
-            self.pointer(chi),self.pointer(eta))
+            self.pointer(chi),self.pointer(eta),*extra)
         if status:raise ValueError(f'국소 선 계수 생산 실패: status={status}')
         return chi,eta
 
@@ -418,6 +431,8 @@ def prepare(run,material,atomic_dir,phot_library,kernel_library,c_full,nu,out,fr
         raise ValueError('계수 생산의 알려진 할당이 봉인32GiB 초과')
     if peer is None and shutil.disk_usage(out).free<source_output_reserve(len(states[0]['temperature']),len(nu),free_free_policy):
         raise OSError('새 단일 상태 계수의 두 원출력과 catalogue 보존 공간 부족')
+    if SourceKernels(kernel_library).occupation_line_function is None:
+        raise ValueError('BF 적분 전에 점유확률 지원 source kernel로 다시 빌드해야 함')
     cache_metrics={}
     bfs=([B.continuum_grid(routes,rows,states[0],continuum_nu)] if peer is None else
          B.continuum_grids_shared(routes,rows,states,continuum_nu,cache_metrics=cache_metrics))
@@ -450,7 +465,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
                 ff[chi][:,continuum_index],ff[eta][:,continuum_index])
     line_domain=native_line_domain(run)
     lines,line_counts,osc_identities=load_lines(run,rows,models,line_domain=line_domain)
-    bb_chi,bb_eta=kernels.lines(nu,state['full'],lines,profile)
+    bb_chi,bb_eta=kernels.lines(nu,state['full'],lines,profile,occupation=state['occupation'])
     es=np.broadcast_to(state['ne'][:,None]*6.6524587321e-25,bb_chi.shape)
     native_ff=free_free_policy=='NATIVE_UPPER_IONS'
     components=dict(bf_chi=bf['chi_net'],bf_eta=bf['eta_spont'],
@@ -479,6 +494,7 @@ def _finish_sources(run,nu,out,state,bf,rows,models,routes,policy,smoothing,rout
             mapping_inferred=False,continuum_sampling_is_physical_truth=False),
         C_full_population_comparison=full_comparison,phot_preprocessing=smoothing,
         profile=profile,line_domain=line_domain,dissolved_continuum=dissolved,inactive_processes=inactive,
+        BB_occupation_contract='ABSORPTION_TIMES_W_UPPER_OVER_W_LOWER_V1',
         free_free=dict(policy=free_free_policy,coefficient_cgs=3.69e8,
             native_selection='existing lower PHOT ions -> upper populations only',
             charges=ff['charges'],native_charges=ff['native_charges'],

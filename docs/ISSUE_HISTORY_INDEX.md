@@ -1081,6 +1081,17 @@
 
 ## P10 동일-state CMFGEN 고정-J 열 출력 포획 재개
 
+- **BB 흡수 occupation 비 누락 수리/주원인 비채택(2026-11-04):** native`SET_LINE_OPAC`는
+  LTE 분율과 별도로 흡수에`w_upper/w_lower`를 적용한다. Lumina source·C SE·독립 열장부에
+  이 항이 빠져 세 경로를 함께 수리했다. 역율/선폭/J/SCL_LN은 유지한다. 비단위 w의 작은
+  LTE 시험으로 Planck source 복구를 확인했지만, 현 저장 물질/J의 전선·90점 재합산에서
+  영향은 최대`1.45e-10 cgs`여서 현재 큰 불일치의 주원인은 아니다. 결과
+  `same_state_BB_occupation_absorption_impact.json`(`aeab11ba…d15fdf`) 보존. 같은 계수/J에서
+  native full 인구 재구성 차이만으로 가능한 BB 열 이동도 최대`1.76e-4 cgs` 상한이어서
+  깊은 층의`~3–5e-3` BB 차이를 설명하지 못한다. P08의 stale 배열 검사와 이번 연산자 누락을
+  구분한다. 수리된 코드로 새 실물 계산은0회이며 최종 동질성미달이다. source/ABI·적용 범위·
+  인과 비채택·재현 근거는 [11월4일 인수계](HANDOVER_2026-11-04.md)의
+  `선 흡수의 점유확률 비 수리와 주원인 분리`를 따른다.
 - **PRRR 분모 오독 수리와 전90점 BF 수/FF 열 분리(2026-11-04):** PRRR`Ion Density`는
   재결합 대상 상위 이온의 바닥 SL 수밀도이며 하위 이온 총수가 아니다. 옛 oracle의
   Gamma/n_ion 비교가 이를 혼동해 파서와 네 소비자를 수리했다. 생산 C 물질 해법의

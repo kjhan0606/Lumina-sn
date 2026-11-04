@@ -128,6 +128,25 @@ int main(void)
     bb_view.radiation_generation=5;bb_view.native_shell=1;
     assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
     bb_view.native_shell=0;
+    /* LTE 분율에 w가 있어도 bound 흡수의 wu/wl은 별도 한 번 필요하다. */
+    double bb_w[4]={1.,.5,1.,.5};
+    a.model_level_occupation=bb_w;a.model_occupation_n_shells=1;
+    a.partition_stamp.status=POP_OK;
+    strcpy(a.partition_stamp.atomic_model_sha256,"synthetic-occupation");
+    strcpy(bb_view.material_model_sha256,"synthetic-occupation");
+    thermal_factor[1]=.8;
+    assert(!nlte_model_element_bb_assemble_with_native_thermal(&bb,&bb_element,&bb_n,&a,&p,&bb_view,thermal_factor));
+    assert(fabs(bb.radiative[1]-3.5)<1.e-14 && bb.radiative[4]==5.);
+    assert(fabs(bb.radiative_heat[0]-6.62607015e-12*7.)<1.e-25);
+    assert(bb.radiative_heat[1]==original_bb_heat[1]);
+    assert(fabs(bb.radiative_heat[2]+6.62607015e-12*1.9)<1.e-25);
+    assert(fabs(bb.native_thermal_heat[0]-.8*bb.radiative_heat[0])<1.e-25);
+    nlte_model_bb_block_free(&bb);
+    bb_w[0]=0.;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
+    bb_w[0]=1.;a.model_occupation_n_shells=2;
+    assert(nlte_model_element_bb_assemble(&bb,&bb_element,&bb_n,&a,&p,&bb_view)!=0);
+    a.model_level_occupation=NULL;a.model_occupation_n_shells=0;
     nlte_model_element_free(&bb_element);
     assert(!setenv("LUMINA_NLTE_BF_COLLISION","1",1));
     assert(!nlte_model_element_bf_assemble(&block,&element,&n,&a,&p));
