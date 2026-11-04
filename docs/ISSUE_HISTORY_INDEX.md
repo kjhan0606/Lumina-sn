@@ -1169,6 +1169,16 @@
   6/90, 21/90, 38/90, 15/90, 20/90점이다. 열항 상쇄가 큰 깊이에서 상대 이동량은
   민감하며, 이 결과는 Lumina 방향 개선·이온화 동질성·정확 native qsum을 증명하지 않는다.
   새 물리 계산·수송·물질 갱신은 0회이고, 최종 목표는 `NOT_MET` 유지다.
+- **2026-11-04 Si/S full-level line-roster mapping:** 저장 Lumina roster와 `1264295`
+  `NETRATE`의 `(Z,stage,lower_full,upper_full)`를 직접 맞췄다. Si II/III, S II/III에서
+  각각 2/5/5/8개의 Lumina-only 저주파선(약 `4.05–4.71e12 Hz`)이 있고 native-only는0개다;
+  Si IV/S IV는 완전 일치한다. 공유선의 주파수 차이는 native F10.6 중심의 출력 반올림
+  반폭 이내와 일치한다. 이는 광범위한 준위 주소 오류보다 line-domain/선택 기준 차이를
+  우선 가리키지만, 양쪽 sealed MODEL/RVTJ와 GF 선택값을 직접 대조하지 않아 `MIN_CF`
+  원인으로 확정하지 않는다. 다음 read-only 확인은 20개 전이에 양쪽 선택식을 적용하는
+  것이다. 전이 목록, 제한 및 아직 모르는 점은 [11월4일 인수계](HANDOVER_2026-11-04.md)의
+  `Si/S 전이 주소 목록 대조`를 참조한다. 이 결과는 열·이온분포 불일치의 원인 확정이나
+  수정 승인이 아니며, 최종 목표는 `NOT_MET`다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
   이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획
