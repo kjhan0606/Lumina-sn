@@ -1124,8 +1124,10 @@
   보간함수를 고차 profile 적분한 값은 각각 313702에서 `+1.578%`, 315920에서 `+0.5334%`
   차이 났다. 선형 보간 적분과 fine-grid J 직접 적분의 차이는 `−1.972%/−0.4658%`여서
   native/fine의 겉보기 차이 `−0.4250%/+0.06514%`가 상쇄 결과임을 보인다. 인쇄 선 중심
-  `±5e8 Hz` 민감도에서도 부호·규모는 유지된다. 이는 인쇄 주파수·근사 격자와 piecewise-linear
-  J 가정에 의존하며 exact native qsum 재현은 아니다. 작은 잔차를 격자 수렴의 증거로 보지
+  `±5e8 Hz` 민감도에서도 부호·규모는 유지된다. `±3σ`에서 native NCF 6점/fine-grid 24점,
+  fine J 대 NCF 선형보간의 profile-weighted RMS 잔차는 국소 J 평균 대비 `4.12%/0.814%`다.
+  이는 인쇄 주파수·근사 격자와 piecewise-linear J 가정에 의존하며 exact native qsum 재현은 아니다.
+  작은 잔차를 격자 수렴의 증거로 보지
   않고, 이온화 수용이나 격자 수정도 하지 않는다. 세부 산식과 한계는
   [11월4일 인수계](HANDOVER_2026-11-04.md)를 참조한다.
 - **프로파일 면적의 SE 전파(2026-11-04):** Lumina의
@@ -1150,6 +1152,16 @@
   물질상태를 고정하며 native 내부 정확한 qsum이나 SE 재해결이 아니다. 그러므로 Lumina
   정규화를 native 격자 오차에 맞춰 바꾸지 않는다. 정본은
   [11월4일 인수계](HANDOVER_2026-11-04.md).
+- **Q=1 + fine-J 고정상태 전이별 반사실:** 같은 native line 식 `ZNET=Q(1−αJbar)`에서
+  α를 역산해 Q=1과 EDDFACTOR fine-grid J를 대입했다. S III 깊이36 전3,678개의 합은 native
+  `−1.94823e-6` → Q-only `−1.87635e-6` → Q+fine-J `+1.17996e-6`으로, Lumina 부호변환
+  목표 `+1.21746e-6`에 3.1% 차이로 접근한다. 깊이85 Co IV/Fe IV/Co V/Ni IV 합은
+  `+9.04811e-3` → `+3.59881e-3`; Lumina 목표 `+3.59462e-3`와 차이는 `4.18e-6`(0.12%)다.
+  깊이36 Si IV/Si III/S III도 합 차를 `3.19e-5`에서 `5.79e-7`로 줄였다. 이는 같은 고정
+  T/ne/인구/J에서 coarse line-profile 적분 해상도가 주요 열 차이의 강한 원인임을 지지한다.
+  다만 반올림 격자·선 중심으로 계산한 반사실이며 exact native qsum, CMFGEN 재실행,
+  ionization/thermal 공동수렴 증거는 아니다. 그러므로 이온분포 목표는 계속 `NOT_MET`이다.
+  상세 절차와 이온별 값은 [11월4일 인수계](HANDOVER_2026-11-04.md)를 따른다.
 - runner의 표식 검증을 stdout/OUTGEN 양쪽에 적용하고 stale OUTGEN 표식을 사전 거부하도록
   수정했다. 관련 시험 4개 통과. 실행기와 시험 변경은 commit `0cf2b529`로 푸시됐다.
   이번 source/operator 재구성은 기존 데이터의 read-only 분석이며, 승인된 CMFGEN 포획
