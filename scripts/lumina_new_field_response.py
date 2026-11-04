@@ -66,7 +66,9 @@ def open_field(preparation, preparation_sha, feedback, feedback_sha):
             raise ValueError('새 장과 물질의 계보 불일치')
         child = feedback.parent/('F-'+str(last['sweep']))
         entry = report['sweeps'][last['sweep']-1]
-        if (entry['state'] != 'COMPLETE_F_NOT_CONVERGENCE' or
+        # source 잔차 통과 때도 출력 F(J)는 완성장이다. 통과 인증은 입력 J에 대한
+        # 것이므로 이 출력의 산란 수렴을 별도로 선언하지는 않는다.
+        if (entry['state'] not in ('COMPLETE_F_NOT_CONVERGENCE','FIXED_MATERIAL_SOURCE_RESIDUAL_PASS') or
                 Path(last['J']['path']) != child/'J.npy' or
                 B.sha(child/'resident-field.json') != entry['result_sha256']):
             raise ValueError('완성 장 기록/주소 변경')
@@ -175,12 +177,16 @@ def execution_resources(seconds, temperature_evaluations=0):
     long_thermal = long_setting == '1'
     if long_thermal and (mode != 'slurm' or type(temperature_evaluations) is not int or temperature_evaluations <= 0):
         raise ValueError('장시간 Slurm 경로는 실제 온도 평가에만 허용')
-    max_seconds = 106200 if long_thermal else (42600 if mode == 'manual-lageunha' else 13800)
+    thermal_hours=os.environ.get('LUMINA_RESPONSE_THERMAL_HOURS','30')
+    if thermal_hours not in ('30','48') or (not long_thermal and thermal_hours!='30'):
+        raise ValueError('명시한 장시간 열응답 한도 오류')
+    max_seconds = int(thermal_hours)*3600-1800 if long_thermal else (42600 if mode == 'manual-lageunha' else 13800)
     if os.environ.get('OMP_NUM_THREADS') != '16' or not 600 <= seconds <= max_seconds:
         raise ValueError('CPU16/32GiB/OpenMP16·명시한 단회 시간 필요')
     record = dict(executor=mode, hostname=socket.gethostname(), pid=os.getpid(),
                   CPUs=16, memory_limit_bytes=32*1024**3, seconds=seconds,
                   long_thermal=long_thermal)
+    if long_thermal:record['thermal_hours_limit']=int(thermal_hours)
     if mode == 'slurm':
         if (os.environ.get('SLURM_CPUS_PER_TASK') != '16' or
                 os.environ.get('SLURM_MEM_PER_NODE') != '32768'):

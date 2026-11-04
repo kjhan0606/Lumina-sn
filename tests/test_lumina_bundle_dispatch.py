@@ -48,23 +48,26 @@ def test_field_submitted_once_with_bounded_script(setup):
     assert len(calls) == 1
 
 
-def test_compute_node_preflight_uses_pinned_grammar_alias_and_strict_host_key(setup,monkeypatch):
+@pytest.mark.parametrize('host,address,state',[
+    ('grammar','192.0.2.20','CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD'),
+    ('syntax','192.0.2.10','SUBMISSION_ROUTE_VERIFIED_BEFORE_COEFFICIENTS')])
+def test_compute_node_preflight_uses_pinned_grammar_alias_and_strict_host_key(setup,monkeypatch,host,address,state):
     config,c,_=setup
     c['control_sha256']={'lumina_bundle_dispatch.py':D.sha(Path(D.__file__))}
+    c['submission_host_addresses']['syntax']='192.0.2.10'
     config.write_text(json.dumps(c))
     calls=[]
     monkeypatch.setattr(D.subprocess,'run',lambda command,**kwargs:
-        (calls.append((command,kwargs)) or SimpleNamespace(returncode=0,stdout='grammar\n',stderr='')))
-    result=D.preflight_callback(config,D.sha(config))
+        (calls.append((command,kwargs)) or SimpleNamespace(returncode=0,stdout=host+'\n',stderr='')))
+    result=D.preflight_callback(config,D.sha(config),host)
     command,kwargs=calls[0]
-    assert command[-3:]==['grammar','hostname','-s']
-    assert 'HostName=192.0.2.20' in command
-    assert 'HostKeyAlias=grammar' in command
+    assert command[-3:]==[host,'hostname','-s']
+    assert 'HostName='+address in command
+    assert 'HostKeyAlias='+host in command
     assert 'StrictHostKeyChecking=yes' in command
     assert 'UpdateHostKeys=no' in command
     assert kwargs['timeout']==15 and kwargs['capture_output'] and kwargs['text']
-    assert result==dict(state='CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD',host='grammar',
-                        remote_hostname='grammar',automatic_retries=0)
+    assert result==dict(state=state,host=host,remote_hostname=host,automatic_retries=0)
 
 
 def test_compute_node_preflight_fails_closed_on_unreachable_callback(setup,monkeypatch):
@@ -121,21 +124,25 @@ def test_response_requires_completed_new_field(setup, complete):
         assert not calls and not Path(c['response_parent']).exists()
 
 
-def test_response_can_submit_bounded_returned_field_TNE_solve(setup):
+@pytest.mark.parametrize('hours,allocation,seconds',[(30,'1-06:00:00',106200),(48,'2-00:00:00',171000)])
+@pytest.mark.parametrize('field_state',['COMPLETE_F_NOT_CONVERGENCE','FIXED_MATERIAL_SOURCE_RESIDUAL_PASS'])
+def test_response_can_submit_bounded_returned_field_TNE_solve(setup,hours,allocation,seconds,field_state):
     config,c,calls=setup;gpu=Path(c['gpu_root']);(gpu/'feedback').mkdir()
     result=Path(c['coefficient_result']);coefficient=json.loads(result.read_text())
     coefficient['thermal_energy_policy']='native_instantaneous_scenario'
     result.write_text(json.dumps(coefficient))
     (gpu/'feedback/feedback.json').write_text(json.dumps(dict(last_complete=dict(sweep=1),
         accepted_preparation_sha256=coefficient['preparation']['sha256'],
-        sweeps=[dict(state='COMPLETE_F_NOT_CONVERGENCE')])))
-    c['limits']=dict(response_allocations=1,response_CPU=16,response_GiB=32,response_hours=30,
+        sweeps=[dict(state=field_state)])))
+    c['limits']=dict(response_allocations=1,response_CPU=16,response_GiB=32,response_hours=hours,
         response_temperature_evaluations=12,response_thermal_policy='native_instantaneous_scenario',
         automatic_retries=0)
     config.write_text(json.dumps(c))
     D.dispatch(config,D.sha(config),'response')
     command=shlex.split(calls[0][-1])
-    assert '--time=1-06:00:00' in command
+    assert '--time='+allocation in command
+    assert 'LUMINA_RESPONSE_SECONDS='+str(seconds) in next(x for x in command if x.startswith('--export='))
+    assert 'LUMINA_RESPONSE_THERMAL_HOURS='+str(hours) in next(x for x in command if x.startswith('--export='))
     assert 'LUMINA_RESPONSE_LONG_THERMAL=1' in next(x for x in command if x.startswith('--export='))
     assert command[command.index('--temperature-evaluations')+1]=='12'
     assert command[command.index('--thermal-policy')+1]=='native_instantaneous_scenario'
@@ -246,7 +253,8 @@ def test_invalid_sweep_or_partial_warm_start_cannot_submit(setup,fault):
     assert not calls and not (config.parent/'field-submission.json').exists()
 
 
-def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeypatch):
+@pytest.mark.parametrize('hours',[30,48])
+def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeypatch,hours):
     import prepare_lumina_bundle_dispatch as P
     gpu=tmp_path/'gpu';gpu.mkdir()
     (gpu/'prepared.json').write_text(json.dumps(dict(source_commit='b'*40)))
@@ -255,11 +263,11 @@ def test_control_preparation_uses_the_actual_coefficient_commit(tmp_path,monkeyp
     prepared=P.prepare(tmp_path,tmp_path/'control','b'*40,gpu,tmp_path/'new-coeff/result.json',
         tmp_path/'response','c'*40,max_sweeps=1,input_j=tmp_path/'old/J.npy',input_j_sha256='a'*64,
         initial_preparation=tmp_path/'old/P.json',initial_preparation_sha256='d'*64,thermal_response=True,
-        submission_host_addresses={'grammar':'192.0.2.20','syntax':'192.0.2.10'})
+        submission_host_addresses={'grammar':'192.0.2.20','syntax':'192.0.2.10'},response_thermal_hours=hours)
     config=json.loads(Path(prepared['config']).read_text())
     assert config['coefficient_commit']=='c'*40 and config['response_commit']=='b'*40
     assert config['limits']['maximum_F']==1 and config['limits']['GPU_hours']==12
-    assert config['limits']['response_hours']==30
+    assert config['limits']['response_hours']==hours
     assert config['limits']['response_temperature_evaluations']==12
     assert config['limits']['response_thermal_policy']=='native_instantaneous_scenario'
     assert config['initial_field']['J']['path']==str(tmp_path/'old/J.npy')

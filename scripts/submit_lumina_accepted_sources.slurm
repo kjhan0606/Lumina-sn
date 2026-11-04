@@ -20,6 +20,17 @@ parent=$(realpath "${1:?새 parent 필요}")
 source_commit=${2:?봉인 commit 필요}
 shift 2
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+lumina_bundle_config=${LUMINA_ACCEPTED_BUNDLE_CONFIG:-}
+lumina_bundle_digest=${LUMINA_ACCEPTED_BUNDLE_CONFIG_SHA256:-}
+if [[ -n "$lumina_bundle_config" || -n "$lumina_bundle_digest" ]]; then
+    [[ -n "$lumina_bundle_config" && "$lumina_bundle_digest" =~ ^[0-9a-f]{64}$ ]]
+    test -f "$lumina_bundle_config"
+    test -f "$(dirname "$lumina_bundle_config")/lumina_bundle_dispatch.py"
+    read -r lumina_actual_digest _ < <(sha256sum -- "$lumina_bundle_config")
+    [[ "$lumina_actual_digest" = "$lumina_bundle_digest" ]]
+    python3 "$(dirname "$lumina_bundle_config")/lumina_bundle_dispatch.py" \
+        "$lumina_bundle_config" "$lumina_bundle_digest" preflight-source
+fi
 test -d "$parent"
 test ! -e "$parent/source"
 test ! -e "$parent/run"
@@ -30,3 +41,8 @@ export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$parent/source/scripts"
 cd "$parent/source"
 timeout -k 30 6900s python3 scripts/run_lumina_accepted_sources.py \
     --out "$parent/run" --source-commit "$source_commit" "$@"
+if [[ -n "$lumina_bundle_config" ]]; then
+    # 승인된 묶음 구성에서만 새 계수 완성 후 GPU를 한 번 제출한다. 대기/재시도 없음.
+    python3 "$(dirname "$lumina_bundle_config")/lumina_bundle_dispatch.py" \
+        "$lumina_bundle_config" "$lumina_bundle_digest" field
+fi

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import time
 
 import numpy as np
@@ -27,6 +28,27 @@ def material_inputs(manifest=None, manifest_sha256=None, full_population=None, f
 
 
 coefficient_free_free_policy=A.coefficient_free_free_policy
+
+
+def build_current_source_kernel(project,native_source,out):
+    """현재 봉인 소스의 occupation 지원 커널을 기존 빌드 스크립트로 만든다."""
+    project,native_source,out=[Path(p).resolve() for p in (project,native_source,out)]
+    if out.exists():raise FileExistsError('기존 source kernel 빌드 보존')
+    builder=project/'scripts/build_cmfgen_source_kernels.sh'
+    try:
+        subprocess.run(['bash',str(builder),str(native_source),str(project),str(out)],
+                       check=True,capture_output=True,text=True,timeout=120)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('현재 source kernel 빌드 실패: '+error.stderr[-2000:]) from error
+    library=out/'model_sources.so'
+    if S.SourceKernels(library).occupation_line_function is None:
+        raise ValueError('현재 계수 생산에는 occupation 지원 kernel이 필요함')
+    names=('set_kind_module.f','gff.f','cmfgen_source_native.f90',
+           'model_source_kernels.c','model_gaussian_profile.h')
+    record=dict(builder_sha256=B.sha(builder),source_sha256={name:B.sha(out/name) for name in names},
+                library_sha256=B.sha(library),
+                BB_occupation_contract='ABSORPTION_TIMES_W_UPPER_OVER_W_LOWER_V1')
+    return library,record
 
 
 def run(out, source_commit, accepted_material=None, accepted_material_sha256=None,
@@ -70,12 +92,14 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
         if B.sha(paths[key]) != manifest['input_sha256'][str(paths[key])]:
             raise ValueError('원 기준 입력 변경: '+key)
     phot = RUNS/'lumina_model_spec_428222/cmfgen_phot_smoothing.so'
-    kernel = RUNS/'lumina_full_source_tests_20261020-0sY1jL/kernels/model_sources.so'
     out.mkdir()
+    kernel,kernel_build=build_current_source_kernel(Path(__file__).resolve().parents[1],
+        RUNS.parent/'cmfgen_src/cur_cmf',out/'kernels')
     inputs = {str(p): B.sha(p) for p in (*paths.values(), phot, kernel)}
     (out/'inputs.json').write_text(json.dumps(dict(source_commit=source_commit,
         input_sha256=inputs, resources='CPU16/32GiB/2h/GPU0/retry0',
         thermal_energy_policy=manifest.get('thermal_energy_policy'),free_free_policy=free_free_policy,
+        kernel_build=kernel_build,
         continuum_evaluation='direct at every original frequency; no CONT_FREQ substitution',
         physical_RT_executions=0, new_SE_solves=0), indent=2)+'\n')
     print(json.dumps(dict(phase='NEW_ACCEPTED_COEFFICIENTS_BEGIN', source_commit=source_commit)), flush=True)
@@ -90,6 +114,7 @@ def run(out, source_commit, accepted_material=None, accepted_material_sha256=Non
     A.prepare(config, B.sha(config), out/'boundary')
     result = dict(state='COMPLETE_NEW_ACCEPTED_COEFFICIENTS_AND_BOUNDARY',
         source_commit=source_commit, wall_seconds=time.monotonic()-start,
+        kernel_build=kernel_build,
         thermal_energy_policy=manifest.get('thermal_energy_policy'),free_free_policy=free_free_policy,
         input_sha256=inputs, preparation=dict(path=str(out/'boundary/preparation.json'),
         sha256=B.sha(out/'boundary/preparation.json')), new_transport=0, new_SE_solves=0,

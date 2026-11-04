@@ -66,33 +66,36 @@ def test_existing_slurm_resources_remain_supported(monkeypatch):
     with pytest.raises(ValueError): N.execution_resources(13800)
 
 
-def test_long_thermal_requires_real_slurm_time_and_temperature_evaluations(monkeypatch):
+@pytest.mark.parametrize('hours,seconds,allocation,shorter',[
+    (30,106200,'1-06:00:00','1-05:00:00'),(48,171000,'2-00:00:00','1-23:00:00')])
+def test_long_thermal_requires_real_slurm_time_and_temperature_evaluations(monkeypatch,hours,seconds,allocation,shorter):
     from types import SimpleNamespace
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'slurm')
     monkeypatch.setenv('LUMINA_RESPONSE_LONG_THERMAL', '1')
+    monkeypatch.setenv('LUMINA_RESPONSE_THERMAL_HOURS',str(hours))
     monkeypatch.setenv('OMP_NUM_THREADS', '16')
     monkeypatch.setenv('SLURM_CPUS_PER_TASK', '16')
     monkeypatch.setenv('SLURM_MEM_PER_NODE', '32768')
     monkeypatch.setenv('SLURM_JOB_ID', '456')
-    shown={'value': 'JobId=456 JobState=RUNNING TimeLimit=1-06:00:00 NumCPUs=16'}
+    shown={'value': 'JobId=456 JobState=RUNNING TimeLimit='+allocation+' NumCPUs=16'}
     def show(command, **kwargs):
         assert command == ['scontrol', 'show', 'job', '456', '-o']
         assert kwargs['check'] and kwargs['timeout'] == 10
         return SimpleNamespace(stdout=shown['value'])
     monkeypatch.setattr(N.subprocess, 'run', show)
-    result=N.execution_resources(106200, 12)
-    assert result['long_thermal'] and result['seconds']==106200
-    assert result['allocated_seconds']==108000
+    result=N.execution_resources(seconds, 12)
+    assert result['long_thermal'] and result['seconds']==seconds
+    assert result['allocated_seconds']==hours*3600 and result['thermal_hours_limit']==hours
     with pytest.raises(ValueError, match='온도 평가'):
-        N.execution_resources(106200, 0)
+        N.execution_resources(seconds, 0)
     with pytest.raises(ValueError, match='시간 할당 부족'):
-        shown['value']='JobId=456 JobState=RUNNING TimeLimit=1-05:00:00 NumCPUs=16'
-        N.execution_resources(106200, 12)
-    shown['value']='JobId=456 JobState=RUNNING TimeLimit=1-06:00:00 NumCPUs=16'
-    with pytest.raises(ValueError): N.execution_resources(106201, 12)
+        shown['value']='JobId=456 JobState=RUNNING TimeLimit='+shorter+' NumCPUs=16'
+        N.execution_resources(seconds, 12)
+    shown['value']='JobId=456 JobState=RUNNING TimeLimit='+allocation+' NumCPUs=16'
+    with pytest.raises(ValueError): N.execution_resources(seconds+1, 12)
     monkeypatch.setenv('LUMINA_RESPONSE_EXECUTOR', 'manual-lageunha')
     with pytest.raises(ValueError, match='Slurm 경로'):
-        N.execution_resources(106200, 12)
+        N.execution_resources(seconds, 12)
 
 
 @pytest.mark.parametrize('reported', ['JobId=456 TimeLimit=UNLIMITED',
@@ -170,7 +173,9 @@ def test_direction_output_cannot_be_published_as_accepted_material(tmp_path):
     ('direction',21000,'06:00:00',True),('direction',42600,'12:00:00',True),
     ('direction',21000,'12:00:00',False),('direction',21000,'05:59:00',False),
     ('refine',10200,'03:00:00',True),('refine',42600,'12:00:00',True),
-    ('refine',10200,'12:00:00',False),('refine',10200,'02:59:00',False)])
+    ('refine',10200,'12:00:00',False),('refine',10200,'02:59:00',False),
+    ('coupled30',106200,'1-06:00:00',True),('coupled48',171000,'2-00:00:00',True),
+    ('coupled48',171000,'1-06:00:00',False),('coupled30',171000,'2-00:00:00',False)])
 def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tmp_path,mode,seconds,allocation,accepted):
     import os
     import subprocess
@@ -185,9 +190,11 @@ def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tm
     startup=tmp_path/'shell-env'; startup.write_text('module() { :; }\n')
     environment={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],
         'BASH_ENV':str(startup),'SLURM_JOB_ID':'123','LUMINA_RESPONSE_EXECUTOR':'slurm',
-        'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':str(seconds)}
+        'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':str(seconds),
+        'LUMINA_RESPONSE_THERMAL_HOURS':'48' if mode=='coupled48' else '30'}
     arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations','4' if mode=='direction' else '12']
-    arguments.append('--temperature-direction-only' if mode=='direction' else '--refine-temperature-direction')
+    if mode in ('direction','refine'):
+        arguments.append('--temperature-direction-only' if mode=='direction' else '--refine-temperature-direction')
     result=subprocess.run(arguments,env=environment,capture_output=True,text=True,timeout=10)
     assert result.returncode!=0 # 승인된 경우에도 mock archive에서 멈추며 실제 빌드/물리0회다.
     assert ('REACHED_ARCHIVE' in result.stderr) is accepted
@@ -360,6 +367,19 @@ def test_actual_inputfield_accepts_only_last_complete_new_J(scenario, monkeypatc
         assert last['sweep'] == 2 and source.ns == 3
         np.testing.assert_array_equal(field.values, np.full((3, 8), 2.))
     assert field.closed
+
+
+def test_completed_source_residual_pass_can_feed_response_without_relabelling_output_as_tested_input(scenario,monkeypatch):
+    args,behavior=connect(scenario,monkeypatch)
+    value=1.+F.SOURCE_FIXED_POINT_RTOL/4
+    behavior['outputs']=[1.,value]
+    result=F.run(**args);feedback=args['out']/'feedback.json'
+    assert result['status']=='FIXED_MATERIAL_SCATTERING_CLOSED'
+    assert result['sweeps'][-1]['state']=='FIXED_MATERIAL_SOURCE_RESIDUAL_PASS'
+    assert Path(result['accepted_scattering_field']['path']).parent.name=='F-1'
+    with N.open_field(args['accepted_input'],args['accepted_input_sha256'],feedback,N.B.sha(feedback)) as (_,_,field,last):
+        assert last['sweep']==2 and Path(last['J']['path']).parent.name=='F-2'
+        np.testing.assert_array_equal(field.values,np.full((3,8),value))
 
 
 def test_partial_second_uses_completed_first_not_partial_J(scenario, monkeypatch):

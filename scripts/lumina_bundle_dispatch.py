@@ -52,8 +52,9 @@ def require_callback_route(config):
     return command
 
 
-def preflight_callback(config, digest):
-    """할당된 GPU 노드에서 실제 grammar SSH 경로를 F 계산 전에 확인한다."""
+def preflight_callback(config, digest, host='grammar'):
+    """할당 노드에서 다음 제출 호스트의 SSH를 비싼 계산 전에 확인한다."""
+    if host not in ('grammar','syntax'):raise ValueError('후속 제출 호스트 오류')
     config=Path(config).resolve()
     if sha(config)!=digest:
         raise ValueError('묶음 제출 구성 변경')
@@ -64,15 +65,16 @@ def preflight_callback(config, digest):
     if (not isinstance(expected,str) or not re.fullmatch(r'[0-9a-f]{64}',expected) or
             sha(Path(__file__))!=expected):
         raise ValueError('GPU callback 사전 확인기의 봉인 해시 불일치')
-    command=require_callback_route(c)+['hostname','-s']
+    command=(require_callback_route(c) if host=='grammar' else submission_ssh(c,host))+['hostname','-s']
     try:
         result=subprocess.run(command,capture_output=True,text=True,timeout=15)
     except (OSError,subprocess.TimeoutExpired) as error:
-        raise RuntimeError('GPU 노드에서 grammar callback SSH 사전 확인 실패') from error
+        raise RuntimeError('할당 노드에서 '+host+' callback SSH 사전 확인 실패') from error
     remote_host=result.stdout.strip()
     if result.returncode!=0 or not remote_host:
-        raise RuntimeError('GPU 노드에서 grammar callback SSH 사전 확인 실패')
-    return dict(state='CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD',host='grammar',
+        raise RuntimeError('할당 노드에서 '+host+' callback SSH 사전 확인 실패')
+    return dict(state='CALLBACK_ROUTE_VERIFIED_BEFORE_FIELD' if host=='grammar' else
+                'SUBMISSION_ROUTE_VERIFIED_BEFORE_COEFFICIENTS',host=host,
                 remote_hostname=remote_host,automatic_retries=0)
 
 
@@ -134,7 +136,8 @@ def dispatch(config, digest, step):
         if not last or f['accepted_preparation_sha256'] != p['sha256']:
             raise ValueError('새 완성 자체장 없음; 물질응답 제출 안 함')
         entry = f['sweeps'][last['sweep']-1]
-        if entry['state'] != 'COMPLETE_F_NOT_CONVERGENCE': raise ValueError('부분장 소비 금지')
+        if entry['state'] not in ('COMPLETE_F_NOT_CONVERGENCE','FIXED_MATERIAL_SOURCE_RESIDUAL_PASS'):
+            raise ValueError('부분장 소비 금지')
         limits = c.get('limits', {})
         temperature_evaluations = limits.get('response_temperature_evaluations', 0)
         if type(temperature_evaluations) is not int or temperature_evaluations not in (0, 12):
@@ -143,14 +146,19 @@ def dispatch(config, digest, step):
             '--feedback', str(feedback), '--feedback-sha', sha(feedback)]
         if temperature_evaluations:
             policy = limits.get('response_thermal_policy')
+            hours=limits.get('response_hours')
+            if type(hours) is not int or hours not in (30,48):
+                raise ValueError('반환장 열보정 시간 한도 오류')
             expected_limits = dict(response_allocations=1, response_CPU=16, response_GiB=32,
-                response_hours=30, automatic_retries=0)
+                response_hours=hours, automatic_retries=0)
             if (policy != 'native_instantaneous_scenario' or
                     coefficient.get('thermal_energy_policy') != policy or
                     any(limits.get(key) != value for key, value in expected_limits.items())):
                 raise ValueError('반환장 열보정 정책 불일치')
-            common += ['--time=1-06:00:00',
-                '--export=ALL,LUMINA_RESPONSE_LONG_THERMAL=1,LUMINA_RESPONSE_SECONDS=106200']
+            allocation='1-06:00:00' if hours==30 else '2-00:00:00'
+            common += ['--time='+allocation,
+                '--export=ALL,LUMINA_RESPONSE_LONG_THERMAL=1,LUMINA_RESPONSE_SECONDS='+str(hours*3600-1800)+
+                ',LUMINA_RESPONSE_THERMAL_HOURS='+str(hours)]
             response_options += ['--temperature-evaluations', str(temperature_evaluations),
                 '--thermal-policy', policy, '--secant-after-accept']
         else:
@@ -186,9 +194,10 @@ def dispatch(config, digest, step):
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('config', type=Path); p.add_argument('digest')
-    p.add_argument('step', choices=('field', 'response', 'preflight'))
+    p.add_argument('step', choices=('field', 'response', 'preflight','preflight-source'))
     args=vars(p.parse_args())
-    if args['step']=='preflight':
-        print(json.dumps(preflight_callback(args['config'],args['digest']),indent=2))
+    if args['step'] in ('preflight','preflight-source'):
+        print(json.dumps(preflight_callback(args['config'],args['digest'],
+                        'syntax' if args['step']=='preflight-source' else 'grammar'),indent=2))
     else:
         print(json.dumps(dispatch(**args),indent=2))

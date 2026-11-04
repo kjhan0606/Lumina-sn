@@ -2,6 +2,9 @@
 from pathlib import Path
 import json
 import sys
+import os
+import subprocess
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,6 +46,65 @@ def test_FF_source_selection_follows_declared_material_energy_policy(thermal,exp
     ('physical_stored','NATIVE_UPPER_IONS'),('unknown',None),(None,'unknown')])
 def test_mixed_heat_and_transport_FF_models_are_rejected(thermal,requested):
     with pytest.raises(ValueError):S.coefficient_free_free_policy(dict(thermal_energy_policy=thermal),requested)
+
+
+def test_new_source_run_builds_current_occupation_kernel_without_replacing_existing(tmp_path):
+    native=S.RUNS.parent/'cmfgen_src/cur_cmf'
+    if not (native/'subs/gff.f').is_file():pytest.skip('native GFF 소스 필요')
+    project=Path(__file__).resolve().parents[1];out=tmp_path/'kernels'
+    library,record=S.build_current_source_kernel(project,native,out)
+    assert S.S.SourceKernels(library).occupation_line_function is not None
+    assert record['library_sha256']==S.B.sha(library)
+    for name in ('model_source_kernels.c','model_gaussian_profile.h'):
+        assert record['source_sha256'][name]==S.B.sha(project/'src'/name)
+    assert record['source_sha256']['gff.f']==S.B.sha(native/'subs/gff.f')
+    assert record['BB_occupation_contract']=='ABSORPTION_TIMES_W_UPPER_OVER_W_LOWER_V1'
+    before=library.read_bytes()
+    with pytest.raises(FileExistsError):S.build_current_source_kernel(project,native,out)
+    assert library.read_bytes()==before
+
+
+def test_builder_result_without_occupation_abi_cannot_reach_source_production(tmp_path,monkeypatch):
+    monkeypatch.setattr(S.subprocess,'run',lambda *args,**kwargs:None)
+    monkeypatch.setattr(S.S,'SourceKernels',lambda path:SimpleNamespace(occupation_line_function=None))
+    with pytest.raises(ValueError,match='occupation 지원'):
+        S.build_current_source_kernel(tmp_path,tmp_path/'native',tmp_path/'kernels')
+
+
+@pytest.mark.parametrize('callback',['none','valid','bad_digest','missing_digest','source_failed','preflight_failed'])
+def test_source_completion_callback_is_explicit_and_never_follows_a_failed_source(tmp_path,callback):
+    control=tmp_path/'control';control.mkdir();config=control/'config.json';config.write_text('{}')
+    (control/'lumina_bundle_dispatch.py').write_text('# 합성 제출기; 실제 SSH/Slurm 호출 없음\n')
+    binaries=tmp_path/'bin';binaries.mkdir();parent=tmp_path/'parent';parent.mkdir()
+    git=binaries/'git';git.write_text('#!/bin/bash\ntar -cf - -T /dev/null\n');git.chmod(0o700)
+    python=binaries/'python3';python.write_text(
+        '#!/bin/bash\nprintf "%s\\n" "$*" >> "$FIXTURE_TRACE"\n'
+        'if [[ "${@: -1}" = preflight-source ]]; then exit "$FIXTURE_PREFLIGHT_STATUS"; fi\n'
+        'if [[ "$1" = scripts/run_lumina_accepted_sources.py ]]; then exit "$FIXTURE_SOURCE_STATUS"; fi\n')
+    python.chmod(0o700)
+    startup=tmp_path/'shell-env';startup.write_text('module() { :; }\n')
+    trace=tmp_path/'trace'
+    env={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],'BASH_ENV':str(startup),
+         'FIXTURE_TRACE':str(trace),'FIXTURE_SOURCE_STATUS':'7' if callback=='source_failed' else '0'}
+    env['FIXTURE_PREFLIGHT_STATUS']='8' if callback=='preflight_failed' else '0'
+    env.pop('LUMINA_ACCEPTED_BUNDLE_CONFIG',None);env.pop('LUMINA_ACCEPTED_BUNDLE_CONFIG_SHA256',None)
+    if callback!='none':
+        env['LUMINA_ACCEPTED_BUNDLE_CONFIG']=str(config)
+        if callback!='missing_digest':
+            env['LUMINA_ACCEPTED_BUNDLE_CONFIG_SHA256']='0'*64 if callback=='bad_digest' else S.B.sha(config)
+    script=Path(S.__file__).with_name('submit_lumina_accepted_sources.slurm')
+    result=subprocess.run(['bash',str(script),str(parent),'a'*40],env=env,capture_output=True,text=True,timeout=10)
+    lines=trace.read_text().splitlines() if trace.exists() else []
+    if callback in ('bad_digest','missing_digest'):
+        assert result.returncode!=0 and not lines and not (parent/'source').exists()
+    elif callback=='source_failed':
+        assert result.returncode==7 and len(lines)==2
+        assert lines[0].endswith(' preflight-source')
+    elif callback=='preflight_failed':
+        assert result.returncode==8 and len(lines)==1 and not (parent/'source').exists()
+    else:
+        assert result.returncode==0 and len(lines)==(3 if callback=='valid' else 1)
+        if callback=='valid':assert lines[-1].endswith(' '+S.B.sha(config)+' field')
 
 
 def test_invalid_TNE_manifest_stops_before_frequency_coefficient_integration(tmp_path,monkeypatch):

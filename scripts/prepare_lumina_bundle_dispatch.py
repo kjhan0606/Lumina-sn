@@ -12,7 +12,7 @@ from lumina_bundle_dispatch import sha, require_callback_route
 def prepare(project, out, commit, gpu_root, coefficient_result, response_parent, coefficient_commit,
             max_sweeps=1, input_j=None, input_j_sha256=None,
             initial_preparation=None, initial_preparation_sha256=None, thermal_response=False,
-            submission_host_addresses=None):
+            submission_host_addresses=None,response_thermal_hours=30):
     project, out, gpu_root = map(lambda p: Path(p).resolve(), (project, out, gpu_root))
     routing = dict(submission_host_addresses=submission_host_addresses or {})
     require_callback_route(routing)
@@ -21,6 +21,9 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
         raise ValueError('실제 계수/후속 소스 commit과 왕복당 F 1회 또는 2회 한도 필요')
     if type(thermal_response) is not bool:
         raise ValueError('반환장 열보정 선택은 불리언이어야 함')
+    if (type(response_thermal_hours) is not int or response_thermal_hours not in (30,48) or
+            (not thermal_response and response_thermal_hours!=30)):
+        raise ValueError('명시한 열보정 시간은30 또는48시간이어야 함')
     initial = (input_j, input_j_sha256, initial_preparation, initial_preparation_sha256)
     if any(v is not None for v in initial) and (not all(v is not None for v in initial) or
             not all(re.fullmatch(r'[0-9a-f]{64}', value) for value in (input_j_sha256, initial_preparation_sha256))):
@@ -51,7 +54,7 @@ def prepare(project, out, commit, gpu_root, coefficient_result, response_parent,
                     GPU_hours=12 if thermal_response or max_sweeps == 2 else 10,
                     maximum_F=max_sweeps,
                     response_allocations=1, response_CPU=16, response_GiB=32,
-                    response_hours=30 if thermal_response else 3,
+                    response_hours=response_thermal_hours if thermal_response else 3,
                     response_temperature_evaluations=12 if thermal_response else 0,
                     response_thermal_policy='native_instantaneous_scenario' if thermal_response else None,
                     automatic_retries=0))
@@ -75,7 +78,9 @@ if __name__ == '__main__':
     p.add_argument('--initial-preparation', type=Path)
     p.add_argument('--initial-preparation-sha256')
     p.add_argument('--thermal-response', action='store_true',
-        help='반환 J에 대한 T/ne 열보정을 최대12평가·30시간 단회로 이어 실행')
+        help='반환 J에 대한 T/ne 열보정을 최대12평가 단회로 이어 실행')
+    p.add_argument('--response-thermal-hours',type=int,choices=(30,48),default=30,
+        help='별도 승인된 열응답 시간; 기본30시간은 유지')
     p.add_argument('--grammar-address', required=True,
         help='계산 노드에서 도달 검증한 grammar 수치 IP; 원 SSH alias/호스트키 유지')
     p.add_argument('--syntax-address', help='필요한 경우 검증한 syntax 수치 IP')
