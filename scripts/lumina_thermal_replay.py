@@ -41,7 +41,7 @@ def stopped_prefix(report, prefix):
 
 def load(path, digest, *, field, source_identity, implementation, state,
          library, line_library, inputs, policy='physical_stored', prefix=None, project_charge=False,
-         direction_source=False):
+         direction_source=False, selected_base=False):
     path = Path(path).resolve()
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
@@ -56,6 +56,12 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if type(projected_trials) is not bool:
         raise ValueError('보존 열평가의 정상 전하보정 호출 방식 오류')
     previous_policy = energy_policy(report, default='physical_stored')
+    if type(selected_base) is not bool or (selected_base and (
+            completed is not None or direction_source or prefix is not None or project_charge or
+            report.get('state') != 'COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE' or
+            report.get('charge_converged') is not True or
+            report.get('selected_response') not in report.get('evaluations', []))):
+        raise ValueError('선택 상태 재시작은 완료·전하 폐합된 실제 선택 응답만 가능')
     if type(direction_source) is not bool or (direction_source and (
             prefix is not None or project_charge or previous_policy != policy or
             (completed is None and (
@@ -113,8 +119,10 @@ def load(path, digest, *, field, source_identity, implementation, state,
         packet(data, heat, policy).validate()
         return data, heat, entry
 
-    first = read(report['thermal_initial_response'])
-    order = report.get('thermal_evaluation_order', [])
+    first = read(report['selected_response'] if selected_base else report['thermal_initial_response'])
+    if selected_base and float(np.max(abs(first[0]['charge_residual']/first[0]['ne']))) > 1.e-10:
+        raise ValueError('선택 기점의 실제 전하 미폐합')
+    order = [] if selected_base else report.get('thermal_evaluation_order', [])
     if completed is not None:
         order = order[:4]
     if prefix is not None:
@@ -125,7 +133,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
         if entry.get('fixed_field_thermal_callback') is not True:
             raise ValueError('보존 호출 순서의 비열평가 혼합')
         replay.append(read(entry))
-    if not replay:
+    if not replay and not selected_base:
         raise ValueError('재사용할 완료 열평가 없음')
     direction_basis = None
     if direction_source:
@@ -192,5 +200,6 @@ def load(path, digest, *, field, source_identity, implementation, state,
                     previous_energy_policy=previous_policy, energy_policy=policy,
                     initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=bool(project_charge),
                     previous_acceptance_reused=False, centered_direction_source=direction_source,
+                    selected_material_as_new_base=selected_base,
                     saved_evaluations=len(replay),
                     new_material_evaluations=0, new_transport=0))

@@ -9,6 +9,70 @@ from lumina_common_charge import solve as solve_charge
 from lumina_coupled_material import packet, residual, jacobian, newton_direction
 
 
+def solve_root(evaluate, first, adiabatic, lower, upper, *, policy,
+               max_evaluations=12, on_evaluation=None, on_direction=None):
+    """실제 수용 상태에서 box 보정과 새 centered 근 확인을 같은 예산 안에 수행한다.
+
+    4회 centered 확인을 남겨두고 후보를 평가한다. 예산 부족은 미수렴이며,
+    작은 제한 보폭이나 열잔차만으로 근을 인증하지 않는다.
+    """
+    from lumina_fixed_field_thermal import linearize
+    if type(max_evaluations) is not int or not 4 <= max_evaluations <= 12:
+        raise ValueError('box 근 탐색은 실제 응답4~12회 한도 필요')
+    selected = first; used = 0; accepted = 0; history = []; directions = []
+    root_max = None; converged = False; reason = 'EVALUATION_LIMIT'
+    def actual(t, ne):
+        nonlocal used
+        if used >= max_evaluations: raise RuntimeError('box 근 탐색 실제평가 한도 초과')
+        value = evaluate(t, ne); used += 1
+        return value
+    def decision(value, entry):
+        item = dict(entry, evaluation=used)
+        if history and history[-1]['evaluation'] == used: history[-1] = item
+        else: history.append(item)
+        if on_evaluation is not None: on_evaluation(value, item)
+    while max_evaluations-used >= 4:
+        probes = []; captured = []
+        def probe(t, ne):
+            value = actual(t, ne); probes.append(value); return value
+        def direction(*args):
+            captured.append(args)
+            if on_direction is not None: on_direction(*args)
+        linear = linearize(probe, selected, adiabatic, policy=policy,
+                           on_evaluation=decision, on_direction=direction)
+        directions.append(linear)
+        root_max = max(linear['max_abs_log_temperature_direction'], linear['max_abs_log_ne_direction'])
+        base = packet(*selected[:2], policy)
+        physical = residual(base, adiabatic, base.ne, base.thermal_scale)
+        n = len(base.ne)
+        if root_max <= 1.e-3 and abs(physical[:n]).max() <= 1.e-10 and abs(physical[n:]).max() <= 1.e-3:
+            converged = True; reason = 'FRESH_CENTERED_ROOT_AND_PHYSICAL_TOLERANCES'; break
+        allowance = max_evaluations-used-4
+        if allowance < 2: break
+        _, matrix, f, delta, c, h = captured[0]
+        basis = dict(temperature=base.temperature, ne=base.ne, jacobian=matrix,
+                     scaled_residual=f, log_direction=delta, charge_scale=c, thermal_scale=h)
+        correction = refine(actual, selected, probes, adiabatic, basis, lower, upper,
+                            policy=policy, max_evaluations=allowance, max_temperature_trials=1,
+                            on_evaluation=decision)
+        if not correction['accepted_iterations']:
+            reason = 'ACTUAL_BOX_CANDIDATE_NOT_ACCEPTED'; break
+        selected = correction['selected']; accepted += 1; root_max = None
+    final = packet(*selected[:2], policy); n = len(final.ne)
+    physical = residual(final, adiabatic, final.ne, final.thermal_scale)
+    return dict(selected=selected, history=history, centered_checks=directions,
+        accepted_iterations=accepted, evaluations_used=used, fresh_evaluations_used=used,
+        replayed_evaluations=0, fixed_field_numerical_converged=converged,
+        fixed_field_root_converged=converged, root_search_requested=True,
+        root_log_step_tolerance=1.e-3, root_fresh_direction_max=root_max,
+        charge_relative=float(abs(final.charge/final.ne).max()),
+        thermal_physical_scaled_max=float(abs(physical[n:]).max()),
+        physical_tolerances_satisfied=bool(abs(physical[:n]).max()<=1.e-10 and abs(physical[n:]).max()<=1.e-3),
+        charge_tolerance=1.e-10, thermal_tolerance=1.e-3,
+        charge_projected_trials=True, bounded_root_restart=True, stop_reason=reason,
+        new_transport=0, joint_convergence=False)
+
+
 def bounded_direction(first, probes, adiabatic, basis, *, policy, max_log_step=.1):
     """동일 기점/네 응답/열행을 확인하고 전하 제거 후 box 선형 문제를 푼다."""
     from scipy.optimize import lsq_linear

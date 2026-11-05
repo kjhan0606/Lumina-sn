@@ -286,6 +286,14 @@ def run(args):
     temperature_evaluations = getattr(args, 'temperature_evaluations', 0)
     direction_only = getattr(args, 'temperature_direction_only', False)
     refining = getattr(args, 'refine_temperature_direction', False)
+    box_root = getattr(args, 'restart_box_root', False)
+    if type(box_root) is not bool or (box_root and (
+            refining or direction_only or getattr(args, 'charge_projection', False) or
+            getattr(args, 'secant_after_accept', False) or getattr(args, 'thermal_replay_prefix', None) is not None or
+            not getattr(args, 'resume_result', None) or not getattr(args, 'resume_result_sha', None) or
+            not getattr(args, 'resume_thermal_result', None) or not getattr(args, 'resume_thermal_result_sha', None) or
+            type(temperature_evaluations) is not int or not 4 <= temperature_evaluations <= 12)):
+        raise ValueError('box 근 재시작은 완료 선택 상태·계수 해시쌍과 신규4~12평가 필요')
     refinement_trials = getattr(args, 'refinement_temperature_trials', 2)
     if type(refinement_trials) is not int or refinement_trials not in (1, 2) or (not refining and refinement_trials != 2):
         raise ValueError('유한 온도수정의 온도 제안 한도는1~2회')
@@ -307,6 +315,9 @@ def run(args):
             args.seconds > 42600))):
         raise ValueError('온도방향 전용은 완료 계수/기준 재사용·신규4평가·12시간 이내이며 수용/재생 모드와 혼합 금지')
     execution = execution_resources(args.seconds, temperature_evaluations)
+    if box_root and (execution['executor'] != 'slurm' or
+            not execution.get('hostname', '').split('.')[0].startswith('grammar')):
+        raise ValueError('box 근 재시작은 grammar Slurm에서 실행')
     if (direction_only or refining) and (execution['executor'] != 'slurm' or
             not execution.get('long_thermal') or
             not execution.get('hostname', '').split('.')[0].startswith('grammar') or
@@ -346,10 +357,11 @@ def run(args):
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
         thermal_implementation_sha256=thermal_implementation_hashes(),
         charge_projection=projecting,
-        fresh_temperature_full_BF_integrations_max=refinement_trials if refining else (2 if direction_only else (0 if projecting else None)),
+        fresh_temperature_full_BF_integrations_max=5 if box_root else (refinement_trials if refining else (2 if direction_only else (0 if projecting else None))),
         secant_after_accept=secant_after_accept,
         temperature_direction_only=direction_only,
         refine_temperature_direction=refining,
+        restart_box_root=box_root,
         refinement_temperature_trials_max=refinement_trials if refining else None,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
@@ -407,7 +419,7 @@ def run(args):
                     source_identity=source.identity, state=state, inputs=inputs,
                     library=args.library, line_library=args.line_library,
                     routes=len(routes), lines=len(lines['lower']),
-                    reuse_thermal_base=direction_only or refining, thermal_policy=thermal_policy)
+                    reuse_thermal_base=direction_only or refining or box_root, thermal_policy=thermal_policy)
                 result['baseline_reuse'] = seed['provenance']
                 for name in completed_seed.coefficient_names(seed['report']):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
@@ -538,7 +550,7 @@ def run(args):
                         implementation=result['thermal_implementation_sha256'], state=state,
                         library=args.library, line_library=args.line_library, inputs=inputs,
                         policy=thermal_policy, prefix=replay_prefix, project_charge=projecting,
-                        direction_source=refining)
+                        direction_source=refining, selected_base=box_root)
                     result['thermal_replay'] = replay_source['provenance']
                     cached_response.register(replay_source['bound_temperature_tables'], inputs=inputs)
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
@@ -597,6 +609,11 @@ def run(args):
                                 (direction_root/'linearization.npz', direction_root/'result.json')})
                         save()
                         return result
+                    elif box_root:
+                        block = thermal_refinement.solve_root(evaluate_temperature, first_value,
+                            full_ad, lower, upper, policy=thermal_policy,
+                            max_evaluations=temperature_evaluations,
+                            on_evaluation=thermal_decision, on_direction=thermal_direction)
                     elif refining:
                         def refinement_proposal(entry):
                             result.setdefault('temperature_refinement_proposal_events', []).append(entry)
@@ -682,6 +699,8 @@ if __name__ == '__main__':
         help='완료 방향 전용4응답을 재사용해 최대 두 제한 온도 제안의 실제 전하/열 개선을 평가. 실행 승인을 대신하지 않음')
     parser.add_argument('--refinement-temperature-trials', type=int, choices=(1, 2), default=2,
         help='유한 수정의 새 온도 제안 수. 단일 큰 보폭 확인에서는1로 제한')
+    parser.add_argument('--restart-box-root', action='store_true',
+        help='완료 선택 상태를 새 기점으로 box 보정하고 fresh centered 방향으로 근 확인; 추가 실행 승인 대체 아님')
     parser.add_argument('--resume-result', type=Path,
         help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
     parser.add_argument('--resume-result-sha')

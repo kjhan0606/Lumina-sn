@@ -63,6 +63,23 @@ def test_normal_projection_call_order_is_explicit_in_saved_and_resumed_runs(pres
     with pytest.raises(ValueError,match='호출 방식'):load(preserved)
 
 
+def test_selected_restart_loads_accepted_state_not_original_probe_sequence(preserved):
+    root, report, args = preserved
+    entry = report['thermal_initial_response']; p = Path(entry['root'])/'response.npz'
+    with np.load(p) as f: data = {k:f[k] for k in f.files}
+    data['charge_residual'][:] = 0.
+    np.savez(p, **data); entry['response_sha256'] = R.B.sha(p)
+    report.update(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+                  charge_converged=True, selected_response=entry, evaluations=[entry])
+    args['selected_base'] = True
+    result = load(preserved)
+    assert result['first'][2] == entry and result['replay'] == []
+    assert result['provenance']['selected_material_as_new_base']
+    assert not result['provenance']['source_completion_certified']
+    report['charge_converged'] = False
+    with pytest.raises(ValueError, match='선택 상태'): load(preserved)
+
+
 def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(preserved):
     root, report, args = preserved
     receipt = dict(path=str(root/'temperature-bound-cache/table.json'), sha256='table-sha')
