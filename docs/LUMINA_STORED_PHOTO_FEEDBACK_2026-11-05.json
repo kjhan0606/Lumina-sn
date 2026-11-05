@@ -1,0 +1,964 @@
+{
+  "scope": "STORED_BOUND_PHOTO_ONLY_NOT_TOTAL_RATE_OR_SE_CAUSALITY",
+  "current_response_role": "thermal_initial_response_not_final_selected",
+  "reference": "CMFGEN70/J71 fixed-T nonconverged diagnostic; frozen pre-refinement population",
+  "alpha_scope": "stored BF (spontaneous+stimulated)/(ne*parent ion density); includes population response, not independent equilibrium prediction",
+  "new_integrals": 0,
+  "new_SE": 0,
+  "new_transport": 0,
+  "new_native": 0,
+  "report_hash_scope": "live result hash is observation only; completed arrays checked separately",
+  "input_sha256": {
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/result.json": "7d2d5248ee5ab2706728310a82c18eb68104792eeabf5b77c42d64bdc4c467f5",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/result.json": "be3bf940802800c7df94396e1fbd6a8828aa444a9c444082582179349f1eaf47",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/run/result.json": "2f82c3beeef5551b6d5d8cde997accc593f5700da5b6415802048c42b9a1f8dd",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/bound_photo_field_comparison/result.json": "a48426e695632ebafe423f8fea1abad600d19ed8104f96d73fba54026d31062c",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/evaluation-4/response.npz": "216347a338d3adb66337cd46180135c71dec42581c18f48f0351bcb5055eb2a8",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/evaluation-4/response.npz": "252993d3da03dd43ede0d02908c5134896aea8df902b9a54f947027b9556436e",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/run/evaluation-5/response.npz": "94a1a02c79164445e996bda50265472ca0c1da045c3f8b4430f1cb9655c0d40b",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/evaluation-4/balance.npz": "bcc48de1e6372b0510ea28c39c6487ccfeb2342f6da1dd6b62ded6510a68f604",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/run/evaluation-5/balance.npz": "d8a34c928c88a12dc7f77646789541f98094fc42f2eeb31ff9ea9999e0abd17c",
+    "SHARED/kjhan/cmfgen_runs/lumina_model_spec_428222/levels.csv": "b3645052d00dbd535de4f9b3687eda3da02f3dd0584ccef4079c8f9e700daf67",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/bound-rates.npy": "ab3116d37cdedffb6d91bc8a4b08e6fd03f6184382050e91cdf1885efbc26be0",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/route-roster.npz": "478d0e9c6902e1a2695eeda4b7d06780db441aec90c82908172c936b76b7df30",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/bound-rates.npy": "ab3116d37cdedffb6d91bc8a4b08e6fd03f6184382050e91cdf1885efbc26be0",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/route-roster.npz": "478d0e9c6902e1a2695eeda4b7d06780db441aec90c82908172c936b76b7df30",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/run/bound-rates.npy": "81067d7e26b03dfb3a2fe2ca8265917174e6568f71f574836c1c8b8f55455c52",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/run/route-roster.npz": "478d0e9c6902e1a2695eeda4b7d06780db441aec90c82908172c936b76b7df30",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/source/src/bf_rate_jnu.c": "533d3e29e9f7175b5df0aa26fdb43a9449c0795f9d3ff0eedd8043d0c78edeb1",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/source/src/bf_rate_jnu.c": "533d3e29e9f7175b5df0aa26fdb43a9449c0795f9d3ff0eedd8043d0c78edeb1",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/source/src/bf_rate_jnu.c": "533d3e29e9f7175b5df0aa26fdb43a9449c0795f9d3ff0eedd8043d0c78edeb1",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/source/scripts/lumina_model_material_rates.py": "c576f559e80a49809ee4cf60033217542ad7a42d319e57c7b0475d0caf0945fc",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/source/scripts/lumina_model_material_rates.py": "c576f559e80a49809ee4cf60033217542ad7a42d319e57c7b0475d0caf0945fc",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/source/scripts/lumina_model_material_rates.py": "c576f559e80a49809ee4cf60033217542ad7a42d319e57c7b0475d0caf0945fc",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/source/scripts/cmfgen_model_continuum.py": "1ef460c797258426e367d2b1c1bc143d31025d70a230b9265b0f25f4aff949ff",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/source/scripts/cmfgen_model_continuum.py": "1ef460c797258426e367d2b1c1bc143d31025d70a230b9265b0f25f4aff949ff",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/root-response-20261105/returned_response/source/scripts/cmfgen_model_continuum.py": "1ef460c797258426e367d2b1c1bc143d31025d70a230b9265b0f25f4aff949ff",
+    "SHARED/kjhan/cmfgen_runs/lumina_model_spec_428222/cmfgen_phot_smoothing.so": "90bd55a89c78b947e848969f47abfc250baf2f4ba08dc78c81d5245c3c1cd6de",
+    "SHARED/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material/MODEL": "e8ec1835355869c3b8fbaf761fc8b6eeb516b527aa660aea768b8cbc19e2f6c9",
+    "SHARED/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material/MODEL_SPEC": "3e6f53861f16e2dac822d68e1412f91813c7a80f939fdbd0c4b1394e9055f2fb",
+    "SHARED/kjhan/cmfgen_runs/toy06_19p48d_field_feedback_429038/material/atomic_links.txt": "7fb2468b880d5b192e7c3f143cacc38e19ea719b76403ca96fd7033a31a64c9b",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/returned_response_grammar_retry1/run/bound_photo_field_comparison/profiles.csv": "f7867644de25ab2cce03a87dd4fae4561a2c31da2c57688ce586672869e05410",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/run/boundary/preparation.json": "7206ca33fae747ad8bcdda02190a3c4c9ab6821c8c3cfe3cce0fe1516489edcb",
+    "SHARED/kjhan/cmfgen_runs/lumina_refinement_cfull_20261102-DGhtkFEg/material/native_material_nodes.bin": "4552aecc967f69a704f923a903e982b5aa7cb9799932dff2566132943e421701",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/run/boundary/preparation.json": "b3a5ec265d3143acfae0573f6e6c5e27dd3a1704269b7c178894664ab2310b43",
+    "SHARED/kjhan/cmfgen_runs/lumina_outer_iteration_20261102_ee33377ee2/lumina_currentJ_Trefine_after1260758_v1/run/cfull_export_after1262975_20261104/material/native_material_nodes.bin": "fdad9fc859db4c42c69f5d4912af0ffaee66302888bab36a05d8258f2a296223"
+  },
+  "temperature_bit_equal": true,
+  "previous_photo_replay_relative_max": 0,
+  "decomposition_closure_relative_max": 0,
+  "summaries": [
+    {
+      "Z": 14,
+      "stage": 2,
+      "region": "all90",
+      "points": 90,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9608151501965239,
+        "min": 0.8381231569430172,
+        "max": 1.0467244754878184
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 1.0015779863168661,
+        "min": 0.858680368488339,
+        "max": 1.0851793173995896
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0313587679867966,
+        "min": 1.0182800973663466,
+        "max": 1.1194135200263846
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.032161449075650425,
+        "min": 0.018707530920001617,
+        "max": 0.120792227601611
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.038579682782104205,
+        "min": -0.006862963583064163,
+        "max": 0.12213292949065913
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.1125153165872946,
+        "min": 0.019901300085319977,
+        "max": 0.1508949245588684
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1125055844391372,
+        "min": 1.019912214268576,
+        "max": 1.1508757127634206
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0006067797526317,
+        "min": 1.000118654586296,
+        "max": 1.0030735685397743
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0005362473799470635,
+        "min": 0.000029818063797981686,
+        "max": 0.0015735103234415515
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.0019046399504790731,
+        "min": 0.0008837618031160108,
+        "max": 0.032779165166253434
+      },
+      "current_BF_net_over_photo": {
+        "median": 0.000006648080538345843,
+        "min": 1.0761483075230445e-8,
+        "max": 0.00005115648143530312
+      }
+    },
+    {
+      "Z": 14,
+      "stage": 2,
+      "region": "transition30_42",
+      "points": 13,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9913275899540481,
+        "min": 0.9533060678719194,
+        "max": 1.0076481626567368
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 1.0260335697038394,
+        "min": 1.0110299622983714,
+        "max": 1.0503935172537469
+      },
+      "frozen_current_over_previous": {
+        "median": 1.038996691895922,
+        "min": 1.0280775851051107,
+        "max": 1.0737992738370825
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.04093447176449314,
+        "min": 0.02886360396787475,
+        "max": 0.07710458091699723
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.08425299394401521,
+        "min": 0.044409141632607174,
+        "max": 0.12034902045167513
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.12714516493035707,
+        "min": 0.09392842991475778,
+        "max": 0.14921262441954988
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1271433672850486,
+        "min": 1.0939302945491836,
+        "max": 1.1492396035351684
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0003927210816765,
+        "min": 1.0002682068176922,
+        "max": 1.0005812632594546
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0003528653721196484,
+        "min": 0.0002619741254061836,
+        "max": 0.00046471643762002746
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.000979665758148314,
+        "min": 0.0008837618031160108,
+        "max": 0.0015095253421894689
+      },
+      "current_BF_net_over_photo": {
+        "median": 0.0000010126367014104793,
+        "min": 6.433562279463454e-7,
+        "max": 0.0000026619886987827965
+      }
+    },
+    {
+      "Z": 14,
+      "stage": 2,
+      "region": "inner80_89",
+      "points": 10,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9449204701972825,
+        "min": 0.9428786270649598,
+        "max": 0.972536561298036
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9667469941328066,
+        "min": 0.9624835781804092,
+        "max": 0.9911926723063019
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0212796953907501,
+        "min": 1.0191829405193422,
+        "max": 1.0239428230337209
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.02178208398342995,
+        "min": 0.01950283983430294,
+        "max": 0.024600041073053146
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.030196684924843772,
+        "min": 0.0227329100383859,
+        "max": 0.03278672303357051
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.05164336744315849,
+        "min": 0.04223574987268884,
+        "max": 0.057386764106623654
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.051809822581741,
+        "min": 1.0424275069189743,
+        "max": 1.0576498672107821
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0020330908505675,
+        "min": 1.0007758181356015,
+        "max": 1.0030735685397743
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.001027989427924536,
+        "min": 0.0007507852128432191,
+        "max": 0.001500892568872314
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.021545599625794803,
+        "min": 0.014235978963143306,
+        "max": 0.032779165166253434
+      },
+      "current_BF_net_over_photo": {
+        "median": 0.00004166218269419899,
+        "min": 0.00002229328610029843,
+        "max": 0.00005115648143530312
+      }
+    },
+    {
+      "Z": 14,
+      "stage": 3,
+      "region": "all90",
+      "points": 90,
+      "frozen_previous_over_CMFGEN": {
+        "median": 1.0292118608524334,
+        "min": 0.8300349912838217,
+        "max": 1.0990786659903986
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 1.1305373701467278,
+        "min": 0.8526599116203555,
+        "max": 1.2007363993211855
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0781333137350222,
+        "min": 1.0174638565738612,
+        "max": 1.105820266221063
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.08458465164532397,
+        "min": 0.017662844087432277,
+        "max": 0.10549978710592801
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.09096658329252133,
+        "min": -0.03475775461528397,
+        "max": 0.20331927508627715
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.12529057240292746,
+        "min": 0.025671339890160422,
+        "max": 0.2916013121802567
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1253344718370075,
+        "min": 1.0256499869478974,
+        "max": 1.2915963499068837
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0002196302015784,
+        "min": 1.0001040162493873,
+        "max": 1.0046456660296796
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0011346768564785559,
+        "min": 0.00007713042908308321,
+        "max": 0.002568095269094517
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.0017895747735818227,
+        "min": 0.0006852767394803145,
+        "max": 0.028404054702142686
+      },
+      "current_BF_net_over_photo": {
+        "median": 1.6562542919935277e-7,
+        "min": 2.8473114628559474e-10,
+        "max": 0.000007014225458351218
+      }
+    },
+    {
+      "Z": 14,
+      "stage": 3,
+      "region": "transition30_42",
+      "points": 13,
+      "frozen_previous_over_CMFGEN": {
+        "median": 1.080343439592474,
+        "min": 1.054545898402208,
+        "max": 1.0884879568319714
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 1.1841505285414435,
+        "min": 1.158071918594512,
+        "max": 1.2007363993211855
+      },
+      "frozen_current_over_previous": {
+        "median": 1.1005404507436163,
+        "min": 1.0918298509375224,
+        "max": 1.105820266221063
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.10093714484459063,
+        "min": 0.09074084585373504,
+        "max": 0.10549978710592801
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.009134353687610113,
+        "min": -0.03475775461528397,
+        "max": 0.023612635977002423
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.11463414079353812,
+        "min": 0.062493627611547996,
+        "max": 0.12342299928432994
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1146445962742777,
+        "min": 1.0625112800327399,
+        "max": 1.123357761057181
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0001330471110061,
+        "min": 1.0001110338350008,
+        "max": 1.0001818674832663
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0008662020201003484,
+        "min": 0.0004108135036721139,
+        "max": 0.001255508332836608
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.0007423392769849141,
+        "min": 0.0006852767394803145,
+        "max": 0.0008885377221762461
+      },
+      "current_BF_net_over_photo": {
+        "median": 1.9769104785351247e-8,
+        "min": 1.5201412507659774e-8,
+        "max": 7.546746860522578e-8
+      }
+    },
+    {
+      "Z": 14,
+      "stage": 3,
+      "region": "inner80_89",
+      "points": 10,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.932401401684781,
+        "min": 0.9298337442432512,
+        "max": 0.9655010585686178
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.966141443793997,
+        "min": 0.9619399988453524,
+        "max": 0.9910041468838687
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0341029232989776,
+        "min": 1.0264143556228307,
+        "max": 1.036334708017969
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.03615886415739813,
+        "min": 0.027484011860801082,
+        "max": 0.0387379779114815
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.09899914962505402,
+        "min": 0.06839784835463913,
+        "max": 0.10483636766610925
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.1349420955315554,
+        "min": 0.09588186021544022,
+        "max": 0.14326465414329312
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1351000279243886,
+        "min": 1.0960285654237172,
+        "max": 1.1434706930256107
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0041049265947057,
+        "min": 1.0029708982820889,
+        "max": 1.0046456660296796
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0023174089677535648,
+        "min": 0.0021553174252829654,
+        "max": 0.002568095269094517
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.023328798308453788,
+        "min": 0.02000155116339309,
+        "max": 0.028404054702142686
+      },
+      "current_BF_net_over_photo": {
+        "median": 0.000006340861537837814,
+        "min": 0.0000037535323013671772,
+        "max": 0.000007014225458351218
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 2,
+      "region": "all90",
+      "points": 90,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9617222676443313,
+        "min": 0.8265287817470097,
+        "max": 1.0539433471395185
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9931189787972495,
+        "min": 0.8283758213781957,
+        "max": 1.061187745064769
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0175735090774016,
+        "min": 0.9949469437734819,
+        "max": 1.0687856562639568
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.017907730971018533,
+        "min": -0.004931686155051606,
+        "max": 0.06924832961807005
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.0018310625013367352,
+        "min": -0.03148562202446718,
+        "max": 0.021508049480143423
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.012739803064389061,
+        "min": -0.008588677433667853,
+        "max": 0.0752973710583875
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.0127717590866347,
+        "min": 0.9913996414135876,
+        "max": 1.0753298747330968
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 0.9995308178115219,
+        "min": 0.993795890821015,
+        "max": 1.0048356071613516
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0022531492242048867,
+        "min": 0.0003698791149393532,
+        "max": 0.005020878634958259
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.0010349710906963237,
+        "min": 0.00037472424799382524,
+        "max": 0.023197503185609276
+      },
+      "current_BF_net_over_photo": {
+        "median": 7.298642462483211e-9,
+        "min": -3.597931214560304e-7,
+        "max": 0.0000011714034418501602
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 2,
+      "region": "transition30_42",
+      "points": 13,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9546972834260743,
+        "min": 0.9394866271638987,
+        "max": 0.9949172682428252
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9978968937433965,
+        "min": 0.976890173633736,
+        "max": 1.0251902581393648
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0361516952833356,
+        "min": 1.0144231303008364,
+        "max": 1.0648419951339807
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.03597452264453316,
+        "min": 0.014740118398126898,
+        "max": 0.06526057328186945
+      },
+      "population_effect_relative_to_previous": {
+        "median": -0.021168114333934458,
+        "min": -0.03148562202446718,
+        "max": -0.004308004506601403
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.004488900620065971,
+        "min": -0.0037399766115783517,
+        "max": 0.05610326677447787
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.0044955396346191,
+        "min": 0.9962110561076741,
+        "max": 1.0559591897582126
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 0.9974428095801675,
+        "min": 0.99596300969246,
+        "max": 1.0036053360577142
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0010395043582624997,
+        "min": 0.0003698791149393532,
+        "max": 0.0020527132467749176
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.000612895802988316,
+        "min": 0.0004919189762782249,
+        "max": 0.0008672149047954139
+      },
+      "current_BF_net_over_photo": {
+        "median": -1.6123276692742121e-7,
+        "min": -2.698989793089941e-7,
+        "max": 3.5391534335372135e-8
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 2,
+      "region": "inner80_89",
+      "points": 10,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9106527920123304,
+        "min": 0.9067649318651898,
+        "max": 0.9569934280195743
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9558296269375421,
+        "min": 0.95182041993082,
+        "max": 0.9924167037244266
+      },
+      "frozen_current_over_previous": {
+        "median": 1.047734032032741,
+        "min": 1.0370151713352496,
+        "max": 1.0527707349686815
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.04858087190690974,
+        "min": 0.037530150613763164,
+        "max": 0.05378932157824408
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.020163730295574597,
+        "min": 0.017935478752875662,
+        "max": 0.021508049480143423
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.06823795651859141,
+        "min": 0.055465629366638826,
+        "max": 0.0752973710583875
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.0682412811068045,
+        "min": 1.0555004480515557,
+        "max": 1.0753298747330968
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 0.994171511627949,
+        "min": 0.993795890821015,
+        "max": 0.9968021683830807
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0028383005846320253,
+        "min": 0.0026662674946660303,
+        "max": 0.0030501432091849523
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.015948155160320783,
+        "min": 0.011514371846192119,
+        "max": 0.023197503185609276
+      },
+      "current_BF_net_over_photo": {
+        "median": 3.760535583403471e-7,
+        "min": 1.1825261991099197e-7,
+        "max": 4.855842751651708e-7
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 3,
+      "region": "all90",
+      "points": 90,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9652361123283,
+        "min": 0.8556069700607087,
+        "max": 1.4190261550286292
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9747911309120768,
+        "min": 0.851758738115468,
+        "max": 1.4095650877682997
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0002122533931281,
+        "min": 0.9896933585017088,
+        "max": 1.0426854511979404
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.0004799783370569824,
+        "min": -0.010278398080873642,
+        "max": 0.04506217932003577
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.017805393421247054,
+        "min": -0.010855335360808509,
+        "max": 0.09121582730776114
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.013213130855438121,
+        "min": -0.014341998542069146,
+        "max": 0.1362780066277969
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.0132220306553439,
+        "min": 0.985667392348151,
+        "max": 1.136246056109963
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.000048642256445,
+        "min": 1.0000092191791043,
+        "max": 1.0012224842396695
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.002601021426928418,
+        "min": 0.00010615984997031092,
+        "max": 0.004064253762037784
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.0002152661061560801,
+        "min": 0.00010757251130285688,
+        "max": 0.0073431243491063015
+      },
+      "current_BF_net_over_photo": {
+        "median": 1.316632684563191e-8,
+        "min": -4.238095211748467e-9,
+        "max": 2.7927641254274796e-7
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 3,
+      "region": "transition30_42",
+      "points": 13,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.8891526046689694,
+        "min": 0.8556069700607087,
+        "max": 0.9758772992173073
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.8910398731335004,
+        "min": 0.8700995197784238,
+        "max": 0.9881060672432332
+      },
+      "frozen_current_over_previous": {
+        "median": 1.012464470296311,
+        "min": 0.9935859700293164,
+        "max": 1.0199680767445751
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.012641104272054768,
+        "min": -0.0064403147737191685,
+        "max": 0.02032361877038149
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.028726437725851293,
+        "min": 0.015023716094791827,
+        "max": 0.043555241486312186
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.04547871577431271,
+        "min": 0.008583401321072659,
+        "max": 0.06080227441653161
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.0454994206093122,
+        "min": 1.0085915804898329,
+        "max": 1.0608313576998532
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0000281342486794,
+        "min": 1.0000199920702273,
+        "max": 1.0000392218719365
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.0006268879240082237,
+        "min": 0.00014476130801932552,
+        "max": 0.0019277406460082025
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.00013635378076490672,
+        "min": 0.00011334385140673678,
+        "max": 0.00018177692519046152
+      },
+      "current_BF_net_over_photo": {
+        "median": 7.111744188839497e-9,
+        "min": 4.649085681043478e-9,
+        "max": 1.4049008360566919e-8
+      }
+    },
+    {
+      "Z": 16,
+      "stage": 3,
+      "region": "inner80_89",
+      "points": 10,
+      "frozen_previous_over_CMFGEN": {
+        "median": 0.9308366252596484,
+        "min": 0.9260625921326673,
+        "max": 0.9700142516159167
+      },
+      "frozen_current_over_CMFGEN": {
+        "median": 0.9661740404293049,
+        "min": 0.9640357077881345,
+        "max": 1.0017887881722254
+      },
+      "frozen_current_over_previous": {
+        "median": 1.0388550615717271,
+        "min": 1.0327567729065592,
+        "max": 1.0426854511979404
+      },
+      "field_effect_relative_to_previous": {
+        "median": 0.04077749639021644,
+        "min": 0.03384902542792883,
+        "max": 0.04506217932003577
+      },
+      "population_effect_relative_to_previous": {
+        "median": 0.08394755929677138,
+        "min": 0.05936973896913451,
+        "max": 0.09121582730776114
+      },
+      "total_change_relative_to_previous": {
+        "median": 0.124745256971631,
+        "min": 0.09321876439706334,
+        "max": 0.1362780066277969
+      },
+      "total_BF_gamma_current_over_previous": {
+        "median": 1.1247085339766296,
+        "min": 1.0932114927756245,
+        "max": 1.136246056109963
+      },
+      "effective_BF_alpha_current_over_previous": {
+        "median": 1.0010894039125604,
+        "min": 1.000707777610988,
+        "max": 1.0012224842396695
+      },
+      "current_pseudo_photo_share": {
+        "median": 0.004023852689966467,
+        "min": 0.0038808212795445884,
+        "max": 0.004064253762037784
+      },
+      "current_stimulated_RR_share": {
+        "median": 0.005917152990185524,
+        "min": 0.005047261113657066,
+        "max": 0.0073431243491063015
+      },
+      "current_BF_net_over_photo": {
+        "median": 1.9349215705284963e-7,
+        "min": 1.4104865931639911e-7,
+        "max": 2.7927641254274796e-7
+      }
+    }
+  ],
+  "profile_csv": "LUMINA_STORED_PHOTO_FEEDBACK_2026-11-05.csv",
+  "profile_rows": 360,
+  "profile_columns": [
+    "node",
+    "Z",
+    "stage",
+    "radius_cm",
+    "frozen_previous_over_CMFGEN",
+    "frozen_current_over_CMFGEN",
+    "frozen_current_over_previous",
+    "gamma_previous",
+    "gamma_current",
+    "field_effect_relative_to_previous",
+    "population_effect_relative_to_previous",
+    "total_change_relative_to_previous",
+    "fraction_previous",
+    "fraction_current",
+    "total_BF_gamma_current_over_previous",
+    "effective_BF_alpha_current_over_previous",
+    "ne_current_over_previous",
+    "previous_pseudo_photo_share",
+    "current_pseudo_photo_share",
+    "previous_stimulated_RR_share",
+    "current_stimulated_RR_share",
+    "previous_BF_net_over_photo",
+    "current_BF_net_over_photo"
+  ],
+  "direction_replay": {
+    "scope": "SAVED_LINEAR_SYSTEM_ONLY_NOT_NEW_THERMAL_RESPONSE_OR_ACCEPTED_MATERIAL",
+    "linearization_sha256": "b288cbf3dc57693f17655390edbd3428ed9caaf0d49987bac6fcd802d94f225d",
+    "base_response_sha256": "94a1a02c79164445e996bda50265472ca0c1da045c3f8b4430f1cb9655c0d40b",
+    "replayed_direction_bit_equal": true,
+    "backward_relative_error": 6.769217319127321e-12,
+    "row_normalized_thermal_Schur_condition": 7.108184876676513,
+    "max_abs_logT_direction": 1.7128762104007473,
+    "max_logT_node": 3,
+    "max_abs_logne_direction": 0.03496771769272362,
+    "global_alpha": 0.05838133508585763,
+    "base_scaled_heat_max": 6.234033156689367e-7,
+    "global_predicted_scaled_heat_max": 5.870081978032339e-7,
+    "box_predicted_scaled_heat_max": 1.737609193474791e-9,
+    "box_iterations": 3,
+    "new_BF": 0,
+    "new_SE": 0,
+    "new_transport": 0,
+    "nodes": [
+      {
+        "node": 0,
+        "T": 9438.230154003144,
+        "raw_dlogT": -1.4722793245791965,
+        "global_dlogT": -0.08595363258823822,
+        "box_dlogT": -0.1,
+        "initial_heat": -7.099739137717006e-10,
+        "global_predicted_heat": -6.685246888095757e-10,
+        "box_predicted_heat": -5.934269370687878e-10
+      },
+      {
+        "node": 3,
+        "T": 9031.80667318337,
+        "raw_dlogT": -1.7128762104007473,
+        "global_dlogT": -0.1,
+        "box_dlogT": -0.1,
+        "initial_heat": -1.8074895598104162e-9,
+        "global_predicted_heat": -1.7019659061549351e-9,
+        "box_predicted_heat": -1.737609193474791e-9
+      },
+      {
+        "node": 10,
+        "T": 10891.841891897337,
+        "raw_dlogT": -0.828928737563802,
+        "global_dlogT": -0.04839396639000927,
+        "box_dlogT": -0.1,
+        "initial_heat": -3.3443820902173916e-10,
+        "global_predicted_heat": -3.149132598753269e-10,
+        "box_predicted_heat": -2.9786354324055294e-10
+      },
+      {
+        "node": 20,
+        "T": 8999.721428342316,
+        "raw_dlogT": -0.005392843835219245,
+        "global_dlogT": -0.00031484142300963633,
+        "box_dlogT": -0.005031214397380768,
+        "initial_heat": -1.3006116213323698e-11,
+        "global_predicted_heat": -1.2246801784508041e-11,
+        "box_predicted_heat": -8.784354736505456e-13
+      },
+      {
+        "node": 30,
+        "T": 11841.369053721666,
+        "raw_dlogT": -0.006708499337435963,
+        "global_dlogT": -0.0003916511477421029,
+        "box_dlogT": -0.006708499337435958,
+        "initial_heat": -3.6587546392342744e-9,
+        "global_predicted_heat": -3.445151658644202e-9,
+        "box_predicted_heat": -2.481541837659083e-24
+      },
+      {
+        "node": 33,
+        "T": 12035.364793623385,
+        "raw_dlogT": -0.007250394393276271,
+        "global_dlogT": -0.00042328770457848545,
+        "box_dlogT": -0.007250394393276269,
+        "initial_heat": -3.988187010353496e-8,
+        "global_predicted_heat": -3.7553513281169834e-8,
+        "box_predicted_heat": -1.9852334701272664e-23
+      },
+      {
+        "node": 36,
+        "T": 12611.526280109332,
+        "raw_dlogT": 0.02428276065596101,
+        "global_dlogT": 0.0014176599866653399,
+        "box_dlogT": 0.02428276065596096,
+        "initial_heat": 2.7531816875619537e-7,
+        "global_predicted_heat": 2.5924472649081523e-7,
+        "box_predicted_heat": 5.293955920339377e-22
+      },
+      {
+        "node": 42,
+        "T": 11039.433274226873,
+        "raw_dlogT": 0.002127261848618304,
+        "global_dlogT": 0.00012419238679954616,
+        "box_dlogT": 0.0021272618486182474,
+        "initial_heat": 4.9000982245079524e-8,
+        "global_predicted_heat": 4.6140239481093374e-8,
+        "box_predicted_heat": 1.3036366453835716e-21
+      },
+      {
+        "node": 52,
+        "T": 10147.659275075699,
+        "raw_dlogT": 0.00012790440483524812,
+        "global_dlogT": 0.00000746722991764381,
+        "box_dlogT": 0.00012790440483524963,
+        "initial_heat": 7.552189559412902e-9,
+        "global_predicted_heat": 7.111282650112902e-9,
+        "box_predicted_heat": -9.26442286059391e-23
+      },
+      {
+        "node": 65,
+        "T": 18007.213528727563,
+        "raw_dlogT": 0.00008796349689780755,
+        "global_dlogT": 0.000005135426387714701,
+        "box_dlogT": 0.00008796349689780688,
+        "initial_heat": 1.247776020773126e-7,
+        "global_predicted_heat": 1.1749291907922722e-7,
+        "box_predicted_heat": 9.529120656610879e-22
+      },
+      {
+        "node": 80,
+        "T": 22735.646040078373,
+        "raw_dlogT": -0.0004962136651893723,
+        "global_dlogT": -0.000028969616261602316,
+        "box_dlogT": -0.000496213665189396,
+        "initial_heat": -1.8319139456451206e-7,
+        "global_predicted_heat": -1.7249643637359572e-7,
+        "box_predicted_heat": 8.655617929754882e-21
+      },
+      {
+        "node": 89,
+        "T": 23086.62669594496,
+        "raw_dlogT": 0.0006721903600788517,
+        "global_dlogT": 0.000039243370653246746,
+        "box_dlogT": 0.0006721903600788612,
+        "initial_heat": 2.703899052454449e-7,
+        "global_predicted_heat": 2.5460418158347726e-7,
+        "box_predicted_heat": -3.758708703440958e-21
+      }
+    ]
+  },
+  "additional_actual_box_trial": {
+    "status": "APPROVED_NOT_SUBMITTED",
+    "scope": "같은 J·기점·완료 네 응답 재사용, 기존 실행 불변; 실제 큰 보폭 후보의 열/전하/Si/S 검증",
+    "parent_completion_certified": false
+  },
+  "limitations": [
+    "CMFGEN 기준은 비수렴 fixed-T 진단해이며 released-T 기준해가 아님",
+    "현재 응답은 열 탐색 기점이며 최종 선택 상태가 아님",
+    "광이온화율 분해는 같은 두 인구와 두 장의 대수적 분해이며 별도 인과 실험이 아님",
+    "유효 재결합계수는 실제 인구를 이용한 응답 장부량이며 독립 재결합 예측이 아님",
+    "box 선형 예측은 실제 수용·온도근·공동수렴 증거가 아님"
+  ]
+}

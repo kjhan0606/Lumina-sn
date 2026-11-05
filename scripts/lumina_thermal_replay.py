@@ -7,6 +7,7 @@ import socket
 import numpy as np
 
 import cmfgen_model_continuum as B
+import lumina_completed_thermal_prefix as completed_prefix
 from lumina_coupled_material import packet
 
 ENERGY_POLICIES = ('physical_stored', 'physical_instantaneous_scenario',
@@ -45,17 +46,24 @@ def load(path, digest, *, field, source_identity, implementation, state,
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
     report = json.loads(path.read_text())
+    completed = completed_prefix.unpack(report)
+    producer_root = path.parent
+    if completed is not None:
+        report, producer_root, prefix_hashes = completed
+        if direction_source is not True:
+            raise ValueError('완료 부분자료는 명시적 온도 방향 수정에서만 사용')
     projected_trials = report.get('charge_projected_trials', False)
     if type(projected_trials) is not bool:
         raise ValueError('보존 열평가의 정상 전하보정 호출 방식 오류')
     previous_policy = energy_policy(report, default='physical_stored')
     if type(direction_source) is not bool or (direction_source and (
             prefix is not None or project_charge or previous_policy != policy or
+            (completed is None and (
             report.get('state') != 'COMPLETE_CURRENT_FIELD_THERMAL_DIRECTION_NOT_ACCEPTED_MATERIAL' or
             report.get('temperature_direction_only') is not True or
             report.get('material_published') is not False or report.get('temperature_updated') is not False or
             report.get('temperature_linearization', {}).get('evaluations_used') != 4 or
-            report.get('temperature_linearization', {}).get('accepted_iterations') != 0)):
+            report.get('temperature_linearization', {}).get('accepted_iterations') != 0)))):
         raise ValueError('온도수정 재사용은 같은 정책의 완료 방향 전용4응답만 가능')
     if prefix is not None and (type(prefix) is not int or not 1 <= prefix <= 4):
         raise ValueError('다른 열정책 미분에는 초기 섭동1~4개만 명시적으로 재사용 가능')
@@ -71,7 +79,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
         raise ValueError('보존 열평가의 장/물질/실제 물리 해법 불일치')
     old_inputs = report['input_sha256']
     for current, name in ((library, 'bridge.so'), (line_library, 'lines.so')):
-        if B.sha(Path(current)) != old_inputs[str(path.parent.parent/'build'/name)]:
+        if B.sha(Path(current)) != old_inputs[str(producer_root.parent/'build'/name)]:
             raise ValueError('보존 열평가의 실제 바이너리 불일치')
     consumed = {str(path): digest}
     for filename, expected in old_inputs.items():
@@ -107,6 +115,8 @@ def load(path, digest, *, field, source_identity, implementation, state,
 
     first = read(report['thermal_initial_response'])
     order = report.get('thermal_evaluation_order', [])
+    if completed is not None:
+        order = order[:4]
     if prefix is not None:
         if prefix > len(order): raise ValueError('요청한 초기 섭동이 아직 완료되지 않음')
         order = order[:prefix]
@@ -120,15 +130,18 @@ def load(path, digest, *, field, source_identity, implementation, state,
     direction_basis = None
     if direction_source:
         directions = report.get('thermal_directions', [])
+        if completed is not None:
+            directions = directions[:1]
         if len(replay) != 4 or len(directions) != 1:
             raise ValueError('온도수정 재사용의 centered 네 응답/원 방향 개수 오류')
         direction = directions[0]; root = Path(direction['root'])
         record, matrix = root/'result.json', root/'linearization.npz'
-        if (root != path.parent/'thermal-direction-1' or
+        output_hashes = report.get('output_sha256', {}) if completed is None else prefix_hashes
+        if (root != producer_root/'thermal-direction-1' or
                 json.loads(record.read_text()) != direction or
-                B.sha(record) != report.get('output_sha256', {}).get('thermal-direction-1/result.json') or
+                B.sha(record) != output_hashes.get('thermal-direction-1/result.json') or
                 B.sha(matrix) != direction['linearization_sha256'] or
-                B.sha(matrix) != report.get('output_sha256', {}).get('thermal-direction-1/linearization.npz') or
+                B.sha(matrix) != output_hashes.get('thermal-direction-1/linearization.npz') or
                 direction.get('linearization_kind') != 'centered' or direction.get('centered_log_step') != 1.e-4 or
                 direction.get('energy_policy') != policy or direction.get('field') != field or
                 direction.get('source_identity') != source_identity or

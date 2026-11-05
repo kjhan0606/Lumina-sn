@@ -53,6 +53,7 @@ if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     elif [[ " $* " == *" --refine-temperature-direction "* ]]; then
         case "$response_seconds" in
             10200) max_seconds=10200; expected_limit='03:00:00' ;;
+            21000) max_seconds=21000; expected_limit='06:00:00' ;;
             42600) max_seconds=42600; expected_limit='12:00:00' ;;
             *) echo '유한 온도수정 시간 한도 오류' >&2; exit 2 ;;
         esac

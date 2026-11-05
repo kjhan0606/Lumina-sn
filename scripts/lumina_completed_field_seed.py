@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 import cmfgen_model_continuum as B
+import lumina_completed_thermal_prefix as completed_prefix
 
 
 COEFFICIENTS = ('bound-rates.npy', 'route-roster.npz', 'jbar.npy',
@@ -71,6 +72,9 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
     if B.sha(path) != digest:
         raise ValueError('완료 응답 보고서 변경')
     report = json.loads(path.read_text())
+    prefix = completed_prefix.unpack(report)
+    if prefix is not None:
+        report, root, prefix_hashes = prefix
     fixed = (report.get('state') == 'COMPLETE_FINITE_NEW_FIELD_RESPONSE_NOT_JOINT_CONVERGENCE'
              and report.get('fixed_accepted_temperature') is True)
     block = report.get('temperature_block', {})
@@ -80,7 +84,10 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
         block.get('evaluations_used') == 0 and block.get('accepted_iterations') == 0 and
         block.get('history') == [] and not report.get('thermal_evaluation_order') and
         report.get('selected_response') == report.get('thermal_initial_response'))
-    if (type(reuse_thermal_base) is not bool or not (fixed or unmoved_thermal) or
+    if prefix is not None:
+        if reuse_thermal_base is not True:
+            raise ValueError('완료 부분자료는 명시적 온도 방향 수정에서만 사용')
+    elif (type(reuse_thermal_base) is not bool or not (fixed or unmoved_thermal) or
             report.get('charge_converged') is not True or
             report.get('full_BF_integrations') != 1):
         raise ValueError('완료 고정온도·전하 응답만 계수 재사용 가능')
@@ -108,13 +115,13 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
         source_verification[name]=dict(original_sha256=expected,current_sha256=current_sha,
             cache_scope_sha256=cache_source_signature(current))
     names=coefficient_names(report)
-    paths = {name: root/name for name in (*names, 'physical-profiles.npz')}
+    paths = {name: root/name for name in (*names, *(('physical-profiles.npz',) if prefix is None else ()))}
     for name, file in paths.items():
-        expected = report['output_sha256'][name]
+        expected = (report['output_sha256'] if prefix is None else prefix_hashes)[name]
         if B.sha(file) != expected:
             raise ValueError('완료 계수 파일 변경: '+name)
         consumed[str(file)] = expected
-    entry = report['selected_response']
+    entry = report['selected_response'] if prefix is None else report['thermal_initial_response']
     if (entry not in report['evaluations'] or
             Path(entry['root']).parent != root or
             Path(entry['root']).name not in {'evaluation-'+str(i+1) for i in range(len(report['evaluations']))}):
@@ -123,10 +130,11 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
     if B.sha(response) != entry['response_sha256']:
         raise ValueError('완료 선택 응답 변경')
     consumed[str(response)] = entry['response_sha256']
-    with np.load(paths['physical-profiles.npz'], allow_pickle=False) as profiles:
-        for key in ('temperature', 'ne'):
-            if not np.array_equal(profiles['accepted_'+key], state[key]):
-                raise ValueError('완료 계수의 기준 T/ne 불일치')
+    if prefix is None:
+        with np.load(paths['physical-profiles.npz'], allow_pickle=False) as profiles:
+            for key in ('temperature', 'ne'):
+                if not np.array_equal(profiles['accepted_'+key], state[key]):
+                    raise ValueError('완료 계수의 기준 T/ne 불일치')
     with np.load(response, allow_pickle=False) as data:
         ne = data['ne'].copy(); pop = data['population']
         charge = data['charge_residual']
@@ -196,4 +204,7 @@ def load(path, digest, *, field, source_identity, state, inputs, library,
         result['thermal_base'] = thermal_base
         result['provenance'].update(saved_heat_reused=True,
             saved_ne_role='pinned same T/ne/J and physical heat implementation; explicit direction/refinement base')
+    if prefix is not None:
+        result['provenance'].update(completed_prefix=True, parent_completion_certified=False,
+                                    captured_parent_state=report['state'])
     return result

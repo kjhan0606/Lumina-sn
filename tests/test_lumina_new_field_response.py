@@ -228,6 +228,7 @@ def test_direction_output_cannot_be_published_as_accepted_material(tmp_path):
     ('direction',21000,'06:00:00',True),('direction',42600,'12:00:00',True),
     ('direction',21000,'12:00:00',False),('direction',21000,'05:59:00',False),
     ('refine',10200,'03:00:00',True),('refine',42600,'12:00:00',True),
+    ('refine',21000,'06:00:00',True),('refine',21000,'03:00:00',False),
     ('refine',10200,'12:00:00',False),('refine',10200,'02:59:00',False),
     ('coupled30',106200,'1-06:00:00',True),('coupled48',171000,'2-00:00:00',True),
     ('coupled48',171000,'1-06:00:00',False),('coupled30',171000,'2-00:00:00',False)])
