@@ -950,7 +950,9 @@
     ]
   },
   "additional_actual_box_trial": {
-    "status": "APPROVED_NOT_SUBMITTED",
+    "status": "SUBMITTED_ONCE_RUNNING_ALLOCATION",
+    "job_id": 1270589,
+    "execution_record": "LUMINA_BOX_STEP_2026-11-05.json",
     "scope": "같은 J·기점·완료 네 응답 재사용, 기존 실행 불변; 실제 큰 보폭 후보의 열/전하/Si/S 검증",
     "parent_completion_certified": false
   },
