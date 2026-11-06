@@ -41,7 +41,7 @@ def stopped_prefix(report, prefix):
 
 def load(path, digest, *, field, source_identity, implementation, state,
          library, line_library, inputs, policy='physical_stored', prefix=None, project_charge=False,
-         direction_source=False, selected_base=False):
+         direction_source=False, selected_base=False, selected_centered_replay=False):
     path = Path(path).resolve()
     if B.sha(path) != digest:
         raise ValueError('보존 열평가 보고서 변경')
@@ -62,6 +62,12 @@ def load(path, digest, *, field, source_identity, implementation, state,
             report.get('charge_converged') is not True or
             report.get('selected_response') not in report.get('evaluations', []))):
         raise ValueError('선택 상태 재시작은 완료·전하 폐합된 실제 선택 응답만 가능')
+    if type(selected_centered_replay) is not bool or (selected_centered_replay and (
+            not selected_base or project_charge or prefix is not None or direction_source or
+            previous_policy != policy or
+            report.get('temperature_block', {}).get('fixed_field_root_converged') is not False or
+            report.get('temperature_block', {}).get('root_log_step_tolerance') != 1.e-3)):
+        raise ValueError('선택 기점의 centered 재사용은 동일 정책·미수렴 근 확인 상태만 가능')
     if type(direction_source) is not bool or (direction_source and (
             prefix is not None or project_charge or previous_policy != policy or
             (completed is None and (
@@ -122,7 +128,19 @@ def load(path, digest, *, field, source_identity, implementation, state,
     first = read(report['selected_response'] if selected_base else report['thermal_initial_response'])
     if selected_base and float(np.max(abs(first[0]['charge_residual']/first[0]['ne']))) > 1.e-10:
         raise ValueError('선택 기점의 실제 전하 미폐합')
-    order = [] if selected_base else report.get('thermal_evaluation_order', [])
+    all_order = report.get('thermal_evaluation_order', [])
+    order = [] if selected_base else all_order
+    if selected_centered_replay:
+        history = report.get('temperature_block', {}).get('history', [])
+        phases = ('T+', 'T-', 'ne+', 'ne-')
+        if (len(all_order) < 5 or len(history) < 4 or
+                tuple(item.get('phase') for item in history[-4:]) != phases or
+                [item.get('evaluation') for item in history[-4:]] !=
+                    list(range(len(all_order)-3, len(all_order)+1)) or
+                report['selected_response'] != all_order[-5] or
+                any(item.get('fixed_field_thermal_callback') is not True for item in all_order[-4:])):
+            raise ValueError('선택 기점 뒤의 완료 centered T+/T-/ne+/ne- 순서가 맞지 않음')
+        order = all_order[-4:]
     if completed is not None:
         order = order[:4]
     if prefix is not None:
@@ -133,6 +151,19 @@ def load(path, digest, *, field, source_identity, implementation, state,
         if entry.get('fixed_field_thermal_callback') is not True:
             raise ValueError('보존 호출 순서의 비열평가 혼합')
         replay.append(read(entry))
+    if selected_centered_replay:
+        base_data = first[0]
+        step = 1.e-4
+        expected = ((base_data['temperature']*np.exp(step), base_data['ne']),
+                    (base_data['temperature']*np.exp(-step), base_data['ne']),
+                    (base_data['temperature'], base_data['ne']*np.exp(step)),
+                    (base_data['temperature'], base_data['ne']*np.exp(-step)))
+        for (data, _, _), (temperature, density) in zip(replay, expected):
+            if (not np.allclose(data['temperature'], temperature,
+                                rtol=8*np.finfo('f8').eps, atol=0) or
+                    not np.allclose(data['ne'], density,
+                                    rtol=8*np.finfo('f8').eps, atol=0)):
+                raise ValueError('선택 기점 centered 재생의 T/ne 섭동 신원 불일치')
     if not replay and not selected_base:
         raise ValueError('재사용할 완료 열평가 없음')
     direction_basis = None
@@ -200,6 +231,7 @@ def load(path, digest, *, field, source_identity, implementation, state,
                     previous_energy_policy=previous_policy, energy_policy=policy,
                     initial_probe_prefix=prefix, previous_direction_or_acceptance_reused=bool(project_charge),
                     previous_acceptance_reused=False, centered_direction_source=direction_source,
-                    selected_material_as_new_base=selected_base,
+                selected_material_as_new_base=selected_base,
+                selected_centered_probes_reused=selected_centered_replay,
                     saved_evaluations=len(replay),
                     new_material_evaluations=0, new_transport=0))

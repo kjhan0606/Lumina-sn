@@ -81,6 +81,39 @@ def test_normal_response_root_option_survives_callback_adapter():
     np.testing.assert_allclose(result['selected'][0]['temperature'],[2.,3.],rtol=1.e-8)
 
 
+def test_long_secant_root_continuation_reuses_secant_but_requires_fresh_centered_confirmation():
+    target=np.array([2.,3.]);target_ne=np.array([5.,7.]);calls=[];directions=[]
+    def state(t,ne,number=0):
+        dt=np.log(t/target);dn=np.log(ne/target_ne)
+        data=dict(temperature=np.array(t),ne=np.array(ne),population=np.ones((2,2)),
+                  charge_residual=ne*(dn-.2*dt))
+        heat=dict(physical_adiabatic=np.zeros(2),physical_stored_net=dt,
+                  physical_stored_gross=np.full(2,2.),physical_internal_energy=np.ones(2))
+        return data,heat,dict(number=number)
+    first=state(target*np.exp([1.4,.28]),target_ne*np.exp([.28,-.14]))
+    def evaluate(t,ne):
+        value=state(t,ne,len(calls)+1);calls.append(value);return value
+    result=T.solve(evaluate,first,adiabatic,policy='physical_stored',max_evaluations=48,
+        charge_tolerance=1.e-10,thermal_tolerance=1.e-3,root_log_step_tolerance=1.e-3,
+        secant_after_accept=True,on_direction=lambda *args:directions.append(args[-1]))
+    assert result['fixed_field_root_converged']
+    assert result['root_fresh_direction_max']<=1.e-3
+    assert result['accepted_iterations']>1 and 4<len(calls)<=48
+    assert directions[0]=='centered' and 'secant' in directions and directions[-1]=='centered'
+    assert np.max(abs(result['selected'][0]['charge_residual']/result['selected'][0]['ne']))<=1.e-10
+    assert result['thermal_physical_scaled_max']<=1.e-3
+    assert result['new_transport']==0 and not result['joint_convergence']
+    np.testing.assert_allclose(result['selected'][0]['temperature'],target,rtol=1.e-8)
+
+
+@pytest.mark.parametrize('secant,root_check',[(False,True),(True,False)])
+def test_48_evaluation_budget_requires_secant_and_fresh_root_check(secant,root_check):
+    with pytest.raises(ValueError,match='secant root 최대48'):
+        T.solve(lambda *a:pytest.fail('잘못된 48회 설정에서 응답 금지'),case([2.1,3.15],[5.,7.]),
+            adiabatic,policy='physical_stored',max_evaluations=48,
+            secant_after_accept=secant,root_log_step_tolerance=1.e-3 if root_check else None)
+
+
 def test_four_probe_root_confirmation_exports_base_not_last_perturbation():
     from prepare_lumina_accepted_material import thermal_selection
     first=case(np.array([2.,3.])*np.exp(.0005),np.array([5.,7.]));order=[]

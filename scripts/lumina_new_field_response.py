@@ -287,9 +287,21 @@ def run(args):
     direction_only = getattr(args, 'temperature_direction_only', False)
     refining = getattr(args, 'refine_temperature_direction', False)
     box_root = getattr(args, 'restart_box_root', False)
+    secant_root = getattr(args, 'restart_secant_root', False)
+    secant_after_accept = getattr(args, 'secant_after_accept', False)
+    if type(secant_root) is not bool or (secant_root and (
+            box_root or refining or direction_only or getattr(args, 'charge_projection', False) or
+            not secant_after_accept or not getattr(args, 'resume_result', None) or
+            not getattr(args, 'resume_result_sha', None) or
+            not getattr(args, 'resume_thermal_result', None) or
+            not getattr(args, 'resume_thermal_result_sha', None) or
+            getattr(args, 'thermal_replay_prefix', None) is not None or
+            type(temperature_evaluations) is not int or not 4 <= temperature_evaluations <= 48 or
+            args.seconds != 171000)):
+        raise ValueError('secant 근 연속탐색은 완료 선택상태/해시쌍·secant·신규4~48평가·48시간 내부한도 필요')
     if type(box_root) is not bool or (box_root and (
             refining or direction_only or getattr(args, 'charge_projection', False) or
-            getattr(args, 'secant_after_accept', False) or getattr(args, 'thermal_replay_prefix', None) is not None or
+            secant_after_accept or getattr(args, 'thermal_replay_prefix', None) is not None or
             not getattr(args, 'resume_result', None) or not getattr(args, 'resume_result_sha', None) or
             not getattr(args, 'resume_thermal_result', None) or not getattr(args, 'resume_thermal_result_sha', None) or
             type(temperature_evaluations) is not int or not 4 <= temperature_evaluations <= 12)):
@@ -323,12 +335,18 @@ def run(args):
             not execution.get('hostname', '').split('.')[0].startswith('grammar') or
             not args.seconds+300 <= execution.get('allocated_seconds', 0) <= 43200):
         raise ValueError('온도방향 진단/수정은 grammar Slurm·최대12시간 필요')
+    if secant_root and (execution['executor'] != 'slurm' or
+            not execution.get('long_thermal') or execution.get('thermal_hours_limit') != 48 or
+            not execution.get('hostname', '').split('.')[0].startswith('grammar') or
+            not args.seconds+300 <= execution.get('allocated_seconds', 0) <= 172800):
+        raise ValueError('secant 근 연속탐색은 Grammar Slurm 48시간 할당만 허용')
     replay_path = getattr(args, 'resume_thermal_result', None)
     replay_sha = getattr(args, 'resume_thermal_result_sha', None)
     minimum = 1 if replay_path else 5
+    maximum = 48 if secant_root else 12
     if type(temperature_evaluations) is not int or (not direction_only and
-            temperature_evaluations != 0 and not minimum <= temperature_evaluations <= 12):
-        raise ValueError('온도 보정은 비활성0, 신규5~12회 또는 보존평가 재개1~12회 필요')
+            temperature_evaluations != 0 and not minimum <= temperature_evaluations <= maximum):
+        raise ValueError('온도 보정은 secant 근 연속탐색 최대48회, 그 외 신규5~12회 또는 보존평가 재개1~12회 필요')
     resume = getattr(args, 'resume_result', None)
     resume_sha = getattr(args, 'resume_result_sha', None)
     if bool(resume) != bool(resume_sha) or (resume and not temperature_evaluations):
@@ -342,7 +360,6 @@ def run(args):
     if replay_prefix is not None and (not replay_path or type(replay_prefix) is not int or not 1 <= replay_prefix <= 4):
         raise ValueError('초기 열섭동 재사용은 봉인 재개 보고서와1~4개 명시가 필요')
     projecting = getattr(args, 'charge_projection', False)
-    secant_after_accept = getattr(args, 'secant_after_accept', False)
     if type(secant_after_accept) is not bool or (secant_after_accept and
             (temperature_evaluations == 0 or projecting)):
         raise ValueError('실제 온도 반복에만 선택적 secant 방향 재사용 가능')
@@ -357,11 +374,13 @@ def run(args):
         temperature_evaluations_max=temperature_evaluations, thermal_energy_policy=thermal_policy,
         thermal_implementation_sha256=thermal_implementation_hashes(),
         charge_projection=projecting,
-        fresh_temperature_full_BF_integrations_max=5 if box_root else (refinement_trials if refining else (2 if direction_only else (0 if projecting else None))),
+        fresh_temperature_full_BF_integrations_max=(48 if secant_root else (5 if box_root else
+            (refinement_trials if refining else (2 if direction_only else (0 if projecting else None))))),
         secant_after_accept=secant_after_accept,
         temperature_direction_only=direction_only,
         refine_temperature_direction=refining,
         restart_box_root=box_root,
+        restart_secant_root=secant_root,
         refinement_temperature_trials_max=refinement_trials if refining else None,
         new_transport=0, new_native=0, evaluations=[],
         scattering_convergence_certified=False, RE_solved=False, full_BF_integrations=0,
@@ -419,7 +438,8 @@ def run(args):
                     source_identity=source.identity, state=state, inputs=inputs,
                     library=args.library, line_library=args.line_library,
                     routes=len(routes), lines=len(lines['lower']),
-                    reuse_thermal_base=direction_only or refining or box_root, thermal_policy=thermal_policy)
+                    reuse_thermal_base=direction_only or refining or box_root or secant_root,
+                    thermal_policy=thermal_policy)
                 result['baseline_reuse'] = seed['provenance']
                 for name in completed_seed.coefficient_names(seed['report']):
                     check(); shutil.copyfile(seed['paths'][name], out/name)
@@ -550,7 +570,8 @@ def run(args):
                         implementation=result['thermal_implementation_sha256'], state=state,
                         library=args.library, line_library=args.line_library, inputs=inputs,
                         policy=thermal_policy, prefix=replay_prefix, project_charge=projecting,
-                        direction_source=refining, selected_base=box_root)
+                    direction_source=refining, selected_base=box_root or secant_root,
+                    selected_centered_replay=secant_root)
                     result['thermal_replay'] = replay_source['provenance']
                     cached_response.register(replay_source['bound_temperature_tables'], inputs=inputs)
                     for data, energy, metadata in [replay_source['first'], *replay_source['replay']]:
@@ -692,7 +713,7 @@ if __name__ == '__main__':
         parser.add_argument('--'+name, required=True)
     parser.add_argument('--seconds', type=int, default=6600)
     parser.add_argument('--temperature-evaluations', type=int, default=0,
-        help='신규 실제평가 한도: 새 보정5~12, 보존평가 재개1~12, 방향 전용4. 실행 승인을 대신하지 않음')
+        help='신규 실제평가 한도: 일반 경로 최대12, secant 근 연속탐색 최대48, 방향 전용4. 실행 승인을 대신하지 않음')
     parser.add_argument('--temperature-direction-only', action='store_true',
         help='동일 T/ne/J·열구현의 완료 기준을 복원해 centered4응답의 방향만 저장. 후보 수용/수렴 선언 없음')
     parser.add_argument('--refine-temperature-direction', action='store_true',
@@ -701,6 +722,8 @@ if __name__ == '__main__':
         help='유한 수정의 새 온도 제안 수. 단일 큰 보폭 확인에서는1로 제한')
     parser.add_argument('--restart-box-root', action='store_true',
         help='완료 선택 상태를 새 기점으로 box 보정하고 fresh centered 방향으로 근 확인; 추가 실행 승인 대체 아님')
+    parser.add_argument('--restart-secant-root', action='store_true',
+        help='완료 선택 상태에서 실제 수용 뒤 secant를 재사용해 근을 탐색하고 종료 전 centered 방향을 새로 확인; Grammar 48시간·최대48평가')
     parser.add_argument('--resume-result', type=Path,
         help='같은 장·수용 물질의 봉인 완료 고정온도 보고서. 계수만 재사용하고 SE/열은 재평가')
     parser.add_argument('--resume-result-sha')

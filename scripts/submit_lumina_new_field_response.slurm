@@ -22,19 +22,28 @@ response_seconds=${LUMINA_RESPONSE_SECONDS:-13800}
 [[ "$response_seconds" =~ ^[0-9]+$ ]]
 max_seconds=13800
 direction_only=0
+secant_root=0
 for response_argument in "$@"; do
     if [[ "$response_argument" = --temperature-direction-only || "$response_argument" = --refine-temperature-direction ]]; then direction_only=1; fi
+    if [[ "$response_argument" = --restart-secant-root ]]; then secant_root=1; fi
 done
+thermal_hours=${LUMINA_RESPONSE_THERMAL_HOURS:-30}
 if (( direction_only )); then
     [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]
     [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
+fi
+if (( secant_root )); then
+    [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]
+    [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
+    [[ "$thermal_hours" = 48 && "$response_seconds" = 171000 ]]
+    [[ " $* " = *" --secant-after-accept "* ]]
+    [[ " $* " = *" --temperature-evaluations 48 "* ]]
 fi
 if [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = manual-lageunha ]]; then max_seconds=42600; fi
 if [[ "${LUMINA_RESPONSE_LONG_THERMAL:-0}" = 1 ]]; then
     [[ "${LUMINA_RESPONSE_EXECUTOR:-slurm}" = slurm ]]
     expected_limit='1-06:00:00'
     max_seconds=106200
-    thermal_hours=${LUMINA_RESPONSE_THERMAL_HOURS:-30}
     [[ "$thermal_hours" = 30 || "$thermal_hours" = 48 ]]
     if [[ "$thermal_hours" = 48 ]]; then
         (( direction_only == 0 ))
@@ -90,6 +99,11 @@ export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$project/scripts"
 export LUMINA_ARTIS_PARITY=0 LUMINA_NLTE_BF_COLLISION=1
 export LUMINA_TOPION_LEVELS_FILE="$project/data/atomic/topion_levels.csv"
 export LUMINA_IONIZATION_REFERENCE_FILE="$project/data/atomic/ionization_reference.csv"
+if [[ " $* " = *" --restart-secant-root "* ]]; then
+    /home/kjhan/miniconda3/bin/python3 -m pytest -q -p no:cacheprovider \
+      tests/test_lumina_fixed_field_thermal.py tests/test_lumina_new_field_response.py \
+      tests/test_lumina_thermal_replay.py
+fi
 core=(lumina_plasma lumina_element_wide nlte_model_se nlte_model_bb nlte_model_coll_bb
       population_contract opacity_publication emissivity_publication radeq_publication
       line_net_rate cmfgen_adiabatic bf_rate_jnu radiation_field seed_capability

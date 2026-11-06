@@ -162,6 +162,24 @@ def test_long_thermal_rejects_missing_or_ambiguous_allocation(monkeypatch, repor
         N.slurm_allocation_seconds('456')
 
 
+@pytest.mark.parametrize('fault',['budget','no_secant','result','thermal','box','projection','prefix','time'])
+def test_secant_root_continuation_requires_one_sealed_48_hour_mode(fault):
+    from types import SimpleNamespace
+    values=dict(seconds=171000,temperature_evaluations=48,restart_secant_root=True,
+        secant_after_accept=True,resume_result='accepted-result',resume_result_sha='result-sha',
+        resume_thermal_result='accepted-thermal-result',resume_thermal_result_sha='thermal-sha')
+    if fault=='budget':values['temperature_evaluations']=49
+    elif fault=='no_secant':values['secant_after_accept']=False
+    elif fault=='result':values['resume_result']=None
+    elif fault=='thermal':values['resume_thermal_result_sha']=None
+    elif fault=='box':values['restart_box_root']=True
+    elif fault=='projection':values['charge_projection']=True
+    elif fault=='prefix':values['thermal_replay_prefix']=4
+    else:values['seconds']=171001
+    with pytest.raises(ValueError,match='secant 근 연속탐색'):
+        N.run(SimpleNamespace(**values))
+
+
 def test_approved_manual_duration_keeps_cpu_memory_and_host_limits(manual_resources):
     result=N.execution_resources(42600)
     assert result['seconds']==42600 and result['CPUs']==16
@@ -231,6 +249,7 @@ def test_direction_output_cannot_be_published_as_accepted_material(tmp_path):
     ('refine',21000,'06:00:00',True),('refine',21000,'03:00:00',False),
     ('refine',10200,'12:00:00',False),('refine',10200,'02:59:00',False),
     ('coupled30',106200,'1-06:00:00',True),('coupled48',171000,'2-00:00:00',True),
+    ('secant48',171000,'2-00:00:00',True),('secant48',171000,'1-06:00:00',False),
     ('coupled48',171000,'1-06:00:00',False),('coupled30',171000,'2-00:00:00',False)])
 def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tmp_path,mode,seconds,allocation,accepted):
     import os
@@ -247,10 +266,12 @@ def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tm
     environment={**os.environ,'PATH':str(binaries)+os.pathsep+os.environ['PATH'],
         'BASH_ENV':str(startup),'SLURM_JOB_ID':'123','LUMINA_RESPONSE_EXECUTOR':'slurm',
         'LUMINA_RESPONSE_LONG_THERMAL':'1','LUMINA_RESPONSE_SECONDS':str(seconds),
-        'LUMINA_RESPONSE_THERMAL_HOURS':'48' if mode=='coupled48' else '30'}
-    arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations','4' if mode=='direction' else '12']
+        'LUMINA_RESPONSE_THERMAL_HOURS':'48' if mode in ('coupled48','secant48') else '30'}
+    evaluations='4' if mode=='direction' else ('48' if mode=='secant48' else '12')
+    arguments=['bash',str(script),str(parent),'0'*40,'--temperature-evaluations',evaluations]
     if mode in ('direction','refine'):
         arguments.append('--temperature-direction-only' if mode=='direction' else '--refine-temperature-direction')
+    if mode=='secant48': arguments.extend(['--restart-secant-root','--secant-after-accept'])
     result=subprocess.run(arguments,env=environment,capture_output=True,text=True,timeout=10)
     assert result.returncode!=0 # 승인된 경우에도 mock archive에서 멈추며 실제 빌드/물리0회다.
     assert ('REACHED_ARCHIVE' in result.stderr) is accepted

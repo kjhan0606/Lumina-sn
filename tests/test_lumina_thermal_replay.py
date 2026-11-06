@@ -42,6 +42,39 @@ def load(preserved):
     return R.load(path,R.B.sha(path),**args)
 
 
+def selected_centered_source(preserved):
+    root,report,args=preserved
+    columns=args['state']['columns']
+    data,heat,_=case([2.04,3.06],[5.,7.])
+    data['columns']=columns
+    def save(index,value,phase):
+        output=root/('evaluation-'+str(index));output.mkdir()
+        np.savez(output/'response.npz',**value[0]);np.savez(output/'balance.npz',**value[1])
+        return dict(root=str(output),response_sha256=R.B.sha(output/'response.npz'),
+            balance_sha256=R.B.sha(output/'balance.npz'),fixed_field_thermal_callback=True)
+    selected=save(4,(data,heat,None),'selected')
+    temperature=data['temperature'];ne=data['ne'];step=1.e-4
+    probes=[]
+    for index,(phase,t,density) in enumerate((
+            ('T+',temperature*np.exp(step),ne.copy()),
+            ('T-',temperature*np.exp(-step),ne.copy()),
+            ('ne+',temperature.copy(),ne*np.exp(step)),
+            ('ne-',temperature.copy(),ne*np.exp(-step))),5):
+        candidate,energy,_=case(t,density,index)
+        candidate['columns']=columns
+        probes.append(save(index,(candidate,energy,None),phase))
+    order=[*report['thermal_evaluation_order'],selected,*probes]
+    report.update(state='COMPLETE_FINITE_NEW_FIELD_TNE_RESPONSE_NOT_JOINT_CONVERGENCE',
+        charge_converged=True,selected_response=selected,evaluations=[report['thermal_initial_response'],*order],
+        thermal_evaluation_order=order,temperature_block=dict(fixed_field_root_converged=False,
+            root_search_requested=True,root_log_step_tolerance=1.e-3,
+            history=[dict(evaluation=i,phase=phase) for i,phase in enumerate(
+                ('line_search','line_search','line_search','T+','T-','ne+','ne-'),1)]))
+    args['selected_base']=True
+    args['selected_centered_replay']=True
+    return selected,probes
+
+
 def test_completed_values_are_loaded_without_changing_source_files(preserved):
     root,report,args=preserved
     paths=[Path(e['root'])/name for e in [report['thermal_initial_response'],*report['thermal_evaluation_order']]
@@ -78,6 +111,33 @@ def test_selected_restart_loads_accepted_state_not_original_probe_sequence(prese
     assert not result['provenance']['source_completion_certified']
     report['charge_converged'] = False
     with pytest.raises(ValueError, match='선택 상태'): load(preserved)
+
+
+def test_selected_root_restart_reuses_only_its_last_verified_centered_probes(preserved):
+    selected,probes=selected_centered_source(preserved)
+    result=load(preserved)
+    assert result['first'][2]==selected
+    assert len(result['replay'])==4
+    assert [entry[2] for entry in result['replay']]==probes
+    assert result['provenance']['selected_material_as_new_base']
+    assert result['provenance']['selected_centered_probes_reused']
+    assert result['provenance']['saved_evaluations']==4
+    assert result['provenance']['new_material_evaluations']==0
+
+
+@pytest.mark.parametrize('fault',['order','phase','temperature','root'])
+def test_selected_root_restart_rejects_stale_or_noncentered_saved_probes(preserved,fault):
+    selected,probes=selected_centered_source(preserved)
+    root,report,args=preserved
+    if fault=='order':report['selected_response']=report['thermal_evaluation_order'][-6]
+    elif fault=='phase':report['temperature_block']['history'][-1]['phase']='line_search'
+    elif fault=='root':report['temperature_block']['fixed_field_root_converged']=True
+    else:
+        entry=probes[0];path=Path(entry['root'])/'response.npz'
+        with np.load(path) as values:data={k:values[k] for k in values.files}
+        data['temperature'][0]*=1.001;np.savez(path,**data)
+        entry['response_sha256']=R.B.sha(path)
+    with pytest.raises(ValueError):load(preserved)
 
 
 def test_verified_parent_exposes_optional_bound_tables_without_new_evaluations(preserved):

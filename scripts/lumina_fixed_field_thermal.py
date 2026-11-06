@@ -102,9 +102,11 @@ def solve(evaluate, first, adiabatic, *, policy, max_evaluations,
     replay = tuple(replay)
     centered_minimum = 4 if root_log_step_tolerance is not None else 5
     minimum = 1 if replay else centered_minimum
-    if (type(max_evaluations) is not int or not minimum <= max_evaluations <= 12 or
+    evaluation_limit = (48 if secant_after_accept and root_log_step_tolerance is not None
+                        else 12)
+    if (type(max_evaluations) is not int or not minimum <= max_evaluations <= evaluation_limit or
             len(replay)+max_evaluations < centered_minimum):
-        raise ValueError('고정장 온도 보정은 신규 실제평가 한도와 완전한 섭동/후보 예산 필요')
+        raise ValueError('고정장 온도 보정은 secant root 최대48, 그 외 최대12 실제평가와 완전한 섭동/후보 예산 필요')
     data, energy, metadata = first
     initial = packet(data, energy, policy)
     values = {id(initial): first}
