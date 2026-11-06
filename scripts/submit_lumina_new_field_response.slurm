@@ -99,6 +99,7 @@ export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$project/scripts"
 export LUMINA_ARTIS_PARITY=0 LUMINA_NLTE_BF_COLLISION=1
 export LUMINA_TOPION_LEVELS_FILE="$project/data/atomic/topion_levels.csv"
 export LUMINA_IONIZATION_REFERENCE_FILE="$project/data/atomic/ionization_reference.csv"
+cd "$project"
 if [[ " $* " = *" --restart-secant-root "* ]]; then
     /home/kjhan/miniconda3/bin/python3 -m pytest -q -p no:cacheprovider \
       tests/test_lumina_fixed_field_thermal.py tests/test_lumina_new_field_response.py \
@@ -109,7 +110,6 @@ core=(lumina_plasma lumina_element_wide nlte_model_se nlte_model_bb nlte_model_c
       line_net_rate cmfgen_adiabatic bf_rate_jnu radiation_field seed_capability
       atomic_internal_energy nlte_population_candidate line_jbar lumina_atomic
       nlte_model_material_bridge)
-cd "$project"
 objects=()
 for name in "${core[@]}"; do
     visibility=hidden

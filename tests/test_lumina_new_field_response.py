@@ -278,6 +278,17 @@ def test_submission_wrapper_checks_actual_direction_allocation_before_archive(tm
     assert (parent/'source').exists() is accepted
 
 
+def test_secant_slurm_preflight_runs_from_extracted_project_root():
+    script=Path(N.__file__).with_name('submit_lumina_new_field_response.slurm')
+    text=script.read_text()
+    project_created=text.index('project="$parent/source"')
+    change_directory=text.index('cd "$project"',project_created)
+    preflight=text.index('if [[ " $* " = *" --restart-secant-root "* ]]; then',project_created)
+    pytest_invocation=text.index('/home/kjhan/miniconda3/bin/python3 -m pytest',preflight)
+    compile_start=text.index('core=(lumina_plasma',preflight)
+    assert project_created < change_directory < preflight < pytest_invocation < compile_start
+
+
 @pytest.mark.parametrize('path,digest,limit', [('result.json', None, 5),
     (None, 'sha', 5), ('result.json', 'sha', 0)])
 def test_resume_requires_pin_pair_and_explicit_temperature_mode(manual_resources, path, digest, limit):
