@@ -1,0 +1,36 @@
+{
+  "state": "SUBMITTED_ONCE",
+  "job_id": 1272795,
+  "parent_job": 1272744,
+  "dependency": "afterok:1272744",
+  "source_commit": "68354c258796d9a859b841acd62913dcc608d310",
+  "config_sha256": "e36d355ce8e61211c76043a9d115f050e3b28d1eaed12eea51ed1d45c0acdcda",
+  "command": "sbatch --parsable --dependency=afterok:1272744 --kill-on-invalid-dep=yes --chdir='SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/source' --output='SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/slurm-%j.out' --error='SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/slurm-%j.err' 'SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/source/scripts/submit_lumina_final_native_pair.slurm' 'SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/source' 'SHARED/kjhan/cmfgen_runs/lumina_final_native_pair_20261106-rnygvwaw/config.json' 'e36d355ce8e61211c76043a9d115f050e3b28d1eaed12eea51ed1d45c0acdcda'",
+  "resources": {
+    "cpus": 16,
+    "memory_GiB": 32,
+    "wall_hours": 8,
+    "captures": 2,
+    "retries": 0,
+    "requeue": 0,
+    "gpus": 0,
+    "new_transport": 0,
+    "new_material_updates": 0
+  },
+  "tests": {
+    "passed": 189,
+    "skipped": 1,
+    "actual_material_preflight": {
+      "points": 90,
+      "variables": 1800
+    },
+    "actual_field_preflight": {
+      "frequencies": 1115020,
+      "J_sha256": "04a91db259ca71b1c3a8484d438965020842731082d428190343edb5b2a1d4f4"
+    }
+  },
+  "physics_result": "NOT_YET_AVAILABLE",
+  "joint_convergence": "NOT_CLAIMED",
+  "output_root": "lumina_final_native_pair_20261106-rnygvwaw/run",
+  "path_alias": "SHARED: 실행 서버의 공유 파일시스템 접두사; 원 제출 명령은 공유 출력의 submission-result.json 참조."
+}
