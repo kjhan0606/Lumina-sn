@@ -1,0 +1,101 @@
+{
+  "state": "RUNNING_AFTER_PREFLIGHT",
+  "job_id": 1274045,
+  "job_name": "lumina-secant-root-1107b",
+  "cluster": "Grammar",
+  "node_at_snapshot": "grammar007",
+  "elapsed_at_snapshot": "00:05:09",
+  "source_commit": "7f945d2212e696258143526eae6092c2f3e7765d",
+  "launcher_sha256": "491aa4364614dd654c130719aea386b3030d2662c2328bc42edd8844db4b5cce",
+  "output_root": "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/box-root-secant-20261107-v8m3p6",
+  "inputs": {
+    "preparation": {
+      "path": "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/run/boundary/preparation.json",
+      "sha256": "b3a5ec265d3143acfae0573f6e6c5e27dd3a1704269b7c178894664ab2310b43"
+    },
+    "feedback": {
+      "path": "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/corrected-followup/gpu/feedback/feedback.json",
+      "sha256": "a40d31ab05f9646715d4172829bb72364fc59c82989a73504e3923325036da6f"
+    },
+    "completed_prefix": {
+      "path": "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/box-step-20261105-b0jmd0n1/completed-prefix.json",
+      "sha256": "dd111c5c774e50d8bf7d9f530b62d35361abcc64875b7482de00805575639b40"
+    },
+    "previous_thermal_root": {
+      "path": "SHARED/kjhan/cmfgen_runs/lumina_outer_roundtrip_20261104-uw1e00_s/box-root-20261106-bmkl_17t/returned_response/run/result.json",
+      "sha256": "0a23b70f817524604ab801a072ec7277df13921195b3becce4e8026fc09038e8"
+    },
+    "selected_generation17_response_sha256": "12a5811b8fa7d6fcade34b33ae8c07defed28efb9529f7635b3ac51c4b10ab3f"
+  },
+  "limits": {
+    "cpus": 16,
+    "memory_gib": 32,
+    "slurm_walltime_hours": 48,
+    "internal_seconds": 171000,
+    "new_thermal_callbacks_max": 48,
+    "fresh_temperature_full_bf_integrations_max": 48,
+    "gpu": 0,
+    "new_transport": 0,
+    "material_acceptance_outside_fixed_j_solver": 0,
+    "automatic_retry": 0,
+    "requeue": 0
+  },
+  "solver_contract": {
+    "mode": "restart_secant_root",
+    "secant_after_accept": true,
+    "thermal_policy": "native_instantaneous_scenario",
+    "selected_state": "generation17/evaluation7",
+    "saved_centered_probes_reused": ["T+", "T-", "ne+", "ne-"],
+    "acceptance": {
+      "relative_charge_residual_max": 1e-10,
+      "scaled_heat_residual_max": 1e-3,
+      "fresh_root_log_step_max": 1e-3
+    }
+  },
+  "preflight": {
+    "in_job_tests": "184 passed in 1.87 s",
+    "local_tests_with_inherited_48h_environment_simulated": "184 passed in 3.49 s",
+    "shell_syntax": "PASS",
+    "python_compile": "PASS",
+    "diff_check": "PASS"
+  },
+  "initial_run_snapshot": {
+    "slurm_state": "RUNNING",
+    "reported_result_state": "STARTED",
+    "phase": "FIXED_NEW_FIELD_T_NE_CORRECTION",
+    "completed_callbacks": 0,
+    "stdout_marker": "DYNAMIC_MATERIAL_BF_BEGIN generation11",
+    "interpretation": "실제 BF 평가 경로 진입; 결과 callback/수용 후보는 아직 없음"
+  },
+  "pre_physics_failures_preserved": [
+    {
+      "job_id": 1274013,
+      "state": "FAILED",
+      "elapsed": "00:00:08",
+      "exit_code": "4:0",
+      "cause": "preflight pytest가 추출 source root로 이동하기 전에 상대 tests 경로를 찾지 못함",
+      "physics_callbacks": 0
+    },
+    {
+      "job_id": 1274036,
+      "state": "FAILED",
+      "elapsed": "00:00:10",
+      "exit_code": "1:0",
+      "preflight_result": "19 failed, 165 passed",
+      "cause": "48시간 실행용 환경변수가 pytest 자식으로 상속되어 실행기 단위시험 입력을 오염",
+      "physics_callbacks": 0
+    }
+  ],
+  "independent_reproduction": {
+    "job_id": 1273964,
+    "state": "COMPLETED",
+    "resources": "CPU1, 4GiB, 19s",
+    "result": "독립 line-quadrature 및 Schur 방향 재현 PASS; Grammar 보고서가 Lageunha 보고서와 byte-identical",
+    "new_physics_response": 0,
+    "new_transport": 0
+  },
+  "runtime_estimate_hours": [30, 40],
+  "runtime_estimate_basis": "1272744의 11 callback/6시간59분 실측에 저장 centered probe 재사용을 반영한 거친 추정; 보장 아님, 큐 대기는 별도",
+  "final_scientific_goal": "NOT_MET",
+  "scope_note": "고정-J T/ne 근 continuation만 수행. 성공해도 새 수송, 반환장 물질응답, Si/S 분포 및 CMFGEN 스펙트럼 비교가 남음."
+}

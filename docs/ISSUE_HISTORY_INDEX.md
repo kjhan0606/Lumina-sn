@@ -621,6 +621,29 @@
 
 ## P10 공통장 인구 일치와 자기일관 해 및 CMFGEN 기준해
 
+- **2026-11-07 고정-J 온도근 secant continuation 제출:** job `1274045`는 Grammar `grammar007`에서
+  CPU16·32GiB·48시간 한도로 실행 중이다. 두 사전검사 전용 실패(`1274013`: 상대경로,
+  `1274036`: runtime 환경변수의 pytest 상속)는 물리평가 전에 멈췄고, 보존됐다. 수정본의
+  in-job preflight 184개가 통과한 뒤 generation11 full-BF 단계에 진입했으며, 초기
+  스냅샷상 callback은 아직0회다. 기존 입력 해시와 선택 generation17/evaluation7을 재사용하며
+  callback 최대48·새 수송0·물질수용0·GPU0·자동재시작0이다. 따라서 고정-J 근 결과는 아직
+  없고 최종 공동수렴·CMFGEN 분포/스펙트럼 목표는 계속 `NOT_MET`다. 정본은
+  [`LUMINA_SECANT_ROOT_CONTINUATION_2026-11-07.json`](LUMINA_SECANT_ROOT_CONTINUATION_2026-11-07.json)
+  및 [11월7일 인계](HANDOVER_2026-11-04.md) 최상단.
+
+- **2026-11-07 최종시험 준비 판정:** `1272744`는 물리 열잔차`1.4045e-9`로 문턱 안이지만
+  새 centered 근 방향`|ΔlnT|=1.432957`(깊이4), `|Δlnne|=0.032041`로 근 기준`1e-3`에
+  미달하고 평가한도에서 끝났다. 따라서 새 수송을 제출하지 않았다. 전90점 same-J line
+  replay는 유의 열차42/42점 및 외곽21/21점에서 native-grid 차이를1% 이내 재현했다.
+  13개 상위 Co IV 선의 추가 독립검사는 C sampled 대 Python trapezoid`2.03e-16`, C
+  piecewise-linear 대 GL16`9.13e-13`, 저장 Jbar 재현`6.08e-14`로 통과했고 Grammar
+  재현 job `1273964`는19초 정상 완료했다. source/native 물리 profile은 같고 `FRAC_DOP`
+  격자설정만 다르다. 저장 Jacobian을 전하 제거·행 정규화 Schur 방식으로 독립 재현한
+  조건수는`6.54`이며 fresh 방향은 지속된다. raw full-matrix 조건수`6.38e9`는 서로 다른
+  행 척도를 섞은 값이므로 특이성 판정에서 제외한다. 이는 line-kernel 오류를 지지하지
+  않으며 자기일관성·CMFGEN 분포/스펙트럼 일치도 아직 증명하지 않는다. 세부 결과,
+  정본 경로와 최종시험 선행조건은 [11월7일 인계](HANDOVER_2026-11-04.md)의 최상단 참조.
+
 - **11월5일 열개선에도 S III가 멀어진 이유:** 같은 J의 node34에서 T+5.70%가
   유효 재결합−1.661%·광이온화+0.376%와 함께 S III 감소로 이어졌다. 저장±T/ne
   실제 응답의 국소 기울기가 분율 로그 변화와 약0.9% 차이로 일치했다. 현재 열해법의
