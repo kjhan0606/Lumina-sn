@@ -146,3 +146,18 @@ def test_capture_runner_requires_exact_slurm_allocation(tmp_path, monkeypatch):
     monkeypatch.setenv("SLURM_JOB_ID", "987654")
     with pytest.raises(ValueError, match="CPU16/32GiB"):
         runner.run(root)
+
+
+def test_explicit_identity_preserves_all_three_bindings(tmp_path):
+    root = make_attempt(tmp_path / 'attempt')
+    identity = dict(J_sha256=J_SHA, result_sha256=RESULT_SHA, response_sha256=RESPONSE_SHA)
+    assert runner.validate_inputs(root, identity)['fixed_j_sha256'] == J_SHA
+    for key in identity:
+        with pytest.raises(ValueError):
+            runner.validate_inputs(root, {**identity, key: 'a' * 64})
+
+
+@pytest.mark.parametrize('identity', [{}, [], 'invalid', {'J_sha256': 'a'*64}])
+def test_invalid_explicit_identity_does_not_fall_back(tmp_path, identity):
+    with pytest.raises(ValueError, match='identity is invalid'):
+        runner.validate_inputs(make_attempt(tmp_path / 'attempt'), identity)

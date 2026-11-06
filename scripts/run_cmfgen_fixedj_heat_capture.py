@@ -40,7 +40,7 @@ def control(vadat: str, key: str) -> str:
     return values[0]
 
 
-def validate_inputs(root: Path) -> dict:
+def validate_inputs(root: Path, identity=None) -> dict:
     build = root / "build"
     inputs = root / "inputs"
     run = root / "native"
@@ -75,17 +75,24 @@ def validate_inputs(root: Path) -> dict:
             raise ValueError(f"sealed input mismatch: {name}")
     j_hashes = [digest for name, digest in field_manifest.get("input_sha256", {}).items()
                 if Path(name).name == "J.npy"]
+    expected = dict(
+        J_sha256="40a48d9aedaafa4d8f6f8adb0fdb6ea191bd152ed3f55de38e8862fe445232a6",
+        result_sha256="be3bf940802800c7df94396e1fbd6a8828aa444a9c444082582179349f1eaf47",
+        response_sha256="252993d3da03dd43ede0d02908c5134896aea8df902b9a54f947027b9556436e") if identity is None else identity
+    if not isinstance(expected, dict) or set(expected) != {'J_sha256','result_sha256','response_sha256'} or any(
+            not isinstance(v,str) or not re.fullmatch('[0-9a-f]{64}',v) for v in expected.values()):
+        raise ValueError('explicit fixed-J comparison identity is invalid')
     if (state_manifest.get("points") != 90 or state_manifest.get("variables") != 1800
             or field_manifest.get("layout", {}).get("depths") != 90
             or field_manifest.get("layout", {}).get("frequencies") != 1_115_020
             or len(j_hashes) != 1
             or j_hashes[0] !=
-            "40a48d9aedaafa4d8f6f8adb0fdb6ea191bd152ed3f55de38e8862fe445232a6"):
+            expected['J_sha256']):
         raise ValueError("not the approved generation14/evaluation4 fixed-J state")
     if (state_manifest.get("accepted_result_sha256") !=
-            "be3bf940802800c7df94396e1fbd6a8828aa444a9c444082582179349f1eaf47"
+            expected['result_sha256']
             or state_manifest.get("accepted_response_sha256") !=
-            "252993d3da03dd43ede0d02908c5134896aea8df902b9a54f947027b9556436e"):
+            expected['response_sha256']):
         raise ValueError("accepted material/response identity differs from approval")
 
     vadat = (run / "VADAT").read_text()
@@ -149,13 +156,13 @@ def verify_outputs(artifacts: dict, job_id: str, returncode: int, elapsed: float
             "new_transport": False, "material_update": False, "final_goal": "NOT_MET"}
 
 
-def run(root: Path) -> int:
+def run(root: Path, identity=None) -> int:
     root = root.resolve(strict=True)
     if (os.environ.get("SLURM_CPUS_PER_TASK") != "16"
             or os.environ.get("SLURM_MEM_PER_NODE") != "32768"
             or not os.environ.get("SLURM_JOB_ID")):
         raise ValueError("run only in the approved Grammar CPU16/32GiB Slurm allocation")
-    artifacts = validate_inputs(root)
+    artifacts = validate_inputs(root) if identity is None else validate_inputs(root, identity)
     env = os.environ.copy()
     env[ACTIVATION] = "1"
     env.update(OMP_NUM_THREADS="16", OMP_DYNAMIC="FALSE", OMP_STACKSIZE="512M",
