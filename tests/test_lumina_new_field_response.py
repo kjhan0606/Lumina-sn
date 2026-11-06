@@ -287,6 +287,10 @@ def test_secant_slurm_preflight_runs_from_extracted_project_root():
     pytest_invocation=text.index('/home/kjhan/miniconda3/bin/python3 -m pytest',preflight)
     compile_start=text.index('core=(lumina_plasma',preflight)
     assert project_created < change_directory < preflight < pytest_invocation < compile_start
+    preflight_command=text[preflight:compile_start]
+    for name in ('LUMINA_RESPONSE_EXECUTOR','LUMINA_RESPONSE_LONG_THERMAL',
+                 'LUMINA_RESPONSE_SECONDS','LUMINA_RESPONSE_THERMAL_HOURS'):
+        assert f'-u {name}' in preflight_command
 
 
 @pytest.mark.parametrize('path,digest,limit', [('result.json', None, 5),

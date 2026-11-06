@@ -101,7 +101,9 @@ export LUMINA_TOPION_LEVELS_FILE="$project/data/atomic/topion_levels.csv"
 export LUMINA_IONIZATION_REFERENCE_FILE="$project/data/atomic/ionization_reference.csv"
 cd "$project"
 if [[ " $* " = *" --restart-secant-root "* ]]; then
-    /home/kjhan/miniconda3/bin/python3 -m pytest -q -p no:cacheprovider \
+    env -u LUMINA_RESPONSE_EXECUTOR -u LUMINA_RESPONSE_LONG_THERMAL \
+      -u LUMINA_RESPONSE_SECONDS -u LUMINA_RESPONSE_THERMAL_HOURS \
+      /home/kjhan/miniconda3/bin/python3 -m pytest -q -p no:cacheprovider \
       tests/test_lumina_fixed_field_thermal.py tests/test_lumina_new_field_response.py \
       tests/test_lumina_thermal_replay.py
 fi
